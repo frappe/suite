@@ -14,6 +14,8 @@ from typing import Protocol
 
 import frappe
 
+from suite.drive.patches.build.ports import BotoBucket
+
 ACTIVE = "Active"
 TRASHED = "Trashed"
 REMOVED = "Removed"
@@ -24,6 +26,11 @@ REMOVED = "Removed"
 # recomputes reachability independently of anything Build owns.
 DRIVE_ROOT_ROW = "Drive"
 USERS_ROW = "Users"
+
+# The framework S3 driver's own key space: canonical copies, `File Blob`
+# bytes and framework files all live under these. A legacy key here, or one
+# a store resolves to a name here, is never Drive's to delete.
+FRAMEWORK_ROOTS = ("private/", "public/", "sites/")
 
 # §3.13's complete dropped-field list for `Drive Disk Settings` (Single):
 # `quota`, `root_folder`, `thumbnail_prefix`, `flat`, and the six S3 fields.
@@ -738,30 +745,67 @@ class LegacyBucket:
     # `DeleteObjects` takes at most this many keys per call.
     DELETE_BATCH = 1000
 
-    def __init__(self, bucket: str, client):
-        self.bucket = bucket
-        self.client = client
+    def __init__(self, boto: BotoBucket):
+        self.boto = boto
 
     def delete_keys(self, keys: tuple[str, ...]) -> int:
         """Delete these keys, exactly as given, 1000 per call. Returns how
-        many S3 reports deleted. A key that is already gone is reported
-        deleted, not an error: `DeleteObjects` is idempotent."""
+        many are gone afterwards.
+
+        A key that is already gone counts as deleted, so a rerun after any
+        interruption finishes. AWS S3 reports such a key under `Deleted`;
+        Garage, which Frappe Cloud's object storage runs, reports it as a
+        `NoSuchKey` error. Any other error raises, and nothing in its batch
+        is counted.
+        """
         deleted = 0
         for start in range(0, len(keys), self.DELETE_BATCH):
             batch = keys[start : start + self.DELETE_BATCH]
-            response = self.client.delete_objects(
-                Bucket=self.bucket,
+            response = self.boto.client.delete_objects(
+                Bucket=self.boto.bucket,
                 Delete={"Objects": [{"Key": key} for key in batch], "Quiet": False},
             )
             errors = response.get("Errors") or []
-            if errors:
-                first = errors[0]
+            refused = [error for error in errors if error.get("Code") != "NoSuchKey"]
+            missing = [error for error in errors if error.get("Code") == "NoSuchKey"]
+            if refused:
+                first = refused[0]
                 raise RuntimeError(
-                    f"S3 refused to delete {len(errors)} of {len(batch)} legacy keys (for example "
+                    f"S3 refused to delete {len(refused)} of {len(batch)} legacy keys (for example "
                     f"{first.get('Key')!r}: {first.get('Code')} {first.get('Message')})"
                 )
-            deleted += len(response.get("Deleted") or [])
+            for error in missing:
+                if error["Key"].startswith("/"):
+                    self._delete_stored_without_slash(error["Key"])
+            deleted += len(response.get("Deleted") or []) + len(missing)
         return deleted
+
+    def _delete_stored_without_slash(self, key: str) -> None:
+        """Delete `/team/id` on a store that holds it as `team/id`, or find it gone.
+
+        The object goes only when HEAD shows that both names are one object,
+        and it is deleted by its legacy name, so this code never names
+        `team/id` itself. On AWS the slash is part of the key, so a different
+        `team/id` is never touched. A stored name under the framework's roots
+        is refused: Suite still serves that object. `BotoBucket._copy_from`
+        says how Garage treats a key in the request path.
+        """
+        if self.boto.head(key) is None:
+            return
+        stored_key = key.lstrip("/")
+        if not stored_key or stored_key.startswith(FRAMEWORK_ROOTS):
+            raise RuntimeError(
+                f"Legacy key {key!r} reaches the object stored as {stored_key!r}, under the "
+                "framework's own roots. Refusing to delete it."
+            )
+        if not self.boto.is_one_object(key, stored_key):
+            raise RuntimeError(
+                f"S3 reports legacy key {key!r} missing on delete but present on HEAD, and "
+                f"{stored_key!r} is not the same object. Refusing to guess which object it names."
+            )
+        self.boto.client.delete_object(Bucket=self.boto.bucket, Key=key)
+        if self.boto.head(key) is not None:
+            raise RuntimeError(f"Legacy key {key!r} is still in the bucket after deleting it.")
 
 
 class SiteDiskSettingsSnapshot:

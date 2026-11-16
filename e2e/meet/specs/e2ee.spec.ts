@@ -56,7 +56,10 @@ async function readFingerprint(page: Page): Promise<string> {
 		.getByText("Encryption fingerprint", { exact: true })
 		.locator("xpath=..");
 	await expect(section).toBeVisible({ timeout: 30_000 });
-	return (await section.locator("pre").innerText()).trim();
+	// The value truncates on one line; its title holds the whole fingerprint.
+	const value = section.locator("[title]").first();
+	await expect(value).toHaveAttribute("title", /\S/);
+	return ((await value.getAttribute("title")) ?? "").trim();
 }
 
 async function expectScreenShareReceiving(page: Page): Promise<void> {
@@ -67,7 +70,7 @@ async function expectScreenShareReceiving(page: Page): Promise<void> {
 }
 
 async function clickScreenShare(page: Page): Promise<void> {
-	await page.locator('button[aria-label="Toggle Screen Share"]').evaluate((button) => {
+	await page.locator('button[aria-label="Toggle screen share"]').evaluate((button) => {
 		if (!(button instanceof HTMLButtonElement)) throw new Error("Expected a screen share button");
 		button.click();
 	});

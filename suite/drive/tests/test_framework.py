@@ -37,20 +37,8 @@ OWNER = "framework-link-owner@example.com"
 REFUSED = (403, 404)
 
 
-def _slides_save(document: dict) -> tuple[str, dict]:
-    return "/api/method/suite.slides.api.slides.save_slides", {
-        "name": document["name"],
-        "slides": [],
-        "base_modified": str(document["modified"]),
-    }
-
-
-# The save each editor sends, given the row it read.
-SAVES = {
-    "Presentation": _slides_save,
-}
-# Writer and Sheets save through their logs, so their links are checked on open only
-OPENS = ("Writer Document", "Sheet", *SAVES)
+# Each editor saves through its log, so its link is checked on open only
+OPENS = ("Writer Document", "Sheet", "Presentation")
 
 
 class TestShareLinkOpensContentDocuments(IntegrationTestCase):
@@ -94,64 +82,33 @@ class TestShareLinkOpensContentDocuments(IntegrationTestCase):
     def _docname(self, doctype: str) -> str:
         return frappe.db.get_value(doctype, {content.spec_for(doctype).node_field: self.nodes[doctype]})
 
-    def _send(self, method: str, path: str, code: str | None, body: dict | None = None):
+    def _open(self, doctype: str, code: str | None):
+        path = f"/api/v2/document/{quote(doctype)}/{self._docname(doctype)}"
         headers = {"X-Drive-Links": code} if code else {}
-        kwargs = {"method": method, "headers": headers}
-        if body is not None:
-            kwargs["json"] = body
-        response = make_request(target=self.CLIENT.open, args=(path,), kwargs=kwargs)
+        response = make_request(
+            target=self.CLIENT.open, args=(path,), kwargs={"method": "GET", "headers": headers}
+        )
         frappe.db.rollback()
         return response
 
-    def _open(self, doctype: str, code: str | None):
-        path = f"/api/v2/document/{quote(doctype)}/{self._docname(doctype)}"
-        return self._send("GET", path, code)
-
-    def _save(self, doctype: str, code: str | None, document: dict):
-        path, body = SAVES[doctype](document)
-        return self._send("POST", path, code, body)
-
-    def _owner_row(self, doctype: str) -> dict:
-        frappe.set_user(OWNER)
-        return frappe.get_doc(doctype, self._docname(doctype)).as_dict()
-
-    def test_a_guest_without_a_link_can_neither_open_nor_save(self):
+    def test_a_guest_without_a_link_cannot_open(self):
         for doctype in OPENS:
             with self.subTest(doctype):
                 self._link(doctype, drive.EDIT)
                 self.assertIn(self._open(doctype, None).status_code, REFUSED)
 
-        for doctype in SAVES:
-            with self.subTest(doctype):
-                self.assertIn(self._save(doctype, None, self._owner_row(doctype)).status_code, REFUSED)
-
-    def test_a_read_link_opens_the_document_but_does_not_save_it(self):
-        links: dict[str, tuple[str, dict]] = {}
+    def test_a_read_link_opens_the_document(self):
         for doctype in OPENS:
             with self.subTest(doctype):
-                code = self._link(doctype, drive.READ)
-                opened = self._open(doctype, code)
+                opened = self._open(doctype, self._link(doctype, drive.READ))
                 self.assertEqual(opened.status_code, 200, opened.get_data(as_text=True))
                 self.assertEqual(opened.get_json()["data"]["name"], self._docname(doctype))
-                links[doctype] = (code, opened.get_json()["data"])
 
-        for doctype in SAVES:
-            with self.subTest(doctype):
-                self.assertIn(self._save(doctype, *links[doctype]).status_code, REFUSED)
-
-    def test_an_edit_link_opens_the_document_and_saves_it(self):
-        links: dict[str, tuple[str, dict]] = {}
+    def test_an_edit_link_opens_the_document(self):
         for doctype in OPENS:
             with self.subTest(doctype):
-                code = self._link(doctype, drive.EDIT)
-                opened = self._open(doctype, code)
+                opened = self._open(doctype, self._link(doctype, drive.EDIT))
                 self.assertEqual(opened.status_code, 200, opened.get_data(as_text=True))
-                links[doctype] = (code, opened.get_json()["data"])
-
-        for doctype in SAVES:
-            with self.subTest(doctype):
-                saved = self._save(doctype, *links[doctype])
-                self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
 
     def test_a_link_to_one_document_opens_no_other(self):
         code = self._link("Writer Document", drive.EDIT)

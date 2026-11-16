@@ -1,32 +1,16 @@
 /**
  * Writer's calls to the Drive and Suite routes that `DocumentSession` does not
- * cover: uploading media into a document, purging the nodes a failed import
- * uploaded, the people list the mention menu reads, and sharing the document
- * with someone a comment mentions.
+ * cover: uploading media into a document and purging the nodes a failed import
+ * uploaded.
  *
  * Every call goes to `/api/suite/drive/` or `/api/suite/`, never to a legacy
  * Drive method.
  */
-import type { MentionSuggestionItem, UploadedMedia, UploadFunction } from 'frappe-ui/editor'
+import type { UploadedMedia, UploadFunction } from 'frappe-ui/editor'
 import { watch } from 'vue'
 
 import { api, client, useUpload } from '@/api'
-import { documentCredentials } from '@/apps/drive'
 import { randomId } from '@/platform/random-id'
-import type { PeopleLookupOutputPersonUser } from '@/platform/transport/generated'
-
-/** A person on this site, in the shape the mention menu reads. */
-export interface WriterUser extends MentionSuggestionItem {
-  name: string
-  email: string
-  full_name: string
-  user_image: string | null
-  value: string
-  label: string
-  /** Asked about a document: whether they can open it. */
-  has_access?: boolean
-  is_blocked?: boolean
-}
 
 /** The URL a Writer body stores for a media node. `suite/writer/drive.py` reads it back. */
 export function embedUrl(node: string): string {
@@ -83,55 +67,4 @@ export async function purgeNodes(nodes: readonly string[]): Promise<void> {
     patch: { state: 'Trashed' },
   })
   if (trashed.ok.length) await client.mutation(api.drive.nodes.purgeBatch, { nodes: trashed.ok })
-}
-
-function writerUser(person: PeopleLookupOutputPersonUser): WriterUser {
-  return {
-    name: person.name,
-    email: person.email,
-    full_name: person.full_name ?? '',
-    user_image: person.user_image,
-    value: person.email,
-    label: (person.full_name || person.email).trimEnd(),
-    ...(person.has_access !== undefined && { has_access: person.has_access }),
-    ...(person.is_blocked && { is_blocked: true }),
-  }
-}
-
-/**
- * The first page of people who match `query`, from `GET /api/suite/people`,
- * which any Suite user may call. With no query it is the first page of
- * everyone. With `node`, people who can open that document come first, the
- * caller is left out, and each person says whether they can open it. The route
- * pages users and groups together, so groups are dropped. A question about a
- * document carries its share link, as the server reads a link commenter's role
- * from it.
- */
-export async function searchUsers(query: string, node?: string | null): Promise<WriterUser[]> {
-  const q = query.trim()
-  const page = await client.query(
-    api.suite.people.list,
-    { ...(q && { q }), ...(node && { node }) },
-    { context: node ? documentCredentials(node).context : undefined },
-  )
-  return page.rows.flatMap((row) => (row.kind === 'user' ? [writerUser(row)] : []))
-}
-
-/**
- * The people among `users` who can't open `node`, as the mention menu marks
- * them. The lookup carries the share link, as a search on the document does. A
- * failed lookup counts nobody, so it never stops a comment.
- */
-export async function peopleWithoutAccess(
-  node: string,
-  users: readonly string[],
-): Promise<WriterUser[]> {
-  const found = await client
-    .query(
-      api.suite.people.lookup,
-      { node, users: [...users] },
-      { context: documentCredentials(node).context },
-    )
-    .catch(() => [])
-  return found.filter((person) => person.has_access === false).map(writerUser)
 }

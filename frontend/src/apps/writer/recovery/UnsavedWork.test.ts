@@ -35,13 +35,16 @@ vi.mock('@/platform/collab', async (original) => {
 })
 
 const { discardCopy, keepPageCopy, listCopies } = await import('./copies')
-const { keepDraft } = await import('./commentDrafts')
+const { keepCommentDraft } = await import('@/apps/drive')
 const { default: UnsavedWork } = await import('./UnsavedWork.vue')
 
-async function openedPage(ready = (root: Element) => rowButton(root)) {
+async function openedPage(
+  ready: (root: Element) => unknown = (root) => rowButton(root),
+  onCounted = (_count: number) => {},
+) {
   const document = { render: () => null }
   const routes = [
-    { path: '/drive/recovery', component: UnsavedWork },
+    { path: '/drive/recovery', component: UnsavedWork, props: { onCounted } },
     { path: '/d/:node/:slug', component: document },
   ]
   const router = createRouter({ history: createMemoryHistory(), routes })
@@ -56,14 +59,6 @@ async function openedPage(ready = (root: Element) => rowButton(root)) {
     .mount(root)
   await vi.waitFor(() => expect(ready(root)).not.toBeNull())
   return { root, router }
-}
-
-function emptyState(root: Element) {
-  if (!root.textContent?.includes('No recovery copies')) {
-    return null
-  }
-
-  return root
 }
 
 function placeholderRow(root: Element) {
@@ -118,10 +113,20 @@ describe('Writer recovery copies page', () => {
     expect([placeholderRow(root), root.querySelector('[aria-busy="true"]')]).toEqual([null, null])
   })
 
-  it('says so when the device keeps no copies', async () => {
-    const { root } = await openedPage(emptyState)
+  it('tells the page it keeps no copies, and draws nothing of its own', async () => {
+    const counted = vi.fn()
+    const { root } = await openedPage(() => counted.mock.calls.length || null, counted)
 
-    expect(rowButton(root)).toBeNull()
+    expect([counted.mock.calls, root.textContent]).toEqual([[[0]], ''])
+  })
+
+  it('tells the page how many copies it lists', async () => {
+    keepPageCopy('node-1', 'Plan', '<p>abc</p>')
+    const counted = vi.fn()
+
+    await openedPage(() => counted.mock.calls.length || null, counted)
+
+    expect(counted.mock.calls).toEqual([[1]])
   })
 
   it('opens a copy in its document when the document can be opened', async () => {
@@ -152,9 +157,17 @@ describe('Writer recovery copies page', () => {
 
   it("lists the document's unposted comments with its copy", async () => {
     keepPageCopy('gone', 'Plan', '<p>Typed while offline</p>')
-    keepDraft('Guest', 'gone', { clientId: 'one', anchor: anchorOn('offline'), text: 'Why?' })
-    keepDraft('Guest', 'gone', { clientId: 'two', anchor: anchorOn('Typed'), text: '  ' })
-    keepDraft('Guest', 'other', { clientId: 'three', anchor: anchorOn('Plan'), text: 'Elsewhere' })
+    keepCommentDraft('Guest', 'gone', {
+      clientId: 'one',
+      anchor: anchorOn('offline'),
+      text: 'Why?',
+    })
+    keepCommentDraft('Guest', 'gone', { clientId: 'two', anchor: anchorOn('Typed'), text: '  ' })
+    keepCommentDraft('Guest', 'other', {
+      clientId: 'three',
+      anchor: anchorOn('Plan'),
+      text: 'Elsewhere',
+    })
     const { root } = await openedPage()
 
     rowButton(root).click()

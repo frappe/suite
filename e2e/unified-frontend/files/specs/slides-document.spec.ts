@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { frappeData } from "../../../shared/frappe";
 import { expect, test, type APIRequestContext, type Browser, type Page } from "@playwright/test";
@@ -48,8 +49,19 @@ async function openDeck(page: Page, node = deck.name) {
 	await page.goto(`/d/${node}`);
 	const title = page.getByRole("textbox", { name: "Presentation title" });
 	await expect(title).toBeVisible({ timeout: 20_000 });
-	await expect(page.getByText("Opening presentation…")).toHaveCount(0, { timeout: 20_000 });
+	await expect(page.getByRole("status", { name: "Opening presentation" })).toHaveCount(0, { timeout: 20_000 });
 	return title;
+}
+
+/** Picks an item from the presentation's ⋯ menu. A side panel's item opens or closes it. */
+async function pickFromMenu(page: Page, item: "Comments" | "Versions" | "Export as PDF") {
+	await page.getByRole("button", { name: "More actions" }).click();
+	await page.getByRole("menuitem", { name: item, exact: true }).click();
+}
+
+/** A push of the room's work. */
+function isPush(url: string) {
+	return new URL(url).pathname.endsWith("/updates");
 }
 
 /** Add a rectangle to the open slide, as a person does: press R, then draw it on the slide. */
@@ -78,17 +90,18 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 	await expect.poll(async () => (await getNode(api, deck.name)).title).toBe("Renamed deck");
 
 	// Export prints one page per slide, then takes the print view away again.
-	await page.getByRole("button", { name: "Export", exact: true }).click();
+	await pickFromMenu(page, "Export as PDF");
 	await expect.poll(() => page.evaluate(() => window.printedPages)).toBe(1);
 	await expect(page.locator(".slides-container")).toHaveCount(0);
 
-	await page.getByRole("button", { name: "Comments" }).click();
+	await pickFromMenu(page, "Comments");
 	const comments = page.getByRole("complementary", { name: "Comments" });
-	await comments.getByRole("textbox", { name: "New comment" }).fill("Tighten the opening slide");
-	await comments.getByRole("button", { name: "Add", exact: true }).click();
+	await comments.getByRole("button", { name: "Add a comment" }).click();
+	await comments.getByLabel("Add a comment", { exact: true }).fill("Tighten the opening slide");
+	await comments.getByRole("button", { name: "Comment", exact: true }).click();
 	await expect(comments.getByText("Tighten the opening slide")).toBeVisible();
 
-	await page.getByRole("button", { name: "Versions" }).click();
+	await pickFromMenu(page, "Versions");
 	await expect(page.getByRole("complementary", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
 
@@ -104,26 +117,32 @@ test("renames, exports and comments without a legacy Drive call", async ({ page 
 test("losing edit access freezes the deck, sends no write and offers the changes", async ({ page }) => {
 	const seen = watchPage(page);
 	await openDeck(page);
-	// Every save fails, so the edit below stays unsaved.
-	await page.route("**/suite.slides.api.slides.save_slides", (route) => route.abort());
+	// Every push fails, so the edit below stays unsent
+	await page.route(/\/content\/[^/]+\/updates/, (route) => {
+		if (route.request().method() === "POST") {
+			return route.abort("failed");
+		}
 
+		return route.continue();
+	});
+
+	const pushed = page.waitForRequest((request) => request.method() === "POST" && isPush(request.url()));
 	await addRectangle(page);
-	await expect(page.getByText("Not saved", { exact: true })).toBeVisible();
+	await pushed;
 	await patchNode(api, deck.name, { state: "Trashed" });
 	await page.evaluate(() => window.dispatchEvent(new Event("focus")));
 
 	// A trashed item is read-only; its Trashed badge takes the place of View only.
 	await expect(page.getByText("Trashed", { exact: true })).toBeVisible();
+	// The edit is still unsent, so the toast says it is kept, not only that the deck is view only
 	await expect(page.getByText("Editing access changed. Your unsaved changes are kept on this device.")).toBeVisible();
 	const frozenAt = seen.requests.length;
 	await page.waitForTimeout(3_000);
-	expect(seen.requests.slice(frozenAt).filter((line) => line.includes("save_slides"))).toEqual([]);
-
-	const user = (await page.context().cookies()).find((cookie) => cookie.name === "user_id");
-	expect(user).toBeDefined();
-	const recoveryKey = `suite:slides-recovery:${decodeURIComponent(user!.value)}:${deck.name}`;
-	const recovery = () => page.evaluate((key) => localStorage.getItem(key), recoveryKey);
-	expect(await recovery()).toContain("rectangle");
+	// The room may still send its unsent work once, within a short bound; this test's route aborts it
+	const writes = seen.requests
+		.slice(frozenAt)
+		.filter((line) => line.startsWith("POST") && line.includes("suite.slides"));
+	expect(writes).toEqual([]);
 
 	const download = page.waitForEvent("download");
 	await page.getByRole("button", { name: "Download my changes" }).first().click();
@@ -132,16 +151,26 @@ test("losing edit access freezes the deck, sends no write and offers the changes
 	expect(JSON.parse(readFileSync((await file.path())!, "utf8")).slides[0].elements).toEqual(
 		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	// A browser save can't be confirmed, so the download marks the copy and keeps it.
-	expect(JSON.parse((await recovery())!)).toEqual(
-		expect.arrayContaining([expect.objectContaining({ downloaded: true })]),
+	// The live room keeps the one copy on this device. The toast saves the slides on screen, so
+	// that copy stays, and Recovery copies offers it with the rectangle
+	const recovery = await page.context().newPage();
+	await recovery.goto("/drive/recovery");
+	const copy = recovery.getByRole("row").filter({ hasText: "Slides journey" });
+	await expect(copy).toHaveCount(1);
+	const kept = recovery.waitForEvent("download");
+	await copy.getByRole("button", { name: /^Actions for the copy from / }).click();
+	await recovery.getByRole("menuitem", { name: "Download" }).click();
+	expect(JSON.parse(readFileSync((await (await kept).path())!, "utf8")).slides[0].elements).toEqual(
+		expect.arrayContaining([expect.objectContaining({ shapeType: "rectangle" })]),
 	);
-	expect(await recovery()).toContain("rectangle");
+	await recovery.close();
 
 	// A trashed deck takes no new comments.
-	await page.getByRole("button", { name: "Comments" }).click();
+	await pickFromMenu(page, "Comments");
 	await expect(page.getByRole("heading", { name: "Comments" })).toBeVisible();
-	await expect(page.getByRole("textbox", { name: "New comment" })).toHaveCount(0);
+	const comments = page.getByRole("complementary", { name: "Comments" });
+	await expect(comments.getByRole("button", { name: "Add a comment" })).toHaveCount(0);
+	await expect(comments.getByLabel("Add a comment", { exact: true })).toHaveCount(0);
 	expect(seen.requests.filter((line) => line.includes("suite.drive.api"))).toEqual([]);
 	expect(seen.errors).toEqual([]);
 });
@@ -167,6 +196,39 @@ async function shareByLink(node: string, role: number): Promise<string> {
 	expect(response.ok()).toBe(true);
 	const grant = await frappeData<{ principal: string }>(response);
 	return grant.principal.replace("$LINK:", "");
+}
+
+/**
+ * Make `node`'s deck an old-style one, held in its rows alone, as every deck from before
+ * collaboration is. A new deck starts with a live log, and the server refuses row writes to it.
+ * Existing composites are old-style decks, so the composite test starts from one. This removes
+ * the log through the content layer's own purge, as the backend's `old_deck` fixture does.
+ */
+function dropLiveLog(node: string): void {
+	const bench = process.env.BENCH_PATH ?? "/home/faris/benches/suite-bench";
+	const site = process.env.BENCH_SITE ?? "slides.localhost";
+	execFileSync(
+		`${bench}/env/bin/python`,
+		[
+			"-c",
+			`
+import sys
+import frappe
+from suite.content import log
+frappe.init(site=${JSON.stringify(site)})
+frappe.connect()
+if not frappe.conf.allow_tests:
+    raise RuntimeError("the old-style deck fixture requires a test site")
+doc_id = log.mark_purged("slides", sys.argv[1])
+if not doc_id:
+    raise RuntimeError("the deck has no live log to drop")
+log.delete_purged("slides", doc_id)
+frappe.destroy()
+`,
+			node,
+		],
+		{ cwd: `${bench}/sites` },
+	);
 }
 
 /** A browser signed in as the link-only person, holding these links. */
@@ -196,7 +258,7 @@ test("a person who holds only an edit link opens and saves the deck", async ({ b
 	await openDeck(page);
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
 
-	const saved = page.waitForResponse((answer) => answer.url().includes("suite.slides.api.slides.save_slides"));
+	const saved = page.waitForResponse((answer) => answer.request().method() === "POST" && isPush(answer.url()));
 	await addRectangle(page);
 	const answer = await saved;
 	expect(answer.status()).toBe(200);
@@ -210,6 +272,7 @@ test("a person who holds only an edit link opens and saves the deck", async ({ b
 test("a composite sends the link code of a deck that is shared on its own", async ({ browser, baseURL }) => {
 	const part = await createDocument(api, home.name, "Linked part", "Presentation");
 	const hidden = await createDocument(api, home.name, "Private part", "Presentation");
+	dropLiveLog(deck.name);
 	const updated = await api.put(`/api/resource/Presentation/${encodeURIComponent(deck.content_docname!)}`, {
 		data: {
 			is_composite: 1,
@@ -244,32 +307,56 @@ test("a composite sends the link code of a deck that is shared on its own", asyn
 	expect(answer.status()).toBe(200);
 	const sent = (await answer.request().headerValue("x-drive-links")) ?? "";
 	expect(sent.split(",").sort()).toEqual([deckCode, partCode].sort());
-	await expect(page.getByRole("button", { name: "1 · ready" })).toBeVisible();
-	await expect(page.getByRole("button", { name: "2 · unreadable" })).toBeVisible();
+	// Only the deck shared on its own reads; the private one stays a blank slide, not a failed load
+	const parts = await frappeData<{ references: Array<{ index: number; readable: boolean }> }>(answer);
+	const read = parts.references
+		.map(({ index, readable }) => [index, readable])
+		.sort(([left], [right]) => Number(left) - Number(right));
+	expect(read).toEqual([
+		[1, true],
+		[2, false],
+	]);
+	// Each new part holds one slide: the shared part's loads, and the private part's stays blank
+	const failed = page.getByText("Couldn't load this slide. Reload to try again.");
+	// The canvas is the one 960px slide; thumbnails carry the same element marks at their own size
+	const canvas = page.locator(".w-\\[960px\\]");
+	await expect(page.getByText("1 of 2", { exact: true })).toBeVisible();
+	await expect(canvas).toBeVisible();
+	await expect(failed).toHaveCount(0);
+
+	await page.keyboard.press("ArrowDown");
+	await expect(page.getByText("2 of 2", { exact: true })).toBeVisible();
+	await expect(canvas.locator("[data-index]")).toHaveCount(0);
+	await expect(failed).toHaveCount(0);
 	await visitor.close();
 });
 
-test("restores a saved version and reloads the deck", async ({ page }) => {
+test("restores a saved version and reloads the deck", async ({ page, browser }) => {
 	await openDeck(page);
-	await page.getByRole("button", { name: "Versions" }).click();
+	await pickFromMenu(page, "Versions");
 	const versions = page.getByRole("complementary", { name: "Versions" });
 	await versions.getByRole("button", { name: "Save version" }).click();
-	await page.getByRole("dialog").getByRole("textbox").fill("Empty deck");
-	await page.getByRole("dialog").getByRole("button", { name: "Save", exact: true }).click();
+	await versions.getByRole("textbox", { name: "Version name" }).fill("Empty deck");
+	await versions.getByRole("textbox", { name: "Version name" }).press("Enter");
 	await expect(versions.getByText("Empty deck")).toBeVisible();
-	await versions.getByRole("button", { name: "Close versions" }).click();
+	await versions.getByRole("button", { name: "Close panel" }).click();
 
 	await addRectangle(page);
 	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
-	await expect.poll(() => rectangles(api, deck.content_docname!)).toBe(1);
+	expect(await showsSavedRectangle(browser)).toBe(true);
 	await expect(page.locator(SHAPE_RECT).first()).toBeVisible();
 
-	await page.getByRole("button", { name: "Versions" }).click();
-	await versions.getByRole("listitem").filter({ hasText: "Empty deck" }).getByRole("button", { name: "Restore" }).click();
+	await pickFromMenu(page, "Versions");
+	await versions.getByRole("button", { name: /^Empty deck/ }).click();
+	await page
+		.getByRole("status")
+		.filter({ hasText: "Viewing Empty deck" })
+		.getByRole("button", { name: "Restore this version" })
+		.click();
 	await page.getByRole("dialog").getByRole("button", { name: "Restore", exact: true }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 
-	await expect.poll(() => rectangles(api, deck.content_docname!)).toBe(0);
+	expect(await showsSavedRectangle(browser)).toBe(false);
 	// The editor shows the restored copy, not the rectangle it drew.
 	await expect(page.locator(SHAPE_RECT)).toHaveCount(0);
 	await expect(page.getByText("View only", { exact: true })).toHaveCount(0);
@@ -278,15 +365,15 @@ test("restores a saved version and reloads the deck", async ({ page }) => {
 /** A rectangle shape on the canvas. Only shapes set a stroke width in px; icons draw rects too. */
 const SHAPE_RECT = 'svg rect[stroke-width$="px"]';
 
-/** How many rectangles the server copy of a presentation holds. */
-async function rectangles(client: APIRequestContext, docname: string): Promise<number> {
-	const response = await client.get(`/api/resource/Presentation/${encodeURIComponent(docname)}`);
-	const doc = await frappeData<{ slides: Array<{ elements: string }> }>(response);
-	return doc.slides.flatMap((slide) => {
-		const elements: unknown = JSON.parse(slide.elements || "[]");
-		if (!Array.isArray(elements)) throw new Error("Expected slide elements to be an array");
-		return elements.filter((element) => element?.shapeType === "rectangle");
-	}).length;
+/** Whether the server copy of the deck holds a rectangle, as a fresh page on another device opens it. */
+async function showsSavedRectangle(browser: Browser): Promise<boolean> {
+	const other = await browser.newContext();
+	const page = await other.newPage();
+	await openDeck(page);
+	await expect(page.locator('[data-save-state="clean"]')).toBeVisible();
+	const count = await page.locator(SHAPE_RECT).count();
+	await other.close();
+	return count > 0;
 }
 
 declare global {

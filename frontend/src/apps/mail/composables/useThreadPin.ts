@@ -2,6 +2,7 @@ import { api, client } from '@/api'
 import type { Thread } from '@/apps/mail/types'
 import { raiseOptimisticToast } from '@/apps/mail/utils'
 import { threadPinIds } from '@/apps/mail/utils/mailCopies'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * Pinning a conversation in a folder, the same from any list: rows of a merged list go to their own
@@ -12,11 +13,11 @@ export const useThreadPin = () => {
   const said = (pinned: boolean, many = false) =>
     many
       ? pinned
-        ? __('Threads pinned.')
-        : __('Threads unpinned.')
+        ? __('Threads pinned')
+        : __('Threads unpinned')
       : pinned
-        ? __('Thread pinned.')
-        : __('Thread unpinned.')
+        ? __('Thread pinned')
+        : __('Thread unpinned')
 
   const pinMails = (account: string, ids: string[], pinned: boolean, mailbox: string) =>
     raiseOptimisticToast(

@@ -83,16 +83,13 @@
               </span>
             </div>
           </div>
-          <div
+          <LoadFailed
             v-else-if="recentQuery.status === 'error' && !recentRows.length"
-            class="flex items-center justify-between rounded-5 border border-outline-gray-1 px-3 py-4"
+            variant="section"
+            :title="__('Could not load recent files')"
+            :retry="() => recentQuery.refetch()"
             data-testid="recent-error"
-          >
-            <p class="text-p-sm text-ink-red-7">
-              {{ recentQuery.error?.message || __('Could not load recent files.') }}
-            </p>
-            <Button :label="__('Retry')" variant="ghost" @click="recentQuery.refetch()" />
-          </div>
+          />
           <div
             v-else-if="!recentRows.length"
             class="flex items-center justify-between rounded-5 border border-outline-gray-1 px-3 py-4"
@@ -113,20 +110,13 @@
               @preview-error="recentQuery.refetch()"
             />
           </div>
-          <div
+          <LoadFailed
             v-if="recentQuery.status === 'error' && recentRows.length"
-            class="mt-3 flex items-center justify-between rounded-4 bg-surface-red-2 px-3 py-2"
-          >
-            <p class="text-p-sm text-ink-red-7">
-              {{ __('Recent files could not be refreshed.') }}
-            </p>
-            <Button
-              :label="__('Retry')"
-              variant="ghost"
-              theme="red"
-              @click="recentQuery.refetch()"
-            />
-          </div>
+            class="mt-3"
+            variant="section"
+            :title="__('Could not refresh recent files')"
+            :retry="() => recentQuery.refetch()"
+          />
         </section>
 
         <section aria-labelledby="home-upcoming-heading">
@@ -171,16 +161,13 @@
               </div>
             </div>
           </div>
-          <div
+          <LoadFailed
             v-else-if="upcomingQuery.status === 'error' && !upcomingEvents.length"
-            class="flex items-center justify-between rounded-5 border border-outline-gray-1 px-3 py-4"
+            variant="section"
+            :title="__('Could not load upcoming events')"
+            :retry="() => upcomingQuery.refetch()"
             data-testid="upcoming-error"
-          >
-            <p class="text-p-sm text-ink-red-7">
-              {{ upcomingQuery.error?.message || __('Could not load upcoming events.') }}
-            </p>
-            <Button :label="__('Retry')" variant="ghost" @click="upcomingQuery.refetch()" />
-          </div>
+          />
           <p
             v-else-if="!upcomingRows.length"
             class="rounded-5 border border-outline-gray-1 px-3 py-8 text-center text-p-sm text-ink-gray-5"
@@ -194,20 +181,13 @@
             :current-user="session.user.value?.id"
             data-testid="upcoming-rows"
           />
-          <div
+          <LoadFailed
             v-if="upcomingQuery.status === 'error' && upcomingEvents.length"
-            class="mt-3 flex items-center justify-between rounded-4 bg-surface-red-2 px-3 py-2"
-          >
-            <p class="text-p-sm text-ink-red-7">
-              {{ __('Upcoming events could not be refreshed.') }}
-            </p>
-            <Button
-              :label="__('Retry')"
-              variant="ghost"
-              theme="red"
-              @click="upcomingQuery.refetch()"
-            />
-          </div>
+            class="mt-3"
+            variant="section"
+            :title="__('Could not refresh upcoming events')"
+            :retry="() => upcomingQuery.refetch()"
+          />
         </section>
       </div>
     </ScrollArea>
@@ -251,6 +231,7 @@ import { documentTypes } from '@/composition/documentRegistry'
 import GetStarted from '@/composition/home/GetStarted.vue'
 import { formatEventTime, groupHomeEvents, homeEventWindow } from '@/composition/home/homeTime'
 import { Dropdown } from '@/platform/feedback'
+import { LoadFailed } from '@/platform/load-failed'
 import { useRestoredScroll } from '@/platform/scroll-restoration'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'

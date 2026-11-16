@@ -14,6 +14,9 @@ from suite.drive._core import nodes
 from suite.drive._core.access import effective_role, grant
 from suite.drive.framework import principals_for
 from suite.drive.tests.fixtures import drop_personal_root, drop_root
+from suite.slides.content import APP as SLIDES
+from suite.slides.content.tests.support import opened
+from suite.slides.tests.test_system_templates import lines_of, read_deck
 from suite.suite_core import storage
 from suite.tests.utils import ensure_user
 from suite.writer.content import APP
@@ -131,6 +134,18 @@ class TestDemoSeed(IntegrationTestCase):
         self.assertEqual(effective_role(brief, principals_for("Guest")), READ)
         self.assertEqual(effective_role(brief, principals_for(email_of("leo"))), READ)
         self.assertEqual(effective_role(brief, principals_for(email_of("theo"))), MANAGE)
+
+        for title, first in (
+            ("Q3 review and Q4 priorities", "Q3 review / Q4 priorities"),
+            ("Beacon collections launch", "Beacon collections"),
+        ):
+            with self.subTest(presentation=title):
+                node = node_titled(title).name
+                self.assertIsNotNone(content.find(SLIDES, node))
+                _header, state = opened(node)
+                deck = read_deck(state)
+                self.assertEqual(len(deck), 5)
+                self.assertEqual(lines_of(deck[0]["elements"][1]), [first])
 
         outside, inside = self.store_colleague_files()
         self.measure_mail()

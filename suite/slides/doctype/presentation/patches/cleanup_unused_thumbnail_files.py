@@ -47,9 +47,11 @@ def get_referenced_file_urls():
     referenced_urls = set()
 
     # move_slide_thumbnail_to_presentation runs before this patch and lifts the first
-    # slide's thumbnail onto the deck, so the deck is the only holder of that URL
-    for thumbnail in frappe.get_all("Presentation", pluck="thumbnail"):
-        add_referenced_url(referenced_urls, thumbnail)
+    # slide's thumbnail onto the deck, so the deck is the only holder of that URL,
+    # and with the field gone from the DocType (Q19') its column, where one is left, is read by SQL
+    if frappe.db.has_column("Presentation", "thumbnail"):
+        for thumbnail in frappe.db.sql_list("SELECT `thumbnail` FROM `tabPresentation`"):
+            add_referenced_url(referenced_urls, thumbnail)
 
     slides = frappe.get_all(
         "Slide",

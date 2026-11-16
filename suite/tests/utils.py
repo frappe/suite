@@ -81,3 +81,21 @@ def restore_local(name: str, value: object) -> None:
     # `frappe.local` is a contextvar store, so deleting a name it never held raises
     with suppress(AttributeError):
         delattr(frappe.local, name)
+
+
+@contextmanager
+def column_hidden(doctype: str, column: str):
+    # Takes a column off the table for the block and puts it back with its values, even if the block raises:
+    # dropping it and adding it back would lose every value, and the DDL commits that loss
+    hidden = f"_hidden_{column}"
+    rename_column(doctype, column, hidden)
+    try:
+        yield
+    finally:
+        rename_column(doctype, hidden, column)
+
+
+def rename_column(doctype: str, old: str, new: str) -> None:
+    frappe.db.sql_ddl(f"ALTER TABLE `tab{doctype}` RENAME COLUMN `{old}` TO `{new}`")
+    # The column list is cached per table and DDL does not refresh it
+    frappe.client_cache.delete_value(f"table_columns::tab{doctype}")

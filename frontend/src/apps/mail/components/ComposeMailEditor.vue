@@ -393,6 +393,7 @@ import type {
 import { formatBytes, isOverlayPresent, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
+import { translate as __ } from '@/platform/translation'
 
 import RecipientInput from './Controls/RecipientInput.vue'
 import ContactsModal from './Modals/ContactsModal.vue'
@@ -464,7 +465,7 @@ const refuseOversized = (file: File) => {
 const uploadFailure = (file: File, reason: unknown) =>
   reason instanceof UploadError && reason.messages.length
     ? reason.messages.join('\n')
-    : __('Failed to upload {0}', [file.name])
+    : __('Could not upload {0}', [file.name])
 const uploadInlineImage = async (file: File) => {
   if (refuseOversized(file)) throw new Error(__('{0} is too large to attach.', [file.name]))
   pendingInlineUploads.value++

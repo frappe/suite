@@ -5,7 +5,7 @@
 	     modals stay mounted for the views' v-model bindings. -->
   <!-- Stretched, the padding inside, so a split Inbox's tabs can run the header's full height and
        underline on its border. -->
-  <header class="hidden items-stretch border-b px-3 sm:flex sm:px-5">
+  <PageHeader class="hidden sm:flex">
     <!-- h-12: one height with or without the Inbox's tabs. The title's crumb stands a little taller
          than the tabs and the actions, and the bar grew with it. -->
     <div class="flex h-12 min-w-0 flex-1 items-center space-x-2 py-2.5">
@@ -33,7 +33,7 @@
     <div class="flex h-12 shrink-0 items-center py-2.5">
       <HeaderActions view-menu :inbox="mailbox === mailboxIds.inbox" />
     </div>
-  </header>
+  </PageHeader>
 
   <!-- On mobile this banner renders below the title header instead (inside the mobile
 	     header block) — above it, it read as page chrome sitting on top of the title. -->
@@ -431,7 +431,7 @@
   <SearchTweakPanel v-if="SearchTweakPanel && mailbox === 'search'" />
 </template>
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
 import {
   computed,
@@ -523,6 +523,7 @@ import { timeMenuOptions } from '@/apps/mail/utils/timeMenuOptions'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
+import { translate as __ } from '@/platform/translation'
 
 const {
   accountId,
@@ -1459,13 +1460,13 @@ const rowSetFlagged = (mail: Thread, flagged: boolean) =>
 
 const rowArchive = (mail: Thread) => {
   if (isAllAccountsSearch.value)
-    return crossAccountFile(mail, 'archive', __('Archiving...'), __('Thread archived.'))
+    return crossAccountFile(mail, 'archive', __('Archiving…'), __('Thread archived'))
   return handleArchiveThreads([mail.thread_id])
 }
 
 const rowTrash = (mail: Thread) => {
   if (isAllAccountsSearch.value)
-    return crossAccountFile(mail, 'trash', __('Moving to Trash...'), __('Thread moved to Trash.'))
+    return crossAccountFile(mail, 'trash', __('Moving to Trash…'), __('Thread moved to Trash'))
   return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
 }
 
@@ -1493,7 +1494,7 @@ async function emptyMailboxSubmit() {
     mailbox,
   }
   await emptyMailbox.run(input)
-  raiseToast(__('{0} emptied.', [mailboxName.value]))
+  raiseToast(__('{0} emptied', [mailboxName.value]))
   resetThreads()
 }
 // How much goes, that it goes for good, and a button that says so.

@@ -58,13 +58,18 @@ function tabOn(
   const store = reactive<{ slides: StoreSlide[] }>({ slides: [] })
   const renamed: Map<string, string>[] = []
   const boundText: (string | null)[] = []
+  let drawnHigherBy = 0
   const deck = openLiveDeck(doc, {
     slides: () => store.slides,
-    flatten: flattenLikeTheEditor,
+    flatten: (element) => {
+      const flat = flattenLikeTheEditor(element)
+      return element.transform === CENTRED ? { ...flat, top: flat.top - drawnHigherBy } : flat
+    },
     boundElementId: () => boundElementId,
     isSelected: (id) => selected.includes(id),
     setBoundText: (html) => boundText.push(html),
     canWrite: () => canWrite,
+    restoreRev: () => 0,
     fontsPending: () => fontsPending,
     onRenamed: (renames) => renamed.push(renames),
     onMerged: () => {},
@@ -77,6 +82,17 @@ function tabOn(
     renamed,
     boundText,
     element: (id: string) => store.slides.flatMap((s) => s.elements).find((e) => e.id === id)!,
+    // the tab lost edit, as a role change or a lock does
+    stopWriting: () => {
+      canWrite = false
+    },
+    fontsLoad: () => {
+      fontsPending = false
+    },
+    // the tab draws centred text a little taller or shorter, as a font or zoom change does
+    redraw: (higherBy: number) => {
+      drawnHigherBy = higherBy
+    },
   }
 }
 
@@ -565,7 +581,8 @@ describe('an edit of centred text that does not move it', () => {
 })
 
 describe('typing in centred text', () => {
-  function typedInto(doc: Y.Doc) {
+  it('keeps the top it was shown at, so the first edit grows the text downwards', () => {
+    const doc = new Y.Doc()
     writeDeck(doc, [
       {
         id: 's',
@@ -573,20 +590,15 @@ describe('typing in centred text', () => {
       },
     ])
     const tab = tabOn(doc, { boundElementId: 't' })
-    tab.element('t').content = '<p>a much longer line of text</p>'
+    const shown = { left: tab.element('t').left, top: tab.element('t').top }
+
+    // Enter, as the first key: a second, empty line
+    tab.element('t').content = '<p>Title</p><p></p>'
     tab.deck.push()
-    return tab
-  }
 
-  it('saves the re-measured top-left with the first edit', () => {
-    const doc = new Y.Doc()
-    const tab = typedInto(doc)
-    const top = 300 - tab.element('t').content.length
-
-    expect(tab.element('t').top).toBe(top)
+    expect(tab.element('t')).toMatchObject(shown)
     expect(savedFrame(doc, 't')).toEqual({
-      left: 450,
-      top,
+      ...shown,
       transform: 'none',
       transformOrigin: 'top left',
     })
@@ -638,6 +650,39 @@ describe('typing in centred text', () => {
   })
 })
 
+describe('a move of centred text while another tab has it selected', () => {
+  it('keeps the move in both tabs when the other tab draws the text again', () => {
+    const [asha, ravi] = [new Y.Doc(), new Y.Doc()]
+    // Ravi's write wins a tie
+    asha.clientID = 1
+    ravi.clientID = 2
+    writeDeck(asha, [
+      {
+        id: 's',
+        elements: [{ id: 't', type: 'text', frame: { left: 500, top: 300, transform: CENTRED } }],
+      },
+    ])
+    Y.applyUpdate(ravi, Y.encodeStateAsUpdate(asha))
+    const ashaTab = tabOn(asha)
+    const raviTab = tabOn(ravi, { boundElementId: 't', selected: ['t'] })
+
+    // Neither tab has heard the other's change yet
+    raviTab.redraw(1)
+    raviTab.deck.push()
+    ashaTab.element('t').left = 175
+    ashaTab.element('t').top = 340
+    ashaTab.deck.push()
+    Y.applyUpdate(ravi, Y.encodeStateAsUpdate(asha, Y.encodeStateVector(ravi)), 'wire')
+    Y.applyUpdate(asha, Y.encodeStateAsUpdate(ravi, Y.encodeStateVector(asha)), 'wire')
+
+    const moved = { left: 175, top: 340 }
+    expect(ashaTab.element('t')).toMatchObject(moved)
+    expect(raviTab.element('t')).toMatchObject(moved)
+    expect(savedFrame(asha, 't')).toMatchObject(moved)
+    expect(savedFrame(ravi, 't')).toMatchObject(moved)
+  })
+})
+
 describe('a presentation with no slides', () => {
   it('a tab that can edit adds a real blank, and one that can only read does not', () => {
     const viewer = tabOn(new Y.Doc(), { canWrite: false })
@@ -646,5 +691,278 @@ describe('a presentation with no slides', () => {
     const doc = new Y.Doc()
     tabOn(doc)
     expect(slideIds(doc)).toHaveLength(1)
+  })
+})
+
+describe("filling a new presentation's blank slide", () => {
+  const picture = (id: string, refId: string | number) => ({
+    id,
+    type: 'image',
+    left: 1,
+    top: 2,
+    width: 30,
+    height: 40,
+    refId,
+  })
+  const light = (): StoreSlide => ({
+    clientId: 'light',
+    background: '#FFFFFFFF',
+    elements: [picture('l1', 'title'), picture('l2', 'body')],
+  })
+  const dark = (): StoreSlide => ({
+    clientId: 'dark',
+    background: '#000000FF',
+    elements: [picture('d1', 'title'), picture('d2', 'body'), picture('d3', 'footer')],
+  })
+
+  // Two tabs on one blank presentation that have not heard from each other yet
+  function apart() {
+    const [one, other] = [new Y.Doc(), new Y.Doc()]
+    writeDeck(one, [{ id: 's1', elements: [] }])
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one))
+    return [one, other]
+  }
+
+  // The two tabs hear from each other from now on
+  function connect(one: Y.Doc, other: Y.Doc) {
+    one.on('update', (update, origin) => {
+      if (origin !== 'wire') Y.applyUpdate(other, update, 'wire')
+    })
+    other.on('update', (update, origin) => {
+      if (origin !== 'wire') Y.applyUpdate(one, update, 'wire')
+    })
+    Y.applyUpdate(other, Y.encodeStateAsUpdate(one, Y.encodeStateVector(other)), 'wire')
+    Y.applyUpdate(one, Y.encodeStateAsUpdate(other, Y.encodeStateVector(one)), 'wire')
+  }
+
+  const refIds = (doc: Y.Doc) => readSlides(doc)[0].elements.map(({ refId }) => refId)
+  // Magic Move pairs elements across slides by this key, so one slide never holds it twice
+  const transitionKeys = (doc: Y.Doc) =>
+    readSlides(doc)[0].elements.map(({ id, type, refId }) => (type === 'table' ? id : refId || id))
+
+  it('ends on one layout in both tabs when two tabs pick different themes at once', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    expect(tabA.deck.fillBlank(light())).toBe(true)
+    expect(tabB.deck.fillBlank(dark())).toBe(true)
+    connect(one, other)
+
+    const [slide] = readSlides(one)
+    expect(readSlides(other)).toEqual(readSlides(one))
+    expect(slide.elements).toHaveLength(slide.background === '#FFFFFFFF' ? 2 : 3)
+    expect(new Set(refIds(one)).size).toBe(slide.elements.length)
+  })
+
+  it('ends on one copy of the layout when two tabs pick the same theme at once', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(light())
+    connect(one, other)
+
+    expect(refIds(one)).toEqual(['title', 'body'])
+    expect(refIds(other)).toEqual(['title', 'body'])
+  })
+
+  it('draws the theme that stayed in the tab whose fill gave way, not its own', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(dark())
+    connect(one, other)
+
+    const kept = readSlides(one)[0].background
+    for (const tab of [tabA, tabB]) {
+      expect(tab.store.slides).toHaveLength(1)
+      expect(tab.store.slides[0].background).toBe(kept)
+      expect(tab.store.slides[0].elements).toHaveLength(kept === '#FFFFFFFF' ? 2 : 3)
+    }
+  })
+
+  it('keeps an element a co-editor added to the blank slide at the same moment', () => {
+    const [one, other] = apart()
+    const tabA = tabOn(one)
+    tabOn(other)
+
+    tabA.deck.fillBlank(light())
+    addElement(other, 's1', { type: 'image', frame: { left: 7 } })
+    connect(one, other)
+
+    expect(readSlides(one)[0].elements).toHaveLength(3)
+    expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  it('keeps an element of its own fill that the tab moved before the other fill arrived', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(light())
+    for (const tab of [tabA, tabB]) {
+      tab.store.slides[0].elements[0].left = 99
+      tab.deck.push()
+    }
+    connect(one, other)
+
+    // the winner's whole fill, and the one element the other tab moved
+    const frames = readSlides(one)[0].elements.map(({ frame }) => frame)
+    const moved = frames.filter((frame) =>
+      expect.objectContaining({ left: 99 }).asymmetricMatch(frame),
+    )
+    expect(frames).toHaveLength(3)
+    expect(moved).toHaveLength(2)
+    expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  it('leaves no transition key twice when an element the tab moved stays', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(light())
+    for (const tab of [tabA, tabB]) {
+      tab.store.slides[0].elements[0].left = 99
+      tab.deck.push()
+    }
+    connect(one, other)
+
+    for (const doc of [one, other]) {
+      expect(new Set(transitionKeys(doc)).size).toBe(readSlides(doc)[0].elements.length)
+    }
+  })
+
+  it('leaves no transition key twice when the kept element pairs by a number', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+    const numbered = (): StoreSlide => ({
+      clientId: 'numbered',
+      elements: [picture('n1', 1), picture('n2', 2)],
+    })
+
+    tabA.deck.fillBlank(numbered())
+    tabB.deck.fillBlank(numbered())
+    for (const tab of [tabA, tabB]) {
+      tab.store.slides[0].elements[0].left = 99
+      tab.deck.push()
+    }
+    connect(one, other)
+
+    for (const doc of [one, other]) {
+      expect(readSlides(doc)[0].elements).toHaveLength(3)
+      expect(new Set(transitionKeys(doc)).size).toBe(3)
+    }
+  })
+
+  it('leaves its document alone when the tab whose fill gave way can no longer write', () => {
+    const [one, other] = apart()
+    const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+    tabA.deck.fillBlank(light())
+    tabB.deck.fillBlank(dark())
+    tabA.stopWriting()
+    tabB.stopWriting()
+    // the room saves nothing from a tab that can't write, so each hears only the other's fill
+    const [fromOne, fromOther] = [Y.encodeStateAsUpdate(one), Y.encodeStateAsUpdate(other)]
+    Y.applyUpdate(other, fromOne, 'wire')
+    Y.applyUpdate(one, fromOther, 'wire')
+
+    expect(readSlides(other)).toEqual(readSlides(one))
+  })
+
+  describe("with a theme's centred title and subtitle", () => {
+    const centred = (id: string, refId: string, content: string): StoreItem => ({
+      id,
+      type: 'text',
+      left: 500,
+      top: 300,
+      transform: CENTRED,
+      transformOrigin: 'center',
+      refId,
+      content,
+    })
+    const theme = (clientId: string, background: string): StoreSlide => ({
+      clientId,
+      background,
+      elements: [
+        centred(`${clientId}-title`, 'title', '<p style="text-align: center">Title</p>'),
+        centred(`${clientId}-subtitle`, 'subtitle', '<p style="text-align: center">Subtitle</p>'),
+      ],
+    })
+
+    // What one theme's fill leaves in both tabs: its title and subtitle, once
+    function expectOneFill(one: Y.Doc, other: Y.Doc) {
+      const [slide] = readSlides(one)
+      expect(readSlides(other)).toEqual(readSlides(one))
+      expect(slide.elements.map(({ refId }) => refId)).toEqual(['title', 'subtitle'])
+    }
+
+    it('ends on one theme when two tabs pick at once', () => {
+      const [one, other] = apart()
+      const [tabA, tabB] = [tabOn(one), tabOn(other)]
+
+      tabA.deck.fillBlank(theme('light', '#FFFFFFFF'))
+      tabB.deck.fillBlank(theme('dark', '#000000FF'))
+      connect(one, other)
+
+      expectOneFill(one, other)
+    })
+
+    // as the editor does once the theme's font comes: send, then draw at the new size
+    function fontArrives(tab: ReturnType<typeof tabOn>) {
+      tab.deck.push()
+      tab.fontsLoad()
+      tab.redraw(6)
+      tab.deck.redraw()
+      tab.deck.push()
+    }
+
+    it("ends on one theme when the theme's font comes before the other fill", () => {
+      const [one, other] = apart()
+      const [tabA, tabB] = [
+        tabOn(one, { fontsPending: true }),
+        tabOn(other, { fontsPending: true }),
+      ]
+
+      tabA.deck.fillBlank(theme('light', '#FFFFFFFF'))
+      tabB.deck.fillBlank(theme('dark', '#000000FF'))
+      fontArrives(tabA)
+      fontArrives(tabB)
+      connect(one, other)
+
+      expectOneFill(one, other)
+    })
+
+    it("ends on one theme when the theme's font comes after the other fill", () => {
+      const [one, other] = apart()
+      const [tabA, tabB] = [
+        tabOn(one, { fontsPending: true }),
+        tabOn(other, { fontsPending: true }),
+      ]
+
+      tabA.deck.fillBlank(theme('light', '#FFFFFFFF'))
+      tabB.deck.fillBlank(theme('dark', '#000000FF'))
+      connect(one, other)
+      fontArrives(tabA)
+      fontArrives(tabB)
+
+      expectOneFill(one, other)
+    })
+  })
+
+  it('leaves the undo steps alone when the slide is no longer blank', () => {
+    const doc = new Y.Doc()
+    presentation(doc)
+    const tab = tabOn(doc)
+    tab.element('a').opacity = 50
+    tab.deck.push()
+    tab.deck.endStep()
+
+    expect(tab.deck.fillBlank(light())).toBe(false)
+    tab.deck.undo()
+
+    expect(tab.element('a').opacity).toBe(100)
   })
 })

@@ -44,41 +44,29 @@
           :aria-busy="addMember.isPending"
         >
           <div class="space-y-3">
-            <div v-for="(email, index) in emails" :key="index" class="space-y-1.5">
-              <label class="text-ink-gray-5 block text-xs">
-                {{ index === 0 ? __('Primary Email') : __('Alias') }}
-              </label>
-              <div class="flex items-center justify-between">
-                <FormControl
-                  v-model="email.username"
-                  placeholder="johndoe"
-                  class="w-full"
-                  :aria-label="index === 0 ? __('Primary email username') : __('Alias username')"
-                />
-                <FeatherIcon class="text-ink-gray-3 mx-2.5 h-4 w-4" name="at-sign" />
-                <FormControl
-                  v-model="email.domain"
-                  type="combobox"
-                  placeholder="yourdomain.com"
-                  class="w-full"
-                  :options="domains.data"
-                  :open-on-click="true"
-                />
-                <Button
-                  v-if="index > 0"
-                  icon="lucide-x"
-                  variant="ghost"
-                  size="sm"
-                  class="ml-2 shrink-0"
-                  :aria-label="__('Remove alias')"
-                  @click="emails.splice(index, 1)"
-                />
-              </div>
-            </div>
+            <EmailAddressField
+              v-for="(email, index) in emails"
+              :key="index"
+              v-model:username="email.username"
+              v-model:domain="email.domain"
+              :domains="domains.data ?? []"
+              :label="index === 0 ? __('Primary email address') : __('Alias')"
+              username-placeholder="johndoe"
+            >
+              <Button
+                v-if="index > 0"
+                icon="lucide-x"
+                variant="ghost"
+                size="sm"
+                class="shrink-0"
+                :aria-label="__('Remove alias')"
+                @click="emails.splice(index, 1)"
+              />
+            </EmailAddressField>
             <Button
               variant="ghost"
               size="sm"
-              :label="__('Add another email')"
+              :label="__('Add another email address')"
               @click="emails.push({ username: '', domain: emails[0]?.domain || '' })"
             >
               <template #prefix>
@@ -96,35 +84,35 @@
             v-if="accountRequest.send_invite"
             v-model="accountRequest.backup_email"
             type="email"
-            :label="__('Existing contact email')"
+            :label="__('Existing contact email address')"
             placeholder="johndoe@personal.com"
             :description="__('Password resets and the invitation email are sent to this address.')"
           />
           <MultiSelect v-model="groupIds" :label="__('Groups')" :options="groupOptions" />
           <MultiSelect
             v-model="mailingListIds"
-            :label="__('Mailing Lists')"
+            :label="__('Mailing lists')"
             :options="mailingListOptions"
           />
           <hr />
 
           <Switch
             v-model="accountRequest.disable_receiving"
-            :label="__('Disable Receiving')"
+            :label="__('Disable receiving')"
             :description="__('Reject incoming emails while allowing this account to send.')"
           />
-          <Switch v-model="accountRequest.send_invite" :label="__('Send Invite')" />
+          <Switch v-model="accountRequest.send_invite" :label="__('Send invite')" />
           <template v-if="!accountRequest.send_invite">
             <div class="grid grid-cols-2 gap-3">
               <FormControl
                 v-model="accountRequest.first_name"
-                :label="__('First Name')"
+                :label="__('First name')"
                 placeholder="John"
                 required
               />
               <FormControl
                 v-model="accountRequest.last_name"
-                :label="__('Last Name')"
+                :label="__('Last name')"
                 placeholder="Doe"
               />
             </div>
@@ -146,7 +134,7 @@
               />
               <Combobox
                 v-model="accountRequest.time_zone"
-                :label="__('Time Zone')"
+                :label="__('Time zone')"
                 :options="timeZoneOptions"
                 class="min-w-0"
               />
@@ -183,11 +171,13 @@ import { Icon as FeatherIcon } from 'frappe-ui/experimental'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
+import EmailAddressField from '@/apps/mail/components/Controls/EmailAddressField.vue'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { useEnabledDomains } from '@/apps/mail/composables/useEnabledDomains'
 import { raiseToast } from '@/apps/mail/utils'
 import { utcFromNow } from '@/apps/mail/utils/datetime'
 import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const temporaryPassword = ref('')
@@ -320,7 +310,7 @@ async function addMemberSubmit() {
     return
   }
   temporaryPassword.value = result.temporary_password || ''
-  raiseToast(accountRequest.send_invite ? __('Invitation sent.') : __('Account added.'))
+  raiseToast(accountRequest.send_invite ? __('Invitation sent') : __('Account added'))
   if (!temporaryPassword.value) show.value = false
 }
 </script>

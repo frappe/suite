@@ -27,7 +27,8 @@ const slides = fromAny<
   Ref<(Record<string, unknown> & { elements: Record<string, unknown>[] })[]>,
   unknown
 >(storeSlides)
-const { replaceMediaElement } = await import('./element')
+const { duplicateElements, replaceMediaElement } = await import('./element')
+const { getTransitionKey } = await import('./transition')
 const { resetImageCrop } = await import('./imageCrop')
 const { setCommandHistory } = await import('./historyMeta')
 const { useCommandHistory } = await import('@/apps/slides/composables/useCommandHistory')
@@ -111,5 +112,70 @@ describe('resetting the crop of an image whose id repeats on an earlier slide', 
 
     expect(slides.value[0].elements[0].crop).toEqual(crop)
     expect(slides.value[1].elements[0].crop).toBeUndefined()
+  })
+})
+
+// the show keys each element by `getTransitionKey`: Magic Move pairs equal keys across slides
+describe('a copy of an element that pairs with the next slide', () => {
+  const source = () => image('source', '/files/paired.webp', { refId: 'pair' })
+  const keys = (at: number) => slides.value[at].elements.map(getTransitionKey)
+
+  beforeEach(() => {
+    slides.value = [
+      { clientId: 'c1', transition: 'Magic Move', elements: [source()] },
+      { clientId: 'c2', elements: [image('partner', '/files/paired.webp', { refId: 'pair' })] },
+      { clientId: 'c3', elements: [] },
+    ]
+    slideIndex.value = 0
+    setCommandHistory(useCommandHistory(slides, { actionOrder, actions: {} }))
+  })
+
+  it('never shares a key with its source on the same slide', async () => {
+    await duplicateElements(null, [slides.value[0].elements[0]], 0)
+
+    expect(new Set(keys(0)).size).toBe(2)
+  })
+
+  it('keeps its pairing when pasted back after a cut', async () => {
+    const cut = slides.value[0].elements.pop()!
+
+    await duplicateElements(null, [cut], 0, false)
+
+    expect(keys(0)).toEqual(keys(1))
+  })
+
+  it('keeps its pairing when pasted on a slide with no element of that key', async () => {
+    slideIndex.value = 2
+
+    await duplicateElements(null, [source()], null)
+
+    expect(keys(2)).toEqual(keys(1))
+  })
+
+  it('never shares a key with an element whose own id is that key', async () => {
+    slides.value[2].elements = [image('pair', '/files/paired.webp')]
+    slideIndex.value = 2
+
+    await duplicateElements(null, [source()], null)
+
+    expect(new Set(keys(2)).size).toBe(2)
+  })
+
+  it('never shares a numeric key with an element already on the slide', async () => {
+    slides.value[2].elements = [image('partner', '/files/paired.webp', { refId: 7 })]
+    slideIndex.value = 2
+
+    await duplicateElements(null, [image('source', '/files/paired.webp', { refId: 7 })], null)
+
+    expect(new Set(keys(2)).size).toBe(2)
+  })
+
+  it('keeps one pairing when two pasted elements carry it', async () => {
+    slideIndex.value = 2
+
+    await duplicateElements(null, [source(), source()], null)
+
+    expect(new Set(keys(2)).size).toBe(2)
+    expect(keys(2)).toContain('pair')
   })
 })

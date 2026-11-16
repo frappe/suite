@@ -16,7 +16,7 @@ import {
   patchEmptyParagraphs,
   ZWSP,
 } from '@/apps/slides/stores/tiptapSetup'
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
 
 import { guessShapeColorsFromBackground, guessTextColorFromBackground } from '../utils/color'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
@@ -27,9 +27,8 @@ import { getMinSizeForElement } from '../utils/resize'
 import { shareTableWidth } from '../utils/tableWidths'
 import { getElementDiv } from './elementRegistry'
 import { commandHistory } from './historyMeta'
-import { currentId, isLive, isTextEditedHere, wasLastTextChangeHere } from './liveDeck'
+import { askLivePush, currentId, isLive, isTextEditedHere, wasLastTextChangeHere } from './liveDeck'
 import { presentationId } from './presentation'
-import { markDirty } from './saving'
 import {
   currentSlide,
   selectionBounds,
@@ -38,7 +37,11 @@ import {
   slides,
   updateSelectionBounds,
 } from './slide'
-import { getCommandsToInitElementRefId, getCommandsToUpdateElementRefId } from './transition'
+import {
+  getCommandsToInitElementRefId,
+  getCommandsToUpdateElementRefId,
+  getTransitionKey,
+} from './transition'
 
 const findSlideElement = (id) => currentSlide.value?.elements.find((el) => el.id === id)
 
@@ -558,7 +561,7 @@ const savePoster = async (posterDataUrl) => {
     return fileDoc.file_url
   } catch (error) {
     // the media is worth keeping without a poster
-    console.error('Could not save poster', error)
+    console.error(__('Could not save poster'), error)
     return null
   }
 }
@@ -746,7 +749,7 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
   // a co-editor may have deleted that slide while the upload ran
   if (isLive() && !slides.value.includes(targetSlide)) {
     targetSlide = currentSlide.value
-    toast.info(translate('The slide this was added to was deleted, so it is on this slide.'))
+    toast.info(__('The slide this was added to was deleted, so it is on this slide'))
   }
 
   const slideIdx = slides.value.indexOf(targetSlide)
@@ -920,6 +923,9 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
   let newSelection = []
 
   const baseZIndex = currentSlide.value.elements.length
+  // the show keys elements by their transition key, so no two on one slide share one. A cut's
+  // source is gone, so its paste keeps the pairing
+  const slideKeys = new Set(currentSlide.value.elements.map(getTransitionKey))
   const sortedElements = [...elements].sort((a, b) => (a.zIndex || 1) - (b.zIndex || 1))
   const copies = remapElementIds(
     sortedElements.map((element) => JSON.parse(JSON.stringify(element))),
@@ -928,6 +934,12 @@ const duplicateElements = async (e, elements, srcSlide, toDisplace = true) => {
   sortedElements.forEach((element, index) => {
     const newElement = copies[index]
     delete newElement.locked
+    if (slideKeys.has(newElement.refId)) {
+      delete newElement.refId
+    }
+
+    slideKeys.add(getTransitionKey(newElement))
+
     newElement.zIndex = baseZIndex + index + 1
     newElement.top += displaceByPx
     newElement.left += displaceByPx
@@ -1157,7 +1169,7 @@ const addFixedWidthToElement = () => {
 
   markTurnedFixed(activeElement.value.id)
   activeElement.value.width = width
-  markDirty()
+  askLivePush()
 }
 
 // only centered and right-aligned text pays a width change out of its left
@@ -1232,7 +1244,7 @@ const setAutoWidth = async () => {
   await resetGrowthBaseline()
 }
 
-// the stored number equals what auto-height already renders, so no markDirty
+// the stored number equals what auto-height already renders, so no push
 const ensureExplicitHeight = (element) => {
   if (!element || !['image', 'video'].includes(element.type)) return
   if (element.height) return
@@ -1274,7 +1286,7 @@ const updateElementContent = (element) => {
   element.content = updatedHTML
   editorOldText = currentText
 
-  markDirty()
+  askLivePush()
 }
 
 // empty cells are still a table, only a deleted one leaves nothing to edit
@@ -1302,7 +1314,7 @@ const blurAndSaveContent = (element) => {
   if (element.type === 'shape') {
     if (element.content) {
       element.content = null
-      markDirty()
+      askLivePush()
     }
   } else {
     deleteElements(null, [element.id])

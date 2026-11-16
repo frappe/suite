@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Edit Account'),
+      title: __('Edit account'),
       actions: [
         {
           label: __('Save'),
@@ -17,7 +17,7 @@
     <template #default>
       <div class="space-y-4">
         <FormControl v-model="role" type="select" :label="__('Role')" :options="ROLE_OPTIONS" />
-        <FormControl v-model="description" :label="__('Full Name')" />
+        <FormControl v-model="description" :label="__('Full name')" />
         <div class="space-y-1.5">
           <label class="text-ink-gray-5 block text-xs">{{ __('Locale') }}</label>
           <Combobox
@@ -27,7 +27,7 @@
           />
         </div>
         <div class="space-y-1.5">
-          <label class="text-ink-gray-5 block text-xs">{{ __('Time Zone') }}</label>
+          <label class="text-ink-gray-5 block text-xs">{{ __('Time zone') }}</label>
           <Combobox
             v-model="timeZone"
             :options="timeZoneOptions"
@@ -54,6 +54,7 @@ import { ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { useAccountOptions } from '@/apps/mail/composables/useAccountOptions'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 type MemberData = {
   name: string
@@ -104,6 +105,6 @@ async function updateMemberSubmit() {
   await updateMember.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Account updated.'))
+  raiseToast(__('Account updated'))
 }
 </script>

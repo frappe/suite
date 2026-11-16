@@ -95,6 +95,8 @@ import {
   editorColumns,
   editorTextStyle,
 } from '@/apps/writer/utils/editor-layout'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { driveFileContent } from './core-editor/driveFileContent'
 import LinkPopover from './core-editor/LinkPopover.vue'
@@ -234,7 +236,10 @@ function autorename() {
   if (!implicitTitle.length) return
 
   renameDocument?.(implicitTitle.slice(0, 100)).catch((error) => {
-    toast.error(error?.message || __('Could not rename this file.'))
+    toast.error(
+      (error instanceof TransportError ? __(error.message) : null) ||
+        __('Could not rename this file'),
+    )
   })
 }
 
@@ -243,7 +248,7 @@ function addComment() {
     return props.commentOnSelection()
   }
 
-  toast.warning(__("New comments aren't supported on this doc."), { duration: 1 })
+  toast.warning(__("New comments aren't supported on this doc"), { duration: 1 })
 }
 
 function manualSave(func?: () => void) {

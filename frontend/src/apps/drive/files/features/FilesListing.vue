@@ -19,13 +19,11 @@
          when the skeleton gives way to rows, an empty state or an error. -->
     <!-- A fast load shows nothing rather than a skeleton that flashes. -->
     <div v-if="isBlank" aria-busy="true" />
-    <div
-      v-else-if="!loading && query.error && !query.rows.length"
-      class="flex flex-col items-center gap-3 py-16"
-    >
-      <ErrorMessage :message="query.error?.message" />
-      <Button label="Retry" @click="query.refetch()" />
-    </div>
+    <LoadFailed
+      v-else-if="!loading && query.status === 'error' && !query.rows.length"
+      :title="__('Could not load files')"
+      :retry="() => query.refetch()"
+    />
     <div
       v-else-if="!loading && !query.rows.length"
       class="flex flex-col items-center justify-center gap-2 py-16 text-center"
@@ -346,20 +344,15 @@
       </section>
     </template>
 
-    <Alert
-      v-if="query.error && query.rows.length"
+    <LoadFailed
+      v-if="query.status === 'error' && query.rows.length"
+      variant="section"
       class="mt-3"
-      theme="amber"
-      title="Could not refresh files"
-      description="The files already loaded are still shown."
+      :title="__('Could not load files')"
+      :retry="loadMore"
     />
     <div ref="sentinel" class="flex min-h-12 items-center justify-center py-3">
       <LoadingIndicator v-if="query.isFetchingNext" />
-      <Button
-        v-else-if="query.error && query.rows.length"
-        label="Retry loading more"
-        @click="loadMore"
-      />
     </div>
     <div
       v-if="marqueeBox"
@@ -388,16 +381,7 @@
 
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
-import {
-  Alert,
-  Avatar,
-  Button,
-  Checkbox,
-  ErrorMessage,
-  LoadingIndicator,
-  Skeleton,
-  type DropdownItem,
-} from 'frappe-ui'
+import { Avatar, Button, Checkbox, LoadingIndicator, Skeleton, type DropdownItem } from 'frappe-ui'
 import {
   List,
   ListCell,
@@ -424,6 +408,7 @@ import { nodeIcon, nodeIconTint, useNodeTypeLabel } from '@/apps/drive/files/int
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import StarredIcon from '@/apps/drive/files/internal/StarredIcon.vue'
 import { Dropdown } from '@/platform/feedback'
+import { LoadFailed } from '@/platform/load-failed'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useWorkspace } from '@/platform/workspace'

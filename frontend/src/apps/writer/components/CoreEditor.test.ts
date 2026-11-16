@@ -48,8 +48,6 @@ vi.mock('./ToCMobile.vue', () => ({
 vi.mock('@/apps/drive', () => ({
   hasDefaultDocumentTitle: () => false,
   useDriveDialogs: () => ({ pickFile: async () => undefined }),
-}))
-vi.mock('@/apps/writer/composables/useUsers', () => ({
   useUsers: () => ({ users: ref([]) }),
   searchMentions: () => [],
 }))

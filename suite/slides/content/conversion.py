@@ -227,20 +227,24 @@ def follow_targets(connector: dict, targets: dict) -> None:
 
 def check(node: str, old: OldDeck, converted: convert.Converted) -> CheckedDeck:
     """Refuse a state the layer can't take whole, before anything writes."""
-    if len(converted.state) > capacity.STATE_MAX:
+    check_state(converted.state)
+    return CheckedDeck()
+
+
+def check_state(state: bytes) -> None:
+    """Refuse a converted state the layer can't take whole: an old deck's, or an old version's."""
+    if len(state) > capacity.STATE_MAX:
         raise ConversionRefused("too_large")
 
     try:
-        if not compaction.compact(converted.state, [], slides_content.PART_MAP).integrated:
+        if not compaction.compact(state, [], slides_content.PART_MAP).integrated:
             raise ConversionRefused("check", "fallback")
     except compaction.CompactionFailed as failed:
         raise ConversionRefused("check", failed.reason) from None
 
     schema = slides_content.SCHEMA
-    if not schema.allows(updates.parse(converted.state), schema.version):
+    if not schema.allows(updates.parse(state), schema.version):
         raise ConversionRefused("check", "schema")
-
-    return CheckedDeck()
 
 
 def fix_up(node: str, old: OldDeck, checked: CheckedDeck) -> None:

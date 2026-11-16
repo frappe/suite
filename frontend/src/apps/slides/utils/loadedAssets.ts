@@ -8,8 +8,10 @@ export function trackLoadedAssets() {
 
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
-      const url = new URL(entry.name)
+      // a style's empty url("") is timed under no address
+      if (!URL.canParse(entry.name)) continue
 
+      const url = new URL(entry.name)
       if (url.origin === location.origin && isBundleAsset(url)) {
         loaded.add(url.pathname)
       }

@@ -1,8 +1,8 @@
 """Slides' editor: what the content layer needs to know about a deck's collab doc.
 
 The doc's layout is frontend/src/apps/slides/collab/deck.ts; PART_MAP and schema.json name its roots and
-must change with it. Collaboration stays off until ticket 57: with no log every callback falls through to
-the deck's rows, and nothing converts while the app is off.
+must change with it. Collaboration is turned on at install and migrate and stays on (Q15'). A deck with no
+log yet is read from its rows until it converts.
 """
 
 import json
@@ -12,6 +12,7 @@ from pathlib import Path
 import pycrdt
 
 from suite import content
+from suite.content.log import set_mode
 from suite.slides.content import files
 from suite.slides.content.conversion import (
     CheckedDeck,
@@ -86,6 +87,11 @@ EDITOR = content.EditorSpec(
     media=content.MediaReferences(
         node_ids=lambda state: files.node_ids(PART_MAP, state), value_rewriter=files.value_rewriter
     ),
-    always_on=False,
+    always_on=True,
     conversion=CONVERSION,
 )
+
+
+def turn_on() -> None:
+    """Turn Slides' collaboration on, which it then stays."""
+    set_mode(APP, "on")

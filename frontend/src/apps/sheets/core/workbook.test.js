@@ -211,6 +211,31 @@ describe('workbook — ₹ and £ amounts are numbers', () => {
   })
 })
 
+// Clear formatting stores a typed 15% as 0.15 (clearTypedFormats in
+// engine/typed-formats.ts). A tab that still shows the typed format gets that
+// input, and must show it plain, as a reload would.
+describe('workbook — the plain value typed over a typed format drops it', () => {
+  it('shows a typed percent, amount or date plain', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '15%')
+    setInput(wb, 'Sheet1', 2, 1, '$1.50')
+    setInput(wb, 'Sheet1', 3, 1, '2024-01-15')
+    setInput(wb, 'Sheet1', 1, 1, '0.15')
+    setInput(wb, 'Sheet1', 2, 1, '1.5')
+    setInput(wb, 'Sheet1', 3, 1, '45306')
+    expect(wb.getDisplayValue('Sheet1', 1, 1)).toBe('0.15')
+    expect(wb.getDisplayValue('Sheet1', 2, 1)).toBe('1.5')
+    expect(wb.getDisplayValue('Sheet1', 3, 1)).toBe('45306')
+  })
+
+  it('keeps the format for a different number', () => {
+    const wb = createWorkbook()
+    setInput(wb, 'Sheet1', 1, 1, '15%')
+    setInput(wb, 'Sheet1', 1, 1, '7')
+    expect(wb.getDisplayValue('Sheet1', 1, 1)).toBe('700%')
+  })
+})
+
 describe('workbook — structure ops', () => {
   it('insertRows adjusts references', () => {
     const wb = createWorkbook()

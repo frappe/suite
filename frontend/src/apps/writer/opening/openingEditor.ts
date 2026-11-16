@@ -4,8 +4,8 @@ import { toast } from 'frappe-ui'
 import { setPlaceholder } from 'frappe-ui/editor'
 import { shallowRef } from 'vue'
 
+import { rankMentionsFor } from '@/apps/drive'
 import MentionMenu from '@/apps/writer/components/MentionMenu.vue'
-import { rankMentionsFor } from '@/apps/writer/composables/useUsers'
 import { writerEditorExtensions } from '@/apps/writer/editor-extensions'
 import { EDITOR_TEXT_CLASS, editorTextStyle } from '@/apps/writer/utils/editor-layout'
 import { translate as __ } from '@/platform/translation'
@@ -65,7 +65,7 @@ export function handOverOpeningEditor(node: string, editor: Editor): void {
   opening.value = null
   if (!typed.isEmpty) {
     if (editor.isEditable) moveTyped(typed, editor)
-    else toast.error(__('This document does not take edits, so what you typed was not added.'))
+    else toast.error(__('This document does not take edits, so what you typed was not added'))
   }
   typed.destroy()
   editor.view.focus()

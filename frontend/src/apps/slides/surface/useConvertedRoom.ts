@@ -1,6 +1,7 @@
 import { toast } from 'frappe-ui'
 import { computed, nextTick, shallowRef, watch, type Ref } from 'vue'
 
+import type { ConvertedState } from '@/apps/drive'
 import { slidesAdapter } from '@/apps/slides/collab/adapter'
 import { elementText } from '@/apps/slides/collab/deck'
 import { drawnSlides } from '@/apps/slides/collab/drawnDeck'
@@ -16,6 +17,7 @@ import { liveTextExtensions } from '@/apps/slides/collab/liveText'
 import { lastSelector, usePeopleSelecting } from '@/apps/slides/collab/peerOutlines'
 import { resetGrowthBaseline } from '@/apps/slides/composables/useTextEditor'
 import {
+  cropSelectionToFitContent,
   resetFocus,
   activeElementIds as storeActiveIds,
   focusElementId as storeFocusId,
@@ -31,20 +33,37 @@ import {
 } from '@/apps/slides/stores/liveDeck'
 import {
   flattenNow,
+  fontsLoadedFor,
   measureNow,
   slidesLength,
   transformElements,
 } from '@/apps/slides/stores/presentation'
-import { currentSlide, setSlideIndex, slideIndex, slides } from '@/apps/slides/stores/slide'
+import {
+  changeSlide,
+  currentSlide,
+  focusedSlide,
+  setSlideIndex,
+  slideIndex,
+  slides,
+} from '@/apps/slides/stores/slide'
+import { holdShownSlide } from '@/apps/slides/stores/slideshow'
 import {
   isRecoverable,
   openCollabRoom,
   type CollabRoom,
   type CollabSession,
+  type LostAccess,
   type RoomPresence,
   type RoomStatus,
+  type VersionRestored,
 } from '@/platform/collab'
-import { translate } from '@/platform/translation'
+import { peopleOf, presenceColours } from '@/platform/collab/peers'
+import type { RestoreNotice } from '@/platform/collab/restoreNotices'
+import { translate as __ } from '@/platform/translation'
+
+import { restoreVersion } from './restoreVersion'
+import { saveFirst } from './saveFirst'
+import type { RetainOptions } from './useUnsavedRecovery'
 
 // SAFETY: the untyped element store holds the selected element ids
 const activeElementIds = storeActiveIds as Ref<string[]>
@@ -57,16 +76,29 @@ interface RoomHost {
   session: CollabSession
   /** Whether this tab may change the presentation, the room aside. */
   mayEdit: () => boolean
+  /** Whether the slideshow route is open, from before its slides have loaded. */
+  isPresenting: () => boolean
   /** Keeps the slides in this browser when the room stops holding unsent work. */
-  retainRecovery: () => boolean
+  retainRecovery: (options?: RetainOptions) => boolean
   /** Keeps the slides in this browser past any later save, or offers them as a download. */
   retainStickyOrOffer: () => boolean
+  /** Told when the presentation's comment threads may have changed. */
+  onThreadsChanged: () => void
+  /** Told when another tab's restore lands. */
+  onVersionRestored: (restored: VersionRestored) => void
+  /** Told once when the server refuses this tab's right, which Drive's access may not show yet. */
+  onAccessRefused: () => void
+  /** Told each time the room keeps its unsent work as a copy on the device. */
+  onCopyKept: () => void
+}
+
+function hasLostAccess(status: RoomStatus | null) {
+  return status?.blockReason === 'lost_edit' || status?.blockReason === 'lost_read'
 }
 
 function allowsEditingIn(status: RoomStatus) {
-  const hasLostAccess = status.blockReason === 'lost_edit' || status.blockReason === 'lost_read'
   const hasStopped = status.saveState === 'failed' || status.blockReason === 'offline'
-  return status.canWrite && !hasLostAccess && !hasStopped
+  return status.canWrite && !hasLostAccess(status) && !hasStopped
 }
 
 function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
@@ -79,12 +111,19 @@ function isKeptNowhere(status: RoomStatus, isRecoveryKept: boolean) {
 export function useConvertedRoom({
   session,
   mayEdit,
+  isPresenting,
   retainRecovery,
   retainStickyOrOffer,
+  onThreadsChanged,
+  onVersionRestored,
+  onAccessRefused,
+  onCopyKept,
 }: RoomHost) {
   const room = shallowRef<CollabRoom | null>(null)
   const status = shallowRef<RoomStatus | null>(null)
   const presence = shallowRef<RoomPresence | null>(null)
+  // Everyone else here, one entry per person, read again each time the room says who is
+  const people = shallowRef<ReturnType<typeof peopleOf>>([])
   const selectorOf = lastSelector(usePeopleSelecting(presence))
   let deck: LiveDeck | null = null
   let stopWatching = () => {}
@@ -96,6 +135,8 @@ export function useConvertedRoom({
 
   const sizes = new Map<string, { key: string; size: { width: number; height: number } }>()
   let isFontPending = false
+  // measured while a font their own text draws in was loading
+  const waitingOnFonts = new Set<string>()
 
   // Until the font comes, edits leave the saved centre alone: nothing waits, a save included
   function redrawWhenFontsLoad() {
@@ -107,9 +148,25 @@ export function useConvertedRoom({
     void document.fonts.ready.then(() => {
       deck?.push()
       isFontPending = false
+      waitingOnFonts.clear()
       deck?.redraw()
       void resetGrowthBaseline()
     })
+  }
+
+  // A font only other text draws in leaves this element's shown position good to save
+  function waitsOnFonts(element: StoreItem) {
+    if (document.fonts.status === 'loading' && !fontsLoadedFor(element)) {
+      waitingOnFonts.add(element.id)
+      redrawWhenFontsLoad()
+    }
+
+    return waitingOnFonts.has(element.id)
+  }
+
+  // centred text as the store holds it, top-left
+  function flatten(element: StoreItem) {
+    return flattenNow(element, measured)
   }
 
   function measured(element: StoreItem) {
@@ -120,8 +177,7 @@ export function useConvertedRoom({
     }
 
     const size = measureNow(element)
-    if (document.fonts.status === 'loading') {
-      redrawWhenFontsLoad()
+    if (waitsOnFonts(element)) {
       return size
     }
 
@@ -129,19 +185,30 @@ export function useConvertedRoom({
     return size
   }
 
+  // the show writes nothing, a repair of an emptied presentation included (Q175, Q178′)
   function canWrite() {
-    return mayEdit() && allowsEditing.value
+    return mayEdit() && allowsEditing.value && !isPresenting()
   }
 
-  function keepShownSlide(previousIds: string[]) {
+  function keepShownSlide(previous: StoreSlide[]) {
     const total = slides.value.length
     slidesLength.value = total
     if (total) {
       const at = slideIndex.value ?? 0
-      const kept = slides.value.findIndex(({ clientId }) => clientId === previousIds[at])
-      const next = kept === -1 ? Math.min(at, total - 1) : kept
-      if (next !== at) {
+      const shown = previous[at]
+      const kept = slides.value.findIndex(({ clientId }) => clientId === shown?.clientId)
+      // Q175: the show keeps a deleted shown slide up, and its end screen stays a place to be
+      if (kept === -1 && shown && isPresenting()) {
+        holdShownSlide(shown)
+      }
+
+      const last = isPresenting() ? total : total - 1
+      const next = kept === -1 ? Math.min(at, last) : kept
+      if (next !== at && isPresenting()) {
         setSlideIndex(next + 1)
+      } else if (next !== at) {
+        // the focused slide and the address follow the slide still shown
+        changeSlide(next, focusedSlide.value != null)
       }
     }
 
@@ -153,6 +220,13 @@ export function useConvertedRoom({
     if (activeElementIds.value.some((id: string) => !present.has(id))) {
       activeElementIds.value = activeElementIds.value.filter((id: string) => present.has(id))
     }
+
+    // a selected element another tab moved takes its box and Frame panel along
+    nextTick(() => {
+      if (activeElementIds.value.length) {
+        cropSelectionToFitContent(activeElementIds.value)
+      }
+    })
 
     if (focusElementId.value && !present.has(focusElementId.value)) {
       focusElementId.value = null
@@ -171,8 +245,8 @@ export function useConvertedRoom({
     if (isBlocked) {
       toast.warning(
         direction === 'undo'
-          ? translate("Couldn't undo: a co-editor changed this")
-          : translate("Couldn't redo: a co-editor changed this"),
+          ? __('Could not undo: a co-editor changed this')
+          : __('Could not redo: a co-editor changed this'),
       )
     }
 
@@ -196,8 +270,8 @@ export function useConvertedRoom({
     const name = selectorOf(id)
     toast.warning(
       name
-        ? translate('{0} deleted this element. Your text is in a recovery copy.', [name])
-        : translate('A co-editor deleted this element. Your text is in a recovery copy.'),
+        ? __('{0} deleted this element. Your text is in a recovery copy.', [name])
+        : __('A co-editor deleted this element. Your text is in a recovery copy.'),
     )
   }
 
@@ -207,13 +281,14 @@ export function useConvertedRoom({
     const shared = sharedPresence(liveRoom.presence!)
     deck = openLiveDeck(doc, {
       slides: storeSlides,
-      flatten: (element) => flattenNow(element, measured),
+      flatten,
       boundElementId,
       isSelected: (id) =>
         activeElementIds.value.includes(id) || currentSlide.value?.clientId === id,
       setBoundText,
       canWrite,
-      fontsPending: () => isFontPending || document.fonts.status === 'loading',
+      restoreRev: () => liveRoom.status.restoreRev,
+      fontsPending: waitsOnFonts,
       onRenamed: applyRenames,
       onMerged: keepShownSlide,
       onStep: showStep,
@@ -249,6 +324,19 @@ export function useConvertedRoom({
       },
     })
     presence.value = liveRoom.presence
+    const roomPresence = liveRoom.presence!
+    const readPeople = () => {
+      people.value = peopleOf(roomPresence.peers, presenceColours(roomPresence))
+    }
+    readPeople()
+    const stopPeople = roomPresence.onChange(readPeople)
+    const stopRestores = liveRoom.onChange(() => liveDeck.followRestore())
+    // leaving the show runs the repair a writable open runs, so an emptied presentation gets its blank
+    const stopRepair = watch(canWrite, (writable) => {
+      if (writable) {
+        liveDeck.pull()
+      }
+    })
     const stopSelection = watch(
       activeElementIds,
       (ids: string[]) => {
@@ -259,6 +347,10 @@ export function useConvertedRoom({
       { immediate: true },
     )
     return () => {
+      stopPeople()
+      people.value = []
+      stopRestores()
+      stopRepair()
       stopSelection()
       liveDeck.stop()
       setLiveSeat(null)
@@ -267,12 +359,17 @@ export function useConvertedRoom({
     }
   }
 
+  // the room is given up for this copy, so no later copy replaces it, whatever the access is by then
+  function retainStopped() {
+    return retainRecovery({ sticky: true })
+  }
+
   // Mirrors the room's state, or rebuilds the room once it asks for that
   function syncStatus(liveRoom: CollabRoom) {
     const liveStatus = liveRoom.status
     if (liveStatus.isReopenNeeded) {
       if (isKeptNowhere(liveStatus, isRecoveryKept)) {
-        isRecoveryKept = retainRecovery()
+        isRecoveryKept = retainStopped()
       }
 
       // Unsent work held nowhere else stays on screen in the old room until it is sent
@@ -285,15 +382,30 @@ export function useConvertedRoom({
     const { blockReason } = liveStatus
     const hasStopped =
       liveStatus.saveState === 'failed' || (blockReason && !isRecoverable(blockReason))
-    if (hasStopped && liveStatus.unsentCount && !isRecoveryKept) {
-      isRecoveryKept = retainRecovery()
+    // the room keeps its own copy on the device, so this page keeps one only where it can't
+    if (hasStopped && isKeptNowhere(liveStatus, isRecoveryKept)) {
+      isRecoveryKept = retainStopped()
     }
 
+    const isRefused = hasLostAccess(liveStatus) && !hasLostAccess(status.value)
+    const isCopyKept = liveStatus.keptCopyCount > (status.value?.keptCopyCount ?? 0)
     status.value = liveStatus
+    if (isRefused) {
+      onAccessRefused()
+    }
+
+    if (isCopyKept) {
+      onCopyKept()
+    }
   }
 
   async function openRoom(isStale: () => boolean) {
-    const opened = await openCollabRoom({ session, adapter: slidesAdapter })
+    const opened = await openCollabRoom({
+      session,
+      adapter: slidesAdapter,
+      onThreadsChanged,
+      onVersionRestored,
+    })
     if (opened.state !== 'live') {
       return false
     }
@@ -317,6 +429,47 @@ export function useConvertedRoom({
     }
     syncStatus(liveRoom)
     return true
+  }
+
+  // A named version holds only saved edits; it throws why they couldn't be
+  async function saveBeforeVersion() {
+    if (room.value) {
+      await saveFirst(room.value)
+    }
+  }
+
+  /** Shuts the room for a lost right; what it can't send within the bound stays a recovery copy. True if work is left unsent. */
+  async function loseAccess(lost: LostAccess) {
+    try {
+      await room.value?.loseAccess(lost)
+    } catch (error) {
+      console.error(error)
+    }
+
+    return !!room.value?.status.unsentCount
+  }
+
+  /**
+   * Opens the room to edits again once access comes back. `reload` when the room stays shut: a new
+   * open takes edits. `held` when that open would drop unsent work kept nowhere else.
+   */
+  async function regainAccess() {
+    const liveRoom = room.value
+    if (!liveRoom) {
+      return 'reload'
+    }
+
+    await liveRoom.regainAccess(mayEdit)
+    if (allowsEditing.value) {
+      return 'editing'
+    }
+
+    return isKeptNowhere(liveRoom.status, isRecoveryKept) ? 'held' : 'reload'
+  }
+
+  /** Whether the room kept its unsent work as a copy on the device itself. */
+  function isKeptByRoom() {
+    return !!status.value && status.value.keptCopyCount > 0 && !status.value.hasCopyFailed
   }
 
   // The editor goes before the old room, so nothing typed lands in a room that no longer sends
@@ -354,5 +507,41 @@ export function useConvertedRoom({
     void leave()?.close()
   }
 
-  return { allowsEditing, saveState, presence, open, close }
+  /** Restores version `seq` from its stored bytes, once this tab's edits are sent (Q5); `convert` upgrades an old one. */
+  async function restore(
+    seq: number,
+    bytes: Uint8Array,
+    convert: () => Promise<ConvertedState>,
+  ): Promise<RestoreNotice> {
+    const liveRoom = room.value
+    const liveDeck = deck
+    if (!liveRoom || !liveDeck) {
+      return { isRestored: false, message: __('Could not restore the version') }
+    }
+
+    liveDeck.push()
+    // Nothing this tab did or held before the restore may come back over it
+    return restoreVersion(liveRoom, seq, bytes, liveDeck.forgetSteps, convert)
+  }
+
+  /** Puts the layout on a new presentation's one blank slide. False if it isn't blank any more. */
+  function fillBlank(layout: StoreSlide) {
+    return deck?.fillBlank(layout) ?? false
+  }
+
+  return {
+    allowsEditing,
+    saveState,
+    presence,
+    people,
+    open,
+    close,
+    restore,
+    fillBlank,
+    saveBeforeVersion,
+    loseAccess,
+    regainAccess,
+    isKeptByRoom,
+    flatten,
+  }
 }

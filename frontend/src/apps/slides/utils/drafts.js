@@ -78,22 +78,113 @@ export async function adoptLegacyDrafts(previousUser) {
   legacyDbDeleted = true
 }
 
-export async function takeUnownedDraft(id, user) {
+// Opens the shared database only if it is there, so a read never creates it again
+function openLegacyDb() {
   if (legacyDbDeleted) {
-    return null
+    return Promise.resolve(null)
   }
 
-  const legacyDb = await openDraftsDb(DRAFTS_DB_NAME)
+  const request = indexedDB.open(DRAFTS_DB_NAME)
+  request.onupgradeneeded = () => request.transaction.abort()
+  return requestResult(request).catch(() => null)
+}
+
+// The shared database's dirty drafts that name no one, where they are; only an editor of the
+// presentation is shown one. No id reads every presentation's
+export async function unownedDrafts(id) {
+  const legacyDb = await openLegacyDb()
+  if (!legacyDb) {
+    return []
+  }
+
   try {
-    const record = await requestResult(draftsStore(legacyDb, 'readonly').get(id))
-    if (!record || record.user) {
-      return null
+    if (!legacyDb.objectStoreNames.contains(STORE)) {
+      return []
     }
 
-    await moveDraftTo(user, record)
-    await requestResult(draftsStore(legacyDb, 'readwrite').delete(id))
-    return { ...record, user }
+    // An undefined id is no query, so it reads them all
+    const records = await requestResult(draftsStore(legacyDb, 'readonly').getAll(id))
+    return records.filter((record) => record.dirty && !record.user)
   } finally {
     legacyDb.close()
   }
+}
+
+// Deletes the shared draft only while it is still `shown`, as deleteDraft does
+export async function deleteUnownedDraft(shown) {
+  const legacyDb = await openLegacyDb()
+  if (!legacyDb) {
+    return
+  }
+
+  try {
+    await deleteIfUnchanged(legacyDb, shown)
+  } finally {
+    legacyDb.close()
+  }
+}
+
+// Old drafts from before every presentation edited in its live room (Q16): a clean one is
+// deleted, and a dirty one stays where it is as a recovery copy. The check and the delete
+// share one transaction, so a dirty write between them can't be lost. `user` is null for a
+// guest, and a draft that names no one is theirs as the editor reads it
+export async function settleDrafts(user, id) {
+  const db = await openDraftsDb(draftsDbName(user || 'Guest'))
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite')
+      const kept = []
+      // No id opens every draft
+      const request = tx.objectStore(STORE).openCursor(id)
+      request.onsuccess = () => {
+        const cursor = request.result
+        if (!cursor) return
+
+        settleDraft(cursor, user, kept)
+        cursor.continue()
+      }
+
+      tx.oncomplete = () => resolve(kept)
+      tx.onabort = () => reject(tx.error)
+    })
+  } finally {
+    db.close()
+  }
+}
+
+function settleDraft(cursor, user, kept) {
+  const draft = cursor.value
+  if (!draft.dirty) {
+    cursor.delete()
+  } else if (!draft.user || draft.user === user) {
+    kept.push(draft)
+  }
+}
+
+// Deletes the draft only while it is still `shown`, by its stamp and its slides. One another
+// tab wrote since stays, as the check and the delete share one transaction
+export async function deleteDraft(user, shown) {
+  const db = await openDraftsDb(draftsDbName(user || 'Guest'))
+  try {
+    await deleteIfUnchanged(db, shown)
+  } finally {
+    db.close()
+  }
+}
+
+// `content` is the slides as JSON
+function deleteIfUnchanged(db, { id, updatedAt, content }) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite')
+    const request = tx.objectStore(STORE).get(id)
+    request.onsuccess = () => {
+      const stored = request.result
+      if (stored?.updatedAt === updatedAt && JSON.stringify(stored.content) === content) {
+        tx.objectStore(STORE).delete(id)
+      }
+    }
+
+    tx.oncomplete = () => resolve()
+    tx.onabort = () => reject(tx.error)
+  })
 }

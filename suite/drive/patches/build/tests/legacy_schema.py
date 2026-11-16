@@ -164,7 +164,7 @@ LEGACY_COLUMNS: dict[str, tuple[tuple[str, str], ...]] = {
         # Pointed at `Sheet Snapshot`; step 7 reads it to find the head version.
         ("head_snapshot", "Link"),
     ),
-    "Presentation": (("title", "Data"),),
+    "Presentation": (("title", "Data"), ("thumbnail", "Attach Image")),
     "Drive Notification": (
         ("from_user", "Link"),
         ("type", "Select"),

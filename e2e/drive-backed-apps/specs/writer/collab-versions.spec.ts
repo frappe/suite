@@ -516,7 +516,7 @@ async function openVersions(page: Page) {
 }
 
 async function nameVersion(page: Page, label: string) {
-	await page.getByRole("button", { name: "More document actions" }).click();
+	await page.getByRole("button", { name: "More actions" }).click();
 	await page.getByRole("menuitem", { name: "Save version" }).click();
 	await page.getByLabel("Version name").fill(label);
 	await page.keyboard.press("Enter");

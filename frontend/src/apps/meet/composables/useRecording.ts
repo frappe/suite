@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { api, client, useMutation } from '@/api'
 import { randomId } from '@/platform/random-id'
+import { translate as __ } from '@/platform/translation'
 
 import type { RecordingPreflightOutput, RecordingStateOutput } from '../client/generated'
 import { useSocket } from '../socket'
@@ -72,7 +73,7 @@ export function useRecording(meetingId: string) {
     if (result.status === 'Rejected') {
       setState(null)
       requestId.value = null
-      toast.error('Recording capacity is unavailable')
+      toast.error(__('Could not start recording. Recording capacity is unavailable.'))
       return result
     }
     setState({
@@ -82,9 +83,10 @@ export function useRecording(meetingId: string) {
     })
     if (result.status === 'Recording') await loadState()
     if (!['Pending', 'Starting'].includes(result.status)) requestId.value = null
-    if (['Pending', 'Starting'].includes(result.status)) toast.info('Recording is starting')
-    else if (result.status === 'Stopping') toast.error('Recording could not start and is stopping')
-    else toast.success('Recording started')
+    if (['Pending', 'Starting'].includes(result.status)) toast.info(__('Recording is starting'))
+    else if (result.status === 'Stopping')
+      toast.error(__('Could not start recording. Recording is stopping.'))
+    else toast.success(__('Recording started'))
     return result
   }
 
@@ -99,7 +101,7 @@ export function useRecording(meetingId: string) {
       state_revision: state.value?.state_revision ?? 0,
     })
     await loadState()
-    toast.info('Recording is stopping')
+    toast.info(__('Recording is stopping'))
     return result
   }
 
@@ -109,7 +111,7 @@ export function useRecording(meetingId: string) {
       const wasPending = ['Pending', 'Starting'].includes(state.value?.status || '')
       setState(null)
       requestId.value = null
-      if (wasPending) toast.error('Recording could not start')
+      if (wasPending) toast.error(__('Could not start recording'))
       return
     }
     if (
@@ -121,9 +123,9 @@ export function useRecording(meetingId: string) {
     const previous = state.value?.status
     setState(event.recording)
     if (event.recording.status === 'Recording' && previous !== 'Recording')
-      toast.info('This meeting is being recorded')
+      toast.info(__('This meeting is being recorded'))
     if (event.recording.status === 'Interrupted')
-      toast.error('Recording was interrupted and is trying to recover')
+      toast.error(__('Could not continue recording. Trying to recover.'))
   }
 
   function syncState(recording: RecordingState | null) {

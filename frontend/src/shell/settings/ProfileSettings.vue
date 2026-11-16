@@ -277,7 +277,7 @@ async function changePassword() {
     new_password: newPassword.value,
   })
   showPasswordDialog.value = false
-  toast.success(__('Password updated.'))
+  toast.success(__('Password updated'))
 }
 
 watch(showPasswordDialog, (open) => {

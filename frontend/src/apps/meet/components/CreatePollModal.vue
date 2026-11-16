@@ -1,31 +1,31 @@
 <template>
-  <Dialog v-model:open="isOpen" title="Create a Poll">
+  <Dialog v-model:open="isOpen" :title="__('Create a poll')">
     <template #default>
       <div class="space-y-4">
         <div>
           <FormControl
-            type="textarea"
             v-model="question"
-            placeholder="Ask your audience something..."
+            type="textarea"
+            :placeholder="__('Ask your audience something…')"
             required
-            label="Question"
+            :label="__('Question')"
           />
         </div>
 
         <div class="space-y-2">
-          <label class="block text-sm font-medium text-ink-gray-7 mb-1">Options</label>
+          <label class="block text-sm font-medium text-ink-gray-7 mb-1">{{ __('Options') }}</label>
           <div v-for="(option, index) in options" :key="index" class="flex items-center gap-2">
             <FormControl
-              type="text"
               v-model="option.text"
-              :placeholder="`Option ${index + 1}`"
+              type="text"
+              :placeholder="__('Option {0}', [index + 1])"
               class="flex-1"
             />
             <Button
               v-if="options.length > 2"
               variant="ghost"
-              @click="removeOption(index)"
               class="text-ink-gray-4 hover:text-ink-gray-7 shrink-0"
+              @click="removeOption(index)"
             >
               <lucide-x class="w-4 h-4" />
             </Button>
@@ -34,10 +34,10 @@
             <Button
               v-if="options.length < 10"
               variant="subtle"
-              @click="addOption"
               icon-left="lucide-plus"
+              @click="addOption"
             >
-              Add Option
+              {{ __('Add option') }}
             </Button>
           </div>
         </div>
@@ -47,7 +47,7 @@
         >
           <lucide-alert-triangle class="h-5 w-5 text-ink-gray-6" />
           <span class="text-ink-gray-8">
-            Polls are temporary and will be deleted once everyone leaves the meeting.
+            {{ __('Polls are temporary and will be deleted once everyone leaves the meeting.') }}
           </span>
         </div>
       </div>
@@ -55,8 +55,10 @@
 
     <template #actions>
       <div class="flex justify-end gap-2 w-full">
-        <Button variant="subtle" @click="closeModal"> Cancel </Button>
-        <Button variant="solid" :disabled="!isValid" @click="handleSubmit"> Create Poll </Button>
+        <Button variant="subtle" @click="closeModal"> {{ __('Cancel') }} </Button>
+        <Button variant="solid" :disabled="!isValid" @click="handleSubmit">
+          {{ __('Create poll') }}
+        </Button>
       </div>
     </template>
   </Dialog>
@@ -65,6 +67,8 @@
 <script setup lang="ts">
 import { Button, Dialog, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 const props = defineProps<{
   modelValue: boolean

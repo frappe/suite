@@ -2,7 +2,7 @@ import type { Editor } from '@tiptap/core'
 import { SuggestionExtension } from 'frappe-ui/editor'
 import type { Component } from 'vue'
 
-import type { WriterUser } from '@/apps/writer/drive'
+import type { MentionUser } from '@/apps/drive'
 
 /**
  * The `@` menu for an editor whose kit adds the `mention` node with no items. Its people come
@@ -11,7 +11,7 @@ import type { WriterUser } from '@/apps/writer/drive'
  * converter bundle, which must not load the API client the menu asks with.
  */
 export const mentionMenuExtension = (listComponent: Component) =>
-  SuggestionExtension.configure<WriterUser>({
+  SuggestionExtension.configure<MentionUser>({
     name: 'mentionMenu',
     trigger: '@',
     items: () => [],

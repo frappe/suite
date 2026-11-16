@@ -12,8 +12,6 @@ vi.mock('@/apps/drive', () => ({
   nodeContentUrl: () => '',
   hasDefaultDocumentTitle: () => false,
   useDriveDialogs: () => ({ pickFile: async () => undefined }),
-}))
-vi.mock('@/apps/writer/composables/useUsers', () => ({
   useUsers: () => ({ users: ref([]) }),
   searchMentions: () => [],
 }))

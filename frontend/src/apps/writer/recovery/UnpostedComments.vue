@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { readCommentDrafts } from '@/apps/drive'
 import { anchorQuote } from '@/apps/writer/collab/anchors'
 import { useSession } from '@/platform/session'
-
-import { readDrafts } from './commentDrafts'
 
 /** Comments this person wrote on the document and never posted, as kept on this device. */
 const props = defineProps<{ node: string }>()
@@ -13,7 +12,7 @@ const { user } = useSession()
 const drafts = computed(() => shownDrafts(user.value?.id ?? 'Guest', props.node))
 
 function shownDrafts(person: string, node: string) {
-  const written = readDrafts(person, node).filter((draft) => draft.text.trim())
+  const written = readCommentDrafts(person, node).filter((draft) => draft.text.trim())
   return written.map((draft) => ({ ...draft, quote: anchorQuote(draft.anchor) }))
 }
 </script>

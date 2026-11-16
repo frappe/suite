@@ -14,11 +14,15 @@ from suite.drive._core import comments
 from suite.drive.framework import principals_for
 from suite.slides import content as slides_content
 from suite.slides import drive as slides_drive
-from suite.slides.api.slides import save_slides
 from suite.slides.content import APP, CONVERTER_BUILD
 from suite.slides.content.tests.support import OWNER, LoggedDeckCase, delete_log, opened
 from suite.slides.doctype.presentation.presentation import apply_theme, get_public_presentation
 from suite.slides.patches import move_file_media_to_drive
+from suite.slides.tests.utils import share
+from suite.tests.utils import ensure_user
+
+READER = "slides-collab-reader@example.com"
+SLIDES_ROW = {"parent": "Suite Collab Settings", "parentfield": "apps", "app": APP}
 
 
 def text_element(element_id, **fields) -> dict:
@@ -43,6 +47,12 @@ def elements_by_left(elements: pycrdt.Map) -> dict:
 def magic_move_keys(elements: pycrdt.Map) -> dict:
     # What the old view pairs elements across slides on, by each element's place
     return {left_of(elements[key]): elements[key].get("refId") or key for key in elements.keys()}
+
+
+def pause_slides(paused: int) -> None:
+    frappe.db.set_value("Suite Collab App", SLIDES_ROW, "conversion_paused", paused)
+    frappe.clear_document_cache("Suite Collab Settings", "Suite Collab Settings")
+    frappe.db.commit()
 
 
 def converted_deck(node: str) -> pycrdt.Doc:
@@ -580,18 +590,6 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         [saved] = self.rows(node)
         self.assertEqual(saved.elements, "[]")
 
-    def test_save_slides_is_refused_and_writes_nothing(self):
-        node = self.old_deck([text_element("element")])
-        self.convert(node)
-        docname = slides_drive.docname_for_node(node)
-        before = self.rows(node)
-        modified = str(frappe.db.get_value("Presentation", docname, "modified"))
-
-        with self.assertRaises(drive.DriveConflict):
-            save_slides(docname, [{"client_id": "new", "elements": "[]"}], modified)
-
-        self.assertEqual(self.rows(node), before)
-
     def test_a_retry_of_the_media_patch_leaves_a_converted_decks_rows(self):
         converted_node = self.old_deck([{"id": "pic", "type": "image", "src": "/private/files/old.png"}])
         self.convert(converted_node)
@@ -649,9 +647,9 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
         node = self.old_deck([text_element("element")])
         waiting = self.old_deck([text_element("element")])
         self.convert(node)
-        docname = slides_drive.docname_for_node(node)
         before = self.rows(node)
-        modified = str(frappe.db.get_value("Presentation", docname, "modified"))
+        deck = frappe.get_doc("Presentation", slides_drive.docname_for_node(node))
+        deck.slides[0].elements = "[]"
         moved: list[str] = []
 
         # A conversion that landed after this transaction's snapshot shows only to a locking read
@@ -662,7 +660,7 @@ class TestOldPathsOnAConvertedDeck(ConversionCase):
             ),
         ):
             with self.assertRaises(drive.DriveConflict):
-                save_slides(docname, [{"client_id": "new", "elements": "[]"}], modified)
+                deck.save()
 
             move_file_media_to_drive.execute()
 
@@ -688,10 +686,33 @@ class TestDeckRoute(ConversionCase):
     def test_a_waiting_deck_says_it_waits(self):
         node = self.old_deck([text_element("element")])
 
-        answer = get_public_presentation(slides_drive.docname_for_node(node))
+        with patch.object(frappe, "enqueue"):
+            answer = get_public_presentation(slides_drive.docname_for_node(node))
 
         self.assertEqual(answer["conversion"]["state"], "pending")
         self.assertNotIn("is_converted", answer)
+
+    def test_a_deck_a_reader_opens_converts_while_paused(self):
+        node = self.old_deck([text_element("element")])
+        docname = slides_drive.docname_for_node(node)
+        ensure_user(READER)
+        share(docname, READER)
+        frappe.db.commit()
+        self.addCleanup(
+            pause_slides, frappe.db.get_value("Suite Collab App", SLIDES_ROW, "conversion_paused")
+        )
+        pause_slides(1)
+        frappe.set_user(READER)
+
+        with patch.object(frappe, "enqueue") as enqueue:
+            first = get_public_presentation(docname)
+
+        [queued] = enqueue.call_args_list
+        frappe.get_attr(queued.args[0])(app=queued.kwargs["app"], node=queued.kwargs["node"])
+        frappe.set_user(READER)
+
+        self.assertEqual(first["conversion"]["state"], "pending")
+        self.assertTrue(get_public_presentation(docname)["is_converted"])
 
     def test_a_converted_deck_says_so(self):
         node = self.old_deck([text_element("element")])
