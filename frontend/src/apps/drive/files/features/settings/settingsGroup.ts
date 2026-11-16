@@ -2,6 +2,7 @@ import { translate as __ } from '@/platform/translation'
 
 export const driveSettings = {
   label: () => __('Drive'),
+  area: 'files',
   tabs: [
     {
       id: 'drive.statistics',

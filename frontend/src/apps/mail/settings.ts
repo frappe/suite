@@ -21,6 +21,7 @@ function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } =
 
 export const mailSettings = {
   label: () => __('Mail'),
+  area: 'mail',
   condition: () => useSession().capabilities.value.jmap,
   tabs: [
     {

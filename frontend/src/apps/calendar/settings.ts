@@ -21,6 +21,7 @@ function scoped(load: () => Promise<BodyModule>) {
 
 export const calendarSettings = {
   label: () => __('Calendar'),
+  area: 'calendar',
   condition: () => useSession().capabilities.value.jmap,
   tabs: [
     {

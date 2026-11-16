@@ -21,6 +21,11 @@ export interface SettingsTab {
 /** One product's heading, named after the product, with its tabs. */
 export interface SettingsGroup {
   readonly label: () => string
+  /**
+   * The app area these settings are for, such as `'mail'`. Asked for no tab,
+   * Settings opens here while that area is on screen.
+   */
+  readonly area?: string
   readonly condition?: () => boolean
   readonly tabs: readonly SettingsTab[]
 }
@@ -52,6 +57,7 @@ export const SETTINGS_GROUPS_KEY: InjectionKey<readonly SettingsGroupLoader[]> =
 
 export interface VisibleSettingsGroup {
   readonly label: string
+  readonly area?: string
   readonly tabs: readonly SettingsTab[]
 }
 
@@ -63,6 +69,7 @@ export function visibleSettingsGroups(groups: readonly SettingsGroup[]): Visible
         ? [
             {
               label: group.label(),
+              area: group.area,
               tabs: group.tabs.filter((tab) => tab.condition?.() ?? true),
             },
           ]
@@ -72,15 +79,19 @@ export function visibleSettingsGroups(groups: readonly SettingsGroup[]): Visible
 }
 
 /**
- * The tab to show: the requested one when it is visible, else the first
- * visible tab, else nothing.
+ * The tab to show: the requested one when it is visible, else the first tab
+ * of the area on screen, else the first visible tab, else nothing.
  */
 export function resolveSettingsTab(
   groups: readonly VisibleSettingsGroup[],
   requested: string | undefined,
+  area?: string,
 ): string | undefined {
   const tabs = groups.flatMap((group) => group.tabs)
-  return tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id
+  const asked = tabs.find((tab) => tab.id === requested)
+  // A group with no area is no app's, so it never counts as where the user is
+  const here = groups.find((group) => !!area && group.area === area)?.tabs[0]
+  return (asked ?? here ?? tabs[0])?.id
 }
 
 /**

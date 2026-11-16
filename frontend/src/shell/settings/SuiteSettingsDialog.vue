@@ -79,6 +79,7 @@ import {
   SettingsSidebar,
 } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -103,14 +104,17 @@ const { groups, failed, load } = useSettingsGroups()
 const tabs = computed(() => groups.value?.flatMap((group) => group.tabs) ?? [])
 
 // The dialog's own selection. It follows the requested tab, falls back to the
-// first visible tab, and stays local so a sidebar click does not rewrite the
-// caller's request.
+// settings of the app on screen and then to the first visible tab, and stays
+// local so a sidebar click does not rewrite the caller's request
 const activeTab = ref<string | undefined>()
+const route = useRoute()
 
 watch(
   [groups, requestedTab],
   ([visible, requested]) => {
-    if (visible) activeTab.value = resolveSettingsTab(visible, requested)
+    if (visible) {
+      activeTab.value = resolveSettingsTab(visible, requested, route.meta.area)
+    }
   },
   { immediate: true },
 )

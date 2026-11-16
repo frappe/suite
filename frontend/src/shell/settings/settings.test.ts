@@ -9,9 +9,15 @@ import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDia
 
 const body = async () => ({})
 
-function group(label: string, tabs: [id: string, shown?: boolean][], shown = true): SettingsGroup {
+function group(
+  label: string,
+  tabs: [id: string, shown?: boolean][],
+  shown = true,
+  area?: string,
+): SettingsGroup {
   return {
     label: () => label,
+    area,
     condition: () => shown,
     tabs: tabs.map(([id, tabShown = true]) => ({
       id,
@@ -45,6 +51,22 @@ describe('settings groups', () => {
     expect(resolveSettingsTab(groups, 'drive.external-access')).toBe('account.profile')
     expect(resolveSettingsTab(groups, undefined)).toBe('account.profile')
     expect(resolveSettingsTab([], 'account.profile')).toBeUndefined()
+  })
+
+  it('opens on the settings of the app on screen when no tab is asked for', () => {
+    const suite = visibleSettingsGroups([
+      group('Account', [['account.profile']]),
+      group('Drive', [['drive.statistics']], true, 'files'),
+      group('Mail', [['mail.general'], ['mail.inbox']], true, 'mail'),
+      group('Calendar', [['calendar.calendars']], false, 'calendar'),
+    ])
+    expect(resolveSettingsTab(suite, undefined, 'mail')).toBe('mail.general')
+    expect(resolveSettingsTab(suite, undefined, 'files')).toBe('drive.statistics')
+    // A tab asked for by name wins over where the user is
+    expect(resolveSettingsTab(suite, 'account.profile', 'mail')).toBe('account.profile')
+    // An app with no settings, or whose settings the user may not see
+    expect(resolveSettingsTab(suite, undefined, 'people')).toBe('account.profile')
+    expect(resolveSettingsTab(suite, undefined, 'calendar')).toBe('account.profile')
   })
 
   it('takes only the tab ids of the composition list', () => {
