@@ -60,23 +60,20 @@
             </template>
           </Button>
         </EmojiPicker>
-        <Button variant="ghost" class="max-h-6 max-w-6" @click="fileInput?.click()">
-          <template #icon>
-            <Paperclip class="text-ink-gray-8 h-4 w-4" />
-          </template>
-        </Button>
+        <!-- One Attach button: a file from this device, or one already in Drive. -->
+        <Dropdown :options="attachOptions">
+          <Button
+            variant="ghost"
+            class="max-h-6 max-w-6"
+            :tooltip="__('Attach')"
+            :aria-label="__('Attach')"
+          >
+            <template #icon>
+              <Paperclip class="text-ink-gray-8 h-4 w-4" />
+            </template>
+          </Button>
+        </Dropdown>
         <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
-        <Button
-          variant="ghost"
-          class="max-h-6 max-w-6"
-          :tooltip="__('Attach from Drive')"
-          :aria-label="__('Attach from Drive')"
-          @click="emit('attachFromDrive')"
-        >
-          <template #icon>
-            <HardDrive class="text-ink-gray-8 h-4 w-4" />
-          </template>
-        </Button>
       </div>
 
       <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
@@ -105,7 +102,7 @@
 <script setup lang="ts">
 import { Button, Dropdown } from 'frappe-ui'
 import { EditorFixedMenu } from 'frappe-ui/editor'
-import { CalendarClock, ChevronDown, HardDrive, Laugh, Paperclip } from 'lucide-vue-next'
+import { CalendarClock, ChevronDown, HardDrive, Laugh, MonitorUp, Paperclip } from 'lucide-vue-next'
 import { computed, useTemplateRef } from 'vue'
 
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
@@ -141,6 +138,19 @@ const sendOptions = [
     label: __('Schedule send'),
     icon: CalendarClock,
     onClick: () => emit('scheduleSend'),
+  },
+]
+
+const attachOptions = [
+  {
+    label: __('Upload from computer'),
+    icon: MonitorUp,
+    onClick: () => fileInput.value?.click(),
+  },
+  {
+    label: __('Attach from Drive'),
+    icon: HardDrive,
+    onClick: () => emit('attachFromDrive'),
   },
 ]
 
