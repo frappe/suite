@@ -16,20 +16,17 @@ interface MentionAccessOptions {
 // Whole sentences per noun, so each translates as one
 const LINES = {
   document: {
-    unshared: (names: string) =>
-      __('{0} can’t open this document until someone who manages it shares it', [names]),
+    unshared: (names: string) => __('{0} can’t open this document until it’s shared', [names]),
     blockedOne: (name: string) => __('{0} has been blocked from this document', [name]),
     blockedMany: (names: string) => __('{0} have been blocked from this document', [names]),
   },
   presentation: {
-    unshared: (names: string) =>
-      __('{0} can’t open this presentation until someone who manages it shares it', [names]),
+    unshared: (names: string) => __('{0} can’t open this presentation until it’s shared', [names]),
     blockedOne: (name: string) => __('{0} has been blocked from this presentation', [name]),
     blockedMany: (names: string) => __('{0} have been blocked from this presentation', [names]),
   },
   spreadsheet: {
-    unshared: (names: string) =>
-      __('{0} can’t open this spreadsheet until someone who manages it shares it', [names]),
+    unshared: (names: string) => __('{0} can’t open this spreadsheet until it’s shared', [names]),
     blockedOne: (name: string) => __('{0} has been blocked from this spreadsheet', [name]),
     blockedMany: (names: string) => __('{0} have been blocked from this spreadsheet', [names]),
   },

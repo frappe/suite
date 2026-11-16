@@ -367,9 +367,7 @@ export function useExportImport({
     // longer tied to the click, and browsers block it.
     const win = window.open('', '_blank', 'width=900,height=700')
     if (!win) {
-      toast.error(
-        __('The browser blocked the print window. Allow pop-ups for this site, then try again.'),
-      )
+      toast.error(__('Allow pop-ups for this site to print'))
       return
     }
     const names = scope === 'all' ? sheetNames() : [currentSheet.value]
@@ -589,13 +587,17 @@ export function useExportImport({
         },
       })
     }
-    if (skipped)
-      toast.info(
-        __(
-          "{0} chart{1} not imported: only bar, line, area, pie and scatter charts over columns of the file's own sheets come in",
-          [skipped, skipped === 1 ? ' was' : 's were'],
-        ),
-      )
+
+    if (skipped) {
+      let title = __('{0} charts not imported', [skipped])
+      if (skipped === 1) {
+        title = __('1 chart not imported')
+      }
+
+      toast.info(title, {
+        description: __('Only bar, line, area, pie and scatter charts come in'),
+      })
+    }
   }
 
   // Ingests one worksheet and returns its view (sizes, hides, freeze).

@@ -557,7 +557,7 @@ describe('mentioning someone who can’t open the spreadsheet', () => {
     expect(create).toHaveBeenCalledOnce()
     expect([told.successes, told.warnings]).toEqual([
       [],
-      ['Arjun Mehta can’t open this spreadsheet until someone who manages it shares it'],
+      ['Arjun Mehta can’t open this spreadsheet until it’s shared'],
     ])
   })
 

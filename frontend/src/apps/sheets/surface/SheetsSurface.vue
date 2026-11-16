@@ -81,7 +81,7 @@ const hasRecovery = ref(readRecovery(props.session.nodeId) !== null)
 // The editor stays mounted while it writes the recovery copy, even once read
 // access is gone: unmounting stops the engine the copy is read from.
 const copying = ref(false)
-// The "Download my changes" toast, closed once the copy it offers is gone.
+// The toast offering the kept changes, closed once the copy it offers is gone
 let offer: ReturnType<typeof toast.warning> | null = null
 const access = createSheetAccess(props.session, {
   narrowed() {
@@ -98,7 +98,7 @@ const access = createSheetAccess(props.session, {
     }
     const unsaved = current !== null && (current.saveState !== 'clean' || current.hasDraft())
     if (!unsaved) {
-      toast.warning(__('Editing access changed. This spreadsheet is now view only.'))
+      toast.warning(__('This spreadsheet is now view only'))
       return
     }
     void keepForDownload()
@@ -363,16 +363,13 @@ async function restoreVersion(seq: string) {
 async function keepForDownload() {
   if (!(await retainRecovery())) return
   if (offer !== null) toast.dismiss(offer)
-  offer = toast.warning(
-    __('Editing access changed. Your unsaved changes are kept on this device.'),
-    {
-      duration: Number.POSITIVE_INFINITY,
-      action: {
-        label: __('Download my changes'),
-        onClick: downloadChanges,
-      },
+  offer = toast.warning(__("You can't edit now. Your changes are kept."), {
+    duration: Number.POSITIVE_INFINITY,
+    action: {
+      label: __('Download'),
+      onClick: downloadChanges,
     },
-  )
+  })
 }
 /** True once the copy is kept. The workbook is read before the first await, while a cell edit is still open. */
 async function retainRecovery(): Promise<boolean> {
@@ -384,7 +381,7 @@ async function retainRecovery(): Promise<boolean> {
     hasRecovery.value = true
     return true
   } catch {
-    toast.error(__('Could not keep your latest changes on this device'))
+    toast.error(__('Could not keep your changes'))
     return false
   } finally {
     copying.value = false
@@ -396,7 +393,7 @@ async function downloadChanges() {
     hasRecovery.value = false
     if (!downloaded) toast.error(__('No recovery copy is kept for this spreadsheet'))
   } catch {
-    toast.error(__('Could not download your changes. They are still kept on this device.'))
+    toast.error(__('Could not download your changes'))
   }
 }
 useDocumentLeaveGuard({

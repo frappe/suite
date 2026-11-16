@@ -64,15 +64,15 @@ export function useUnsavedRecovery(
     if (!isUnsent) {
       // Access came back within the bound, so nothing turned view only
       if (!isWritable()) {
-        toast.warning(__('Editing access changed. This presentation is now view only.'))
+        toast.warning(__('This presentation is now view only'))
       }
 
       return
     }
 
-    toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
+    toast.warning(__("You can't edit now. Your changes are kept."), {
       duration: Number.POSITIVE_INFINITY,
-      action: { label: __('Download my changes'), onClick: () => downloadSlides(shown, title) },
+      action: { label: __('Download'), onClick: () => downloadSlides(shown, title) },
     })
   }
 
@@ -116,10 +116,10 @@ export function useUnsavedRecovery(
       return true
     } catch {
       const title = session.title.value
-      toast.error(__('Could not keep your latest changes on this device'), {
+      toast.error(__('Could not keep your changes'), {
         duration: Number.POSITIVE_INFINITY,
         action: {
-          label: __('Download my changes'),
+          label: __('Download'),
           onClick: () => downloadSlides(copy, title),
         },
       })
@@ -130,7 +130,7 @@ export function useUnsavedRecovery(
   function retainOrWarn() {
     const isKept = retainRecovery()
     if (!isKept) {
-      toast.error(__('Could not keep your latest changes on this device'))
+      toast.error(__('Could not keep your changes'))
     }
 
     return isKept
@@ -201,7 +201,7 @@ export function useUnsavedRecovery(
       syncHasRecovery()
       toast.error(__('No recovery copy is kept for this presentation'))
     } else if (downloaded === 'unmarked') {
-      toast.warning(__('This device is too full to note that the copy was downloaded'))
+      toast.warning(__('Downloaded, but this device is full'))
     }
   }
 
@@ -220,7 +220,7 @@ export function useUnsavedRecovery(
         discardRecovery(session.nodeId, shown.id, shown.copy)
       }
     } catch {
-      toast.error(__("Could not discard the copy. It's still kept on this device."))
+      toast.error(__('Could not discard the copy'))
       return
     }
 

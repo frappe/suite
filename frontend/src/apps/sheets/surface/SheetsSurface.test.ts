@@ -177,9 +177,9 @@ const settle = async () => {
   }
 }
 
-/** The "Download my changes" toast, if one was shown. */
+/** The toast offering the kept changes, if one was shown. */
 const downloadOffer = () =>
-  toast.warning.mock.calls.find(([, options]) => options?.action?.label === 'Download my changes')
+  toast.warning.mock.calls.find(([, options]) => options?.action?.label === 'Download')
 
 it('hides the rail while the spreadsheet is open', async () => {
   await mountSurface()

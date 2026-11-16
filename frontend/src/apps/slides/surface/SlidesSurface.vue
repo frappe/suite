@@ -512,7 +512,7 @@ function storedFile(version: DocumentVersion, bytes: Uint8Array) {
 // Bytes no preview can draw: the person keeps them as the stored file
 function offerStoredFile(version: DocumentVersion, bytes: Uint8Array) {
   const file = storedFile(version, bytes)
-  toast.error(__("This version can't be read, so it can't be restored. You can download it."), {
+  toast.error(__("This version can't be restored"), {
     action: { label: __('Download'), onClick: () => saveThroughBrowser(file) },
   })
 }
@@ -530,7 +530,7 @@ async function versionToRestore(version: DocumentVersion) {
     return { bytes, images: await missingImages(props.session, versionImages(body)) }
   } catch (error) {
     console.error(error)
-    toast.error(__("This version's images could not be checked, so nothing was restored"))
+    toast.error(__('Could not restore the version'))
     return null
   }
 }
