@@ -1,6 +1,6 @@
 <template>
-  <SettingsSection :title="__('Rules')">
-    <template #actions>
+  <div class="flex flex-col gap-3">
+    <div class="flex justify-end gap-2">
       <Button
         icon-left="lucide-refresh-cw"
         :label="__('Rebuild Automation')"
@@ -9,7 +9,7 @@
         @click="rebuildAutomationSubmit()"
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
-    </template>
+    </div>
     <div v-if="filteredScripts.length">
       <div
         v-for="script in filteredScripts"
@@ -58,7 +58,7 @@
       v-model="showDeleteScript"
       :script="selectedScript"
     />
-  </SettingsSection>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -73,7 +73,6 @@ import SieveScriptModal from '@/apps/mail/components/Modals/SieveScriptModal.vue
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
-import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

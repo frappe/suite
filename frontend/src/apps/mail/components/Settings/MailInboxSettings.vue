@@ -1,20 +1,25 @@
 <template>
   <AppSettingsHeader :title="__('Inbox')" />
   <AppSettingsBody>
-    <div class="flex flex-col gap-10">
+    <div class="divide-y divide-outline-gray-1">
       <!-- First, so the link from a screened sender's mail opens on it. -->
-      <div class="divide-y divide-outline-gray-1">
-        <ScreenedEmailAddressSettings />
-        <InboxCategorySettings />
-        <SettingsDialogRow
-          :title="__('Folders')"
-          :description="__('Your own folders for filing mail.')"
-          :action="__('Manage')"
-        >
-          <FolderSettings />
-        </SettingsDialogRow>
-      </div>
-      <AutomationSettings />
+      <ScreenedEmailAddressSettings />
+      <InboxCategorySettings />
+      <SettingsDialogRow
+        :title="__('Folders')"
+        :description="__('Your own folders for filing mail.')"
+        :action="__('Manage')"
+      >
+        <FolderSettings />
+      </SettingsDialogRow>
+      <SettingsDialogRow
+        :title="__('Rules')"
+        :description="__('Scripts that sort and file incoming mail for you.')"
+        :action="__('Manage')"
+        size="xl"
+      >
+        <AutomationSettings />
+      </SettingsDialogRow>
     </div>
   </AppSettingsBody>
 </template>
