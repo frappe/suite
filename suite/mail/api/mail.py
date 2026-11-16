@@ -74,6 +74,7 @@ from suite.mail.doctype.user_account.user_account import (
 from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
 from suite.mail.jmap import (
+    JMAP_ERRORS,
     SuiteJMAPClient,
     get_account_client,
     get_cached_identities,
@@ -109,11 +110,9 @@ from suite.mail.reminders import (
     unsnooze,
 )
 from suite.mail.search_matches import (
-    JMAP_ERRORS,
     MAX_SHOWN_MATCHES,
-    found_in_attachment,
-    get_snippets,
-    marked_words,
+    add_match_words,
+    conversation_match,
     matching_messages,
 )
 from suite.mail.utils import get_config, log_mail_error
@@ -1930,12 +1929,10 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
         if not conversation:
             continue
         written = written_messages(conversation)
-        by_id = {m["id"]: m for m in conversation}
-        matched = [by_id[id] for id in found.get(thread_id) or [newest_matches.get(thread_id)] if id in by_id]
-        written_matches = [m for m in matched if m in written]
-        # Only what was seen of the matches can rule a conversation out.
-        reaction_only = bool(matched and not written_matches and saw_all_matches and found.get(thread_id))
-        match = written_matches[0] if written_matches else written[-1]
+        matched = conversation_match(
+            conversation, written, found.get(thread_id), newest_matches.get(thread_id), saw_all_matches
+        )
+        match = matched.match
         # Found in Trash or Junk, the conversation is shown as those folders show it; anywhere else,
         # as every other list does.
         if trash and any(mb["mailbox_id"] == trash for mb in match["mailboxes"]):
@@ -1953,11 +1950,7 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
             sent_mailbox=ids_by_role.get("sent"),
             inbox_mailbox=ids_by_role.get("inbox"),
         )
-        row["received_at"] = match["received_at"]
-        row["match_id"] = match["id"]
-        row["reaction_only"] = cint(reaction_only)
-        row["matches"] = _row_matches(written_matches or [match], visible)
-        row["marked_words"] = []
+        matched.describe(row, visible)
         rows.append(row)
 
     # Found by a message older than a reaction to it, a row's date is earlier than the place the
@@ -1967,51 +1960,6 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
     add_user_images_to_emails(account, [m for row in rows for m in row["messages"]], is_thread=True)
     add_reaction_refusals(account, [m for row in rows for m in row["messages"]])
     return rows, total
-
-
-def _row_matches(matched: list[dict], visible: list[dict]) -> list[dict]:
-    """The matches a row can show: those the view holds, one for a message and its copies."""
-
-    shown = {m["id"] for m in visible}
-    seen_copies: set[str] = set()
-    matches = []
-    for message in matched:
-        copy_key = message.get("message_id") or message["id"]
-        if message["id"] in shown and copy_key not in seen_copies:
-            seen_copies.add(copy_key)
-            matches.append(
-                {
-                    "id": message["id"],
-                    "from_name": message.get("from_name"),
-                    "from_email": message.get("from_email"),
-                    "received_at": message["received_at"],
-                    "snippet": None,
-                    "in_attachment": 0,
-                }
-            )
-    return matches
-
-
-def add_match_words(account: str, filter: dict, rows: list[dict], shown_matches: int = 1) -> None:
-    """Reads the words of the matches a page's rows show, `shown_matches` of each. Asked once the page
-    is settled, because it fetches every mail it reads: a search across accounts lists far more rows
-    than it returns."""
-
-    shown = [row for row in rows if not row.get("reaction_only")]
-    ids = [match["id"] for row in shown for match in row["matches"][:shown_matches]]
-    snippets = get_snippets(account, filter, ids)
-    if not snippets:
-        return
-
-    for row in shown:
-        messages = {copy["id"]: copy for m in row["messages"] for copy in [m, *m.get("duplicates", [])]}
-        words: list[str] = []
-        for match in row["matches"][:shown_matches]:
-            snippet = snippets.get(match["id"])
-            match["snippet"] = snippet["preview"] if snippet else None
-            match["in_attachment"] = cint(found_in_attachment(messages.get(match["id"], {}), snippet))
-            words += marked_words(snippet)
-        row["marked_words"] = list(dict.fromkeys(words))
 
 
 @frappe.whitelist()

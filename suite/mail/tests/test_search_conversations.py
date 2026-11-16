@@ -7,6 +7,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import UnitTestCase
 
+from suite.mail import search_matches
 from suite.mail.api import mail
 from suite.mail.jmap import MailServerUnavailableError
 
@@ -182,7 +183,7 @@ class TestSearchAcrossAccounts(UnitTestCase):
         with (
             patch.object(mail, "get_user_jmap_accounts", return_value=ACCOUNTS),
             patch.object(mail, "search_threads", side_effect=search_threads),
-            patch.object(mail, "get_snippets", return_value={}),
+            patch.object(search_matches, "get_snippets", return_value={}),
             patch.object(mail, "get_mailbox_id_by_role", return_value=None),
         ):
             return mail._search_all_accounts({"text": "numbers"}, limit=limit, start=start)
@@ -224,24 +225,12 @@ def row_matching(*ids: str) -> dict:
 
 
 class TestMatchWords(UnitTestCase):
-    def words_read_for(self, rows: list[dict], **kwargs) -> list[str]:
-        with patch.object(mail, "get_snippets", return_value={}) as get_snippets:
-            mail.add_match_words("account", {"text": "numbers"}, rows, **kwargs)
-        return get_snippets.call_args.args[2]
-
-    def test_a_row_reads_only_its_newest_matchs_words_by_default(self):
-        rows = [row_matching("a1", "a2", "a3"), row_matching("b1", "b2")]
-        self.assertEqual(self.words_read_for(rows), ["a1", "b1"])
-
-    def test_a_row_listing_its_matches_reads_the_words_of_each_it_lists(self):
-        rows = [row_matching("a1", "a2", "a3", "a4")]
-        self.assertEqual(self.words_read_for(rows, shown_matches=3), ["a1", "a2", "a3"])
-
     def test_no_more_matches_are_read_than_a_row_can_show(self):
         with patch.object(mail, "search_threads", return_value=([row_matching("a1", "a2", "a3", "a4")], 1)):
             with (
-                patch.object(mail, "get_snippets", return_value={}) as get_snippets,
+                patch.object(search_matches, "get_snippets", return_value={}) as get_snippets,
                 patch.object(mail, "_tag_search_results"),
             ):
                 mail.search_mails("account", {"text": "numbers"}, shown_matches=50)
         self.assertEqual(get_snippets.call_args.args[2], ["a1", "a2", "a3"])
+

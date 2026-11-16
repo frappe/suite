@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 from frappe.tests import UnitTestCase
 
 from suite.mail import search_matches
+from suite.mail.jmap import MailServerUnavailableError
 from suite.mail.search_matches import (
+    add_match_words,
     found_in_attachment,
     get_snippets,
     has_terms,
@@ -134,7 +136,7 @@ class TestGetSnippets(UnitTestCase):
         self.assertEqual(batch.calls, [])
 
     def test_a_failed_call_leaves_the_results_without_their_words(self):
-        error = search_matches.MailServerUnavailableError()
+        error = MailServerUnavailableError()
         with (
             patch.object(search_matches.frappe, "log_error"),
             patch.object(search_matches.frappe, "get_traceback", return_value=""),
@@ -214,3 +216,26 @@ class TestMarkedWords(UnitTestCase):
             "preview": parse_snippet("the <mark>budgets</mark> are in"),
         }
         self.assertEqual(marked_words(snippet), ["Budget", "budgets"])
+
+
+def row_matching(*ids: str) -> dict:
+    return {"matches": [{"id": id} for id in ids], "messages": []}
+
+
+class TestMatchWords(UnitTestCase):
+    def words_read_for(self, rows: list[dict], **kwargs) -> list[str]:
+        with patch.object(search_matches, "get_snippets", return_value={}) as get_snippets:
+            add_match_words("account", {"text": "numbers"}, rows, **kwargs)
+        return get_snippets.call_args.args[2]
+
+    def test_a_row_reads_only_its_newest_matchs_words_by_default(self):
+        rows = [row_matching("a1", "a2", "a3"), row_matching("b1", "b2")]
+        self.assertEqual(self.words_read_for(rows), ["a1", "b1"])
+
+    def test_a_row_listing_its_matches_reads_the_words_of_each_it_lists(self):
+        rows = [row_matching("a1", "a2", "a3", "a4")]
+        self.assertEqual(self.words_read_for(rows, shown_matches=3), ["a1", "a2", "a3"])
+
+    def test_a_row_only_a_reaction_found_reads_no_words(self):
+        rows = [{**row_matching("a1"), "reaction_only": 1}, row_matching("b1")]
+        self.assertEqual(self.words_read_for(rows), ["b1"])

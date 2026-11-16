@@ -3,6 +3,7 @@
 from typing import Literal, NotRequired, TypedDict
 
 from suite.mail.http.shapes import Flag
+from suite.mail.search_matches import SearchSegment
 
 
 class Recipient(TypedDict):
@@ -137,11 +138,6 @@ class UnifiedThreadPage(TypedDict):
 class TabCount(TypedDict):
     category: Literal["primary", "updates", "forums", "promotions", "social"]
     unread_threads: int
-
-
-class SearchSegment(TypedDict):
-    text: str
-    hit: bool
 
 
 class SearchMatch(TypedDict):
