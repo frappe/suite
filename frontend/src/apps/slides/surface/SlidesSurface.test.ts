@@ -63,7 +63,7 @@ const {
   slideIndex,
   slides: editorSlides,
 } = await import('@/apps/slides/stores/slide')
-const { inReadonlyMode, loadTemplates, presentationId, templateList, viewOnly } =
+const { inReadonlyMode, loadTemplates, presentationId, presentationTheme, templateList, viewOnly } =
   await import('@/apps/slides/stores/presentation')
 const { drawnSlides } = await import('@/apps/slides/collab/drawnDeck')
 const { askLivePush, undoLive } = await import('@/apps/slides/stores/liveDeck')
@@ -190,6 +190,38 @@ describe('Slides slideshow route', () => {
     seen.disconnect()
 
     expect(mountedShows).not.toContain(true)
+  })
+})
+
+describe("the header's view-only badge", () => {
+  function isBadged() {
+    return mounted?.root.querySelector('header')?.getAttribute('data-view-only') === 'true'
+  }
+
+  it('waits for the presentation to open before it calls a reader view only', async () => {
+    const load = Promise.withResolvers<void>()
+    mounted = await openedSurface({ role: 10, firstLoad: load.promise })
+    await vi.waitFor(() =>
+      expect(document.querySelector('[aria-label="Opening presentation"]')).not.toBeNull(),
+    )
+
+    expect(isBadged()).toBe(false)
+    load.resolve()
+
+    await vi.waitFor(() => expect(isBadged()).toBe(true))
+  })
+
+  it("never shows on an editor's way into a live presentation", async () => {
+    const badges: boolean[] = []
+    const seen = new MutationObserver(() => badges.push(isBadged()))
+    seen.observe(document.body, { childList: true, subtree: true, attributes: true })
+    convertedRoom('one')
+
+    mounted = await openedSurface({ deck: { is_converted: true } })
+    await vi.waitFor(() => expect(thumbnails(mounted!.root)).toHaveLength(1))
+    seen.disconnect()
+
+    expect(badges).not.toContain(true)
   })
 })
 
@@ -2124,6 +2156,13 @@ describe('a deck on the content layer', () => {
       return mounted!.root.querySelector('[data-theme-pick]')
     }
 
+    // as the server answers a theme write: the row's new stamp, and no slides
+    function themeRecorded() {
+      return new Response(JSON.stringify({ message: { modified: 'M2', base_modified: 'M1' } }), {
+        status: 200,
+      })
+    }
+
     it('is offered on a presentation in its room', async () => {
       blankRoom()
       await openedNew()
@@ -2199,6 +2238,29 @@ describe('a deck on the content layer', () => {
       )
       expect(shownTexts(doc)).toEqual([['theirs.png']])
       expect(calls('update_theme')).toEqual([])
+    })
+
+    it('keeps the editor up, in the room it opened, while the theme is recorded', async () => {
+      blankRoom()
+      await openedNew()
+      const roomOpens = collabRoom.open.mock.calls.length
+      const recorded = Promise.withResolvers<Response>()
+      mounted!.loads.push(recorded.promise)
+      function isOpening() {
+        return !!document.querySelector('[aria-label="Opening presentation"]')
+      }
+
+      themeChange.create('dark-template')
+      await vi.waitFor(() => expect(calls('update_theme')).toHaveLength(1))
+
+      expect([isOpening(), viewOnly.value]).toEqual([false, false])
+      expect(thumbnails(mounted!.root)).toHaveLength(1)
+      recorded.resolve(themeRecorded())
+      await vi.waitFor(() => expect(presentationTheme.value).toBe('dark-template'))
+
+      expect([isOpening(), viewOnly.value]).toEqual([false, false])
+      expect(thumbnails(mounted!.root)).toHaveLength(1)
+      expect(collabRoom.open.mock.calls).toHaveLength(roomOpens)
     })
 
     it('keeps the filled slide through an undo', async () => {
@@ -2330,6 +2392,27 @@ describe('a deck on the content layer', () => {
         )
         expect(shownTexts(doc)).toEqual([[]])
         expect(calls('update_theme')).toEqual([])
+      })
+
+      it('adds a slide from a theme picked in the menu', async () => {
+        const room = roomOf('one')
+        collabRoom.open.mockResolvedValueOnce({ state: 'live', room })
+        await opened(
+          [
+            savedTemplate('brand', 'Brand', ['Brand first']),
+            savedTemplate('calm', 'Calm', ['Calm first']),
+          ],
+          '',
+          { theme: 'brand' },
+        )
+
+        mounted!.loads.push(Promise.resolve(themeRecorded()))
+        themeChange.update('calm')
+        await vi.waitFor(() => expect(presentationTheme.value).toBe('calm'))
+        addEmptySlide()
+
+        await vi.waitFor(() => expect(slideIds(room.doc)).toHaveLength(2))
+        expect(shownTexts(room.doc)[1]).toEqual([expect.stringContaining('Calm first')])
       })
 
       it("adds a slide from the presentation's converted theme", async () => {
