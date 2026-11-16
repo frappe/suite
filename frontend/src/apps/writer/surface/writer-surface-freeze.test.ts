@@ -220,9 +220,7 @@ describe('Writer surface', () => {
     })
     element.dispatchEvent(paste)
 
-    expect(error).toHaveBeenCalledWith(
-      'This is too large to add in one go. Add it in smaller parts.',
-    )
+    expect(error).toHaveBeenCalledWith('Too large to add at once. Add it in parts.')
   })
 
   it('shows the stored body read-only when the open gives no live room', async () => {

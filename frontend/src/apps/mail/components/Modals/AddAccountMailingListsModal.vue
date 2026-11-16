@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Add to Mailing Lists'),
+      title: __('Add to mailing lists'),
       actions: [
         {
           label: __('Add'),
@@ -16,7 +16,7 @@
   >
     <template #default>
       <div class="space-y-1.5">
-        <label class="text-ink-gray-5 block text-xs">{{ __('Mailing Lists') }}</label>
+        <label class="text-ink-gray-5 block text-xs">{{ __('Mailing lists') }}</label>
         <MultiSelect v-model="listIds" :options="options" />
         <ErrorMessage
           :message="
@@ -35,6 +35,7 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { memberId, currentIds } = defineProps<{
@@ -71,6 +72,6 @@ async function addListsSubmit() {
   await addLists.run(input)
   show.value = false
   emit('reload')
-  raiseToast(__('Added to mailing lists.'))
+  raiseToast(__('Added to mailing lists'))
 }
 </script>

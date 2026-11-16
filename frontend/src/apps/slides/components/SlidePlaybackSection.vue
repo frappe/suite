@@ -48,6 +48,7 @@ import { editSlideCommand } from '@/apps/slides/stores/commands'
 import { currentSlide, slides } from '@/apps/slides/stores/slide'
 import { advanceSeconds } from '@/apps/slides/utils/advanceAfter'
 import { chevronClasses, selectValueClasses } from '@/apps/slides/utils/constants'
+import { translate as __ } from '@/platform/translation'
 
 const DEFAULT_DELAY = 5
 
@@ -93,6 +94,6 @@ const applyToAllSlides = () => {
 
   const seconds = advanceSeconds(sourceSlide.advanceAfter)
   const timing = advancesAutomatically.value ? `after ${seconds}s` : 'on click'
-  toast.success(`All slides advance ${timing}`)
+  toast.success(__('All slides advance {0}', [timing]))
 }
 </script>

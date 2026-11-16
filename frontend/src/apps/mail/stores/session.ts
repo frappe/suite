@@ -7,6 +7,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { getSessionUser, useSessionStore } from '@/boot/session'
 import { useSession } from '@/platform/session'
+import { translate as __ } from '@/platform/translation'
 
 export const sessionStore = defineStore('mail-session', () => {
   const session = useSessionStore()
@@ -51,7 +52,7 @@ export const sessionStore = defineStore('mail-session', () => {
     platformSession.expire()
     session.user = null
     reset()
-    raiseToast(__('You have been signed out. Please sign in again.'), 'error')
+    raiseToast(__('You have been signed out. Sign in again.'), 'error')
     if (router.currentRoute.value.name !== 'mail-login') router.replace({ name: 'mail-login' })
   }
 

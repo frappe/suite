@@ -154,7 +154,7 @@ const formatMeetingTime = (event: CalendarEvent) => {
 
   const start = eventStart(event)
   const end = start.add(dayjs.duration(event.duration || 'PT0S'))
-  return `${start.format('h:mm a')} – ${end.format('h:mm a')}`
+  return `${start.format('h:mm A')} – ${end.format('h:mm A')}`
 }
 
 const getMeetingUrl = (event: CalendarEvent) => {

@@ -5,6 +5,8 @@ import { List, ListCell, ListHeader, ListHeaderCell, ListRow, ListRows } from 'f
 import { computed } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 
+import { LoadFailed } from '@/platform/load-failed'
+
 import DashboardSkeletonText from './DashboardSkeletonText.vue'
 
 export type DashboardListColumn = {
@@ -25,7 +27,9 @@ const {
   rowRoute,
   emptyState,
   skeletonRows = 8,
+  failure,
 } = defineProps<{
+  failure?: { title: string; retry: () => Promise<unknown> }
   columns: DashboardListColumn[]
   rows: readonly Row[]
   rowKey: string
@@ -86,7 +90,12 @@ const widthFor = (row: number, column: number) => `${45 + ((row * 7 + column * 1
           </ListCell>
         </ListRow>
       </ListRows>
-      <ListRows v-else v-slot="{ item: row }" :items="rows as Row[]" :row-key="rowKey">
+      <ListRows
+        v-else-if="!failure"
+        v-slot="{ item: row }"
+        :items="rows as Row[]"
+        :row-key="rowKey"
+      >
         <ListRow :value="valueOf(row)" :route="rowRoute?.(row)">
           <ListCell v-for="column in columns" :key="column.key">
             <slot name="cell" :column="column" :row="row" :item="field(row, column.key)">
@@ -101,8 +110,9 @@ const widthFor = (row: number, column: number) => `${45 + ((row * 7 + column * 1
         </ListRow>
       </ListRows>
     </List>
+    <LoadFailed v-if="failure" :title="failure.title" :retry="failure.retry" />
     <div
-      v-if="!loading && !rows.length && emptyState"
+      v-else-if="!loading && !rows.length && emptyState"
       class="flex flex-col items-center gap-1 py-12 text-center"
     >
       <p class="text-base font-medium text-ink-gray-8">{{ emptyState.title }}</p>

@@ -1455,12 +1455,12 @@ async function openNode(row: DriveNode, newTab = false) {
  */
 function openTarget(row: DriveNode): RouteLocationRaw {
   if (row.kind === 'folder') return { path: nodePath(row), query: presentationQuery.value }
-  if (row.kind !== 'file') return driveNodeRoute(row)
   const target = driveNodeRoute(row)
   const state = { ...target.state, ...openingLocationState(previewLocation(row)) }
+  if (row.kind !== 'file') return { ...target, state }
   return { ...target, state, query: { type: typeQuery(listingTypes.value) } }
 }
-/** The folder a file's preview header names, when this listing knows it, so its opening header names it too. */
+/** The folder an item's header names, when this listing knows it, so its opening header names it too. */
 function previewLocation(row: DriveNode): string | null {
   const parent = detail.data?.name === row.parent_node ? detail.data : null
   const folder = row.breadcrumbs ? folderOf(row) : parent

@@ -815,7 +815,7 @@ describe('useMediaControls', () => {
     expect(producer.close).toHaveBeenCalledOnce()
     expect(harness.sfuClient.sendMediaControl).toHaveBeenCalledWith('video_off')
     expect(toast.error).toHaveBeenCalledWith(
-      'Camera stopped and could not be restarted. Check browser permissions and devices.',
+      'Could not restart the camera. Check browser permissions and devices.',
     )
   })
 
@@ -843,7 +843,7 @@ describe('useMediaControls', () => {
     expect(producer.close).toHaveBeenCalledOnce()
     expect(harness.sfuClient.sendMediaControl).toHaveBeenCalledWith('mute')
     expect(toast.error).toHaveBeenCalledWith(
-      'Microphone stopped and could not be restarted. Check browser permissions and devices.',
+      'Could not restart the microphone. Check browser permissions and devices.',
     )
   })
 
@@ -2850,7 +2850,7 @@ describe('useMediaControls', () => {
 
     await expect(harness.controls.toggleCamera()).rejects.toBe(ordinaryAbort)
     expect(consoleError).toHaveBeenCalledWith('Failed to toggle camera:', ordinaryAbort)
-    expect(toast.error).toHaveBeenCalledWith('Failed to toggle camera')
+    expect(toast.error).toHaveBeenCalledWith('Could not turn off the camera')
 
     app.unmount()
     await vi.waitFor(() => expect(harness.dispose).toHaveBeenCalledOnce())
@@ -3807,9 +3807,7 @@ describe('useMediaControls', () => {
       'Failed to load MediaPipe Selfie Segmentation model:',
       abortError,
     )
-    expect(toast.error).toHaveBeenCalledWith(
-      'Failed to load the background effects model. Please try again.',
-    )
+    expect(toast.error).toHaveBeenCalledWith('Could not load background effects. Try again.')
     await effects.dispose()
     app.unmount()
   })

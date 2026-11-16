@@ -49,6 +49,7 @@ class TransferPreview(TypedDict):
 
 class TransferItem(TypedDict):
     node: str
+    title: str
     success: bool
     error: str | None
 

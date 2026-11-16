@@ -35,10 +35,11 @@
         </button>
       </template>
     </FileUploader>
+    <!-- Shown on hover, on focus, and always on touch screens, where there is no hover. -->
     <button
       v-if="logo"
       type="button"
-      class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-surface-gray-7 text-white opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+      class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center rounded-full bg-surface-gray-7 text-white opacity-0 group-hover:opacity-100 focus:opacity-100 [@media(hover:none)]:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
       :aria-label="__('Remove logo')"
       @click="logo = ''"
     >

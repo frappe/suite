@@ -189,24 +189,26 @@ for (const phone of [false, true]) {
 			return tops;
 		}
 
-		test("failed, loading and loaded share one layout", async ({ page }) => {
+		test("a failed load offers Retry, and loading and loaded share one layout", async ({ page }) => {
 			await patchAccount(page, FULL_ACCOUNT);
 			await failRequest(page, USAGE);
 			let panel = await openStatistics(page);
-			await expect(panel.getByText("Storage use could not load.", { exact: true })).toBeVisible();
-			const failed = await headingTops(panel);
+			const failure = panel.getByRole("alert");
+			await expect(failure).toContainText("Could not load storage usage");
+			await expect(failure.getByRole("button", { name: "Retry" })).toBeVisible();
+			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toHaveCount(0);
 
 			await page.unroute(USAGE);
 			const release = await holdUsage(page, FILLED);
 			panel = await openStatistics(page);
 			await expect(panel.getByText("Loading…")).toBeVisible();
-			expect(await headingTops(panel)).toEqual(failed);
+			const loading = await headingTops(panel);
 
 			release();
 			await expect(panel.getByText("report.pdf")).toBeVisible();
 			await expect(panel.getByRole("listitem").filter({ hasText: "PDF" }).first()).toContainText("900 KB");
 			await expect(panel.getByRole("listitem").filter({ hasText: "photo.png" })).toContainText("500 KB");
-			expect(await headingTops(panel)).toEqual(failed);
+			expect(await headingTops(panel)).toEqual(loading);
 		});
 
 		test("usage with no active file explains what still counts", async ({ page }) => {

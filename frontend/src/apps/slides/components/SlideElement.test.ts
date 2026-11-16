@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, type App } from 'vue'
 
 import SlideElement from '@/apps/slides/components/SlideElement.vue'
+import { withOverride } from '@/platform/theme'
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 
@@ -20,10 +21,14 @@ async function drawText(content: string) {
   return page
 }
 
+let releaseDark: (() => void) | undefined
+
 afterEach(() => {
   app?.unmount()
   app = undefined
   document.body.replaceChildren()
+  releaseDark?.()
+  releaseDark = undefined
 })
 
 describe('the colour of text on a slide', () => {
@@ -33,6 +38,15 @@ describe('the colour of text on a slide', () => {
     const text = page.querySelector('p')!
     expect(text.textContent).toBe('Plain')
     expect(getComputedStyle(text).color).toBe('rgb(0, 0, 0)')
+  })
+
+  it('draws text with no saved colour in black in dark mode too', async () => {
+    releaseDark = withOverride('dark')
+    const page = await drawText('<p>Plain</p>')
+    // dark mode's light ink
+    page.style.color = '#f8f8f8'
+
+    expect(getComputedStyle(page.querySelector('p')!).color).toBe('rgb(0, 0, 0)')
   })
 
   it('keeps a saved colour', async () => {

@@ -20,6 +20,7 @@ from suite.drive.patches.build.legacy import (
 from suite.drive.patches.build.state import BuildState, StoragePreparation
 from suite.drive.patches.cleanup.delete_legacy_objects import (
     OWN_DESTINATION,
+    REACHES_KEPT_KEY,
     REFERENCED_BY_BLOB,
     UNDER_FRAMEWORK_ROOT,
     DeletedRecord,
@@ -55,6 +56,24 @@ class FakeBucket:
     @property
     def deleted_keys(self) -> list[str]:
         return [key for batch in self.deletes for key in batch]
+
+
+class TrimmingBucket(FakeBucket):
+    """`FakeBucket` over a store that drops the leading slashes of a key
+    (Garage): `/team/id` reaches, and deletes, the object stored as `team/id`."""
+
+    def __init__(self, sizes: dict[str, int]):
+        super().__init__({key.lstrip("/"): size for key, size in sizes.items()})
+
+    def size(self, key):
+        self.heads.append(key)
+        return self.sizes.get(key.lstrip("/"))
+
+    def delete_keys(self, keys):
+        self.deletes.append(tuple(keys))
+        for key in keys:
+            self.sizes.pop(key.lstrip("/"), None)
+        return len(keys)
 
 
 class FakeBlobs:
@@ -221,6 +240,46 @@ class TestConfirmedDelete(unittest.TestCase):
         self.assertEqual(kept[OWN_DESTINATION], 1)
         self.assertIn("abc/referenced.pdf", site.bucket.sizes)
         self.assertIn(canonical, site.bucket.sizes)
+
+    def test_a_kept_object_survives_a_ledger_that_also_names_it_with_a_leading_slash(self):
+        framework = "private/5e1f0c3a9b7d/k3x9q2m7pa/framework.pdf"
+        cases = (
+            ("named by a File Blob", ("team/id", "/team/id"), {"team/id"}, "team/id", REFERENCED_BY_BLOB),
+            (
+                "named by a File Blob, listed after its slashed name",
+                ("/team/id", "team/id"),
+                {"team/id"},
+                "team/id",
+                REFERENCED_BY_BLOB,
+            ),
+            ("only its bare name is named by a File Blob", ("/team/id",), {"team/id"}, "team/id", None),
+            (
+                "under the framework roots",
+                (framework, f"/{framework}"),
+                set(),
+                framework,
+                UNDER_FRAMEWORK_ROOT,
+            ),
+        )
+        for name, keys, blob_keys, survivor, bare_reason in cases:
+            with self.subTest(name), TemporaryDirectory() as tmp:
+                site = DeleteFixture(
+                    Path(tmp),
+                    entries=(*(copied(key) for key in keys), copied("team/plain")),
+                    blob_keys=blob_keys,
+                )
+                site.bucket = TrimmingBucket(site.bucket.sizes)
+                # One key per batch: the slashed key and its bare name are
+                # looked up in different batches.
+                report = run_delete(site.environment(), confirm=True, batch_size=1)
+
+                self.assertEqual(site.bucket.deleted_keys, ["team/plain"])
+                self.assertIn(survivor, site.bucket.sizes)
+                kept = report.totals().kept
+                self.assertEqual(kept[REACHES_KEPT_KEY], 1)
+                if bare_reason:
+                    self.assertEqual(kept[bare_reason], 1)
+                self.assertIn(REACHES_KEPT_KEY, "\n".join(report.lines()))
 
     def test_confirm_deletes_exactly_the_ledger_keys_and_leaves_every_canonical_copy(self):
         site = DeleteFixture(self.path)

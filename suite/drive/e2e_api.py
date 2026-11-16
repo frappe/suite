@@ -15,6 +15,7 @@ import re
 import frappe
 from frappe.tests.utils import whitelist_for_tests
 
+from suite.composition.welcome import NEEDS_WELCOME
 from suite.drive._core.roots import archive_personal_root, personal_root_for, purge_root
 from suite.drive.framework import principals_for
 
@@ -89,6 +90,8 @@ def provision_users(run_id: str, password: str = DEFAULT_PASSWORD, user_count: i
         user.insert(ignore_permissions=True)
         user.reload()
         user.add_roles("Suite User")
+        # E2E users test the apps, not the first run: skip the welcome without the starter files.
+        frappe.defaults.clear_user_default(NEEDS_WELCOME, email)
 
     return {"run_id": run_id, "users": [_user_result(email, password) for email in emails]}
 

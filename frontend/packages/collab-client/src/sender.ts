@@ -299,7 +299,8 @@ export class Sender {
     const box = after?.box ?? room.outboxes.find((other) => other.pending.length) ?? room.ownOutbox
     const cannotSend =
       room.closed || !room.bound || room.suspect.isJudging || room.saveState === 'failed'
-    if (!box.pending.length || cannotSend) {
+    // A box whose claim hasn't come back holds every box behind it, which may sit on its work
+    if (!box.pending.length || cannotSend || box.awaitsClaim) {
       return null
     }
 

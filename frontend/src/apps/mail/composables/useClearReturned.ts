@@ -1,6 +1,7 @@
 import { api, client } from '@/api'
 import type { Thread } from '@/apps/mail/types'
 import { raiseOptimisticToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 /**
  * Clearing a returned conversation's mark (see suite/mail/reminders.py): nothing takes it off but the
@@ -29,7 +30,7 @@ export const useClearReturned = () => {
     )
     raiseOptimisticToast(
       cleared,
-      many ? __('Threads removed from Reminders.') : __('Thread removed from Reminders.'),
+      many ? __('Threads removed from Reminders') : __('Thread removed from Reminders'),
       () =>
         raiseOptimisticToast(
           cleared.then((done) =>
@@ -43,7 +44,7 @@ export const useClearReturned = () => {
               ),
             ),
           ),
-          many ? __('Threads moved back.') : __('Thread moved back.'),
+          many ? __('Threads moved back') : __('Thread moved back'),
         ),
     )
   }
