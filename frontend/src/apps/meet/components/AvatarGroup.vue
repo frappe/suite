@@ -44,28 +44,19 @@
         class="text-base text-ink-gray-7"
         :class="alignment === 'center' ? 'mt-4' : ''"
       >
-        <span v-if="displayedParticipants.length > 0">
-          {{ formattedNames }}
-        </span>
-        <span v-if="extraCount > 0">
-          {{ displayedParticipants.length > 0 ? ' and ' : '' }}{{ extraCount }} other{{
-            extraCount > 1 ? 's' : ''
-          }}
-        </span>
-        <span v-if="displayedParticipants.length > 0">
-          {{ displayedParticipants.length > 1 ? ' are' : ' is' }}
-        </span>
-        in the meeting
+        <span v-if="displayedParticipants.length > 0">{{ presenceText }}</span>
       </div>
     </div>
     <div v-else-if="!loading && showText" class="flex h-10 items-center">
-      <p class="text-base text-ink-gray-7">You'll be the first to join this meeting</p>
+      <p class="text-base text-ink-gray-7">{{ __("You'll be the first to join this meeting") }}</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import MeetAvatar from './MeetAvatar.vue'
 
@@ -129,8 +120,18 @@ const formattedNames = computed((): string => {
   if (participantLength === 0) return ''
   if (extraCount.value > 0) return names.join(', ')
   if (participantLength === 1) return names[0]
-  if (participantLength === 2) return `${names[0]} and ${names[1]}`
-  if (participantLength === 3) return `${names[0]}, ${names[1]} and ${names[2]}`
+  if (participantLength === 2) return __('{0} and {1}', [names[0], names[1]])
+  if (participantLength === 3) return __('{0}, {1} and {2}', [names[0], names[1], names[2]])
   return names.join(', ')
+})
+const presenceText = computed(() => {
+  const names = formattedNames.value
+  if (extraCount.value === 1)
+    return __('{0} and {1} other are in the meeting', [names, extraCount.value])
+  if (extraCount.value > 1)
+    return __('{0} and {1} others are in the meeting', [names, extraCount.value])
+  return displayedParticipants.value.length === 1
+    ? __('{0} is in the meeting', [names])
+    : __('{0} are in the meeting', [names])
 })
 </script>

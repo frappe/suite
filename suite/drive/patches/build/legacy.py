@@ -34,9 +34,11 @@ def storage_key(file_url: str) -> str:
 # Drive never normalised what it wrote: most keys sit in a folder named after
 # a hash or a user's email, a fifth start with a slash (the S3 console shows
 # a "/" folder), some are bare file names at the root, and only a handful
-# live under `Drive Disk Settings.root_folder`. Every bucket call takes the
-# key as it is; this classification exists so the dry run, the precondition
-# check and the legacy-object delete can report per layout.
+# live under `Drive Disk Settings.root_folder`. Callers pass the key as
+# `storage_key` decodes it; only `BotoBucket`'s copy retries without the
+# leading slashes, on a store that dropped them. This classification exists
+# so the dry run, the precondition check and the legacy-object delete can
+# report per layout.
 LEADING_SLASH = "leading slash"
 BARE_ROOT_KEY = "bare key at the bucket root"
 UNDER_ROOT_FOLDER = "under root_folder"

@@ -3,6 +3,7 @@ import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { confirm, Dropdown, toast } from '@/platform/feedback'
+import { translate as __ } from '@/platform/translation'
 
 import {
   copyToClipboard,
@@ -49,11 +50,11 @@ async function copyText() {
   try {
     await copyToClipboard(props.copy)
   } catch {
-    toast.error("Couldn't copy. Download it instead.")
+    toast.error(__('Could not copy. Download it instead.'))
     return
   }
 
-  toast.success('Copied')
+  toast.success(__('Copied'))
 }
 
 function download() {

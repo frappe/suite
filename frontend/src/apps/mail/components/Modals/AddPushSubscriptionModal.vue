@@ -59,6 +59,7 @@ import { computed, inject, ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const emit = defineEmits<{
@@ -89,7 +90,7 @@ async function addPushSubscriptionSubmit() {
     types: chosenTypes.value.length ? chosenTypes.value : undefined,
   }
   await addPushSubscription.run(input)
-  raiseToast(__('Push subscription created.'))
+  raiseToast(__('Push subscription created'))
   show.value = false
   emit('created')
 }

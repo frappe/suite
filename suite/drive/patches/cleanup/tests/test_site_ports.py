@@ -18,6 +18,7 @@ from unittest.mock import MagicMock, patch
 import frappe
 
 import suite.drive.patches.cleanup as cleanup
+from suite.drive.patches.build.tests.fakes import StoreClient, bucket_over
 from suite.drive.patches.cleanup.ports import (
     SNAPSHOT_FIELDS,
     LegacyBucket,
@@ -570,39 +571,105 @@ class TestSiteTransactionGateway(unittest.TestCase):
         db.commit.assert_not_called()
 
 
+class DeletingStoreClient(StoreClient):
+    """`StoreClient` with the two deletes `LegacyBucket` sends.
+
+    A store that trims path keys (Garage) also keeps the slash of a key in
+    the `DeleteObjects` body, which travels in XML, and reports a key it
+    does not hold as a `NoSuchKey` error. AWS S3 reports it under `Deleted`.
+    """
+
+    def __init__(self, objects, trims_path_keys):
+        super().__init__(objects, trims_path_keys)
+        self.batches = []
+
+    def delete_objects(self, Bucket, Delete):
+        keys = [item["Key"] for item in Delete["Objects"]]
+        self.batches.append(keys)
+        deleted, errors = [], []
+        for key in keys:
+            if self.objects.pop(key, None) is None and self.trims_path_keys:
+                errors.append(
+                    {"Key": key, "Code": "NoSuchKey", "Message": "The specified key does not exist."}
+                )
+            else:
+                deleted.append({"Key": key})
+        return {"Deleted": deleted, "Errors": errors}
+
+    def delete_object(self, Bucket, Key):
+        self.objects.pop(self._path_key(Key), None)
+
+
+class DenyingStoreClient(DeletingStoreClient):
+    """A store that answers `AccessDenied` for every key."""
+
+    def delete_objects(self, Bucket, Delete):
+        self.batches.append([item["Key"] for item in Delete["Objects"]])
+        errors = [{"Key": item["Key"], "Code": "AccessDenied", "Message": "no"} for item in Delete["Objects"]]
+        return {"Deleted": [], "Errors": errors}
+
+
+def legacy_bucket(client):
+    return LegacyBucket(bucket_over(client))
+
+
+STORES = (("keeps slashes, like AWS", False), ("drops slashes, like Garage", True))
+
+
 class TestLegacyBucket(unittest.TestCase):
-    """boto, at the client: 1000-key batches, keys passed through exactly as
-    given, and a partial failure reported instead of swallowed."""
+    """Deleting legacy keys on a store that keeps a leading slash (AWS) and on
+    one that dropped it when it stored the object (Garage)."""
 
-    def test_delete_keys_passes_every_key_shape_through_unchanged(self):
-        # The production bucket holds leading-slash keys and bare root keys;
-        # normalising either would delete the wrong object or none.
-        client = MagicMock()
-        client.delete_objects.side_effect = lambda Bucket, Delete: {"Deleted": Delete["Objects"]}
-        keys = ("/abc/x.pdf", "bare.pdf", "team/y.pdf")
-        deleted = LegacyBucket("bucket", client).delete_keys(keys)
-        self.assertEqual(deleted, 3)
-        sent = [item["Key"] for item in client.delete_objects.call_args.kwargs["Delete"]["Objects"]]
-        self.assertEqual(sent, list(keys))
+    def test_every_key_shape_is_sent_as_given_a_thousand_per_call(self):
+        # Normalising a key would delete the wrong object, or none.
+        keys = ("/abc/x.pdf", "bare.pdf", *(f"team/{i}" for i in range(1500)))
+        client = DeletingStoreClient({key: b"x" for key in keys}, trims_path_keys=False)
+        deleted = legacy_bucket(client).delete_keys(keys)
+        self.assertEqual(deleted, len(keys))
+        self.assertEqual(client.objects, {})
+        self.assertEqual([len(batch) for batch in client.batches], [1000, 502])
+        self.assertEqual(client.batches[0][:2], ["/abc/x.pdf", "bare.pdf"])
 
-    def test_delete_keys_batches_a_thousand_per_call(self):
-        client = MagicMock()
-        client.delete_objects.side_effect = lambda Bucket, Delete: {"Deleted": Delete["Objects"]}
-        keys = tuple(f"team/{i}" for i in range(1500))
-        deleted = LegacyBucket("bucket", client).delete_keys(keys)
-        self.assertEqual(deleted, 1500)
-        sizes = [len(call.kwargs["Delete"]["Objects"]) for call in client.delete_objects.call_args_list]
-        self.assertEqual(sizes, [1000, 500])
+    def test_a_key_that_is_already_gone_counts_as_deleted(self):
+        for name, trims in STORES:
+            with self.subTest(name):
+                # A rerun after an interruption: both keys went last time.
+                client = DeletingStoreClient({"team/kept": b"other"}, trims_path_keys=trims)
+                deleted = legacy_bucket(client).delete_keys(("team/gone", "/team/gone"))
+                self.assertEqual(deleted, 2)
+                self.assertEqual(client.objects, {"team/kept": b"other"})
 
-    def test_delete_keys_raises_on_a_partial_failure(self):
-        client = MagicMock()
-        client.delete_objects.return_value = {
-            "Deleted": [{"Key": "team/a"}],
-            "Errors": [{"Key": "team/b", "Code": "AccessDenied", "Message": "no"}],
-        }
-        with self.assertRaises(RuntimeError) as caught:
-            LegacyBucket("bucket", client).delete_keys(("team/a", "team/b"))
-        self.assertIn("team/b", str(caught.exception))
+    def test_a_slash_named_object_goes_from_a_store_that_dropped_the_slash(self):
+        # What Garage holds after `/team/id` was uploaded to it.
+        client = DeletingStoreClient({"team/id": b"report", "team/other": b"other"}, trims_path_keys=True)
+        deleted = legacy_bucket(client).delete_keys(("/team/id",))
+        self.assertEqual(deleted, 1)
+        self.assertEqual(client.objects, {"team/other": b"other"})
+
+    def test_the_namesake_without_the_slash_survives_on_a_store_that_keeps_it(self):
+        # On AWS `team/id` is a different object, whether `/team/id` is there or not.
+        for objects in ({"/team/id": b"report", "team/id": b"other"}, {"team/id": b"other"}):
+            with self.subTest(objects=sorted(objects)):
+                client = DeletingStoreClient(objects, trims_path_keys=False)
+                legacy_bucket(client).delete_keys(("/team/id",))
+                self.assertEqual(client.objects, {"team/id": b"other"})
+
+    def test_an_object_under_the_framework_roots_is_never_deleted_by_its_slashed_name(self):
+        # On Garage `/sites/...` reaches the canonical copy itself.
+        canonical = "sites/example.test/storage/private/b1/report.pdf"
+        client = DeletingStoreClient({canonical: b"report"}, trims_path_keys=True)
+        with self.assertRaises(RuntimeError):
+            legacy_bucket(client).delete_keys((f"/{canonical}",))
+        self.assertEqual(client.objects, {canonical: b"report"})
+
+    def test_a_refused_delete_raises_and_nothing_else_is_tried(self):
+        for name, trims in STORES:
+            with self.subTest(name):
+                client = DenyingStoreClient({"team/id": b"report"}, trims_path_keys=trims)
+                with self.assertRaises(RuntimeError) as caught:
+                    legacy_bucket(client).delete_keys(("/team/id", "team/id"))
+                self.assertIn("AccessDenied", str(caught.exception))
+                self.assertIn("team/id", client.objects)
 
 
 if __name__ == "__main__":

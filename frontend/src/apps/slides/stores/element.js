@@ -16,7 +16,7 @@ import {
   patchEmptyParagraphs,
   ZWSP,
 } from '@/apps/slides/stores/tiptapSetup'
-import { translate } from '@/platform/translation'
+import { translate as __ } from '@/platform/translation'
 
 import { guessShapeColorsFromBackground, guessTextColorFromBackground } from '../utils/color'
 import { getBoundTargetIds, getLineBox, remapElementIds } from '../utils/connectors'
@@ -561,7 +561,7 @@ const savePoster = async (posterDataUrl) => {
     return fileDoc.file_url
   } catch (error) {
     // the media is worth keeping without a poster
-    console.error('Could not save poster', error)
+    console.error(__('Could not save poster'), error)
     return null
   }
 }
@@ -749,7 +749,7 @@ const addMediaElement = async (file, type, targetSlide, localFile) => {
   // a co-editor may have deleted that slide while the upload ran
   if (isLive() && !slides.value.includes(targetSlide)) {
     targetSlide = currentSlide.value
-    toast.info(translate('The slide this was added to was deleted, so it is on this slide.'))
+    toast.info(__('Its slide was deleted, so it was added here'))
   }
 
   const slideIdx = slides.value.indexOf(targetSlide)

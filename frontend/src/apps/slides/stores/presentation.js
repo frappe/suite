@@ -3,10 +3,13 @@ import { computed, ref } from 'vue'
 
 import { api, client } from '@/api'
 import { normalizeZIndices } from '@/apps/slides/stores/element'
+import { drawnFontsReady } from '@/apps/slides/utils/bundledFonts'
 import { normalizeColor } from '@/apps/slides/utils/color'
 import { migrateShadow } from '@/apps/slides/utils/oldShadow'
 import { appDocumentTitle } from '@/platform/page-meta'
 import { randomId } from '@/platform/random-id'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 import { recordVisit } from './driveVisit'
 import { commandHistory } from './historyMeta'
@@ -70,6 +73,13 @@ async function getElementDimensions(el) {
   const tempDiv = placeForMeasuring(el)
   await document.fonts.ready
   return readMeasured(tempDiv, el)
+}
+
+function fontsLoadedFor(el) {
+  const tempDiv = placeForMeasuring(el)
+  const isLoaded = drawnFontsReady(tempDiv)
+  document.body.removeChild(tempDiv)
+  return isLoaded
 }
 
 function measureNow(el) {
@@ -141,9 +151,7 @@ const parseElements = (value, slide) => {
       parsed = JSON.parse(value)
     } catch (err) {
       console.error('Failed to parse slide elements', err)
-      toast.error(
-        'A slide could not be read. Its content is preserved but hidden; avoid saving over it.',
-      )
+      toast.error(__('A slide could not be read. It is kept but hidden.'))
       if (slide) slide.corruptElements = value
       return []
     }
@@ -292,7 +300,10 @@ const loadTemplates = async () => {
     templateList.value = await client.query(api.slides.templates.list, {}, { cache: 'prefer' })
   } catch (error) {
     if (navigator.onLine) {
-      toast.error(error.message || 'Could not load templates')
+      toast.error(
+        (error instanceof TransportError ? __(error.message) : null) ||
+          __('Could not load templates'),
+      )
     }
   }
 }
@@ -332,6 +343,7 @@ export {
   loadTemplates,
   presentationTheme,
   flattenNow,
+  fontsLoadedFor,
   measureNow,
   viewOnly,
   inReadonlyMode,

@@ -21,9 +21,9 @@ test("a reader cannot edit or rename, and an editor can", async ({ owner, collab
 	await expect(writerEditor(collaborator.page)).toHaveAttribute("contenteditable", "false");
 	await expect(collaborator.page.getByText("View only", { exact: true })).toBeVisible();
 	await expect(documentTitle(collaborator.page)).toHaveAttribute("readonly", "");
-	// Readers still get the document menu: downloads stay, imports go.
+	// Readers still get the document menu: exports stay, imports go
 	await documentMenuButton(collaborator.page).click();
-	await expect(collaborator.page.getByRole("menuitem", { name: "Download as DOCX" })).toBeVisible();
+	await expect(collaborator.page.getByRole("menuitem", { name: "Export as DOCX" })).toBeVisible();
 	await expect(collaborator.page.getByRole("menuitem", { name: "Import DOCX" })).toHaveCount(0);
 	await collaborator.page.keyboard.press("Escape");
 

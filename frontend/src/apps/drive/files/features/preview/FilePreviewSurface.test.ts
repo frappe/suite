@@ -39,7 +39,9 @@ vi.mock('frappe-ui', async () => ({
   Dropdown: defineComponent({
     props: {
       options: {
-        type: fromPartial<PropType<Array<{ label: string; onClick: () => unknown }>>>(Array),
+        type: fromPartial<
+          PropType<Array<{ options: Array<{ label: string; onClick: () => unknown }> }>>
+        >(Array),
         default: () => [],
       },
     },
@@ -50,9 +52,11 @@ vi.mock('frappe-ui', async () => ({
           slots.default?.(),
           h(
             'menu',
-            props.options.map((option) =>
-              h('button', { role: 'menuitem', onClick: option.onClick }, option.label),
-            ),
+            props.options
+              .flatMap((group) => group.options)
+              .map((option) =>
+                h('button', { role: 'menuitem', onClick: option.onClick }, option.label),
+              ),
           ),
         ]),
   }),

@@ -662,6 +662,18 @@ class CreatorGrantTest(GrantCase):
         self.assertEqual(self.roles("person00001"), {})
         self.assertEqual(report.creator_grants_minted, 0)
 
+    def test_media_uploaded_into_someone_elses_presentation_follows_the_presentation(self):
+        # The uploader holds what the presentation gives them, nothing more
+        self.owned("deck0000001", SHARED_ROOT, OWNER, kind="document", content_doctype="Presentation")
+        self.owned("writer00001", SHARED_ROOT, OWNER, kind="document", content_doctype="Writer Document")
+        self.owned("media000001", SHARED_ROOT, FRIEND, path="/deck0000001", parent_node="deck0000001")
+        self.owned("image000001", SHARED_ROOT, FRIEND, path="/writer00001", parent_node="writer00001")
+        self.legacy.permissions_rows = [permission("p1", SHARED_ROOT, "$GENERAL", read=1)]
+        self.run_grants(plans=[RootPlan(SHARED_ROOT, SHARED, None, "Shared", ACTIVE)])
+        self.assertEqual(self.roles("media000001"), {})
+        self.assertEqual(self.drive.effective_role(self.drive.node_rows["media000001"], FRIEND), READ)
+        self.assertEqual(self.roles("image000001"), {FRIEND: EDIT})
+
     def test_an_owners_own_read_row_is_raised_to_edit(self):
         """Legacy let owners past their own row; the row moves up rather than doubling."""
         self.owned("shared00001", SHARED_ROOT, FRIEND)

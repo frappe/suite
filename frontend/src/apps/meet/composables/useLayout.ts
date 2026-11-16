@@ -1,5 +1,7 @@
 import { computed, shallowRef, watch, watchEffect, type ComputedRef, type Ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import type { Participant } from '../utils/media/ParticipantManager'
 import type { PinnedTile } from './useGridLayout'
 import { useResponsiveGrid } from './useResponsiveGrid'
@@ -328,10 +330,10 @@ export function useLayout(
     const names = hidden.map((p) => p.user_name || p.user_id)
     const shown = names.slice(0, 8)
     const remaining = names.length - shown.length
-    if (remaining > 0) return `${shown.join(', ')} and ${remaining} more`
+    if (remaining > 0) return __('{0} and {1} more', [shown.join(', '), remaining])
     if (shown.length === 1) return shown[0]
-    if (shown.length === 2) return `${shown[0]} and ${shown[1]}`
-    return `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`
+    if (shown.length === 2) return __('{0} and {1}', [shown[0], shown[1]])
+    return __('{0} and {1}', [shown.slice(0, -1).join(', '), shown[shown.length - 1]])
   })
 
   return {

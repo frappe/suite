@@ -1,5 +1,7 @@
 import { toast } from 'frappe-ui'
 
+import { translate as __ } from '@/platform/translation'
+
 import { COL_HEADER_H, ROW_HEADER_W } from '../../canvas/constants.js'
 import { DEFAULT_COL_W, DEFAULT_ROW_H, MIN_COL_W, MIN_ROW_H } from '../../core/view-model.js'
 import { renameSheetsInFormula } from '../../engine/formula-adjust.js'
@@ -364,7 +366,10 @@ export function useExportImport({
     // Open the window before the read: a popup opened after an await is no
     // longer tied to the click, and browsers block it.
     const win = window.open('', '_blank', 'width=900,height=700')
-    if (!win) return
+    if (!win) {
+      toast.error(__('Allow pop-ups for this site to print'))
+      return
+    }
     const names = scope === 'all' ? sheetNames() : [currentSheet.value]
     const sheets = []
     for (const name of names) sheets.push(await _printable(name))
@@ -582,10 +587,19 @@ export function useExportImport({
         },
       })
     }
-    if (skipped)
-      toast.info(
-        `${skipped} chart${skipped === 1 ? ' was' : 's were'} not imported: only bar, line, area, pie and scatter charts over columns of the file's own sheets come in.`,
-      )
+
+    if (skipped) {
+      let title = __('{0} charts not imported', [skipped])
+      if (skipped === 1) {
+        title = __('1 chart not imported')
+      }
+
+      toast.info(title, {
+        description: __(
+          "Only bar, line, area, pie and scatter charts come in. Data must be in columns on the file's own sheets.",
+        ),
+      })
+    }
   }
 
   // Ingests one worksheet and returns its view (sizes, hides, freeze).

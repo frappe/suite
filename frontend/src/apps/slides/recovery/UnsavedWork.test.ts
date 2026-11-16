@@ -42,9 +42,9 @@ vi.mock('@/api', () => ({
 const { discardCopy, listCopies } = await import('./copies')
 const { default: UnsavedWork } = await import('./UnsavedWork.vue')
 
-async function openedPage(ready: (root: Element) => unknown) {
+async function openedPage(ready: (root: Element) => unknown, onCounted = (_count: number) => {}) {
   const routes = [
-    { path: '/drive/recovery', component: UnsavedWork },
+    { path: '/drive/recovery', component: UnsavedWork, props: { onCounted } },
     { path: '/d/:node/:slug', component: { render: () => null } },
   ]
   const router = createRouter({ history: createMemoryHistory(), routes })
@@ -124,9 +124,20 @@ describe("Slides' recovery copies on Drive's page", () => {
     expect(await listCopies()).toHaveLength(1)
   })
 
-  it('says so when the device keeps no copies', async () => {
-    const { root } = await openedPage((page) => page.textContent?.includes('No recovery copies'))
+  it('tells the page it keeps no copies, and draws nothing of its own', async () => {
+    const counted = vi.fn()
+    const { root } = await openedPage(() => counted.mock.calls.length, counted)
 
-    expect(rows(root)).toEqual([])
+    expect([counted.mock.calls, root.textContent]).toEqual([[[0]], ''])
+  })
+
+  it('tells the page how many copies it lists', async () => {
+    query.mockResolvedValue([])
+    keepRecovery('node-plan', [{ name: 'row-1' }], { sticky: true })
+    const counted = vi.fn()
+
+    await openedPage(() => counted.mock.calls.length, counted)
+
+    expect(counted.mock.calls).toEqual([[1]])
   })
 })

@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { api, useMutation } from '@/api'
+import { translate as __ } from '@/platform/translation'
 
 import { useConnectionState } from './useConnectionState'
 
@@ -22,14 +23,14 @@ export const useStartMeeting = () => {
   }
 
   const startMeeting = async (meetingType: MeetingType) => {
-    const creatingToastId = toast.loading('Creating meeting...')
+    const creatingToastId = toast.loading(__('Creating meeting…'))
     let meetingCode: string
     try {
       ;({ code: meetingCode } = await createMeeting.run({ type: meetingType }))
     } catch (error) {
       toast.dismiss(creatingToastId)
       console.error('Error creating meeting:', error)
-      toast.error('Failed to create meeting. Please try again.')
+      toast.error(__('Could not create the meeting. Try again.'))
       return
     }
 
@@ -42,20 +43,20 @@ export const useStartMeeting = () => {
       })
     } catch (error) {
       console.error('Error opening meeting:', error)
-      toast.error('Meeting created, but could not open it.', {
+      toast.error(__('Could not open the newly created meeting'), {
         duration: 8000,
         action: {
-          label: 'Copy link',
+          label: __('Copy link'),
           onClick: () => copyMeetingLink(meetingCode),
         },
       })
       return
     }
 
-    toast.success('Meeting created successfully!', {
+    toast.success(__('Meeting created'), {
       duration: 8000,
       action: {
-        label: 'Copy link',
+        label: __('Copy link'),
         onClick: () => copyMeetingLink(meetingCode),
       },
     })

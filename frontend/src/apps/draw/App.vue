@@ -1,53 +1,18 @@
 <script setup lang="ts">
 import './styles.css'
 
-import { Button, TextInput } from 'frappe-ui'
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-
-import { translate as __ } from '@/platform/translation'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
 
 import { useDrawingPersistence } from './canvas/persistence'
 import type { DrawingTool } from './canvas/tools'
 import DrawingToolbar from './components/DrawingToolbar.vue'
 import InfiniteCanvas from './components/InfiniteCanvas.vue'
-import drawLogo from './logo.svg'
 
-const persistence = useDrawingPersistence()
-const { drawingTitle, editable, dirty, saving, drawingLoading, loadError } = persistence
-const title = drawingTitle
-const titleDraft = ref(title.value)
-const editingTitle = ref(false)
-const titleInput = ref<InstanceType<typeof TextInput> | null>(null)
+const { editable } = useDrawingPersistence()
 const canvas = ref<InstanceType<typeof InfiniteCanvas> | null>(null)
 const activeTool = ref<DrawingTool | null>('select')
 let lastTool: DrawingTool = 'select'
 
-function startRenaming() {
-  titleDraft.value = title.value
-  editingTitle.value = true
-  nextTick(() => {
-    titleInput.value?.inputElement?.focus()
-    titleInput.value?.inputElement?.select()
-  })
-}
-
-async function finishRenaming() {
-  if (!editingTitle.value) return
-  editingTitle.value = false
-  if (editable.value && titleDraft.value.trim() && titleDraft.value.trim() !== title.value) {
-    try {
-      await persistence.session.rename(titleDraft.value.trim())
-    } catch (error) {
-      persistence.error.value =
-        error instanceof Error ? error.message : __('Could not rename the drawing.')
-    }
-  }
-  nextTick(() => document.querySelector<HTMLElement>('.infinite-canvas')?.focus())
-}
-function cancelRenaming() {
-  titleDraft.value = title.value
-  editingTitle.value = false
-}
 defineExpose({
   flush: async () => {
     await canvas.value?.flush()
@@ -133,62 +98,6 @@ onBeforeUnmount(() => {
 
 <template>
   <main class="app-shell">
-    <header class="drawing-header" :aria-label="__('Drawing header')">
-      <RouterLink to="/home" :aria-label="__('Back to Suite')">
-        <img class="draw-logo" :src="drawLogo" :alt="__('Draw')" width="24" height="24" />
-      </RouterLink>
-      <h1 class="drawing-title">
-        <TextInput
-          v-if="editingTitle"
-          ref="titleInput"
-          v-model="titleDraft"
-          class="title-field"
-          :aria-label="__('Drawing title')"
-          spellcheck="false"
-          variant="outline"
-          @blur="finishRenaming"
-          @keyup.enter="finishRenaming"
-          @keydown.esc.stop.prevent="cancelRenaming"
-        />
-        <button
-          v-else
-          class="title-button"
-          type="button"
-          :aria-label="__('Rename drawing')"
-          :disabled="!editable"
-          @click="startRenaming"
-        >
-          {{ title }}
-        </button>
-      </h1>
-      <DrawingToolbar
-        :active-tool="activeTool"
-        :inert="!editable || undefined"
-        @select="selectTool"
-      />
-      <span
-        class="ml-auto whitespace-nowrap text-sm text-ink-gray-5"
-        role="status"
-        aria-live="polite"
-      >
-        {{
-          drawingLoading
-            ? __('Loading…')
-            : loadError
-              ? __('Could not load')
-              : saving
-                ? __('Saving…')
-                : dirty
-                  ? __('Unsaved changes')
-                  : __('Saved')
-        }}
-      </span>
-      <Button
-        v-if="persistence.session.canShare.value"
-        :label="__('Share')"
-        @click="persistence.session.share()"
-      />
-    </header>
     <InfiniteCanvas
       ref="canvas"
       :active-tool="activeTool"
@@ -197,6 +106,11 @@ onBeforeUnmount(() => {
       @diamond-created="finishTool"
       @ellipse-created="finishTool"
       @line-created="finishTool"
+    />
+    <DrawingToolbar
+      :active-tool="activeTool"
+      :inert="!editable || undefined"
+      @select="selectTool"
     />
   </main>
 </template>

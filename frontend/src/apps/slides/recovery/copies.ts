@@ -173,6 +173,12 @@ export async function listCopies(): Promise<RecoveryCopy[]> {
   ])
 }
 
+/** The copies one presentation's live room kept on this device, newest first. */
+export async function roomCopies(node: string): Promise<RecoveryCopy[]> {
+  const records = await storeRecords()
+  return newestFirst(records.filter((record) => record.doc === node).flatMap(storeCopy))
+}
+
 function newestFirst(copies: RecoveryCopy[]) {
   return copies.sort((first, second) => second.savedAt.getTime() - first.savedAt.getTime())
 }
