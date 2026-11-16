@@ -2,8 +2,8 @@ import { fromPartial } from '@total-typescript/shoehorn'
 // Regression harness for "conditional formatting in dark mode".
 //
 // A colour-scale rule interpolates literal hex stops, so its fills stay pale
-// whichever theme is on. The cell ink resolves `--ink-gray-9`, which dark mode
-// turns near-white. The two together painted white numbers on a white cell.
+// whichever theme is on. The cell ink resolves `--ink-gray-7`, which dark mode
+// turns light grey. The two together painted white numbers on a white cell.
 //
 // Dark mode here is the real thing: the tokens the canvas reads are set on
 // <html> to their dark-theme values, exactly as frappe-ui does at runtime.
@@ -13,11 +13,15 @@ import { createCellPainter } from './painters/cell-painter.js'
 import { createMockCtx, createMockGeo } from './painters/test-utils.js'
 import type { CellFormat, CondFormat } from './types.js'
 
+// The default cell ink is --ink-gray-7, Writer's body text. --ink-gray-9
+// differs from it, so a painter that reads the wrong token fails.
 const DARK_TOKENS = {
-  '--ink-gray-9': '#f5f5f5', // near-white: dark mode's default cell ink
+  '--ink-gray-7': '#b5b5b5', // light grey: dark mode's default cell ink
+  '--ink-gray-9': '#f5f5f5',
   '--surface-base': '#1f1f1f',
 }
 const LIGHT_TOKENS = {
+  '--ink-gray-7': '#404040',
   '--ink-gray-9': '#171717',
   '--surface-base': '#ffffff',
 }
@@ -95,15 +99,15 @@ describe('cell text stays readable on a fill', () => {
 
   it('keeps the themed ink on an unfilled cell', () => {
     setTheme(DARK_TOKENS)
-    expect(inkPaintedFor({})).toBe(DARK_TOKENS['--ink-gray-9'])
+    expect(inkPaintedFor({})).toBe(DARK_TOKENS['--ink-gray-7'])
     setTheme(LIGHT_TOKENS)
-    expect(inkPaintedFor({})).toBe(LIGHT_TOKENS['--ink-gray-9'])
+    expect(inkPaintedFor({})).toBe(LIGHT_TOKENS['--ink-gray-7'])
   })
 
   it('keeps the themed ink when a rule sets no fill at all', () => {
     setTheme(DARK_TOKENS)
     const condFmt = { icon: { shape: 'arrow-up', color: '#16a34a' } }
-    expect(inkPaintedFor({ condFmt })).toBe(DARK_TOKENS['--ink-gray-9'])
+    expect(inkPaintedFor({ condFmt })).toBe(DARK_TOKENS['--ink-gray-7'])
   })
 
   it('never overrides a text colour the user chose', () => {
@@ -150,7 +154,7 @@ describe('overflow text from a filled cell', () => {
     const draws = overflowDraws({ backgroundColor: '#262626' })
     expect(draws).toHaveLength(2)
     const inside = draws.find((d) => d.ink === INK_ON_DARK)
-    const spill = draws.find((d) => d.ink === LIGHT_TOKENS['--ink-gray-9'])
+    const spill = draws.find((d) => d.ink === LIGHT_TOKENS['--ink-gray-7'])
     // A1 spans x 50..150; the spill starts at B1's left edge.
     expect(inside?.x1).toBeLessThanOrEqual(150)
     expect(spill?.x0).toBeGreaterThanOrEqual(150)
@@ -160,7 +164,7 @@ describe('overflow text from a filled cell', () => {
     const draws = overflowDraws({ backgroundColor: '#262626', align: 'right' }, 4)
     // E1 spans x 450..550; its text spills left over D1, C1, B1.
     const inside = draws.find((d) => d.ink === INK_ON_DARK)
-    const spill = draws.find((d) => d.ink === LIGHT_TOKENS['--ink-gray-9'])
+    const spill = draws.find((d) => d.ink === LIGHT_TOKENS['--ink-gray-7'])
     expect(inside?.x0).toBeGreaterThanOrEqual(450)
     expect(spill?.x1).toBeLessThanOrEqual(450)
   })

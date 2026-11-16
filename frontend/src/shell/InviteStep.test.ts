@@ -79,7 +79,7 @@ it('keeps an invite draft after refusal and sends its success event only after a
       { status: 400 },
     ),
   )
-  await vi.waitFor(() => expect(root.textContent).toContain('Outgoing email account not set up.'))
+  await vi.waitFor(() => expect(root.textContent).toContain('Outgoing email is not set up.'))
   expect(input.disabled).toBe(false)
   expect(input.value).toBe('alice@example.test')
   expect(sent).not.toHaveBeenCalled()
@@ -102,5 +102,5 @@ it('keeps an invite draft after refusal and sends its success event only after a
   await vi.waitFor(() => expect(sent).toHaveBeenCalledWith("We'll send 1 invite"))
   expect(input.value).toBe('')
   expect(input.disabled).toBe(false)
-  expect(root.textContent).not.toContain('Outgoing email account not set up.')
+  expect(root.textContent).not.toContain('Outgoing email is not set up.')
 })

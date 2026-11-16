@@ -40,8 +40,22 @@ const PRODUCTS: Product[] = [
 		boxLabel: "Add a comment",
 		start: "Add a comment",
 	},
-	{ label: "Sheets", doctype: "Sheet", title: "Guest names sheet", post: "Comment", boxLabel: "New comment" },
-	{ label: "Slides", doctype: "Presentation", title: "Guest names deck", post: "Add", boxLabel: "New comment" },
+	{
+		label: "Sheets",
+		doctype: "Sheet",
+		title: "Guest names sheet",
+		post: "Comment",
+		boxLabel: "Add a comment",
+		start: "Add a comment",
+	},
+	{
+		label: "Slides",
+		doctype: "Presentation",
+		title: "Guest names deck",
+		post: "Comment",
+		boxLabel: "Add a comment",
+		start: "Add a comment",
+	},
 ];
 
 let api: APIRequestContext;
@@ -84,12 +98,8 @@ async function storedAuthors(node: string): Promise<Array<{ author: string; auth
 
 async function openComments(page: Page, product: Product): Promise<Locator> {
 	// The product's own title bar holds the way to Comments. The body may still load behind it.
-	if (product.label === "Writer" || product.label === "Sheets") {
-		await page.getByRole("button", { name: "More document actions" }).click({ timeout: 20_000 });
-		await page.getByRole("menuitem", { name: "Comments" }).click();
-	} else {
-		await page.getByRole("button", { name: "Comments" }).click({ timeout: 20_000 });
-	}
+	await page.getByRole("button", { name: "More actions" }).click({ timeout: 20_000 });
+	await page.getByRole("menuitem", { name: "Comments" }).click();
 	const panel = page.getByRole("complementary", { name: "Comments" });
 	if (product.start) {
 		await panel.getByRole("button", { name: product.start }).click();

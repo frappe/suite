@@ -12,6 +12,8 @@ export interface RestoreNotice {
   message: string
   /** The converter refused an old version, so the person is offered its download instead. */
   canDownload?: boolean
+  /** The converter's reason for refusing, as a second line under the message. */
+  detail?: string
 }
 
 // The server's wait between restores, for a refusal that doesn't say how long is left
@@ -20,51 +22,46 @@ const RESTORE_EVERY_SECONDS = 60
 // Whole sentences per noun, so each translates as one
 const LINES = {
   document: {
-    notKept: () =>
-      __("The document as it is now couldn't be kept as a version first, so nothing was restored."),
-    unchanged: () => __('The document already matches this version.'),
+    unchanged: () => __('The document already matches this version'),
     openOne: (name: string) =>
       __('{0} has this document open now and will be told you restored it.', [name]),
     openMany: (names: string) =>
       __('{0} have this document open now and will be told you restored it.', [names]),
-    restoredEarlier: (who: string) =>
-      __('{0} restored an earlier version of this document.', [who]),
+    restoredEarlier: (who: string) => __('{0} restored an earlier version of this document', [who]),
   },
   presentation: {
-    notKept: () =>
-      __(
-        "The presentation as it is now couldn't be kept as a version first, so nothing was restored.",
-      ),
-    unchanged: () => __('The presentation already matches this version.'),
+    unchanged: () => __('The presentation already matches this version'),
     openOne: (name: string) =>
       __('{0} has this presentation open now and will be told you restored it.', [name]),
     openMany: (names: string) =>
       __('{0} have this presentation open now and will be told you restored it.', [names]),
     restoredEarlier: (who: string) =>
-      __('{0} restored an earlier version of this presentation.', [who]),
+      __('{0} restored an earlier version of this presentation', [who]),
   },
 }
 
 // Functions, so each message is translated once the catalog has loaded
-const REFUSALS = new Map<string, (noun: FileNoun) => string>(
+const REFUSALS = new Map<string, () => string>(
   Object.entries({
-    restoring: () => __('Someone else is restoring a version. Try again once it is done.'),
+    restoring: () => __('Someone else is restoring. Try again soon.'),
     behind: () => __('This tab is still catching up. Try again in a moment.'),
-    milestone_failed: (noun: FileNoun) => LINES[noun].notKept(),
-    paused: () => __('Saving is paused, so nothing was restored.'),
+    milestone_failed: () => __('Could not save the current state, so nothing was restored'),
+    paused: () => __('Saving is paused, so nothing was restored'),
   }),
 )
 
 /** What the person is told when the converter refused an old version, with its reason if it gave one. */
 export function refusedNotice(reason: string | null): RestoreNotice {
-  let message = __(
-    "This version couldn't be upgraded, so it can't be restored. You can download it.",
-  )
+  const notice: RestoreNotice = {
+    isRestored: false,
+    message: __("This version can't be restored"),
+    canDownload: true,
+  }
   if (reason) {
-    message += ' ' + __('Reason: {0}.', [reason])
+    notice.detail = __('Reason: {0}.', [reason])
   }
 
-  return { isRestored: false, message, canDownload: true }
+  return notice
 }
 
 /** What the person is told about the room's answer to a restore. */
@@ -94,9 +91,9 @@ export function noticeFor(result: RestoreResult, noun: FileNoun): RestoreNotice 
 
   const refusal = result.refusal ?? ''
   const explain = REFUSALS.get(refusal)
-  if (explain) return { isRestored: false, message: explain(noun) }
+  if (explain) return { isRestored: false, message: explain() }
 
-  return { isRestored: false, message: __('The version was not restored.') }
+  return { isRestored: false, message: __('The version was not restored') }
 }
 
 /**
@@ -134,12 +131,12 @@ export async function restoredByOther({ by, version }: VersionRestored, noun: Fi
   }
 
   if (version.label) {
-    return __('{0} restored the version “{1}”.', [who, version.label])
+    return __('{0} restored the version “{1}”', [who, version.label])
   }
 
   const taken = { creation: version.takenAt }
   const day = dayOrTime(taken)
   const time = versionTime(taken)
   const when = day === time ? time : `${day}, ${time}`
-  return __('{0} restored the version from {1}.', [who, when])
+  return __('{0} restored the version from {1}', [who, when])
 }

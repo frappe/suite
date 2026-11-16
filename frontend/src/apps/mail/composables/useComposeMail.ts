@@ -29,6 +29,7 @@ import {
   type uploadFunction,
 } from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { translate as __ } from '@/platform/translation'
 
 /** The mounted editor, as far as this composable cares about it. */
 interface EditorHost {
@@ -388,12 +389,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
     if (options.isUploading?.()) {
-      const message = __('Please wait for attachments to finish uploading.')
+      const message = __('Wait for attachments to finish uploading')
       if (sendAt) throw new Error(message)
       return raiseToast(message, 'error')
     }
     if (isRecipientsEmpty.value) {
-      const message = __('Please add at least one recipient.')
+      const message = __('Add at least one recipient')
       if (sendAt) throw new Error(message)
       return raiseToast(message, 'error')
     }
@@ -424,8 +425,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const keepUnsavedDraft = () => {
     const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
     const account = scopeAccountId.value
-    toast.error(__('Draft not saved.'), {
-      description: __('Your changes are kept here until you reopen the draft.'),
+    toast.error(__('Draft not saved'), {
+      description: __('Your changes are kept here until you reopen the draft'),
       duration: Infinity,
       action: {
         label: __('Reopen'),
@@ -468,7 +469,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     const heldIds = draft.id ? [draft.id, ...formerIds] : []
     heldIds.forEach(holdDraft)
     commitAfterUndo({
-      message: __('Draft discarded.'),
+      message: __('Draft discarded'),
       // A draft never saved has nothing on the server to remove: only Undo's reopening matters.
       removal: draft.id
         ? { kind: 'draft', account, id: draft.id }
@@ -505,8 +506,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   const showScheduleModal = ref(false)
   const openScheduleModal = () => {
-    if (isRecipientsEmpty.value)
-      return raiseToast(__('Please add at least one recipient.'), 'error')
+    if (isRecipientsEmpty.value) return raiseToast(__('Add at least one recipient'), 'error')
     showScheduleModal.value = true
   }
   // Remind me if nobody replies: chosen here, and set by the send itself, so it exists only for mail
@@ -564,7 +564,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // slot; View is an aside you could reach any time from Sent, offered only when the thread
     // isn't already the one in front of you.
     const sentToast = raiseToast(
-      __('Message sent.'),
+      __('Message sent'),
       'success',
       {
         label: __('Undo'),
@@ -617,7 +617,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       }
     }
     if (isOpen() && status !== 'Submitted') return
-    if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
+    if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved'))
     else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
       offerUndoSend(
         sentAs,
@@ -626,7 +626,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         thread_id ?? undefined,
       )
     else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
-      raiseToast(__('Send scheduled.'), 'success', {
+      raiseToast(__('Send scheduled'), 'success', {
         label: __('View'),
         onClick: () =>
           router.push({
@@ -638,7 +638,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       })
     else if (status === 'Submitted')
       raiseToast(
-        __('Message sent.'),
+        __('Message sent'),
         'success',
         // No View action when the sent mail's thread is already open in front of the user.
         thread_id && route.params.threadID !== thread_id
@@ -726,7 +726,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // been fetched. A null tab means the popup blocker got it — retrying after the fetch would
     // hit the same block, so just say so.
     const tab = window.open('', '_blank')
-    if (!tab) return raiseToast(__('Allow popups to open attachments.'), 'error')
+    if (!tab) return raiseToast(__('Allow popups to open attachments'), 'error')
     try {
       tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
     } catch {

@@ -151,6 +151,7 @@ import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { mailbox } = defineProps<{
@@ -228,7 +229,7 @@ async function createFolderSubmit() {
     automation_rules: isDefaultAutomation.value ? null : automationRules,
   }
   await createFolder.run(input)
-  raiseToast(__('Folder created.'))
+  raiseToast(__('Folder created'))
   show.value = false
 }
 const updateFolder = useMutation(api.mail.mailboxes.update)
@@ -240,7 +241,7 @@ async function updateFolderSubmit() {
     automation_rules: isDefaultAutomation.value ? null : automationRules,
   }
   await updateFolder.run(input)
-  raiseToast(__('Folder updated.'))
+  raiseToast(__('Folder updated'))
   show.value = false
 }
 const createAutomationScript = useMutation(api.mail.sieve.createAutomation)
@@ -250,7 +251,7 @@ async function createAutomationScriptSubmit() {
     active: true,
   }
   await createAutomationScript.run(input)
-  raiseToast(__('Folder Automation enabled.'))
+  raiseToast(__('Folder automation enabled'))
   showEnableFolderAutomation.value = false
 }
 watch(show, (val) => {

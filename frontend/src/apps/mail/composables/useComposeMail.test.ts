@@ -272,7 +272,7 @@ describe('saving a draft', () => {
 
     expect(toastError).toHaveBeenCalledOnce()
     const [message, options] = toastError.mock.calls[0]
-    expect(message).toBe('Draft not saved.')
+    expect(message).toBe('Draft not saved')
     options.action.onClick()
     expect(requestCompose).toHaveBeenCalledWith(
       expect.objectContaining({

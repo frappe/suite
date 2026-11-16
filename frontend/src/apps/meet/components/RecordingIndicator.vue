@@ -2,6 +2,8 @@
 import { Button } from 'frappe-ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
+import { translate as __ } from '@/platform/translation'
+
 import type { RecordingState } from '../composables/useRecording'
 
 const props = withDefaults(defineProps<{ recording: RecordingState; canStop?: boolean }>(), {
@@ -27,13 +29,13 @@ const elapsed = computed(() => {
 })
 
 const interruptionLabel = computed(() => {
-  if (!props.recording.interruption_deadline) return 'Recording interrupted'
+  if (!props.recording.interruption_deadline) return __('Recording interrupted')
   const deadline = props.recording.interruption_deadline.includes('T')
     ? props.recording.interruption_deadline
     : props.recording.interruption_deadline.replace(' ', 'T')
   const timestamp = /(?:Z|[+-]\d\d:\d\d)$/.test(deadline) ? deadline : `${deadline}Z`
   const seconds = Math.max(0, Math.ceil((new Date(timestamp).getTime() - now.value) / 1000))
-  return `Recording interrupted - ${seconds}s`
+  return __('Recording interrupted - {0}s', [seconds])
 })
 
 onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 1000)))
@@ -46,11 +48,11 @@ onUnmounted(() => timer && clearInterval(timer))
     variant="subtle"
     size="sm"
     :icon-left="recording.status === 'Interrupted' ? 'lucide-triangle-alert' : 'lucide-circle-stop'"
-    :label="recording.status === 'Interrupted' ? interruptionLabel : `REC ${elapsed}`"
+    :label="recording.status === 'Interrupted' ? interruptionLabel : __('REC {0}', [elapsed])"
     :disabled="!canStop || recording.status === 'Stopping'"
     role="status"
     aria-live="polite"
-    :tooltip="canStop ? 'Stop recording' : 'This meeting is being recorded'"
+    :tooltip="canStop ? __('Stop recording') : __('This meeting is being recorded')"
     @click="emit('click')"
   />
 </template>

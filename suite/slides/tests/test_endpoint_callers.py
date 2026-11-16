@@ -21,6 +21,8 @@ RETIRED = {
     "add": "live: the editor uploads to it directly (MEDIA_UPLOAD_ENDPOINT), as multipart, not through a route",
     "documents.access": "Drive's session gives the role; only the offline-copy warm list asks it",
     "documents.isComposite": "documents.get returns is_composite",
+    "documents.applyTheme": "no caller since 5c02e0d44: a deck is converted on open and themed in its room; "
+    "kept until the rows write path is removed",
 }
 
 APP = Path(frappe.get_app_path("suite"))

@@ -88,6 +88,12 @@ export class Room implements CollabRoom {
   readonly copier = new Copier(this)
   readonly fence = new RestoreFence(() => this.notifyListeners())
   private connecting: Promise<void> | null = null
+  // Each writer's next clock in what the server committed, as heard here; what adopted work is checked against
+  readonly committed: Map<number, number>
+  // Sessions a claim with no answer left on the device
+  unclaimed: ReadonlySet<string> = new Set()
+  // Adoption and the claims made offline run one at a time, so no box is adopted between a claim and the bind
+  private adopting: Promise<unknown> = Promise.resolve()
   private unsentSince = 0
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private listeners = new Set<() => void>()
@@ -107,6 +113,8 @@ export class Room implements CollabRoom {
     this.epoch = init.epoch
     this.writable = init.canWrite
     this.bound = init.bound
+    // Offline, the device copy: only rows the server sent
+    this.committed = yjs.decodeStateVector(yjs.encodeStateVector(init.doc))
     this.device = null
     if (options.device) {
       this.device = new Device(options.device)
@@ -163,7 +171,7 @@ export class Room implements CollabRoom {
     this.ownOutbox.release = releaseOwnLock ?? (() => {})
     this.takeOpening(opening)
     if (this.writable) {
-      await adoptLeftovers(this)
+      await this.adopt()
     }
 
     if (this.options.socket && !this.closed) {
@@ -282,7 +290,32 @@ export class Room implements CollabRoom {
       return this.claimAndBind()
     }
 
+    // A claim with no answer is asked again before anyone else's rows are taken
+    if (this.unclaimed.size) {
+      this.connecting ??= this.retryClaims().finally(() => {
+        this.connecting = null
+      })
+    }
+
     return this.connecting ?? this.puller.pullNow()
+  }
+
+  private async retryClaims() {
+    await this.adopt(new Set(this.unclaimed))
+    await this.puller.pullNow()
+  }
+
+  private serially<T>(work: () => Promise<T>): Promise<T> {
+    const run = (async () => {
+      await this.adopting
+      return work()
+    })()
+    this.adopting = run.catch(() => {})
+    return run
+  }
+
+  private adopt(only?: ReadonlySet<string>) {
+    return this.serially(() => adoptLeftovers(this, only))
   }
 
   // Waits out each retry delay rather than pushing again at once
@@ -668,48 +701,91 @@ export class Room implements CollabRoom {
       this.requestPersistentStorage()
     }
 
-    if (this.realtime?.live) return
+    // Rows come live, but a claim with no answer is asked again every tick
+    if (this.realtime?.live) {
+      if (this.unclaimed.size) {
+        void this.pull()
+      }
+
+      return
+    }
 
     this.realtime?.reconnect()
     const coEditing =
       document.visibilityState === 'visible' && Date.now() - this.lastRemoteAt < CO_EDITING_MS
     // Work held while the server is out of reach goes out on the first tick that reaches it
-    const hasWorkWaiting = this.unsent || this.unheard || !this.bound
+    const hasWorkWaiting = this.unsent || this.unheard || !this.bound || this.unclaimed.size > 0
     if (coEditing || hasWorkWaiting || ++this.ticks % QUIET_TICKS === 0) {
       void this.pull()
     }
   }
 
-  // Claim the clientID chosen offline, send what was typed, and only then take anyone else's rows
+  // Claim the clientIDs chosen offline, send what was typed, and only then take anyone else's rows
   private claimAndBind(): Promise<void> {
-    const bindAfterClaim = async (answer: string | null) => {
-      if (answer === null || this.closed) return
+    this.connecting ??= this.bindAndSend().finally(() => {
+      this.connecting = null
+    })
+    return this.connecting
+  }
 
-      if (answer !== 'ok') {
-        // Other tabs' work never used this clientID, so a later tab can still send it
-        for (const box of this.outboxes.filter((other) => other.adopted)) {
-          box.release()
-        }
+  private async bindAndSend() {
+    const isBound = await this.serially(() => this.claimEach())
+    if (!isBound) return
 
-        this.outboxes = [this.ownOutbox]
-        const reason = lostReason(answer)
-        await this.stopForGood(reason)
-        return
+    await this.adopt()
+    await this.flush()
+    await this.puller.pullNow()
+  }
+
+  // Adopted clientIDs oldest first; false once one gets no answer or is refused
+  private async claimAdopted() {
+    for (let box = this.awaitingBox(); box; box = this.awaitingBox()) {
+      const answer = await claimClientId(this, box)
+      if (answer === null || this.closed) {
+        return false
       }
 
-      this.bound = true
-      this.onServerHeard()
-      await adoptLeftovers(this)
-      await this.flush()
-      await this.puller.pullNow()
+      if (answer !== 'ok') {
+        // This tab's own work may sit on the adopted work, so none of it goes
+        await this.stopForGood(lostReason(answer))
+        return false
+      }
+
+      box.awaitsClaim = false
     }
 
-    this.connecting ??= claimClientId(this, this.ownOutbox)
-      .then(bindAfterClaim)
-      .finally(() => {
-        this.connecting = null
-      })
-    return this.connecting
+    return true
+  }
+
+  // The adopted clientIDs, then this tab's own; no answer leaves the room unbound for the next tick
+  private async claimEach() {
+    if (!(await this.claimAdopted())) {
+      return false
+    }
+
+    const answer = await claimClientId(this, this.ownOutbox)
+    if (answer === null || this.closed) {
+      return false
+    }
+
+    if (answer !== 'ok') {
+      // Other tabs' work never used this clientID, so a later tab can still send it
+      for (const box of this.outboxes.filter((other) => other.adopted)) {
+        box.release()
+      }
+
+      this.outboxes = [this.ownOutbox]
+      await this.stopForGood(lostReason(answer))
+      return false
+    }
+
+    this.bound = true
+    this.onServerHeard()
+    return true
+  }
+
+  private awaitingBox() {
+    return this.outboxes.find((box) => box.awaitsClaim)
   }
 
   private queueOwnUpdate(update: Uint8Array) {
@@ -731,6 +807,9 @@ export class Room implements CollabRoom {
   private onDocUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === REMOTE) {
       this.lastRemoteAt = Date.now()
+      for (const [client, to] of yjs.parseUpdateMeta(update).to) {
+        this.committed.set(client, Math.max(this.committed.get(client) ?? 0, to))
+      }
     }
 
     const fromElsewhere = origin === REMOTE || origin === ADOPT
@@ -805,7 +884,7 @@ export class Room implements CollabRoom {
   // Work a tab left when it closed is free to take on, and goes out from here
   private async readDevice(device: Device) {
     if (this.writable && hasLocks()) {
-      await adoptLeftovers(this)
+      await this.adopt()
     }
 
     const held = this.outboxes.map((box) => box.sid)

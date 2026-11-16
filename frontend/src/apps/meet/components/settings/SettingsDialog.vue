@@ -15,7 +15,7 @@
           {{ __('Controls') }}
         </SettingsNavItem>
       </SettingsNavGroup>
-      <SettingsNavGroup :label="meetSettings.label()">
+      <SettingsNavGroup :label="__('Preferences')">
         <SettingsNavItem v-for="tab in tabs" :key="tab.id" :value="tab.id">
           <template #prefix>
             <span :class="[tab.icon, 'text-ink-gray-6 size-4 shrink-0']" aria-hidden="true" />

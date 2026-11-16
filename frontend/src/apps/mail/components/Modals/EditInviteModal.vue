@@ -3,12 +3,12 @@
     v-if="draft"
     v-model:open="show"
     v-bind="{
-      title: __('Edit Invite'),
+      title: __('Edit invite'),
       actions: [
         ...(canSendInvite
           ? [
               {
-                label: __('Send Invitation Email'),
+                label: __('Send invitation email'),
                 loading: send.isPending,
                 onClick: sendInvitationEmail,
               },
@@ -29,7 +29,7 @@
         <FormControl
           v-model="draft.account"
           type="email"
-          :label="__('Assigned business email')"
+          :label="__('Assigned business email address')"
           :disabled="!isEditableInvite"
           :description="
             __(
@@ -40,7 +40,7 @@
         <FormControl
           v-model="inviteAdmin"
           type="checkbox"
-          :label="__('Business Admin')"
+          :label="__('Business admin')"
           :disabled="!isEditableInvite"
         />
         <FormControl
@@ -61,12 +61,12 @@
         <!-- Fixed when the request was created (set_only_once on the doctype), so the roles the
 				account is created with cannot be changed on an existing invite. -->
         <FormControl :label="__('Role')" :value="roleLabel" disabled />
-        <FormControl :label="__('Backup Email')" :value="draft.backup_email" disabled />
-        <FormControl :label="__('Invited By')" :value="draft.invited_by" disabled />
+        <FormControl :label="__('Backup email address')" :value="draft.backup_email" disabled />
+        <FormControl :label="__('Invited by')" :value="draft.invited_by" disabled />
         <FormControl
           v-model="inviteExpiresAt"
           type="datetime-local"
-          :label="__('Expires At')"
+          :label="__('Expires at')"
           :description="__('The request can no longer create an account after this time.')"
           :disabled="!isEditableInvite"
         />
@@ -76,20 +76,20 @@
 				request is created (set_only_once on the doctype), so they are all shown read-only. -->
         <Switch
           :model-value="Boolean(draft.disable_receiving)"
-          :label="__('Disable Receiving')"
+          :label="__('Disable receiving')"
           :description="__('The account can send emails but cannot receive them.')"
           disabled
           class="hover:!bg-surface-base !cursor-default !p-0"
         />
         <Switch
           :model-value="Boolean(draft.send_invite)"
-          :label="__('Send Invite')"
+          :label="__('Send invite')"
           disabled
           class="hover:!bg-surface-base !cursor-default !p-0"
         />
         <template v-if="groupIds.length || mailingListIds.length">
           <hr />
-          <p class="text-ink-gray-5 text-xs font-medium">{{ __('Account Details') }}</p>
+          <p class="text-ink-gray-5 text-xs font-medium">{{ __('Account details') }}</p>
           <FormControl
             v-if="groupIds.length"
             :label="__('Groups')"
@@ -98,7 +98,7 @@
           />
           <FormControl
             v-if="mailingListIds.length"
-            :label="__('Mailing Lists')"
+            :label="__('Mailing lists')"
             :value="mailingListLabels.join(', ')"
             disabled
           />
@@ -115,6 +115,7 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import { raiseToast } from '@/apps/mail/utils'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
 const { inviteID } = defineProps<{ inviteID: string }>()
@@ -189,12 +190,12 @@ async function saveInvite() {
     is_admin: !!draft.value.is_admin,
   })
   show.value = false
-  raiseToast(__('Invite updated.'))
+  raiseToast(__('Invite updated'))
   emit('reloadInvites')
 }
 async function sendInvitationEmail() {
   if (!canSendInvite.value) return
   await send.run({ name: inviteID })
-  raiseToast(__('Invitation email sent.'))
+  raiseToast(__('Invitation email sent'))
 }
 </script>
