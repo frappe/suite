@@ -95,7 +95,6 @@ class TestSuiteAdminOverride(IntegrationTestCase):
     def test_an_admin_transfers_a_departed_users_content_without_any_grant(self):
         private = store_file(self._as(self.owner), self.owner_root, "handover.txt", BytesIO(b"notes"))
         frappe.set_user("Administrator")
-        destination = drive.ensure_folder(self.other_root, "From departed")
         update_user(self.owner, enabled=False)
 
         self._as(self.admin)
@@ -103,12 +102,12 @@ class TestSuiteAdminOverride(IntegrationTestCase):
             patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=False),
             patch("suite.drive._core.offboarding.is_suite_cloud_configured", return_value=False),
         ):
-            preview = drive.preview_user_transfer(self.owner, destination)
+            preview = drive.preview_user_transfer(self.owner, self.other)
             result = drive.transfer_user_drive(
-                self.owner, destination, preview["fingerprint"], confirm_access=True
+                self.owner, self.other, None, preview["fingerprint"], confirm_access=True
             )
         self.assertTrue(result["complete"], result)
-        self.assertEqual(_node(private).parent_node, destination)
+        self.assertEqual(_node(_node(private).parent_node).parent_node, self.other_root)
         self.assertFalse(frappe.db.exists("Drive Grant", {"node": private, "principal": self.admin}))
 
     def test_the_patch_gives_an_admin_the_creator_grant_the_override_skipped(self):
