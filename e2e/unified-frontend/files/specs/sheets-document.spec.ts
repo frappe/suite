@@ -93,9 +93,8 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	await expect(versions.getByRole("heading", { name: "Versions" })).toBeVisible();
 	await expect(comments).toHaveCount(0);
 	await versions.getByRole("button", { name: "Save version" }).click();
-	const prompt = page.getByRole("dialog", { name: "Save a version" });
-	await prompt.getByRole("textbox").fill("Journey version");
-	await prompt.getByRole("button", { name: "Save" }).click();
+	await versions.getByRole("textbox", { name: "Version name" }).fill("Journey version");
+	await versions.getByRole("textbox", { name: "Version name" }).press("Enter");
 	await expect(versions.getByText("Journey version")).toBeVisible();
 	const order = seen.requests.filter(
 		(line) => PUSH.test(line) || (line.includes(`/nodes/${sheet.name}/versions`) && line.startsWith("POST")),
@@ -104,15 +103,16 @@ test("renames, comments and opens versions without a legacy Drive call", async (
 	expect(order.at(-1)).toContain("/versions");
 
 	// The room keeps the state a restore replaces as a version of its own.
-	const before = versions.getByRole("listitem").filter({ hasText: "Before restoring “Journey version”" });
+	const before = versions.getByRole("button", { name: /^Before restoring “Journey version”/ });
 	await expect(before).toHaveCount(0);
-	await versions.getByRole("listitem").filter({ hasText: "Journey version" }).getByRole("button", { name: "More version actions" }).click();
-	await page.getByRole("menuitem", { name: "Restore this version" }).click();
+	// A row's Restore shows once the pointer is on the row
+	await versions.getByRole("button", { name: /^Journey version/ }).hover();
+	await versions.getByRole("button", { name: "Restore this version" }).click();
 	await page.getByRole("dialog", { name: "Restore this version?" }).getByRole("button", { name: "Restore" }).click();
 	await expect(page.getByText("Version restored")).toBeVisible();
 	await expect(before).toHaveCount(1);
 	// The first row is the current version; the newest saved version comes next.
-	await expect(versions.getByRole("listitem").nth(1)).toContainText("Before restoring “Journey version”");
+	await expect(versions.locator("button[aria-pressed]").nth(1)).toContainText("Before restoring “Journey version”");
 	await expect(page.getByRole("textbox", { name: "Spreadsheet title" })).toHaveValue("Renamed sheet");
 
 	// Share opens the Drive share dialog for a manager (stage 9).

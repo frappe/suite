@@ -133,7 +133,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Five files need more than the free space: the confirm says how many fit, and its button says how many it will upload." },
 		},
 		quotaNoneFit: {
-			meta: { description: "One file larger than the free space: nothing to choose, so no dialog, only an error toast with what it needs and Manage storage." },
+			meta: { description: "One file larger than the free space: nothing to choose, so no dialog, only an error toast with what it needs and Storage." },
 		},
 	},
 });
@@ -359,9 +359,9 @@ export const upload = defineFlow<Event>({
 		async PICK_TOO_BIG(scene) {
 			await leaveFree(scene, 1024 * 1024);
 			await pick(scene, largeFiles(1));
-			await expect(scene.page.getByText("Not enough space to upload")).toBeVisible();
-			await expect(scene.page.getByText("This file needs 24 MB, and only 1 MB is free.")).toBeVisible();
-			await expect(scene.page.getByRole("button", { name: "Manage storage" })).toBeVisible();
+			await expect(scene.page.getByText("Not enough space", { exact: true })).toBeVisible();
+			await expect(scene.page.getByText("Needs 24 MB, only 1 MB free")).toBeVisible();
+			await expect(scene.page.getByRole("button", { name: "Storage", exact: true })).toBeVisible();
 			await expect(scene.page.getByRole("dialog")).toBeHidden();
 		},
 	},

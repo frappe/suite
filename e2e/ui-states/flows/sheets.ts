@@ -213,7 +213,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { PREVIEW_VERSION: "versionPreview" },
 		},
 		versionPreview: {
-			meta: { description: "The automatic version, taken when the sheet was empty, shown read-only next to the versions list. The bar over the grid has Back, the version's name and time, Name this version, Make a copy and Restore this version. It says “No cells differ from the current version”, though every filled cell differs. The header switches to View only with three menus." },
+			meta: { description: "The automatic version, taken when the sheet was empty, shown read-only next to the versions list. The bar over the grid has Back, the version's name and time, Make a copy and Restore this version. It says “No cells differ from the current version”, though every filled cell differs. The header switches to View only with three menus." },
 		},
 		offlineUnsaved: {
 			meta: { description: "Offline with an edit not yet sent: an Offline badge in the header and the edit kept in the grid. Unlike Writer, the header still says Edited just now, not that changes will sync." },
@@ -277,6 +277,11 @@ async function gridReady(page: Page): Promise<void> {
 async function openMenu(page: Page, name: string, item: string): Promise<void> {
 	await page.getByRole("navigation", { name: "Spreadsheet menus" }).getByRole("menuitem", { name, exact: true }).click();
 	await expect(page.getByRole("menuitem", { name: item }).first()).toBeVisible();
+}
+
+/** The rows of the Versions panel: Current version first, then each saved one, newest first. */
+function versionRows(page: Page): Locator {
+	return page.getByRole("complementary", { name: "Versions" }).locator("button[aria-pressed]");
 }
 
 async function openDocumentMenu(page: Page, item: string): Promise<void> {
@@ -472,10 +477,10 @@ export const sheets = defineFlow<Event, BaseScene>({
 		},
 		async OPEN_VERSIONS(scene) {
 			await openDocumentMenu(scene.page, "Versions");
-			await expect(scene.page.getByRole("button", { name: /^Automatic version/ }).first()).toBeVisible();
+			await expect(versionRows(scene.page).nth(1)).toBeVisible();
 		},
 		async PREVIEW_VERSION(scene) {
-			await scene.page.getByRole("button", { name: /^Automatic version/ }).first().click();
+			await versionRows(scene.page).nth(1).click();
 			await expect(scene.page.getByRole("button", { name: "Back to the current version" })).toBeVisible();
 		},
 		async GO_OFFLINE(scene) {

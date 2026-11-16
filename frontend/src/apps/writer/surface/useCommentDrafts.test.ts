@@ -245,7 +245,7 @@ describe('posting a comment on text', () => {
       [null, [], [true]],
     )
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "The text this comment is on wasn't saved, so it wasn't posted",
+      "Comment not posted, as its text wasn't saved",
     )
   })
 
@@ -271,7 +271,7 @@ describe('posting a comment on text', () => {
     await settled()
 
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "The text this comment is on wasn't saved, so it wasn't posted",
+      "Comment not posted, as its text wasn't saved",
     )
   })
 })
@@ -308,7 +308,7 @@ describe('posting a comment on the whole document', () => {
     expect([thread, drafts.value.length, vi.mocked(toast.error).mock.calls]).toEqual([
       null,
       1,
-      [['This comment was already posted with different words. Discard it to remove it.']],
+      [['Already posted with other words. Discard this one.']],
     ])
   })
 

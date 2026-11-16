@@ -383,8 +383,9 @@ describe('Writer surface', () => {
     ) {
       throw new Error('Expected a download action on the refusal toast')
     }
-    expect([message, action.label]).toEqual([
-      "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: crashed.",
+    expect([message, options.description, action.label]).toEqual([
+      "This version can't be restored",
+      'Reason: crashed.',
       'Download',
     ])
     expect(room.restoreVersion).not.toHaveBeenCalled()

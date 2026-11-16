@@ -134,8 +134,9 @@ describe('restoring a version of a converted presentation', () => {
 
       expect(notice).toEqual({
         isRestored: false,
-        message:
-          "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: it was saved while this was a combined presentation, which has no slides of its own.",
+        message: "This version can't be restored",
+        detail:
+          'Reason: it was saved while this was a combined presentation, which has no slides of its own.',
         canDownload: true,
       })
       expect(room.restoreVersion).not.toHaveBeenCalled()

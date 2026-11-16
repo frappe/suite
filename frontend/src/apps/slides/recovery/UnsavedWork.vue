@@ -84,7 +84,7 @@ async function discard(copy: RecoveryCopy) {
   try {
     await discardCopy(copy)
   } catch {
-    toast.error(__("Could not discard the copy. It's still kept on this device."))
+    toast.error(__('Could not discard the copy'))
   }
   await refresh()
 }

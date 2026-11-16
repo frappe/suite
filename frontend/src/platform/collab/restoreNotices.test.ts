@@ -97,14 +97,10 @@ describe('restore messages for a presentation', () => {
     ])
   })
 
-  it('names the presentation when a restore changed nothing or could not keep it first', () => {
-    expect([
-      noticeFor({ outcome: 'unchanged' }, 'presentation').message,
-      noticeFor({ outcome: 'refused', refusal: 'milestone_failed' }, 'presentation').message,
-    ]).toEqual([
+  it('names the presentation when a restore changed nothing', () => {
+    expect(noticeFor({ outcome: 'unchanged' }, 'presentation').message).toBe(
       'The presentation already matches this version',
-      "The presentation as it is now couldn't be kept as a version first, so nothing was restored",
-    ])
+    )
   })
 
   it('names the presentation when another person’s restore names no version', async () => {

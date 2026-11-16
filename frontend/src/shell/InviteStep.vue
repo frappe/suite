@@ -60,7 +60,7 @@ const displayError = computed(() => {
   if (clientError.value) return clientError.value
   const error = invite.error
   if (error instanceof TransportError && error.type === 'OutgoingEmailError')
-    return __('Outgoing email account not set up.')
+    return __('Outgoing email is not set up. Ask your system administrator to set it up.')
   return error?.message ?? ''
 })
 

@@ -184,15 +184,15 @@ const writes = createWriteGate(
     if (!room.value?.status.unsentCount) {
       // Access came back within the bound, so nothing turned read-only
       if (!writes.writable.value) {
-        toast.warning(__('Editing access changed. This document is now read-only.'))
+        toast.warning(__('This document is now view only'))
       }
 
       return
     }
 
-    toast.warning(__('Editing access changed. Your unsaved changes are kept on this device.'), {
+    toast.warning(__("Can't edit now. Unsaved changes are kept on this device."), {
       duration: Number.POSITIVE_INFINITY,
-      action: { label: __('Download my changes'), onClick: () => downloadChanges(html) },
+      action: { label: __('Download'), onClick: () => downloadChanges(html) },
     })
   },
   () => void regainAccess(),
@@ -428,7 +428,7 @@ async function confirmRestore(shown: DocumentVersion) {
     images = await missingImages(props.session, versionImages(body))
   } catch (error) {
     console.error(error)
-    toast.error(__("This version's images could not be checked, so nothing was restored"))
+    toast.error(__('Could not restore the version'))
     return
   } finally {
     isRestoringVersion.value = false
@@ -458,6 +458,7 @@ async function restoreShownVersion(shown: DocumentVersion, images: MissingImage[
     const notice = await restoreBody(shown)
     if (notice.canDownload) {
       toast.error(notice.message, {
+        description: notice.detail,
         action: { label: __('Download'), onClick: () => void downloadVersion(shown) },
       })
       return

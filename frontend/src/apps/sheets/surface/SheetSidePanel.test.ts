@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
-import { useDocumentComments, type DocumentSession, type DocumentThread } from '@/apps/drive'
+import {
+  useDocumentComments,
+  type DocumentPanel,
+  type DocumentSession,
+  type DocumentThread,
+  type DocumentVersion,
+} from '@/apps/drive'
 import { translationPlugin } from '@/platform/translation'
 
 import { cellCommentAnchors } from './commentPlaces'
 import { cellAnchor } from './records'
-import SheetComments from './SheetComments.vue'
+import SheetSidePanel from './SheetSidePanel.vue'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -224,6 +230,7 @@ function driveHolding(threads: DocumentThread[], canShare: boolean) {
     nodeId: 'node-1',
     canShare: ref(canShare),
     comments: { list, create, reply, resolve },
+    versions: { list: async () => ({ rows: [], next_cursor: null }) },
   })
   return { session, create, list, reply, resolve }
 }
@@ -237,15 +244,23 @@ interface MountOptions {
   canShare?: boolean
   /** The anchor a draft is already started on, as the editor's Comment does. */
   startOn?: string | null
+  /** Which of the two the panel shows. */
+  panel?: DocumentPanel
+  /** The version the surface shows in the grid. */
+  previewedVersion?: DocumentVersion | null
 }
 async function mountComments({
   threads = [],
   canShare = false,
   startOn = null,
+  panel = 'comments',
+  previewedVersion = null,
 }: MountOptions = {}) {
   const drive = driveHolding(threads, canShare)
   const sheets = ['Sheet1', 'Sheet2']
   const goToCell = vi.fn((sheet: string) => sheets.includes(sheet))
+  const onPanel = vi.fn()
+  const onBack = vi.fn()
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp(
@@ -261,13 +276,19 @@ async function mountComments({
         }
 
         return () =>
-          h(SheetComments, {
+          h(SheetSidePanel, {
+            panel,
+            'onUpdate:panel': onPanel,
+            previewedVersion,
             session: drive.session,
             comments,
             sheets,
             canComment: true,
             canEditDocument: true,
             goToCell,
+            isRestoringVersion: false,
+            saveFirst: async () => {},
+            onBack,
           })
       },
     }),
@@ -280,7 +301,7 @@ async function mountComments({
   }
 
   await settle()
-  return { root, goToCell, ...drive }
+  return { root, goToCell, onPanel, onBack, ...drive }
 }
 
 function type(root: HTMLElement, label: string, text: string) {
@@ -312,6 +333,47 @@ function rowButton(root: HTMLElement, text: string) {
 
 const CELL_BOX = 'Add a comment on the cell'
 const WHOLE_BOX = 'Add a comment'
+
+describe('the panel beside the grid', () => {
+  it('keeps keys typed in a comment out of the grid', async () => {
+    const { root } = await mountComments({
+      startOn: cellAnchor({ sheet: 'Sheet1', cell: 'B2' }),
+    })
+    const reachedGrid = vi.fn()
+    window.addEventListener('keydown', reachedGrid)
+
+    root
+      .querySelector(`textarea[aria-label="${CELL_BOX}"]`)!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }))
+    window.removeEventListener('keydown', reachedGrid)
+
+    expect(reachedGrid).not.toHaveBeenCalled()
+  })
+
+  it('asks the surface to close it from its Close button', async () => {
+    const { root, onPanel } = await mountComments()
+
+    root.querySelector<HTMLElement>('button[aria-label="Close panel"]')!.click()
+    await nextTick()
+
+    expect(onPanel.mock.calls).toEqual([[null]])
+  })
+
+  it('leaves a shown version on Escape pressed in the panel, and keeps other keys from the grid', async () => {
+    const shown = fromPartial<DocumentVersion>({ seq: 3, kind: 'named', label: 'Before import' })
+    const { root, onBack } = await mountComments({ panel: 'versions', previewedVersion: shown })
+    const reachedGrid = vi.fn()
+    window.addEventListener('keydown', reachedGrid)
+    const close = root.querySelector('button[aria-label="Close panel"]')!
+
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    expect([onBack.mock.calls.length, reachedGrid.mock.calls.length]).toEqual([0, 0])
+
+    close.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    window.removeEventListener('keydown', reachedGrid)
+    expect(onBack).toHaveBeenCalledOnce()
+  })
+})
 
 describe('commenting on a cell', () => {
   it('puts the cursor in a box for the cell, and posts on that cell', async () => {
@@ -495,7 +557,7 @@ describe('mentioning someone who can’t open the spreadsheet', () => {
     expect(create).toHaveBeenCalledOnce()
     expect([told.successes, told.warnings]).toEqual([
       [],
-      ['Arjun Mehta can’t open this spreadsheet until someone who manages it shares it'],
+      ['Arjun Mehta can’t open this spreadsheet until it’s shared'],
     ])
   })
 

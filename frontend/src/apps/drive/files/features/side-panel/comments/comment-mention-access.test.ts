@@ -94,7 +94,7 @@ describe('naming someone who can’t open the document', () => {
       [],
       ['reply on-text "Over to @[arjun@x.com]"'],
       [],
-      ['arjun can’t open this document until someone who manages it shares it'],
+      ['arjun can’t open this document until it’s shared'],
     ])
   })
 
@@ -131,7 +131,7 @@ describe('naming someone who can’t open the document', () => {
 
     expect([confirmed.asked, warnings]).toEqual([
       ['arjun has been blocked from this presentation'],
-      ['ben can’t open this presentation until someone who manages it shares it'],
+      ['ben can’t open this presentation until it’s shared'],
     ])
   })
 

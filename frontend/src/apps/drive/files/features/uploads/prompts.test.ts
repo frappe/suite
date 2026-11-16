@@ -33,8 +33,8 @@ describe('a batch that does not fit', () => {
   it('offers to manage storage when nothing fits', async () => {
     expect(await prompts().quota(full)).toBe('cancel')
     const [shown] = fake.toasts
-    expect(shown?.message).toBe('Not enough space to upload')
-    expect(shown?.action?.label).toBe('Manage storage')
+    expect(shown?.message).toBe('Not enough space')
+    expect(shown?.action?.label).toBe('Storage')
     shown?.action?.onClick()
     expect(fake.openSettings).toHaveBeenCalledWith('drive.statistics')
   })

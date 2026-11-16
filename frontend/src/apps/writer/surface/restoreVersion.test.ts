@@ -170,12 +170,12 @@ describe('restoreVersion', () => {
       [
         { outcome: 'refused', refusal: 'restoring' },
         false,
-        'Someone else is restoring a version. Try again once it is done.',
+        'Someone else is restoring. Try again soon.',
       ],
       [
         { outcome: 'refused', refusal: 'milestone_failed' },
         false,
-        "The document as it is now couldn't be kept as a version first, so nothing was restored",
+        'Could not save the current state, so nothing was restored',
       ],
       [{ outcome: 'refused' }, false, 'The version was not restored'],
     ]),
@@ -216,26 +216,26 @@ describe('restoreVersion', () => {
   )
 
   it.each([
-    [null, "This version couldn't be upgraded, so it can't be restored. You can download it."],
-    [
-      'too_large',
-      "This version couldn't be upgraded, so it can't be restored. You can download it. Reason: too_large.",
-    ],
-  ])(
-    'offers the download of an old version the converter refuses (%s)',
-    async (reason, message) => {
-      const room = fakeRoom({ outcome: 'landed' })
+    [null, undefined],
+    ['too_large', 'Reason: too_large.'],
+  ])('offers the download of an old version the converter refuses (%s)', async (reason, detail) => {
+    const room = fakeRoom({ outcome: 'landed' })
 
-      const notice = await restoreVersion(room, 4, oldVersion(), [], () =>
-        Promise.resolve({ refused: reason }),
-      )
+    const notice = await restoreVersion(room, 4, oldVersion(), [], () =>
+      Promise.resolve({ refused: reason }),
+    )
 
-      expect([notice, room.restoreVersion.mock.calls.length]).toEqual([
-        { isRestored: false, message, canDownload: true, anchors: {} },
-        0,
-      ])
-    },
-  )
+    expect([notice, room.restoreVersion.mock.calls.length]).toEqual([
+      {
+        isRestored: false,
+        message: "This version can't be restored",
+        detail,
+        canDownload: true,
+        anchors: {},
+      },
+      0,
+    ])
+  })
 
   it('restores nothing when converting an old version fails', async () => {
     const room = fakeRoom({ outcome: 'landed' })
