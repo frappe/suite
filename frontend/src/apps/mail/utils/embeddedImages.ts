@@ -14,23 +14,28 @@ import { randomString } from '@/apps/mail/utils'
  * The uploads take a while and the body goes on being edited meanwhile, so this uploads from the
  * body as it was and hands back the change to make, to whatever the body is once they are done:
  * as HTML, or in an editor's document. An upload that fails leaves its image as it is, for the
- * next save to try again.
+ * next save to try again, and says why in `failures`.
  */
 export const uploadEmbeddedImages = async (
   html: string,
   upload: (file: File) => Promise<{ file_url: string }>,
 ) => {
   const fileUrls = new Map<string, string>()
-  for (const url of new Set(dataUrlsIn(html))) {
+  const failures = new Map<string, unknown>()
+  for (const url of new Set(embeddedImagesIn(html).map((image) => image.url))) {
     try {
       const file = await fileOf(url)
       if (file) fileUrls.set(url, (await upload(file)).file_url)
-    } catch {
+      else failures.set(url, undefined)
+    } catch (error) {
       // Left as a data URL; the next save tries again.
+      failures.set(url, error)
     }
   }
   return {
     uploaded: fileUrls.size > 0,
+    /** Why each image left as a data URL wasn't uploaded, by its URL: the upload's error, if any. */
+    failures,
     /** `current` with each uploaded image pointed at its file. */
     inHtml: (current: string) => (fileUrls.size ? pointAtFiles(current, fileUrls) : current),
     /**
@@ -53,21 +58,37 @@ export const uploadEmbeddedImages = async (
   }
 }
 
-const dataUrlsIn = (html: string) => {
-  if (!html.includes('data:image/')) return []
+/**
+ * The images in `html` still held as data URLs, in the order they show, each with what a person
+ * would know it by: the name its data URL carries, else its alt text, and its place among the images.
+ */
+export const embeddedImagesIn = (html: string) => {
+  if (!/data:/i.test(html)) return []
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  const urls: string[] = []
-  for (const image of doc.querySelectorAll('img[src^="data:image/"]')) {
-    const src = image.getAttribute('src')
-    if (src) urls.push(src)
+  return [...doc.querySelectorAll('img')].flatMap((image, index) => {
+    const url = image.getAttribute('src') ?? ''
+    if (!/^data:/i.test(url.trim())) return []
+    const name = nameIn(url) || image.getAttribute('alt')?.trim() || ''
+    return [{ url, name, position: index + 1 }]
+  })
+}
+
+/** The `name` parameter of a data URL (`data:image/png;name=photo.png;base64,…`), if it has one. */
+const nameIn = (url: string) => {
+  const parameters = url.slice(0, url.indexOf(',')).split(';').slice(1)
+  const name = parameters.find((parameter) => parameter.startsWith('name='))?.slice(5)
+  if (!name) return ''
+  try {
+    return decodeURIComponent(name)
+  } catch {
+    return name
   }
-  return urls
 }
 
 const pointAtFiles = (html: string, fileUrls: Map<string, string>) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   let changed = false
-  for (const image of doc.querySelectorAll('img[src^="data:image/"]')) {
+  for (const image of doc.querySelectorAll('img')) {
     const fileUrl = fileUrls.get(image.getAttribute('src') ?? '')
     if (!fileUrl) continue
     image.setAttribute('src', fileUrl)

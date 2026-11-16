@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, onMounted, useTemplateRef } from 'vue'
 
 import type { ComposeMailData } from '@/apps/mail/types'
+import { raiseToast } from '@/apps/mail/utils'
 import { CustomImageExtension, mailEditorKit } from '@/apps/mail/utils/text-editor'
 
 import { useComposeMail } from './useComposeMail'
@@ -46,6 +47,7 @@ vi.mock('@/apps/mail/utils', () => ({
     html_body: mail.html_body! + (mail.quoted_content ?? ''),
     attachments: mail.attachments,
   }),
+  formatBytes: (bytes: number) => `${bytes} bytes`,
   raiseError: vi.fn(),
   raiseToast: vi.fn(),
   randomString: () => 'cid1',
@@ -100,7 +102,13 @@ function compose({
   signedInAs = 'maya@example.com',
   host = () => null,
   upload = vi.fn(),
-}: { signedInAs?: string; host?: () => ComposerHost; upload?: Upload } = {}) {
+  maxAttachmentSize,
+}: {
+  signedInAs?: string
+  host?: () => ComposerHost
+  upload?: Upload
+  maxAttachmentSize?: number
+} = {}) {
   let composer!: ReturnType<typeof useComposeMail>
   const app = createApp(
     defineComponent({
@@ -118,7 +126,7 @@ function compose({
       },
     }),
   )
-  app.provide('$user', { data: { name: signedInAs } })
+  app.provide('$user', { data: { name: signedInAs, max_attachment_size: maxAttachmentSize } })
   app.mount(document.createElement('div'))
   apps.push(app)
   return composer
@@ -130,6 +138,7 @@ beforeEach(() => {
   server.updateDraft.mockReset()
   requestCompose.mockReset()
   toastError.mockReset()
+  vi.mocked(raiseToast).mockReset()
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
@@ -448,6 +457,55 @@ describe('an image held in the body as a data URL', () => {
     await composer.saveDraft()
     expect(upload).toHaveBeenCalledTimes(2)
     expect(imagesOf(savedBody(1))).toEqual(['/private/files/pasted.png'])
+  })
+
+  // Gmail and Outlook block data URLs, and base64 can take a mail past the size limit.
+  it('refuses a send whose upload failed, naming the image, and keeps the composer open', async () => {
+    const upload = vi.fn<Upload>().mockRejectedValue(new Error('Server error'))
+    const composer = compose({ upload })
+    composer.onEditorChange(
+      `<div>See this:</div><img src="${png.replace(';base64', ';name=chart.png;base64')}">`,
+    )
+
+    await composer.sendMail()
+
+    expect(server.updateDraft).not.toHaveBeenCalled()
+    expect(open).toBe(true)
+    expect(raiseToast).toHaveBeenCalledWith(expect.stringContaining('chart.png'), 'error')
+  })
+
+  it('refuses a scheduled send the same way, naming an unnamed image by its place', async () => {
+    const upload = vi.fn<Upload>().mockRejectedValue(new Error('Server error'))
+    const composer = compose({ upload })
+    composer.onEditorChange(
+      `<img src="/private/files/logo.png" data-cid="x"><img src="${png}" alt="">`,
+    )
+
+    await expect(composer.sendMail('2026-11-17 09:00:00')).rejects.toThrow(/Image 2\b/)
+    expect(server.updateDraft).not.toHaveBeenCalled()
+    expect(open).toBe(true)
+  })
+
+  it('is refused for its size only on Send, never on an autosave', async () => {
+    const upload = vi.fn<Upload>()
+    // The image is 68 bytes.
+    const composer = compose({ upload, maxAttachmentSize: 50 })
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+
+    await composer.saveDraft()
+    composer.onEditorChange(`<div>See this, again:</div><img src="${png}">`)
+    await composer.saveDraft()
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    // The host's upload is where an editor upload over the limit is refused with a toast.
+    expect(upload).not.toHaveBeenCalled()
+    expect(raiseToast).not.toHaveBeenCalled()
+
+    await composer.sendMail()
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(open).toBe(true)
+    expect(raiseToast).toHaveBeenCalledOnce()
+    expect(raiseToast).toHaveBeenCalledWith(expect.stringMatching(/68 bytes.*50 bytes/), 'error')
   })
 })
 

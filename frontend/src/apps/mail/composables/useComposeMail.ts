@@ -8,7 +8,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
-import { commitAfterUndo, processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
+import {
+  commitAfterUndo,
+  formatBytes,
+  processInlineImages,
+  raiseError,
+  raiseToast,
+} from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import {
   useComposeMail as useComposeRequest,
@@ -17,7 +23,7 @@ import {
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
-import { uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
+import { embeddedImagesIn, uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import {
@@ -73,8 +79,23 @@ interface ComposeMailOptions {
   host: () => EditorHost | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
-  /** How the host uploads an image dropped or pasted into the body, with its own size checks. */
+  /**
+   * How the host uploads an image dropped or pasted into the body, with its own size checks. An
+   * image already in the body is checked for size before it gets here (see `outgoingBody`).
+   */
   uploadInlineImage: typeof uploadFunction
+}
+
+/** A send refused because an image in the body is still a data URL; the message names it. */
+class UnsentImageError extends Error {}
+/** An image in the body over the Mail attachment limit, so not uploaded. */
+class OversizedImageError extends Error {
+  constructor(
+    readonly size: number,
+    readonly limit: number,
+  ) {
+    super()
+  }
 }
 
 /**
@@ -426,6 +447,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
+      if (error instanceof UnsentImageError) raiseToast(error.message, 'error')
     } finally {
       isSending = false
     }
@@ -691,12 +713,19 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // save starting meanwhile leaves these alone. The files are pointed at in the body as it is once
   // they are up, which holds whatever was typed while they went: in the editor's own document when
   // one is mounted, so its caret and anything it is still uploading stay put.
+  //
+  // A send goes with no data URL at all: Gmail and Outlook block them, and base64 can take a mail
+  // past the size limit. One whose upload failed refuses the send, naming the image. A save keeps it
+  // for the next try, quietly: an image over the limit is refused here, not by the host's upload, so
+  // the host's toast for it doesn't come back with every autosave.
   async function outgoingBody({ sending }: { sending: boolean }) {
+    let failures = new Map<string, unknown>()
     if (!options.isUploading?.()) {
       const uploads = await uploadEmbeddedImages(
         mail.html_body + mail.quoted_content,
-        options.uploadInlineImage,
+        uploadEmbeddedImage,
       )
+      failures = uploads.failures
       if (uploads.uploaded) {
         const editor = host()?.editor
         if (editor) {
@@ -706,7 +735,28 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         mail.quoted_content = uploads.inHtml(mail.quoted_content)
       }
     }
+    const [unsent] = sending ? embeddedImagesIn(mail.html_body + (mail.quoted_content ?? '')) : []
+    if (unsent) {
+      const image = unsent.name
+        ? `“${unsent.name}”`
+        : __('Image {0} in the mail', [unsent.position])
+      const failure = failures.get(unsent.url)
+      throw new UnsentImageError(
+        failure instanceof OversizedImageError
+          ? __('{0} is {1}. Mail can attach files up to {2}. Remove it or use a smaller one.', [
+              image,
+              formatBytes(failure.size),
+              formatBytes(failure.limit),
+            ])
+          : __('{0} did not upload, so the mail was not sent. Try again, or remove it.', [image]),
+      )
+    }
     return processInlineImages(mail, { sending })
+  }
+  const uploadEmbeddedImage = async (file: File) => {
+    const limit = user.data?.max_attachment_size
+    if (limit && file.size > limit) throw new OversizedImageError(file.size, limit)
+    return options.uploadInlineImage(file)
   }
   async function updateDraftSubmit({
     submit,

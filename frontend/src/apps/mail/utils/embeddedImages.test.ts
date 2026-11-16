@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { processInlineImages } from '@/apps/mail/utils'
-import { uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
+import { embeddedImagesIn, uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
 
 // A 1×1 transparent PNG, 68 bytes.
 const PNG_BASE64 =
@@ -62,5 +62,33 @@ describe('uploadEmbeddedImages', () => {
 
     expect((await uploadEmbeddedImages(html, upload)).inHtml(html)).toBe(html)
     expect(upload).not.toHaveBeenCalled()
+  })
+
+  it('says why an image was left as a data URL', async () => {
+    const refusal = new Error('Server error')
+    const html = `<img src="${PNG}"><img src="data:text/plain,hello">`
+
+    const uploads = await uploadEmbeddedImages(html, () => Promise.reject(refusal))
+
+    expect([...uploads.failures]).toEqual([
+      [PNG, refusal],
+      ['data:text/plain,hello', undefined],
+    ])
+  })
+})
+
+describe('embeddedImagesIn', () => {
+  it('finds every image still held as a data URL, by the name a person would know it by', () => {
+    const html =
+      `<img src="/private/files/logo.png">` +
+      `<img src="data:image/png;name=floor%20plan.png;base64,${PNG_BASE64}" alt="Plan">` +
+      `<img src="${PNG}" alt="Signature">` +
+      `<p><img src="DATA:image/png;base64,${PNG_BASE64}"></p>`
+
+    expect(embeddedImagesIn(html).map(({ name, position }) => [name, position])).toEqual([
+      ['floor plan.png', 2],
+      ['Signature', 3],
+      ['', 4],
+    ])
   })
 })
