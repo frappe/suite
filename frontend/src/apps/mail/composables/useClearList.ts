@@ -75,6 +75,7 @@ export const useClearList = (target: () => ClearTarget) => {
     })
     if (cleared.length) {
       const [done, undone] = said(action, mail)
+      // Undone is said once it lands: the list fills again only then.
       setUndoAction(() =>
         raiseOptimisticToast(
           Promise.all(
@@ -84,7 +85,7 @@ export const useClearList = (target: () => ClearTarget) => {
                 : client.mutation(api.mail.messages.setFolders, { account, mails: mails ?? [] }),
             ),
           ),
-          undone,
+          () => undone,
         ),
       )
       raiseToast(done, 'success', { label: __('Undo'), onClick: undo })

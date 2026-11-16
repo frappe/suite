@@ -44,7 +44,8 @@ export const useClearReturned = () => {
               ),
             ),
           ),
-          many ? __('Threads moved back') : __('Thread moved back'),
+          // Said once it lands: the rows come back only then.
+          () => (many ? __('Threads moved back') : __('Thread moved back')),
         ),
     )
   }
