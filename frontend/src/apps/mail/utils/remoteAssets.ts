@@ -44,12 +44,17 @@ const cssLetter = (letter: string) => {
 const CSS_STRING = String.raw`"(?:[^"\\\n\r\f]|\\[\s\S])*(?:"|$)|'(?:[^'\\\n\r\f]|\\[\s\S])*(?:'|$)`
 const CSS_UNQUOTED_URL = String.raw`(?:[^)\s"'(\\]|\\[\s\S])*`
 
+// An attribute selector (`a[href^="https://"]`), whose string is a value to compare against, never
+// fetched. It holds no brace, paren or semicolon outside its strings, so it can't run on into a rule.
+const CSS_ATTRIBUTE_SELECTOR = String.raw`\[(?:[^\][{}();"'\\]|\\[\s\S]|${CSS_STRING})*\]`
+
 // Read left to right as the browser tokenizes, so a quote inside a comment or an escaped one can't
-// hide what follows it: comments and escapes pass through untouched, and every url(…) and string
-// (`@import "…"`, `image-set("…")`) is judged by what it decodes to.
+// hide what follows it: comments, escapes and attribute selectors pass through untouched, and every
+// other url(…) and string (`@import "…"`, `image-set("…")`) is judged by what it decodes to.
 const CSS_REFERENCE = new RegExp(
   String.raw`/\*[\s\S]*?(?:\*/|$)` +
     String.raw`|${[...'url'].map(cssLetter).join('')}\(\s*(${CSS_STRING}|${CSS_UNQUOTED_URL})` +
+    `|${CSS_ATTRIBUTE_SELECTOR}` +
     `|(${CSS_STRING})` +
     String.raw`|\\[\s\S]`,
   'gi',

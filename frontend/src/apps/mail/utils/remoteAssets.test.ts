@@ -38,4 +38,31 @@ describe('remote content in a message’s CSS', () => {
     expect(blocked).not.toContain('tracker')
     expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
   })
+
+  it('keeps a rule that only compares a link against an address, with nothing to offer', () => {
+    const html = `
+      <style>
+        a[href^="https://"] { color: #0969da; }
+        a[href*='//example.com/unsubscribe'] { color: #57606a; }
+      </style>
+      <p><a href="https://example.com">Read online</a></p>`
+
+    const css = stylesheets(blockRemoteAssets(html))
+    expect(css).toContain('a[href^="https://"] { color: #0969da; }')
+    expect(css).toContain("a[href*='//example.com/unsubscribe'] { color: #57606a; }")
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(false)
+  })
+
+  it('still withholds an import that follows an attribute selector', () => {
+    const html = `
+      <style>
+        a[href^="https://"] { color: #0969da; }
+        @import "https://fonts.example.com/display.css";
+      </style>`
+
+    const css = stylesheets(blockRemoteAssets(html))
+    expect(css).not.toContain('fonts.example.com')
+    expect(css).toContain('a[href^="https://"]')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
 })
