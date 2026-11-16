@@ -45,6 +45,7 @@ VERSION_FIELDS = (
     "label",
     "pinned",
     "actor",
+    "owner",
     "size",
     "blob",
     "creation",
@@ -142,7 +143,7 @@ def list_versions(
         limit=window,
         start=offset,
     )
-    return page_of(rows, offset, len(rows), window)
+    return page_of(_with_deleted_authors(rows, principals), offset, len(rows), window)
 
 
 def read_version(principals: Principals, node: str, seq: int):
@@ -260,7 +261,7 @@ def label_version(
         raise
     else:
         frappe.db.release_savepoint(savepoint)
-    return frappe._dict(version, **changes)
+    return _with_deleted_authors([frappe._dict(version, **changes)], principals)[0]
 
 
 def get_version(principals: Principals, node: str, seq: int) -> frappe._dict:
@@ -269,7 +270,33 @@ def get_version(principals: Principals, node: str, seq: int) -> frappe._dict:
     current = _node(node)
     require_history_reader(current, principals)
     _require_version_node(current)
-    return _version(current.name, seq)
+    return _with_deleted_authors([_version(current.name, seq)], principals)[0]
+
+
+def _with_deleted_authors(rows: list[frappe._dict], principals: Principals) -> list[frappe._dict]:
+    """Set each row's `deleted_author`: the email of who took it when only the row's owner still names them.
+
+    The legacy port credits a version to Guest when its author's User row is
+    gone, as `actor` is a Link to User. The row's `owner` keeps the legacy
+    author's email. Guest alone does not mark that case: a version can be
+    credited to a Guest who edited through a link while its owner is whoever's
+    request took it, as `touches.version_edits` does. Such an owner has a User
+    row, so an owner with none is the deleted author.
+
+    A Guest reader gets None for every row. The old apps showed version
+    history to signed-in users only, so a share link must not reveal the
+    email now.
+    """
+    candidates = {
+        row.owner for row in rows if row.actor == "Guest" and row.get("owner") and row.owner != "Guest"
+    }
+    deleted = set()
+    if candidates and principals.user != "Guest":
+        existing = frappe.get_all("User", filters={"name": ["in", list(candidates)]}, pluck="name")
+        deleted = candidates.difference(existing)
+    for row in rows:
+        row.deleted_author = row.owner if row.actor == "Guest" and row.get("owner") in deleted else None
+    return rows
 
 
 def delete_version(principals: Principals, node: str, seq: int) -> None:

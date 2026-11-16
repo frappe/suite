@@ -563,6 +563,9 @@ class VersionShape(TypedDict):
     actor: str
     # The actor as a person, so a history shows their name
     person: Person
+    # The email of who took a version the legacy port credited to Guest, as
+    # their account was deleted; None otherwise, and always None to a Guest.
+    deleted_author: str | None
     size: int
     creation: str | None
 
@@ -831,6 +834,7 @@ def version_shape(row: Mapping, known: Mapping[str, Person] | None = None) -> Ve
         "pinned": int(row.get("pinned") or 0),
         "actor": actor,
         "person": known[actor],
+        "deleted_author": row.get("deleted_author"),
         "size": int(row.get("size") or 0),
         "creation": stamp(row.get("creation")),
     }
