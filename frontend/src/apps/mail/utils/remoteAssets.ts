@@ -45,10 +45,22 @@ const CSS_ESCAPED = String.raw`\\(?:\r\n|\r(?!\n)|[^\r])`
 // A comment that ends at its first `*/`, spelled so it can't also match a run of comments as one.
 const CSS_COMMENT = String.raw`/\*[^*]*\*+(?:[^*/][^*]*\*+)*/`
 
-// A string runs to its closing quote or the end of the stylesheet; one broken by a newline is no
-// string to the browser either, so it doesn't match.
-const CSS_STRING = String.raw`"(?:[^"\\\n\r\f]|${CSS_ESCAPED})*(?:"|$)|'(?:[^'\\\n\r\f]|${CSS_ESCAPED})*(?:'|$)`
-const CSS_UNQUOTED_URL = String.raw`(?:[^)\s"'(\\]|${CSS_ESCAPED})*`
+// The scan must end every string, url and name where the browser's tokenizer does (CSS Syntax 3,
+// "Consume a token"), or a quote or `/*` it reads as opening something can hide a url() after it.
+
+// Whitespace as CSS has it. Unlike `\s` it takes no no-break space, so a url( that starts with one
+// and a quote is an unquoted url.
+const CSS_WHITESPACE = String.raw`[ \t\n\r\f]`
+// A string runs to its closing quote or the end of the stylesheet. One broken by a newline ends
+// just before it, and the browser reads on from the newline.
+const CSS_STRING = String.raw`"(?:[^"\\\n\r\f]|${CSS_ESCAPED})*(?:"|$|(?=[\n\r\f]))|'(?:[^'\\\n\r\f]|${CSS_ESCAPED})*(?:'|$|(?=[\n\r\f]))`
+// An unquoted url runs to the next unescaped `)`. A space, quote, `(` or comment inside makes it a
+// bad url to the browser, which still runs to that `)` ("Consume the remnants of a bad url").
+const CSS_UNQUOTED_URL = String.raw`(?:[^)\\]|${CSS_ESCAPED})*`
+// A run of name characters, with the `#` or `@` that starts a hash or at-keyword. The browser reads
+// `xurl(`, `#url(`, `\78 url(` or `\Aurl(` as one name and a `(`, never as a url, so a `url(` only
+// counts where a name starts. A backslash before a newline is no escape and ends the name.
+const CSS_NAME = String.raw`[#@]?(?:[\w\-\0\u0080-\uffff]|\\[\da-f]{1,6}(?:\r\n|[ \t\r\n\f])?|\\[^\r\n\f\da-f])+`
 
 // An attribute selector (`a[href^="https://"]`), whose string is a value to compare against, never
 // fetched. It holds no brace, paren or semicolon outside its strings, so it can't run on into a rule.
@@ -56,13 +68,14 @@ const CSS_UNQUOTED_URL = String.raw`(?:[^)\s"'(\\]|${CSS_ESCAPED})*`
 const CSS_ATTRIBUTE_SELECTOR = String.raw`\[(?:${CSS_COMMENT}|/(?!\*)|[^\][{}();"'\\/]|${CSS_ESCAPED}|${CSS_STRING})*\]`
 
 // Read left to right as the browser tokenizes, so a quote inside a comment or an escaped one can't
-// hide what follows it: comments, escapes and attribute selectors pass through untouched, and every
-// other url(…) and string (`@import "…"`, `image-set("…")`) is judged by what it decodes to.
+// hide what follows it: comments, escapes, names and attribute selectors pass through untouched, and
+// every other url(…) and string (`@import "…"`, `image-set("…")`) is judged by what it decodes to.
 const CSS_REFERENCE = new RegExp(
   String.raw`/\*[\s\S]*?(?:\*/|$)` +
-    String.raw`|${[...'url'].map(cssLetter).join('')}\(\s*(${CSS_STRING}|${CSS_UNQUOTED_URL})` +
+    String.raw`|${[...'url'].map(cssLetter).join('')}\(${CSS_WHITESPACE}*(${CSS_STRING}|${CSS_UNQUOTED_URL})` +
     `|${CSS_ATTRIBUTE_SELECTOR}` +
     `|(${CSS_STRING})` +
+    `|${CSS_NAME}` +
     `|${CSS_ESCAPED}`,
   'gi',
 )

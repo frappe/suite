@@ -101,4 +101,59 @@ describe('remote content in a message’s CSS', () => {
     expect(blockRemoteAssets(html)).not.toContain('evil.example')
     expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
   })
+
+  // The browser drops a url() with a quote, space, `(` or comment in it as one bad url running to
+  // the next `)`, then fetches the url() after it. Ending the bad url early would leave its quote
+  // or comment opening something that hides that url().
+  it.each([
+    ['a double quote', `.a { --x: url(a"b); background: url(https://evil.example/x.png) } /*"*/`],
+    ['a single quote', `.a { --x: url(a'b); background: url(https://evil.example/x.png) } /*'*/`],
+    [
+      'a space and a quote',
+      `.a { --x: url(a "b); background: url(https://evil.example/x.png) } /*"*/`,
+    ],
+    ['a comment', `.a { --x: url(a /*); background: url(https://evil.example/x.png) } /**/`],
+    [
+      'an opening paren',
+      `.a { --x: url(a("b); background: url(https://evil.example/x.png) } /*"*/`,
+    ],
+    [
+      'a no-break space and a quote',
+      `.a { --x: url(\u00a0"b); background: url(https://evil.example/x.png) } /*"*/`,
+    ],
+    ['a quote, before an import', `@import url(a"b); @import "https://evil.example/x.css"; /*"*/`],
+  ])('withholds what follows a bad url() holding %s', (_, css) => {
+    const html = `<style>${css}</style><p>Hello</p>`
+
+    expect(stylesheets(blockRemoteAssets(html))).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
+
+  it('withholds what follows a bad url() in an inline style', () => {
+    const html = `<div style='--x: url(a"b); background: url(https://evil.example/x.png); --y: "'>Hi</div>`
+
+    expect(blockRemoteAssets(html)).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
+
+  // A string broken by a newline ends just before it, and the browser reads on from there.
+  it('withholds what follows a string broken by a newline', () => {
+    const html = `<style>.a { --x: "b /*\n; background: url(https://evil.example/x.png) } /**/</style>`
+
+    expect(stylesheets(blockRemoteAssets(html))).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
+
+  // Where `url(` ends a longer name, the browser reads a plain function, hash or at-keyword, and a
+  // quote after it opens a string. Taking it for a url() would read past that string's `)`.
+  it.each([
+    ['a function', `xurl(`],
+    ['a hash', `#url(`],
+    ['an escaped letter', `\\78 url(`],
+  ])('withholds what follows `url(` at the end of %s', (_, name) => {
+    const html = `<style>.a { --x: ${name}a"b)/*")); background: url(https://evil.example/x.png) } /*"*/</style>`
+
+    expect(stylesheets(blockRemoteAssets(html))).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
 })
