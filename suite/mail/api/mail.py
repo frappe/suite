@@ -4,7 +4,6 @@ import os
 import re
 import zipfile
 from datetime import datetime
-from typing import TypedDict
 
 import frappe
 import pydenticon
@@ -74,6 +73,7 @@ from suite.mail.doctype.user_account.user_account import (
 )
 from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
+from suite.mail.http.shapes import AttachedFile
 from suite.mail.jmap import (
     SuiteJMAPClient,
     get_account_client,
@@ -2665,13 +2665,6 @@ def _refuse_oversized_attachment(filename: str) -> None:
 # What one pick from Drive may bring in all: as much as one mail carries at the common provider limit
 # above. Each copy is held in memory until all are read, so this bounds what one request holds.
 MAX_DRIVE_ATTACHMENT_TOTAL = MAX_ATTACHMENT_SIZE
-
-
-class AttachedFile(TypedDict):
-    name: str
-    file_name: str
-    file_url: str
-    file_size: int
 
 
 @frappe.whitelist(methods=["POST"])

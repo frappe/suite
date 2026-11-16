@@ -91,7 +91,6 @@ from suite.mail.api.contacts import (
     get_contacts,
 )
 from suite.mail.api.mail import (
-    AttachedFile,
     add_mails_to_mailbox,
     allow_screening_senders,
     attach_drive_files,
@@ -247,6 +246,8 @@ from suite.mail.http.settings import CONTRACT_ROUTES as SETTINGS_CONTRACT_ROUTES
 from suite.mail.http.shapes import (
     AccountInput,
     AddressBook,
+    AttachDriveFiles,
+    AttachedFile,
     AttachmentBytesInput,
     AttachmentsZipInput,
     CalendarClientConfig,
@@ -264,10 +265,6 @@ from suite.mail.http.shapes import (
     UnscreenAddresses,
     UserInfo,
 )
-
-
-class AttachDriveFiles(TypedDict):
-    nodes: list[str]
 
 
 class InboxSummary(TypedDict):
