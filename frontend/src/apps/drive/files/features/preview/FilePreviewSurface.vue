@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { useEventListener, useMediaQuery } from '@vueuse/core'
-import { Button, TabButtons } from 'frappe-ui'
+import { useEventListener, useIntervalFn, useMediaQuery } from '@vueuse/core'
+import { Button, Spinner, TabButtons } from 'frappe-ui'
 import { computed, onBeforeUnmount, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter, type RouteLocationPathRaw } from 'vue-router'
 
@@ -44,12 +44,29 @@ const mime = computed(() => file.value.mime ?? '')
 const previewUrl = computed(() => file.value.preview.value?.url ?? '')
 /** Bumped after a new version, so the browser fetches the new bytes. */
 const revision = ref(0)
+/**
+ * A file read through a share link needs `X-Drive-Links`, which a frame, a media element or a
+ * download cannot send. Its page asks for the signed URL with the header, and gives that out.
+ */
+const viaLink = computed(() => !!props.session.access.value.via_link)
+const signedView = useQuery(api.drive.nodes.contentUrl, () =>
+  viaLink.value ? { node: props.session.nodeId } : false,
+)
+const signedDownload = useQuery(api.drive.nodes.contentUrl, () =>
+  viaLink.value ? { node: props.session.nodeId, download: true } : false,
+)
+// A signed URL lasts 15 minutes. Download keeps a fresh one; the shown file keeps playing.
+useIntervalFn(() => viaLink.value && void signedDownload.refetch(), 10 * 60_000)
 const contentUrl = computed(() =>
-  nodeContentUrl(props.session.nodeId, { revision: revision.value }),
+  viaLink.value
+    ? (signedView.data?.url ?? '')
+    : nodeContentUrl(props.session.nodeId, { revision: revision.value }),
 )
 /** Saves the file, where `contentUrl` would open a PDF or a picture in the tab. */
 const downloadUrl = computed(() =>
-  nodeContentUrl(props.session.nodeId, { download: true, revision: revision.value }),
+  viaLink.value
+    ? (signedDownload.data?.url ?? '')
+    : nodeContentUrl(props.session.nodeId, { download: true, revision: revision.value }),
 )
 /** An empty file has no bytes on the server, so there is nothing to download or show. */
 const empty = computed(() => file.value.size.value === 0)
@@ -313,6 +330,7 @@ async function move() {
 async function replaced() {
   await file.value.refreshPreview()
   revision.value += 1
+  if (viaLink.value) await Promise.all([signedView.refetch(), signedDownload.refetch()])
 }
 const preview = computed(() =>
   previewKind({
@@ -374,7 +392,8 @@ watch(
   [files, source, preview],
   () => {
     const own = files.value.findIndex((row) => row.name === props.session.nodeId)
-    const neighbours = (own === -1 ? [] : files.value)
+    // A neighbour reached through a link has no signed URL yet, so it loads when shown.
+    const neighbours = (own === -1 || viaLink.value ? [] : files.value)
       .filter(
         (row, index) =>
           Math.abs(index - own) === 1 &&
@@ -460,7 +479,7 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
           @click="openAsSheet"
         />
         <Button
-          v-if="!empty"
+          v-if="!empty && downloadUrl"
           variant="ghost"
           icon="lucide-download"
           tooltip="Download"
@@ -487,8 +506,15 @@ const pagerLoading = computed(() => !!folder.value && siblings.status === 'pendi
       </template>
     </DocumentHeader>
     <div ref="stage" class="flex min-h-0 flex-1 flex-col bg-surface-base">
+      <PreviewFailed
+        v-if="!empty && viaLink && signedView.status === 'error'"
+        :download="downloadUrl"
+      />
+      <div v-else-if="!empty && !contentUrl" class="flex min-h-0 flex-1">
+        <Spinner size="lg" theme="gray" class="m-auto" />
+      </div>
       <TextPreview
-        v-if="preview.kind === 'text'"
+        v-else-if="preview.kind === 'text'"
         :src="contentUrl"
         :download="downloadUrl"
         :size="file.size.value"

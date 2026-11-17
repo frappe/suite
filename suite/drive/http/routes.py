@@ -153,6 +153,12 @@ def _principals():
     return framework.principals_for_request()
 
 
+def _carries_links() -> bool:
+    """Whether this request presents link codes in `X-Drive-Links`."""
+    request = getattr(frappe.local, "request", None)
+    return bool(request is not None and request.headers.get("X-Drive-Links"))
+
+
 def _mark_favourites(principals, answers: list[shapes.NodeShape]) -> None:
     """Set the caller's own `favourite` flag on each answered node.
 
@@ -540,6 +546,10 @@ def node_get_content(node: Given = None, format: Given = None, download: Given =
     row = node_core.get(principals, wanted)
 
     if row.kind == "file":
+        if _carries_links():
+            # A fetch keeps `X-Drive-Links` across a redirect, so a signed URL on
+            # the storage host would carry the link code off this origin.
+            return node_core.stream_content(row, as_attachment=as_attachment)
         # §2.3 budgets this path at one point check. `get` spent it, so the URL
         # is minted from that row rather than reading and checking again.
         minted = node_core.signed_content_url(row, as_attachment=as_attachment)
@@ -556,6 +566,20 @@ def node_get_content(node: Given = None, format: Given = None, download: Given =
         return answer
 
     raise DriveConflict(_("This Drive node has no content to send"))
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@_route
+def node_content_url(node: Given = None, download: Given = None) -> shapes.ContentUrl:
+    """Answer the signed URL `node_get_content` would redirect to, for one readable file.
+
+    A frame, a media element or a download link cannot send `X-Drive-Links`,
+    so a page that holds a file only through a link reads this URL with the
+    header and gives the element the URL. The signature alone opens it.
+    """
+    row = node_core.get(_principals(), shapes.required_text(node, "node"))
+    minted = node_core.signed_content_url(row, as_attachment=shapes.flag(download, "download", False))
+    return {"url": minted["url"], "expires": minted["expires"]}
 
 
 def _disposition_names(filename: str) -> dict:
@@ -1156,12 +1180,17 @@ def node_version_delete(node: Given = None, seq: Given = None) -> shapes.Count:
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @_route
 def node_version_content(node: Given = None, seq: Given = None) -> Response:
-    """Redirect to one version's bytes behind a short-lived signature (§6.8)."""
-    minted = versions.version_content_url(
-        _principals(),
-        shapes.required_text(node, "node"),
-        shapes.sequence(seq, "seq"),
-    )
+    """Redirect to one version's bytes behind a short-lived signature (§6.8).
+
+    A request that carries `X-Drive-Links` gets the bytes on this response: a
+    fetch keeps the header across a redirect, to the storage host too.
+    """
+    principals = _principals()
+    wanted = shapes.required_text(node, "node")
+    sequence = shapes.sequence(seq, "seq")
+    if _carries_links():
+        return versions.stream_version_content(principals, wanted, sequence)
+    minted = versions.version_content_url(principals, wanted, sequence)
     answer = Response(status=302)
     answer.headers["Location"] = minted["url"]
     answer.headers["Cache-Control"] = "private, no-store"

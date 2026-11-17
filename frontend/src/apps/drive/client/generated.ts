@@ -1271,6 +1271,32 @@ const operationNodePutContent: MutationRef<
   loadValidators: async () => (await import('./validators')).operationNodePutContent,
 }
 
+export type NodeContentUrlInput = { download?: boolean; node: string }
+
+export type NodeContentUrlOutput = { url: string; expires: number }
+
+export type NodeContentUrlError =
+  'DriveNotFound' | 'DriveLocked' | 'DriveLinkExpired' | 'DriveForbidden' | 'DriveConflict'
+
+const operationNodeContentUrl: QueryRef<
+  NodeContentUrlInput,
+  NodeContentUrlOutput,
+  NodeContentUrlError
+> = {
+  id: 'node_content_url',
+  owner: 'drive',
+  kind: 'query',
+  publicName: 'nodes.contentUrl',
+  method: 'GET',
+  path: 'nodes/{node}/content-url',
+  prefix: '/api/suite/drive/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: ['DriveNotFound', 'DriveLocked', 'DriveLinkExpired', 'DriveForbidden', 'DriveConflict'],
+  loadValidators: async () => (await import('./validators')).operationNodeContentUrl,
+}
+
 export type NodeGetContentInput = { format?: string; download?: boolean; node: string }
 
 export type NodeGetContentOutput = Blob
@@ -3186,6 +3212,7 @@ export const api = {
     children: operationNodeChildren,
     copy: operationNodeCopy,
     replaceContent: operationNodePutContent,
+    contentUrl: operationNodeContentUrl,
     download: operationNodeGetContent,
     media: operationNodeMedia,
     setPreview: operationNodePreview,

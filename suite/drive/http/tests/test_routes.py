@@ -443,6 +443,66 @@ class TestShareLinkPage(BoundaryCase):
         self.assertNotIn("t" * 22, f"{context.title}{context.message}")
 
 
+class TestLinkCodesStayOnThisOrigin(BoundaryCase):
+    """A fetch keeps `X-Drive-Links` across a redirect, so a request that carries
+    link codes is never sent to the storage host. Its page asks for the signed
+    URL as JSON instead, and gives that URL to an element that sends no header."""
+
+    STORAGE_URL = "https://bucket.storage.example/blobs/b1?X-Amz-Signature=abc"
+    FILE = frappe._dict({"name": "n1", "kind": "file", "title": "plan.pdf"})
+
+    def request(self, **headers):
+        return local_attribute("request", Request(EnvironBuilder(path="/", headers=headers).get_environ()))
+
+    def test_the_signed_url_comes_back_as_json_for_the_page_to_use(self):
+        with self.request(**{"X-Drive-Links": "l" * 22}):
+            with patch.object(routes.node_core, "get", return_value=self.FILE):
+                with patch.object(
+                    routes.node_core,
+                    "signed_content_url",
+                    return_value={"url": self.STORAGE_URL, "expires": 1700000900},
+                ) as minted:
+                    answer = routes.node_content_url(node="n1", download="1")
+        minted.assert_called_once_with(self.FILE, as_attachment=True)
+        self.assertEqual(answer, {"url": self.STORAGE_URL, "expires": 1700000900})
+
+    def test_file_bytes_asked_for_with_link_codes_come_from_this_origin(self):
+        with self.request(**{"X-Drive-Links": "l" * 22}):
+            with patch.object(routes.node_core, "get", return_value=self.FILE):
+                with patch.object(
+                    routes.node_core, "signed_content_url", return_value={"url": self.STORAGE_URL}
+                ):
+                    with patch.object(
+                        routes.node_core, "stream_content", return_value=Response(b"%PDF-1.7")
+                    ) as streamed:
+                        answer = routes.node_get_content(node="n1")
+        streamed.assert_called_once_with(self.FILE, as_attachment=False)
+        self.assertEqual((answer.status_code, answer.get_data()), (200, b"%PDF-1.7"))
+        self.assertNotIn("Location", answer.headers)
+
+    def test_without_link_codes_the_file_still_redirects_to_the_storage_host(self):
+        with self.request():
+            with patch.object(routes.node_core, "get", return_value=self.FILE):
+                with patch.object(
+                    routes.node_core, "signed_content_url", return_value={"url": self.STORAGE_URL}
+                ):
+                    answer = routes.node_get_content(node="n1")
+        self.assertEqual((answer.status_code, answer.headers["Location"]), (302, self.STORAGE_URL))
+
+    def test_a_version_asked_for_with_link_codes_comes_from_this_origin(self):
+        with self.request(**{"X-Drive-Links": "l" * 22}):
+            with patch.object(
+                routes.versions, "version_content_url", return_value={"url": self.STORAGE_URL}
+            ):
+                with patch.object(
+                    routes.versions, "stream_version_content", return_value=Response(b"v2")
+                ) as streamed:
+                    answer = routes.node_version_content(node="n1", seq="2")
+        streamed.assert_called_once_with(SOMEONE, "n1", 2)
+        self.assertEqual(answer.get_data(), b"v2")
+        self.assertNotIn("Location", answer.headers)
+
+
 class TestContentAnswer(BoundaryCase):
     """§11.2: a file redirects, a document streams, nothing else has bytes."""
 

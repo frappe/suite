@@ -130,6 +130,11 @@ vi.mock('@/platform/transport', async (original) => ({
     request: async (operation: Operation, input: { type?: string; node?: string }) => {
       requests.push({ id: operation.id, input })
       if (operation.id === 'node_patch.trash') return { name: input.node, state: 'Trashed' }
+      if (operation.id === 'node_content_url') {
+        if (input.node === 'refused') throw new Error('Refused')
+        const saves = (input as { download?: boolean }).download ? '&save' : ''
+        return { url: `https://bucket.storage.example/${input.node}?sig${saves}`, expires: 0 }
+      }
       if (operation.id === 'node_get') {
         await folderAnswer
         return {
@@ -262,6 +267,49 @@ const menuItem = (root: HTMLElement, label: string) =>
   )
 const press = (key: string) => window.dispatchEvent(new KeyboardEvent('keydown', { key }))
 const counter = (root: HTMLElement) => root.querySelector('header span.tabular-nums')?.textContent
+
+describe('a file this browser reaches only through a share link', () => {
+  const linked = (nodeId: string, title: string, mime: string) =>
+    fromPartial<FilePreviewSession>({
+      ...session(nodeId, title, mime),
+      access: ref({ role: 10, via_link: '$LINK:S000000000000000000001' }),
+    })
+  const download = (root: HTMLElement) =>
+    root.querySelector('[aria-label="Download"]')?.getAttribute('href')
+
+  it('shows and downloads the signed URLs the server answered, not the content route', async () => {
+    const { root } = await mount(linked('b', 'b.pdf', 'application/pdf'), '/d/b/b-pdf')
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('iframe')?.getAttribute('src')).toBe(
+        'https://bucket.storage.example/b?sig',
+      ),
+    )
+    expect(download(root)).toBe('https://bucket.storage.example/b?sig&save')
+    const asked = requests.filter((request) => request.id === 'node_content_url')
+    expect(asked.map((request) => request.input)).toEqual([
+      { node: 'b' },
+      { node: 'b', download: true },
+    ])
+  })
+
+  it('plays a video from its signed URL', async () => {
+    const { root } = await mount(linked('v', 'talk.mp4', 'video/mp4'), '/d/v/talk-mp4')
+
+    await vi.waitFor(() =>
+      expect(root.querySelector('video')?.getAttribute('src')).toBe(
+        'https://bucket.storage.example/v?sig',
+      ),
+    )
+  })
+
+  it('says the preview did not load when the server refuses the signed URL', async () => {
+    const { root } = await mount(linked('refused', 'r.pdf', 'application/pdf'), '/d/refused/r')
+
+    await vi.waitFor(() => expect(root.textContent).toContain('Could not load the preview'))
+    expect(root.querySelector('iframe')).toBeNull()
+  })
+})
 
 describe('file preview', () => {
   describe('a CSV, which has a text preview', () => {

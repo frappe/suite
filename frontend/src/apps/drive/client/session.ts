@@ -492,7 +492,10 @@ async function fetchWith(
   url: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const headers = new Headers(scope.headers)
+  // Link codes go to this site only. Drive's own routes answer a request that carries them
+  // from this origin, never with a redirect to the storage host.
+  const own = new URL(url, window.location.href).origin === window.location.origin
+  const headers = new Headers(own ? scope.headers : undefined)
   new Headers(init.headers).forEach((value, name) => headers.set(name, value))
   const response = await globalThis.fetch(url, {
     ...init,

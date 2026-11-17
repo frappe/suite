@@ -69,6 +69,23 @@ describe('document session credentials', () => {
     session.dispose()
   })
 
+  it("sends the document's link code to this site, and to no other host", async () => {
+    const requester = transport((id, input) => (id === 'node_get' ? documentNode(input.node) : {}))
+    driveLinks.seed(code(0), 'deck')
+    const session = await openDriveDocumentSession('deck', { client: testClient(requester) })
+    const sent = new Map<string, string | null>()
+    vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      sent.set(url, new Headers(init?.headers).get('X-Drive-Links'))
+      return new Response('{}', { status: 200 })
+    })
+
+    await session.credentials.fetch('/api/suite/drive/nodes/deck/versions/2/content')
+    await session.credentials.fetch(`${window.location.origin}/api/suite/drive/nodes/deck/media`)
+    await session.credentials.fetch('https://bucket.storage.example/blobs/b1?X-Amz-Signature=abc')
+
+    expect([...sent.values()]).toEqual([code(0), code(0), null])
+  })
+
   it('asks with every held code, the document code among them, for a manifest', async () => {
     const requester = transport((id, input) => (id === 'node_get' ? documentNode(input.node) : {}))
     driveLinks.seed(code(0), 'deck')
