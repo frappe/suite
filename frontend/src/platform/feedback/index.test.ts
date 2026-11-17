@@ -31,11 +31,31 @@ vi.mock('frappe-ui', async () => {
 beforeEach(() => vi.clearAllMocks())
 
 describe('feedback', () => {
-  it('turns confirm callbacks into a boolean result', async () => {
-    mocks.confirm.mockImplementationOnce((options) => options.onConfirm())
-    await expect(confirm({ title: 'Continue?' })).resolves.toBe(true)
-    mocks.danger.mockImplementationOnce((options) => options.onCancel())
+  it('answers yes from the confirm button and no from Cancel or Esc', async () => {
+    type Action = { label: string; onClick: () => void }
+    const press = (label: string) => (options: { actions: Action[] }) =>
+      options.actions.find((action) => action.label === label)?.onClick()
+
+    mocks.confirm.mockImplementationOnce(press('Move'))
+    await expect(confirm({ title: 'Move?', confirmLabel: 'Move' })).resolves.toBe(true)
+    mocks.danger.mockImplementationOnce(press('Cancel'))
     await expect(confirm({ title: 'Delete?', destructive: true })).resolves.toBe(false)
+    mocks.confirm.mockImplementationOnce((options) => options.onCancel())
+    await expect(confirm({ title: 'Continue?' })).resolves.toBe(false)
+  })
+
+  it('opens with focus on the confirm button, or on Cancel when it destroys something', () => {
+    const focused = () => {
+      const [options] = (mocks.confirm.mock.calls[0] ?? mocks.danger.mock.calls[0]) as [
+        { actions: { label: string; autofocus?: boolean }[] },
+      ]
+      return options.actions.filter((action) => action.autofocus).map((action) => action.label)
+    }
+    void confirm({ title: 'Continue?' })
+    expect(focused()).toEqual(['Confirm'])
+    vi.clearAllMocks()
+    void confirm({ title: 'Delete?', destructive: true })
+    expect(focused()).toEqual(['Cancel'])
   })
 
   it('returns prompt values and reports mutation errors as toasts', async () => {

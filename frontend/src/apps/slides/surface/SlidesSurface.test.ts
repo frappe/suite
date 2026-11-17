@@ -683,10 +683,11 @@ describe('a deck on the content layer', () => {
 
       press('Dismiss')
       await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(2))
-      const [confirmed] = fromAny<[{ onConfirm: () => void }], unknown>(
-        vi.mocked(dialog.danger).mock.lastCall,
-      )
-      confirmed.onConfirm()
+      const [confirmed] = fromAny<
+        [{ actions: { variant: string; onClick: () => void }[] }],
+        unknown
+      >(vi.mocked(dialog.danger).mock.lastCall)
+      confirmed.actions.find((action) => action.variant === 'solid')!.onClick()
       await vi.waitFor(() => expect(oldDraftNotice()).toBeUndefined())
       expect(await drafts()).toEqual([])
     })
@@ -709,10 +710,11 @@ describe('a deck on the content layer', () => {
 
       press('Dismiss')
       await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(1))
-      const [confirmed] = fromAny<[{ onConfirm: () => void }], unknown>(
-        vi.mocked(dialog.danger).mock.lastCall,
-      )
-      confirmed.onConfirm()
+      const [confirmed] = fromAny<
+        [{ actions: { variant: string; onClick: () => void }[] }],
+        unknown
+      >(vi.mocked(dialog.danger).mock.lastCall)
+      confirmed.actions.find((action) => action.variant === 'solid')!.onClick()
 
       await vi.waitFor(() => expect(oldDraftNotice()?.textContent).not.toBe(shownText))
       expect(oldDraftNotice()).toBeDefined()
@@ -787,10 +789,11 @@ describe('a deck on the content layer', () => {
 
         press('Dismiss')
         await vi.waitFor(() => expect(dialog.danger).toHaveBeenCalledTimes(1))
-        const [confirmed] = fromAny<[{ onConfirm: () => void }], unknown>(
-          vi.mocked(dialog.danger).mock.lastCall,
-        )
-        confirmed.onConfirm()
+        const [confirmed] = fromAny<
+          [{ actions: { variant: string; onClick: () => void }[] }],
+          unknown
+        >(vi.mocked(dialog.danger).mock.lastCall)
+        confirmed.actions.find((action) => action.variant === 'solid')!.onClick()
 
         await vi.waitFor(() => expect(oldDraftNotice()?.textContent).not.toBe(ownText))
         expect(oldDraftNotice()).toBeDefined()
