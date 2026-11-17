@@ -4,6 +4,7 @@ import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 export type NodeCreateCreateFolderOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -83,6 +84,7 @@ const operationNodeCreateCreateFolder: MutationRef<
 export type NodeCreateCreateFileOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -170,6 +172,7 @@ const operationNodeCreateCreateFile: MutationRef<
 export type NodeCreateCreateLinkOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -254,6 +257,7 @@ const operationNodeCreateCreateLink: MutationRef<
 export type NodeCreateCreateDocumentOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -402,6 +406,7 @@ const operationNodeBatchPurge: MutationRef<
 export type NodeGetOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -473,6 +478,7 @@ const operationNodeGet: QueryRef<NodeGetInput, NodeGetOutput, NodeGetError> = {
 export type NodePatchRenameOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -569,6 +575,7 @@ const operationNodePatchRename: MutationRef<
 export type NodePatchMoveOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -661,6 +668,7 @@ const operationNodePatchMove: MutationRef<
 export type NodePatchTrashOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -757,6 +765,7 @@ const operationNodePatchTrash: MutationRef<
 export type NodePatchRestoreOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -853,6 +862,7 @@ const operationNodePatchRestore: MutationRef<
 export type NodePatchStampOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1013,6 +1023,7 @@ const operationNodePurge: MutationRef<NodePurgeInput, NodePurgeOutput, NodePurge
 export type NodeChildrenOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1104,6 +1115,7 @@ const operationNodeChildren: PageRef<
 export type NodeCopyOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1188,6 +1200,7 @@ const operationNodeCopy: MutationRef<NodeCopyInput, NodeCopyOutput, NodeCopyErro
 export type NodePutContentOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1463,6 +1476,7 @@ const operationUploadChunk: MutationRef<UploadChunkInput, UploadChunkOutput, Upl
 export type UploadFinishOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1961,6 +1975,7 @@ const operationViewClearRecents: MutationRef<
 export type ViewListOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean

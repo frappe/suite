@@ -3590,7 +3590,7 @@ copy archive state or quota counters into the node's stored fields.
 
 | Name | Adds |
 |---|---|
-| `access` | `{"role": 40, "via_link": "$LINK:...", "source_node": "...", "source_principal": "..."}` |
+| `access` | `{"role": 40, "via_link": "$LINK:...", "own_role": 10, "source_node": "...", "source_principal": "..."}` |
 | `audience` | `{"kind": "public" \| "organization" \| "link" \| "people", "people": 3}`: how wide the node's sharing is and how many named people can open it, resolved by the same nearest-grant rule as access (§5). It names nobody |
 | `breadcrumbs` | `[{"name", "title", "kind"}]` from the root down to the parent. `kind` tells a folder from a content document, which a client never lists as one (§8.10) |
 | `contents_size` | Integer. The bytes of the files in a folder at every depth, trashed files left out. Folders only; other rows omit it |

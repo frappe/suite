@@ -1775,6 +1775,10 @@ Each app's later migration owns these. They are named and baselined
   Recent or Starred [T011].
 - On a wide screen the header says "Opened from a link" beside that trail,
   since no sidebar place names where the item is.
+- "Through the link only" means the caller holds no role of their own on the
+  item (`access.own_role` is 0). A link that only raises a role they already
+  hold, such as an edit link to a folder shared with them as Viewer, changes
+  neither the sidebar nor the header: the folder stays in Shared with me.
 - Star is hidden and no visit is recorded. Those lists send no link codes
   and could never show the item [T011].
 - Not verified: that Recent and Starred drop link-only items. It follows

@@ -64,7 +64,11 @@ export function openedFromLink(
   folder: Pick<DriveNode, 'root' | 'access'>,
   discovered: DriveRoots | null | undefined,
 ): boolean {
-  return locationOf(folder, discovered) === 'shared' && !!folder.access?.via_link
+  return (
+    locationOf(folder, discovered) === 'shared' &&
+    !!folder.access?.via_link &&
+    folder.access.own_role === 0
+  )
 }
 
 interface TrashLocationResult {

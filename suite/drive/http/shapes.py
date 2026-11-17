@@ -52,6 +52,8 @@ _FALSE = ("0", "false", "no", "off")
 class AccessShape(TypedDict, total=False):
     role: int
     via_link: str | None
+    # The role from the caller's own principals alone; 0 when a link is their only way in.
+    own_role: int
     source_node: str | None
     source_principal: str | None
     # Manage checks pass: `role` is MANAGE, or a Suite Admin's override (ADR 0001).

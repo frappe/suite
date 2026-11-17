@@ -22,12 +22,21 @@ beforeEach(() => nameWorkspace(''))
 
 describe('locations', () => {
   it('counts a folder as opened from a link only when a link, not a share, opens it', () => {
-    const viaLink = { root: 'other-root', access: { role: 10, via_link: '$LINK:abc' } }
-    const shared = { root: 'other-root', access: { role: 10, via_link: null } }
-    const own = { root: 'p-root', access: { role: 50, via_link: '$LINK:abc' } }
+    const viaLink = {
+      root: 'other-root',
+      access: { role: 10, via_link: '$LINK:abc', own_role: 0 },
+    }
+    const shared = { root: 'other-root', access: { role: 10, via_link: null, own_role: 10 } }
+    // Shared with them as Viewer, and opened through an edit link: it is in Shared with me.
+    const sharedAndLinked = {
+      root: 'other-root',
+      access: { role: 30, via_link: '$LINK:abc', own_role: 10 },
+    }
+    const own = { root: 'p-root', access: { role: 50, via_link: '$LINK:abc', own_role: 50 } }
 
     expect(openedFromLink(viaLink, discovered)).toBe(true)
     expect(openedFromLink(shared, discovered)).toBe(false)
+    expect(openedFromLink(sharedAndLinked, discovered)).toBe(false)
     expect(openedFromLink(own, discovered)).toBe(false)
   })
 

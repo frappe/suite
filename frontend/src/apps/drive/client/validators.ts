@@ -171,6 +171,7 @@ export const operationNodeCreateCreateFolder: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -328,6 +329,7 @@ export const operationNodeCreateCreateFile: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -482,6 +484,7 @@ export const operationNodeCreateCreateLink: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -639,6 +642,7 @@ export const operationNodeCreateCreateDocument: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -886,6 +890,7 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1032,6 +1037,7 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1182,6 +1188,7 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1331,6 +1338,7 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1482,6 +1490,7 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
               properties: {
                 role: { title: 'Role', type: 'integer' },
                 via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+                own_role: { title: 'Own Role', type: 'integer' },
                 source_node: {
                   anyOf: [{ type: 'string' }, { type: 'null' }],
                   title: 'Source Node',
@@ -1635,6 +1644,7 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1877,6 +1887,7 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -2036,6 +2047,7 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -2187,6 +2199,7 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -2574,6 +2587,7 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -3324,6 +3338,7 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],

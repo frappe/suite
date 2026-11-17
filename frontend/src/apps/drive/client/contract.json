@@ -55,6 +55,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -482,6 +486,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -893,6 +901,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -1318,6 +1330,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -1912,6 +1928,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -2311,6 +2331,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -2721,6 +2745,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -3126,6 +3154,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -3537,6 +3569,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -3941,6 +3977,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -4527,6 +4567,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -4960,6 +5004,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -5371,6 +5419,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -6229,6 +6281,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
@@ -7903,6 +7959,10 @@
                   }
                 ],
                 "title": "Via Link"
+              },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
               },
               "source_node": {
                 "anyOf": [
