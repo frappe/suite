@@ -416,27 +416,40 @@ const srcdoc = computed(() => {
 				// width from the body (a 100% column with padding) would overflow again, so the body
 				// is laid out once as on a pane as wide as the message, held at that width, and that
 				// layout is what gets scaled. Everything is measured unzoomed, where every browser
-				// agrees. The scale and the held width are undone before measuring, so a pane that
+				// agrees. Each pass lets go of the hold before anything else measures, so a pane that
 				// widens gets the message back at full size.
+				const root = document.documentElement;
+				const bodyStyle = document.body.style;
+				// A sent <body style> lands on this body, so the hold saves the author's own value of
+				// each property it writes and puts it back on release; mail that fits is never touched.
+				let authorValues = null;
+				const hold = (values) => {
+					authorValues ??= {};
+					Object.entries(values).forEach(([name, value]) => {
+						if (!(name in authorValues))
+							authorValues[name] = [bodyStyle.getPropertyValue(name), bodyStyle.getPropertyPriority(name)];
+						bodyStyle.setProperty(name, value, 'important');
+					});
+				};
+				const release = () => {
+					if (!authorValues) return;
+					Object.entries(authorValues).forEach(([name, saved]) => bodyStyle.setProperty(name, ...saved));
+					authorValues = null;
+				};
 				const fitToPane = () => {
-					const root = document.documentElement;
-					const body = document.body.style;
-					body.zoom = '';
-					['width', 'min-width', 'max-width', 'box-sizing'].forEach((name) => body.removeProperty(name));
 					const pane = root.clientWidth;
 					const content = root.scrollWidth;
 					if (!pane || content <= pane + 1) return;
+					const rootWidth = [root.style.getPropertyValue('width'), root.style.getPropertyPriority('width')];
 					root.style.setProperty('width', content + 'px', 'important');
 					const width = document.body.getBoundingClientRect().width;
-					root.style.removeProperty('width');
-					body.setProperty('box-sizing', 'border-box', 'important');
-					body.setProperty('width', width + 'px', 'important');
-					body.setProperty('min-width', '0', 'important');
-					body.setProperty('max-width', 'none', 'important');
-					body.zoom = String(pane / root.scrollWidth);
+					root.style.setProperty('width', ...rootWidth);
+					hold({ 'box-sizing': 'border-box', width: width + 'px', 'min-width': '0', 'max-width': 'none' });
+					hold({ zoom: String(pane / root.scrollWidth) });
 				};
 
 				const normalizeAll = () => {
+					release();
 					normalizeWidths();
 					unsquashImages();
 					fitToPane();
@@ -446,6 +459,7 @@ const srcdoc = computed(() => {
 				// An image that fails changes the layout as surely as one that arrives, so both
 				// refit; the window's own load is the backstop once every image has settled.
 				const refit = () => {
+					release();
 					unsquashImages();
 					fitToPane();
 				};

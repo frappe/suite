@@ -60,11 +60,22 @@ const placeholder = (root: HTMLElement) => root.querySelector('.animate-pulse')
 
 // The frame's document with its own scripts run, as the frame runs them. Nothing is laid out
 // here, so the pane's width and the width the message takes up are given; changing them and
-// sending a resize stands in for the pane changing size.
-const framed = (root: HTMLElement, pane: { width: number; content: number }) =>
+// sending a resize stands in for the pane changing size. The message's width can instead follow
+// the body's, for content sized from it. The body is as wide as it is held, else as the root it is
+// laid out in, else it fills the pane on screen, which a zoomed body outgrows by the zoom.
+type Pane = { width: number; content: number | ((body: number) => number) }
+const framed = (root: HTMLElement, pane: Pane) =>
   new JSDOM(frame(root)!.getAttribute('srcdoc')!, {
     runScripts: 'dangerously',
     beforeParse(window) {
+      const bodyWidth = () => {
+        const { body, documentElement } = window.document
+        return (
+          parseFloat(body.style.width) ||
+          parseFloat(documentElement.style.width) ||
+          pane.width / (Number(body.style.zoom) || 1)
+        )
+      }
       const measure = (pick: () => number) => ({
         get(this: Element) {
           return this === this.ownerDocument.documentElement ? pick() : 0
@@ -78,8 +89,13 @@ const framed = (root: HTMLElement, pane: { width: number; content: number }) =>
       Object.defineProperty(
         window.Element.prototype,
         'scrollWidth',
-        measure(() => pane.content),
+        measure(() =>
+          typeof pane.content === 'number' ? pane.content : pane.content(bodyWidth()),
+        ),
       )
+      Object.defineProperty(window.HTMLBodyElement.prototype, 'getBoundingClientRect', {
+        value: () => ({ width: bodyWidth() }),
+      })
     },
   })
 
@@ -180,8 +196,7 @@ describe('EmailContent renders mail as it was sent', () => {
 
   // The table is wider than a phone's pane, and the quote it sits in can't reflow it: it has to
   // be scaled down to the pane, never cut off at its edge, and come back to full size when the
-  // pane is wide enough again. While scaled, the body keeps a fixed width: one that went on
-  // following the pane would widen with the scale, and a column sized from it would overflow again.
+  // pane is wide enough again.
   it('scales a table quoted in a reply down to a narrow pane, and back up when it fits', async () => {
     const root = mount(fixture('bordered-table-in-quote'))
     await nextTick()
@@ -190,13 +205,49 @@ describe('EmailContent renders mail as it was sent', () => {
     const { window } = framed(root, pane)
     const { body } = window.document
     expect(Number(body.style.zoom)).toBeCloseTo(360 / 540)
-    expect(body.style.width).toMatch(/^\d+(\.\d+)?px$/)
     expect(body.querySelectorAll('table td')).toHaveLength(12)
 
     Object.assign(pane, { width: 800, content: 800 })
     window.dispatchEvent(new window.Event('resize'))
     expect(body.style.zoom).toBe('')
     expect(body.style.width).toBe('')
+  })
+
+  // The column takes the body's width plus its 12px padding each side, so it overflows by the same
+  // 24px at any width the body is laid out at: scaled, it must still end inside the pane.
+  it('scales a column sized from the body down until it ends inside the pane', async () => {
+    const root = mount(fixture('comment-wrapped-style'))
+    await nextTick()
+
+    const pane: Pane = { width: 362, content: (body) => body + 24 }
+    const { window } = framed(root, pane)
+    const { documentElement, body } = window.document
+    expect(Number(body.style.zoom)).toBeLessThan(1)
+    expect(Number(body.style.zoom) * documentElement.scrollWidth).toBeLessThanOrEqual(362)
+  })
+
+  // A sent <body style> is the frame's own body: its centred column stays the author's, whether
+  // the message fits from the start or was scaled to a narrow pane and then given room again.
+  it("keeps the author's own body width, before and after a fit", async () => {
+    const root = mount(
+      '<body style="max-width:600px;margin:0 auto"><p>A centred column.</p></body>',
+    )
+    await nextTick()
+
+    const pane = { width: 800, content: 800 }
+    const { window } = framed(root, pane)
+    const { body } = window.document
+    expect(body.style.maxWidth).toBe('600px')
+
+    Object.assign(pane, { width: 360, content: 540 })
+    window.dispatchEvent(new window.Event('resize'))
+    expect(body.style.zoom).not.toBe('')
+
+    Object.assign(pane, { width: 800, content: 800 })
+    window.dispatchEvent(new window.Event('resize'))
+    expect(body.style.maxWidth).toBe('600px')
+    expect(body.style.width).toBe('')
+    expect(body.style.zoom).toBe('')
   })
 
   it('leaves a message that fits the pane at full size', async () => {
