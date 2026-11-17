@@ -38,7 +38,7 @@
               size="sm"
               icon="lucide-copy"
               :aria-label="__('Copy {0}', [__('API key')])"
-              @click="copyKey(user.data.api_key)"
+              @click="copyValue(user.data.api_key)"
             />
           </div>
         </div>
@@ -123,7 +123,12 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, useQuery } from '@/api'
 import { confirm, toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
-import { SettingsCopyField, SettingsPage, SettingsSection } from '@/platform/settings-tab'
+import {
+  copyValue,
+  SettingsCopyField,
+  SettingsPage,
+  SettingsSection,
+} from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const session = useSession()
@@ -189,15 +194,6 @@ const showSecret = ref(false)
 async function generateKeys() {
   keys.value = await generate.run({ user: userId })
   showSecret.value = true
-}
-
-async function copyKey(key: string) {
-  try {
-    await navigator.clipboard.writeText(key)
-    toast.success(__('Copied'))
-  } catch {
-    toast.error(__('Could not copy. Select the text and copy it.'))
-  }
 }
 
 async function regenerateKeys() {

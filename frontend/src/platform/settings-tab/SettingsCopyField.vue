@@ -8,7 +8,7 @@
     <label :for="id" class="text-sm text-ink-gray-6">{{ label }}</label>
     <div class="flex items-center gap-2">
       <TextInput :id="id" class="min-w-0 flex-1" :model-value="value" readonly />
-      <Button icon="lucide-copy" :aria-label="__('Copy {0}', [label])" @click="copy" />
+      <Button icon="lucide-copy" :aria-label="__('Copy {0}', [label])" @click="copyValue(value)" />
     </div>
   </div>
 </template>
@@ -17,18 +17,10 @@
 import { Button, TextInput } from 'frappe-ui'
 import { useId } from 'vue'
 
-import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
-const props = defineProps<{ label: string; value: string }>()
-const id = useId()
+import { copyValue } from './copyValue'
 
-async function copy() {
-  try {
-    await navigator.clipboard.writeText(props.value)
-    toast.success(__('Copied'))
-  } catch {
-    toast.error(__('Could not copy. Select the text and copy it.'))
-  }
-}
+defineProps<{ label: string; value: string }>()
+const id = useId()
 </script>

@@ -14,6 +14,7 @@
  *       SettingsCopyField   a read-only value with a copy button
  *       SettingsJobStatus   the status line and start button of an import or export
  *
+ *   copyValue               copy a value with the same feedback as SettingsCopyField
  *   useSettingsDraft        the draft of a form or dialog with a Save button, and whether it changed
  *   useSavedFields          the values of switches and selects that save on change, and their saves
  *
@@ -24,6 +25,7 @@
  * that calls `openSettings('<tab id>')` from `@/platform/settings`; it
  * switches tabs while Settings is open.
  */
+export { copyValue } from './copyValue'
 export { default as SettingsCopyField } from './SettingsCopyField.vue'
 export { default as SettingsEmpty } from './SettingsEmpty.vue'
 export { default as SettingsForm } from './SettingsForm.vue'
