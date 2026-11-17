@@ -1349,6 +1349,13 @@ function routeSearch() {
 // The field shows each key at once. The URL, and so the search, follows after a
 // pause. The page leaving, a clear or another URL drops a search still waiting
 const searchLater = useTimeoutFn(routeSearch, 250, { immediate: false })
+// Dropped as soon as another move starts. Its own move would cancel one still loading
+const stopSearchOnMove = router.beforeEach((to) => {
+  if (to.fullPath !== searchingTo) {
+    searchLater.stop()
+  }
+})
+onBeforeUnmount(stopSearchOnMove)
 function typed(event: Event) {
   if (!(event.target instanceof HTMLInputElement)) return
   searchText.value = event.target.value

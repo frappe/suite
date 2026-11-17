@@ -425,6 +425,7 @@ afterEach(() => {
   server.gate = null
   server.detailGate = null
   server.searchGate = null
+  notificationsArrive = Promise.resolve()
   server.refusal = null
   server.batchFailures = []
   vi.useRealTimers()
@@ -444,6 +445,9 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+/** When the Notifications page's code arrives, which is the router's to wait for. */
+let notificationsArrive = Promise.resolve()
+
 async function mount(
   path: string,
   history = createMemoryHistory(),
@@ -462,6 +466,13 @@ async function mount(
       { path: '/drive/trash', component: FilesPage, props: { destination: 'trash' } },
       { path: '/drive/f/:node/:slug?', component: FilesPage, props: { destination: 'folder' } },
       { path: '/d/:node/:slug?', component: { render: () => null } },
+      {
+        path: '/notifications',
+        component: async () => {
+          await notificationsArrive
+          return { render: () => null }
+        },
+      },
     ],
   })
   await router.push(path)
@@ -1419,12 +1430,29 @@ describe('Search', () => {
     await vi.advanceTimersByTimeAsync(300)
     expect(router.currentRoute.value.query.q).toBe('report')
 
-    changesAsItLeaves(field(root))
+    // Pressing the place's link takes focus from the field, which fires its change
+    field(root).dispatchEvent(new Event('change'))
     await router.push('/drive/recent')
     await vi.advanceTimersByTimeAsync(300)
 
     expect(router.currentRoute.value.fullPath).toBe('/drive/recent')
     expect(field(root).value).toBe('')
+  })
+
+  it('opens a page slow to load, over a term not yet searched', async () => {
+    const { promise, resolve: arrive } = Promise.withResolvers<void>()
+    notificationsArrive = promise
+    const { root, router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    type(root, 'report')
+    const opening = router.push('/notifications')
+    await vi.advanceTimersByTimeAsync(300)
+    arrive()
+    await opening
+
+    expect(router.currentRoute.value.fullPath).toBe('/notifications')
   })
 
   it('goes back to the same term in another view, over a term not yet searched', async () => {
