@@ -228,7 +228,21 @@ class TestVersionShape(UnitTestCase):
     def test_the_shape_publishes_exactly_the_declared_fields(self):
         self.assertEqual(
             sorted(shapes.version_shape(VERSION)),
-            sorted(["name", "node", "seq", "kind", "label", "pinned", "actor", "person", "size", "creation"]),
+            sorted(
+                [
+                    "name",
+                    "node",
+                    "seq",
+                    "kind",
+                    "label",
+                    "pinned",
+                    "actor",
+                    "person",
+                    "deleted_author",
+                    "size",
+                    "creation",
+                ]
+            ),
         )
 
     def test_whoever_took_a_version_is_published_as_a_person(self):

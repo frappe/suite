@@ -28,13 +28,6 @@ vi.mock('frappe-ui', () => ({
     props: ['label'],
     template: '<button>{{ label }}</button>',
   }),
-  Tabs: defineComponent({
-    props: ['modelValue', 'tabs'],
-    emits: ['update:modelValue'],
-    template: `<div><button v-for="tab in tabs" :key="tab.value"
-      @click="$emit('update:modelValue', tab.value)">{{ tab.label }}</button>
-      <slot name="tab-panel" /></div>`,
-  }),
 }))
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -126,7 +119,7 @@ vi.mock('@/apps/mail/pages/dashboard/InvitesView.vue', () => ({
     setup(_, { expose }) {
       expose({ reloadInvites: vi.fn() })
     },
-    template: '<div data-test="invitations">Invitation list</div>',
+    template: '<div data-test="invitations"><slot name="lead" />Invitation list</div>',
   }),
 }))
 vi.mock('@/apps/mail/components/Modals/AddAccountModal.vue', () => ({
@@ -162,12 +155,23 @@ afterEach(() => {
   adminScenario.enabled = false
   adminScenario.secondEnabled = false
 })
+/** The switch Suite composition supplies; it leads each page's filter row. */
+function tabs() {
+  return h('nav', [
+    h('button', { onClick: () => router.push('/admin/users') }, 'Users'),
+    h('button', { onClick: () => router.push('/admin/users/invitations') }, 'Invitations'),
+  ])
+}
 async function mount() {
   const element = document.createElement('div')
   document.body.append(element)
   const app = createApp({
     render: () =>
-      h(AdminUsersView, {}, { users: () => h('div', { 'data-test': 'users' }, 'User list') }),
+      h(
+        AdminUsersView,
+        {},
+        { tabs, users: () => [tabs(), h('div', { 'data-test': 'users' }, 'User list')] },
+      ),
   })
   apps.push(app)
   await install(app)
@@ -206,7 +210,11 @@ describe('Admin Users', () => {
     document.body.append(element)
     const app = createApp({
       render: () =>
-        h(AdminUsersView, {}, { users: () => h('section', 'Preserved Suite identities') }),
+        h(
+          AdminUsersView,
+          {},
+          { tabs, users: () => [tabs(), h('section', 'Preserved Suite identities')] },
+        ),
     })
     apps.push(app)
     await install(app)
@@ -224,11 +232,14 @@ describe('Admin Users', () => {
     expect(element.querySelector('[data-test="invitations"]')).toBeNull()
   })
 
-  it('shows invitations without leaving Users', async () => {
+  it('shows invitations without leaving Users, with the switch back in its filter row', async () => {
     const element = await mount()
     await click(element, 'Invitations')
     expect(element.querySelector('[data-test="invitations"]')).not.toBeNull()
     expect(element.querySelector('[data-test="users"]')).toBeNull()
+    expect(element.querySelector('[data-test="invitations"] nav')?.textContent).toContain('Users')
+    await click(element, 'Users')
+    expect(element.querySelector('[data-test="users"]')).not.toBeNull()
   })
 
   it('opens invitations after inviting a user', async () => {

@@ -454,23 +454,23 @@ def set_reset_password_key(email: str) -> str:
     return key
 
 
-def censor_email(email: str) -> str:
-    """Censor the email address to protect privacy"""
-
-    username, domain = email.split("@")
-    censored_username = username[0] + "*" * (len(username) - 1)
-    return f"{censored_username}@{domain}"
-
-
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
-def send_reset_password_link(user: str) -> str:
-    """Send reset password link to the user"""
+def send_reset_password_link(user: str) -> None:
+    """Send reset password link to the user.
+
+    The public "forgot password" form calls this, so it answers the same way whether or not the
+    account exists and never returns where the link went: either would tell a stranger which
+    addresses have accounts.
+    """
 
     # Only an admin resetting somebody else's password is an administrative act; this same endpoint
     # backs the public "forgot password" form, and a user asking for their own link is not audited.
     if frappe.session.user != user:
         log_admin_action("send reset password link", user)
+
+    if not frappe.db.exists("User", user):
+        return
 
     email = get_backup_email(user)
     key = set_reset_password_key(user)
@@ -482,11 +482,6 @@ def send_reset_password_link(user: str) -> str:
         {"link": link},
         local={"subject": _("Reset Password"), "template": "reset_password", "args": {"link": link}},
     )
-
-    if email == user:
-        return email
-
-    return censor_email(email)
 
 
 @frappe.whitelist(allow_guest=True)

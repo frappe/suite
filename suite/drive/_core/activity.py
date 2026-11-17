@@ -422,6 +422,35 @@ def notify_users(
     return created
 
 
+# A run of access changes from one person on one item reads as one notice.
+SHARE_NOTICE_WINDOW_MINUTES = 10
+
+
+def supersede_share_notices(node: str, actor: str, user: str) -> int:
+    """Drop `user`'s notices of `actor`'s recent access changes on `node`, so the next one stands alone.
+
+    Sharing as Comment and then raising it to Edit a minute later is one decision;
+    the reader hears only where it landed.
+    """
+    since = add_to_date(now_datetime(), minutes=-SHARE_NOTICE_WINDOW_MINUTES)
+    names = frappe.db.sql_list(
+        """
+        SELECT notification.name
+        FROM `tabDrive Notification` notification
+        JOIN `tabDrive Activity` activity ON activity.name = notification.activity
+        WHERE notification.to_user = %(user)s
+            AND activity.node = %(node)s
+            AND activity.actor = %(actor)s
+            AND activity.action IN %(actions)s
+            AND activity.at >= %(since)s
+        """,
+        {"user": user, "node": node, "actor": actor, "actions": SHARE_ACTIONS, "since": since},
+    )
+    if names:
+        frappe.db.delete("Drive Notification", {"name": ["in", names]})
+    return len(names)
+
+
 def has_told_without_access(node: str, author: str, user: str) -> bool:
     """Whether `author` already sent `user`, who couldn't read `node`, a notification today."""
     return bool(
@@ -523,13 +552,15 @@ def notifications(
     rows, seen = _visible_notifications(principals, only_unread=only_unread, limit=window, offset=offset)
     on_nodes = [row for row in rows if row.activity]
     wanted = list({row.activity.node for row in on_nodes})
-    fields = ["name", "title", "kind"]
+    fields = ["name", "title", "kind", "mime", "content_doctype"]
     found = frappe.get_all("Drive Node", filters={"name": ["in", wanted]}, fields=fields) if wanted else []
     nodes = {node.name: node for node in found}
     for row in on_nodes:
         node = nodes[row.activity.node]
         row.setdefault("node_title", node.title)
         row.node_kind = node.kind
+        row.node_mime = node.mime
+        row.node_content_doctype = node.content_doctype
     return page_of(rows, offset, seen, window)
 
 
