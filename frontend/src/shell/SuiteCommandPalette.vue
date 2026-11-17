@@ -400,7 +400,11 @@ import { SETTINGS_SHORTCUT } from '@/platform/settings'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
 import { userTimeZone } from '@/platform/time-zone'
-import { SHELL_SETTINGS_COMMAND_ID, useSettingsShortcut } from '@/shell/settings/settingsShortcut'
+import {
+  isAppSettingsCommand,
+  SHELL_SETTINGS_COMMAND_ID,
+  useSettingsShortcut,
+} from '@/shell/settings/settingsShortcut'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
@@ -838,9 +842,7 @@ const filteredCommands = computed(() => {
   )
     return []
   const registered = root.paletteGroups.flatMap((group) => group.commands)
-  const pageOffersSettings = registered.some(
-    (command) => command.id !== SHELL_SETTINGS_COMMAND_ID && command.label === 'Settings',
-  )
+  const pageOffersSettings = registered.some(isAppSettingsCommand)
   const commands = pageOffersSettings
     ? registered.filter((command) => command.id !== SHELL_SETTINGS_COMMAND_ID)
     : registered

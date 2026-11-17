@@ -14,6 +14,15 @@ interface ShortcutCommand {
 }
 
 /**
+ * Whether a palette command is an app's own Settings command: one that shows
+ * the Settings key and is not the shell's. Where an app has one, the key runs
+ * it and the palette lists it in place of the shell's.
+ */
+export function isAppSettingsCommand(command: Pick<ShortcutCommand, 'id' | 'shortcut'>): boolean {
+  return command.shortcut === SETTINGS_SHORTCUT && command.id !== SHELL_SETTINGS_COMMAND_ID
+}
+
+/**
  * Binds the Settings key. It runs the app's Settings command that shows the
  * key in the palette, so in Mail it opens Mail's main tab. Where no app
  * command shows it, Settings opens on its first tab. Pressed while Settings
@@ -30,10 +39,7 @@ export function useSettingsShortcut(commands: () => readonly ShortcutCommand[]):
         showSettings.value = false
         return
       }
-      const appCommand = commands().find(
-        (command) =>
-          command.shortcut === SETTINGS_SHORTCUT && command.id !== SHELL_SETTINGS_COMMAND_ID,
-      )
+      const appCommand = commands().find(isAppSettingsCommand)
       if (appCommand) void appCommand.run()
       else openSettings()
     },
