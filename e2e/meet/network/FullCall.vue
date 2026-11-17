@@ -2,7 +2,7 @@
 import { shallowRef, computed } from 'vue';
 import { useMeetingContext } from '../../../frontend/src/apps/meet/composables/useMeetingContext';
 import { useNetworkQuality } from '../../../frontend/src/apps/meet/composables/useNetworkQuality';
-import FrappeMeetingLogo from '../../../frontend/src/apps/meet/icons/FrappeMeetingLogo.vue';
+import MeetIcon from '../../../frontend/src/apps/meet/AreaIcon.vue';
 import ToolbarButton from '../../../frontend/src/apps/meet/components/ToolbarButton.vue';
 import MeetMicOffIcon from '../../../frontend/src/apps/meet/icons/MeetMicOffIcon.vue';
 import MeetCameraOffIcon from '../../../frontend/src/apps/meet/icons/MeetCameraOffIcon.vue';
@@ -29,7 +29,7 @@ window.networkDemo = {
 </script>
 <template>
  <main data-theme="dark" class="fixed inset-0 flex flex-col bg-surface-base text-ink-gray-9">
-  <header class="h-11 shrink-0 flex items-center px-4 gap-2"><FrappeMeetingLogo class="size-7 rounded-4"/><span class="text-base">Meet <span class="text-ink-gray-5 mx-2">/</span> Team catch-up</span><span id="phase-caption" class="ml-auto text-sm text-ink-gray-5">Healthy connection</span></header>
+  <header class="h-11 shrink-0 flex items-center px-4 gap-2"><MeetIcon class="size-5"/><span class="text-base">Meet <span class="text-ink-gray-5 mx-2">/</span> Team catch-up</span><span id="phase-caption" class="ml-auto text-sm text-ink-gray-5">Healthy connection</span></header>
   <section class="flex-1 min-h-0 px-3 pb-2 flex"><slot/></section>
   <footer class="h-[3.75rem] shrink-0 grid grid-cols-[1fr_auto_1fr] items-center px-4">
    <div class="col-start-2 flex gap-1.5">

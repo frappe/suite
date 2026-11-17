@@ -9,15 +9,15 @@ from frappe import _
 
 from suite.drive._core.access import chain_ids
 from suite.drive._core.errors import DriveConflict, DriveForbidden
-from suite.drive._core.nodes import _move, _node, _subtree_charge
+from suite.drive._core.nodes import _move, _node, _subtree_charge, ensure_folder
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import _check_combined, administration_usage, preflight, root_for_node
-from suite.drive._core.roots import validate_root_pair
+from suite.drive._core.roots import personal_root_for, validate_root_pair
 from suite.suite_core.storage import effective_limit, personal_mail_usage, state
 from suite.suite_core.utils import is_suite_cloud_configured
 
 
-def preview(user: str, destination: str, principals: Principals) -> dict:
+def preview(user: str, to_user: str | None, to_drive: str | None, principals: Principals) -> dict:
     if not principals.is_admin:
         raise DriveForbidden(_("Only an Admin can transfer a disabled user's Drive"))
     if user in ("Guest", "Administrator") or frappe.db.get_value("User", user, "enabled") != 0:
@@ -28,12 +28,30 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
     source = validate_root_pair(roots[0])
     if source.root.state != "Archived":
         raise DriveConflict(_("Archive the Personal Root before transferring its retained content"))
-    target = _node(destination)
-    if target.kind != "folder" or target.state != "Active":
-        raise DriveConflict(_("Choose an active named destination folder"))
-    target_root = root_for_node(target)
-    if target_root.name == source.root.name or target_root.state != "Active":
-        raise DriveConflict(_("Choose a destination in another active Personal or Shared Root"))
+    if bool(to_user) == bool(to_drive):
+        raise DriveConflict(_("Choose exactly one person or shared Drive"))
+    if to_user:
+        if (
+            to_user in (user, "Guest", "Administrator")
+            or frappe.db.get_value("User", to_user, "enabled") != 1
+        ):
+            raise DriveConflict(_("Choose another enabled person"))
+        root = personal_root_for(to_user)
+        if not root:
+            raise DriveConflict(_("Choose a person with an active Personal Root"))
+    else:
+        root = to_drive
+    if not root:
+        raise DriveConflict(_("Choose an active shared Drive"))
+    pair = validate_root_pair(root)
+    target_root, target = pair.root, pair.node
+    if target_root.state != "Active" or target_root.kind != ("Personal" if to_user else "Shared"):
+        raise DriveConflict(_("Choose an active Personal or Shared Drive"))
+    destination = target.name
+    folder_title = _("{0}'s files").format(frappe.db.get_value("User", user, "full_name") or user)
+    destination_title = (
+        (frappe.db.get_value("User", to_user, "full_name") or to_user) if to_user else target.title
+    )
     reserved = frappe.db.get_value("Drive Storage Reservation", {"root": source.root.name}, "name")
     if reserved:
         raise DriveConflict(
@@ -98,6 +116,9 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
             {
                 "source": source.root.name,
                 "destination": destination,
+                "folder_title": folder_title,
+                "to_user": to_user,
+                "to_drive": to_drive,
                 "items": items,
                 "bytes": charge,
                 "grants": grants,
@@ -109,7 +130,9 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
     return {
         "source_root": source.root.name,
         "destination": destination,
-        "destination_user": target_root.user,
+        "destination_user": to_user,
+        "folder_title": folder_title,
+        "destination_title": destination_title,
         "bytes": charge,
         "item_count": len(items),
         "fingerprint": fingerprint,
@@ -120,12 +143,19 @@ def preview(user: str, destination: str, principals: Principals) -> dict:
 
 
 def transfer(
-    user: str, destination: str, fingerprint: str, principals: Principals, *, confirm_access: bool
+    user: str,
+    to_user: str | None,
+    to_drive: str | None,
+    fingerprint: str,
+    principals: Principals,
+    *,
+    confirm_access: bool,
 ) -> dict:
     if not confirm_access:
         raise DriveConflict(_("Confirm that destination inheritance can expand access"))
     frappe.db.get_value("User", user, "name", for_update=True)
-    current = preview(user, destination, principals)
+    current = preview(user, to_user, to_drive, principals)
+    destination = current["destination"]
     if current["fingerprint"] != fingerprint:
         raise DriveConflict(_("The source or destination changed. Review a new transfer preview."))
     target_root = root_for_node(_node(destination))
@@ -136,6 +166,9 @@ def transfer(
     # The admin holds no grant on what they move, so the move runs with Drive's
     # own authority and records the admin as its actor (ADR 0001).
     acting = dataclasses.replace(principals, is_system=True)
+    # A stable system owner makes later batches reusable across administering users.
+    folder_principals = dataclasses.replace(acting, user="Administrator")
+    destination = ensure_folder(folder_principals, destination, current["folder_title"])
     results = []
     # Bounded requests provide observable progress; each item uses Drive's own
     # savepoint. A retry only lists what remains in the source, never copies an
@@ -155,3 +188,14 @@ def transfer(
             results.append({"node": item.name, "title": item.title, "success": True, "error": None})
     remaining = frappe.db.count("Drive Node", {"root": current["source_root"]})
     return {"results": results, "remaining": remaining, "complete": remaining == 0}
+
+
+def shared_drives() -> list[dict]:
+    """Answer active Shared Drive identities ordered by their root node titles."""
+    roots = frappe.get_all(
+        "Drive Root", filters={"kind": "Shared", "state": "Active"}, fields=["name", "node"]
+    )
+    return sorted(
+        [{"id": root.name, "title": _node(root.node).title} for root in roots],
+        key=lambda root: (root["title"], root["id"]),
+    )

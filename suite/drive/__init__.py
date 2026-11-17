@@ -201,17 +201,29 @@ def set_user_active(user: str, *, active: bool) -> str:
     return transition(user, active=active)
 
 
-def preview_user_transfer(user: str, destination: str) -> dict:
+def list_shared_drives() -> list[dict]:
+    """List active Shared Drives for site administration."""
+    from suite.suite_core.administration import require_admin
+
+    require_admin()
+    from suite.drive._core.offboarding import shared_drives
+
+    return shared_drives()
+
+
+def preview_user_transfer(user: str, to_user: str | None = None, to_drive: str | None = None) -> dict:
     """Preview retained bytes and destination inheritance without exposing content bodies."""
     from suite.suite_core.administration import require_admin
 
     require_admin()
     from suite.drive._core.offboarding import preview
 
-    return preview(user, destination, _principals())
+    return preview(user, to_user, to_drive, _principals())
 
 
-def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confirm_access: bool) -> dict:
+def transfer_user_drive(
+    user: str, to_user: str | None, to_drive: str | None, fingerprint: str, *, confirm_access: bool
+) -> dict:
     """Move up to fifty retained top-level subtrees and report per-item outcomes.
 
     The caller's transaction commits successful items. Failures roll back only
@@ -223,7 +235,7 @@ def transfer_user_drive(user: str, destination: str, fingerprint: str, *, confir
     require_admin()
     from suite.drive._core.offboarding import transfer
 
-    return transfer(user, destination, fingerprint, _principals(), confirm_access=confirm_access)
+    return transfer(user, to_user, to_drive, fingerprint, _principals(), confirm_access=confirm_access)
 
 
 from collections.abc import Iterable
@@ -517,15 +529,26 @@ def take_version(
     label: str | None = None,
     actor: str | None = None,
     activity: bool = True,
+    site_limit_only: bool = False,
 ) -> int:
     """Store a node's current bytes as an immutable version and return its seq; needs EDIT.
 
     `actor` credits someone other than the caller, as a sweep versioning other people's edits does.
     `activity=False` records no edit, for a version the system keeps that nobody's edit made.
+    `site_limit_only` counts the bytes against the whole site's limit only, not the owner's quota, for a
+    version the system needs that the owner didn't ask for.
     """
     from suite.drive._core.versions import take_version as _take_version
 
-    return _take_version(_principals(), node, kind=kind, label=label, actor=actor, activity=activity)
+    return _take_version(
+        _principals(),
+        node,
+        kind=kind,
+        label=label,
+        actor=actor,
+        activity=activity,
+        site_limit_only=site_limit_only,
+    )
 
 
 def check_history_reader(node: str) -> None:
@@ -660,6 +683,7 @@ __all__ = (
     "import_document",
     "install_threads",
     "legacy_node",
+    "list_shared_drives",
     "list_versions",
     "node_field",
     "node_owner",
