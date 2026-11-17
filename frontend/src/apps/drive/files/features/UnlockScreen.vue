@@ -48,7 +48,7 @@
 
 <script setup lang="ts">
 import { Button, FormControl } from 'frappe-ui'
-import { onMounted, useTemplateRef } from 'vue'
+import { nextTick, onMounted, useTemplateRef } from 'vue'
 
 import { useUnlockForm } from './unlockForm'
 
@@ -59,9 +59,20 @@ const form = useUnlockForm(() => props.node)
 const field = useTemplateRef<HTMLElement>('field')
 
 // The password is the only thing to do here.
-onMounted(() => field.value?.querySelector('input')?.focus())
+onMounted(focusPassword)
 
 async function open() {
-  if (await form.submit()) emit('unlocked')
+  if (await form.submit()) {
+    emit('unlocked')
+    return
+  }
+  // A refusal clears the field and the request disabled it, so put the cursor back for the next
+  // try. A lockout keeps the field disabled, so there is nothing to focus.
+  await nextTick()
+  if (!form.disabled.value) focusPassword()
+}
+
+function focusPassword() {
+  field.value?.querySelector('input')?.focus()
 }
 </script>
