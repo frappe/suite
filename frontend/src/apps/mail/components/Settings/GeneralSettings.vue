@@ -198,7 +198,7 @@
 
 <script setup lang="ts">
 import { Combobox, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed } from 'vue'
 
 import { api, client, useMutation, useQuery } from '@/api'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
@@ -212,7 +212,12 @@ import {
   useToggleReadingPane,
 } from '@/apps/mail/utils/composables'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
-import { SettingsLoading, SettingsPage, SettingsSection } from '@/platform/settings-tab'
+import {
+  SettingsLoading,
+  SettingsPage,
+  SettingsSection,
+  useSavedFields,
+} from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
@@ -272,24 +277,14 @@ const { quota, isLimited, isCritical, usedPercentage, label } = useQuota()
 
 const hasProvider = computed(() => !!user.data?.is_suite_cloud_configured)
 const regional = useQuery(api.mail.settings.regional, () => (hasProvider.value ? {} : false))
-const regionalShown = ref<{ locale: string; time_zone: string }>()
-watch(
-  () => regional.data,
-  (data) => {
-    regionalShown.value = data ? { locale: data.locale, time_zone: data.time_zone } : undefined
-  },
-  { immediate: true },
-)
 const updateRegional = useMutation(api.mail.settings.updateRegional)
-async function saveRegional(field: 'locale' | 'time_zone', value?: string | number | null) {
-  const shown = regionalShown.value
-  if (!shown || typeof value !== 'string' || !value || shown[field] === value) return
-  const previous = shown[field]
-  shown[field] = value
-  try {
-    await updateRegional.run({ ...shown })
-  } catch {
-    if (regionalShown.value === shown && shown[field] === value) shown[field] = previous
-  }
+// The server takes both fields at once; the one not being changed goes as the server has it.
+const { shown: regionalShown, save: saveRegionalField } = useSavedFields(
+  () =>
+    regional.data ? { locale: regional.data.locale, time_zone: regional.data.time_zone } : null,
+  (change, confirmed) => updateRegional.run({ ...confirmed, ...change }),
+)
+function saveRegional(field: 'locale' | 'time_zone', value?: string | number | null) {
+  if (typeof value === 'string' && value) void saveRegionalField(field, value)
 }
 </script>

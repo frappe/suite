@@ -14,6 +14,8 @@
  *       SettingsCopyField   a read-only value with a copy button
  *       SettingsJobStatus   the status line and start button of an import or export
  *
+ *   useSavedFields          the values of switches and selects that save on change, and their saves
+ *
  * A tab is loaded only when it opens, so this module stays apart from
  * `@/platform/settings` (tab ids and `openSettings`), which loads with the app.
  *
@@ -30,4 +32,5 @@ export { default as SettingsLoading } from './SettingsLoading.vue'
 export { default as SettingsPage } from './SettingsPage.vue'
 export { default as SettingsSection } from './SettingsSection.vue'
 export { default as SettingsSelectionBar } from './SettingsSelectionBar.vue'
+export { useSavedFields } from './useSavedFields'
 export { useSettingsSelection, type SettingsSelection } from './useSettingsSelection'

@@ -81,13 +81,37 @@ it('shows what the server sends after a reload', async () => {
   expect(preferences.value?.default_outgoing_email).toBe('alias@x.test')
 })
 
-it('keeps the newer value when an older save of the same field fails after it', async () => {
+it('keeps the newer value when an older save of the same field fails', async () => {
   const { preferences, save } = mount()
   const first = save('on_block_old_mail', 'Keep')
   const second = save('on_block_old_mail', 'Move to Junk')
-  state.answers[1]!.resolve()
-  await second
   state.answers[0]!.reject(new Error('Server refused'))
   await first
   expect(preferences.value?.on_block_old_mail).toBe('Move to Junk')
+  state.answers[1]!.resolve()
+  await second
+  expect(preferences.value?.on_block_old_mail).toBe('Move to Junk')
+})
+
+it('goes back to what the server stores after two quick changes both fail', async () => {
+  const { preferences, save } = mount()
+  const first = save('on_block_old_mail', 'Keep')
+  const second = save('on_block_old_mail', 'Move to Junk')
+  state.answers[0]!.reject(new Error('Server refused'))
+  await first
+  state.answers[1]!.reject(new Error('Server refused'))
+  await second
+  expect(preferences.value?.on_block_old_mail).toBe('Ask')
+})
+
+it('sends only the changed field while another change is still on its way', async () => {
+  const { save, setFlag } = mount()
+  const first = setFlag('block_remote_images', true)
+  const second = save('on_block_old_mail', 'Keep')
+  state.answers[0]!.reject(new Error('Server refused'))
+  await first
+  await settle()
+  expect(state.sent[1]).toEqual({ account: 'personal', changes: { on_block_old_mail: 'Keep' } })
+  state.answers[1]!.resolve()
+  await second
 })
