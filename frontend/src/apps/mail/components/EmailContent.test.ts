@@ -5,6 +5,8 @@ import EmailContent from '@/apps/mail/components/EmailContent.vue'
 
 // The stubbed frame hands its emit back, so a test can say when the resizer reports ready.
 const resizer = vi.hoisted(() => ({ reportReady: () => {} }))
+// Which platform the reader is on: the print chord is ⌘P on a Mac and Ctrl+P elsewhere.
+const platform = vi.hoisted(() => ({ mac: true }))
 
 vi.mock('@iframe-resizer/vue/iframe-resizer.vue', async () => {
   const { defineComponent, h } = await import('vue')
@@ -24,6 +26,9 @@ vi.mock('@iframe-resizer/child/index.umd.js?raw', () => ({ default: '' }))
 vi.mock('@/apps/mail/utils', () => ({
   analyzeRemoteAssets: () => ({ images: 0, hasRemote: false }),
   blockRemoteAssets: (html: string) => html,
+  get isMac() {
+    return platform.mac
+  },
 }))
 
 vi.mock('@/apps/mail/utils/composables', () => ({
@@ -51,6 +56,7 @@ const placeholder = (root: HTMLElement) => root.querySelector('.animate-pulse')
 beforeEach(() => {
   window.__ = (message: string) => message
   resizer.reportReady = () => {}
+  platform.mac = true
   document.body.innerHTML = ''
 })
 
@@ -91,5 +97,78 @@ describe('EmailContent', () => {
     const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
     expect(doc.querySelector('.quote-toggle')).not.toBeNull()
     expect(doc.querySelector('blockquote')!.classList).toContain('quote-hidden')
+  })
+
+  // The frame's own script, run against a document of its own as the frame would run it: presses
+  // a key inside it and says whether the browser was kept from acting on it.
+  const frameKeys = (root: HTMLElement, forwarded = vi.fn()) => {
+    const srcdoc = new DOMParser().parseFromString(
+      frame(root)!.getAttribute('srcdoc')!,
+      'text/html',
+    )
+    const script = [...srcdoc.querySelectorAll('script')].find((s) =>
+      s.textContent?.includes("'keydown'"),
+    )!.textContent!
+    const inner = document.implementation.createHTMLDocument('')
+    const frameWindow = { parent: { postMessage: forwarded }, addEventListener: () => {} }
+    new Function('window', 'document', script)(frameWindow, inner)
+    return (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent('keydown', { ...init, bubbles: true, cancelable: true })
+      inner.body.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+  }
+
+  // The thread prints the conversation when it hears ⌘P from the frame; the browser printing the
+  // whole app first would be a second, wrong print.
+  it('keeps ⌘P inside a message from the browser on a Mac, and still hands it to the thread', async () => {
+    const root = mount()
+    await nextTick()
+    const forwarded = vi.fn()
+    const press = frameKeys(root, forwarded)
+
+    expect(press({ key: 'p', metaKey: true })).toBe(true)
+    // Ctrl+P is no print chord on a Mac.
+    expect(press({ key: 'p', ctrlKey: true })).toBe(false)
+    expect(press({ key: 'p' })).toBe(false)
+    expect(press({ key: 'f', metaKey: true })).toBe(false)
+    expect(forwarded).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'keyboard', eventType: 'keydown', key: 'p', metaKey: true }),
+      '*',
+    )
+  })
+
+  it('keeps Ctrl+P inside a message from the browser off a Mac, and leaves ⌘P alone', async () => {
+    platform.mac = false
+    const root = mount()
+    await nextTick()
+    const press = frameKeys(root)
+
+    expect(press({ key: 'p', ctrlKey: true })).toBe(true)
+    expect(press({ key: 'p', metaKey: true })).toBe(false)
+  })
+
+  // Each expanded message listens on the same window; were every one to replay every frame's keys,
+  // one ⌘P in a three-message thread would print it three times.
+  it("replays a key pressed in its own message once, and not a key from any other window's", async () => {
+    const first = mount()
+    mount()
+    await nextTick()
+    const presses = vi.fn()
+    document.addEventListener('keydown', presses)
+    const send = (source: Window | null) =>
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'keyboard', eventType: 'keydown', key: 'p', metaKey: true },
+          source,
+        }),
+      )
+
+    send(first.querySelector<HTMLIFrameElement>('[data-frame]')!.contentWindow)
+    expect(presses).toHaveBeenCalledTimes(1)
+
+    send(null)
+    expect(presses).toHaveBeenCalledTimes(1)
+    document.removeEventListener('keydown', presses)
   })
 })
