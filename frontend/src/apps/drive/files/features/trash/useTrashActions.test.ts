@@ -53,6 +53,7 @@ const net = vi.hoisted(() => {
 interface ShownToast {
   kind: 'success' | 'error'
   message: string
+  description?: string
   action?: { label: string; onClick: () => void }
 }
 const feedback = vi.hoisted(() => ({
@@ -152,7 +153,12 @@ describe('Trash actions', () => {
 
     expect(await actions.purge(items('a', 'b'))).toBeNull()
     expect(feedback.toasts).toMatchObject([
-      { kind: 'error', message: 'Drive is busy', action: { label: 'Retry' } },
+      {
+        kind: 'error',
+        message: 'Could not delete 2 items forever',
+        description: 'Drive is busy',
+        action: { label: 'Retry' },
+      },
     ])
 
     feedback.toasts[0]!.action!.onClick()
