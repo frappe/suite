@@ -103,6 +103,12 @@ const realtime = await vi.hoisted(async () => {
   return { socket: fakeSocket({ answers: true }) }
 })
 export const fakeServer = { isFailingTemplates: false, opens: 0 }
+// what Drive lists as each node's media, and the link codes each media read sent
+interface DriveMediaFixture {
+  byNode: Map<string, Array<{ node: string; url: string }>>
+  reads: Array<{ node: string; links: string | null }>
+}
+export const driveMedia: DriveMediaFixture = { byNode: new Map(), reads: [] }
 
 interface MenuEntry {
   label: string
@@ -418,6 +424,7 @@ function session(
   access: Ref<{ role: number }>,
   media: DocumentSession['media'],
   panels: DocumentSession['panels']['value'],
+  credentials: DocumentSession['credentials'] | undefined,
 ): DocumentSession {
   return fromPartial<DocumentSession>({
     nodeId: 'node-1',
@@ -429,7 +436,7 @@ function session(
     access,
     panels: ref(panels),
     refreshAccess: async () => {},
-    credentials: {
+    credentials: credentials ?? {
       context: undefined,
       heldContext: undefined,
       fetch: async () => new Response(versionBytes.current),
@@ -469,6 +476,7 @@ export async function openedSurface({
   composite,
   deck,
   panels = ['comments', 'versions'],
+  credentials,
 }: {
   path?: string
   role?: number
@@ -479,6 +487,8 @@ export async function openedSurface({
   composite?: Record<string, unknown[] | Error | Promise<unknown[]> | { node: string }>
   deck?: Record<string, unknown>
   panels?: DocumentSession['panels']['value']
+  // the link credentials Drive selects; by default the session sends none
+  credentials?: DocumentSession['credentials']
 } = {}) {
   const docname = `p${++fakeServer.opens}`
   const loads: Array<Promise<void | Response>> = []
@@ -512,6 +522,21 @@ export async function openedSurface({
         element.src ? { ...element, src: `adopted:${element.src}` } : element,
       )
       return answer({ ...slide, elements: JSON.stringify(elements) })
+    }
+
+    const mediaRead = url.match(/\/api\/suite\/drive\/nodes\/([^/?]+)\/media/)
+    if (mediaRead) {
+      const node = decodeURIComponent(mediaRead[1])
+      driveMedia.reads.push({ node, links: new Headers(init?.headers).get('X-Drive-Links') })
+      // a Drive route answers in the v2 envelope
+      const media = (driveMedia.byNode.get(node) ?? []).map((row) => ({
+        ...row,
+        title: 'picture.png',
+        mime: 'image/png',
+        size: 1,
+        expires: 900,
+      }))
+      return new Response(JSON.stringify({ data: { media } }), { status: 200 })
     }
 
     if (composite && url.includes('composite_manifest')) {
@@ -569,7 +594,7 @@ export async function openedSurface({
     return answer(deck?.is_converted ? opening : { ...opening, slides })
   })
   const access = ref({ role })
-  const opened = session(docname, access, media, panels)
+  const opened = session(docname, access, media, panels, credentials)
   const view = { render: () => null }
   const router = createRouter({
     history: createMemoryHistory(),
