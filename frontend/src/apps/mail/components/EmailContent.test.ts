@@ -180,7 +180,8 @@ describe('EmailContent renders mail as it was sent', () => {
 
   // The table is wider than a phone's pane, and the quote it sits in can't reflow it: it has to
   // be scaled down to the pane, never cut off at its edge, and come back to full size when the
-  // pane is wide enough again.
+  // pane is wide enough again. While scaled, the body keeps a fixed width: one that went on
+  // following the pane would widen with the scale, and a column sized from it would overflow again.
   it('scales a table quoted in a reply down to a narrow pane, and back up when it fits', async () => {
     const root = mount(fixture('bordered-table-in-quote'))
     await nextTick()
@@ -189,11 +190,13 @@ describe('EmailContent renders mail as it was sent', () => {
     const { window } = framed(root, pane)
     const { body } = window.document
     expect(Number(body.style.zoom)).toBeCloseTo(360 / 540)
+    expect(body.style.width).toMatch(/^\d+(\.\d+)?px$/)
     expect(body.querySelectorAll('table td')).toHaveLength(12)
 
     Object.assign(pane, { width: 800, content: 800 })
     window.dispatchEvent(new window.Event('resize'))
     expect(body.style.zoom).toBe('')
+    expect(body.style.width).toBe('')
   })
 
   it('leaves a message that fits the pane at full size', async () => {
@@ -202,6 +205,7 @@ describe('EmailContent renders mail as it was sent', () => {
 
     const { window } = framed(root, { width: 800, content: 800 })
     expect(window.document.body.style.zoom).toBe('')
+    expect(window.document.body.style.width).toBe('')
   })
 
   // A long line wraps inside the pane instead of widening the message past it or scrolling

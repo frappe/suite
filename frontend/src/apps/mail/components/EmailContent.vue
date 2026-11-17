@@ -411,13 +411,29 @@ const srcdoc = computed(() => {
 				// The last resort, as in Apple Mail: what still overflows once everything that can
 				// reflow has (a row of fixed-size images, a nowrap run, a grid's own min-width) is
 				// scaled down to the pane, never clipped at its edge or panned inside it. Zoom rather
-				// than a transform, so the frame's measured height shrinks with it. The scale is
-				// undone before measuring, so a pane that widens gets the message back at full size.
+				// than a transform, so the frame's measured height shrinks with it. A zoomed body that
+				// kept following the pane would get wider by the same scale, and whatever takes its
+				// width from the body (a 100% column with padding) would overflow again, so the body
+				// is laid out once as on a pane as wide as the message, held at that width, and that
+				// layout is what gets scaled. Everything is measured unzoomed, where every browser
+				// agrees. The scale and the held width are undone before measuring, so a pane that
+				// widens gets the message back at full size.
 				const fitToPane = () => {
-					document.body.style.zoom = '';
-					const pane = document.documentElement.clientWidth;
-					const content = document.documentElement.scrollWidth;
-					if (pane && content > pane + 1) document.body.style.zoom = String(pane / content);
+					const root = document.documentElement;
+					const body = document.body.style;
+					body.zoom = '';
+					['width', 'min-width', 'max-width', 'box-sizing'].forEach((name) => body.removeProperty(name));
+					const pane = root.clientWidth;
+					const content = root.scrollWidth;
+					if (!pane || content <= pane + 1) return;
+					root.style.setProperty('width', content + 'px', 'important');
+					const width = document.body.getBoundingClientRect().width;
+					root.style.removeProperty('width');
+					body.setProperty('box-sizing', 'border-box', 'important');
+					body.setProperty('width', width + 'px', 'important');
+					body.setProperty('min-width', '0', 'important');
+					body.setProperty('max-width', 'none', 'important');
+					body.zoom = String(pane / root.scrollWidth);
 				};
 
 				const normalizeAll = () => {
