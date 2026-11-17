@@ -1578,6 +1578,21 @@ function itemContextOptions(row: DriveNode): DropdownItem[] {
 function rowMenuOptions(row: DriveNode): DropdownItem[] {
   const can = nodeActions(row, signedIn.value)
   const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
+    // In Trash, Restore is the main action, so it comes first; Delete forever stays last.
+    {
+      group: 'Restore',
+      hideLabel: true,
+      options: can.restore
+        ? [
+            {
+              key: 'restore',
+              label: 'Restore',
+              icon: 'lucide-undo-2',
+              onClick: () => trash.restore([itemOf(row)]),
+            },
+          ]
+        : [],
+    },
     {
       group: 'Open',
       hideLabel: true,
@@ -1695,16 +1710,6 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
                 icon: 'lucide-trash-2',
                 theme: 'red' as const,
                 onClick: () => trashRow(row),
-              },
-            ]
-          : []),
-        ...(can.restore
-          ? [
-              {
-                key: 'restore',
-                label: 'Restore',
-                icon: 'lucide-undo-2',
-                onClick: () => trash.restore([itemOf(row)]),
               },
             ]
           : []),
