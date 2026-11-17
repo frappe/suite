@@ -1188,7 +1188,7 @@ const newOptions = computed<DropdownItem[]>(() => {
           { kind: 'link', title: 'Link', mime: null, content_doctype: null },
           () => create('link'),
         ),
-        ...(documents.length
+        ...(documents.some((definition) => definition.hasTemplates)
           ? [
               {
                 label: 'From template',

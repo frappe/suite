@@ -559,6 +559,15 @@ describe('New', () => {
     expect(router.currentRoute.value.query.new).toBe('1')
   })
 
+  it('offers no From template when no document type has templates', async () => {
+    server.folderRole = 40
+    const { root } = await mount('/drive/f/folder-9/drafts')
+    await vi.waitFor(() => expect(newSpreadsheet(root)).toBeDefined())
+
+    const labels = [...root.querySelectorAll('[role="menuitem"]')].map((item) => item.textContent)
+    expect(labels).not.toContain('From template')
+  })
+
   const newButtons = (root: HTMLElement) => [...root.querySelectorAll('[label="New"]')]
   for (const [role, shows] of [
     [30, true],
