@@ -8,6 +8,7 @@
     :title="__('Calendars')"
     :description="__('Your calendars and the ones shared with you')"
     :loading="!calendars.data"
+    :reads="[calendars]"
   >
     <template #actions>
       <Button icon-left="lucide-plus" :label="__('New')" @click="create" />

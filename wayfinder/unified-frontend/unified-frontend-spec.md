@@ -1999,7 +1999,7 @@ There is one Settings group per product, named after the product. Order
 ### 12.5 Tab ids and opening
 
 - Tab ids are namespaced and typed, for example `'mail.screener'` or
-  `'drive.statistics'` [T016].
+  `'drive.storage'` [T016].
 - `openSettings(tab)` takes the union built from the composition list. A
   typo fails at compile time [T016].
 - On phone, `openSettings(tab)` opens that tab's drill-in page [T016].

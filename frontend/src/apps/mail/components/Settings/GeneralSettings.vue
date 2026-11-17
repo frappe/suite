@@ -7,6 +7,7 @@
     :title="__('General')"
     :description="__('How you read and send mail, and how much storage it uses')"
     :loading="!preferences"
+    :reads="[preferencesRead, store.userResource]"
   >
     <template v-if="preferences">
       <SettingsSection :title="__('Reading')">
@@ -217,7 +218,7 @@ import { translate as __ } from '@/platform/translation'
 const store = userStore()
 const user = store.userResource
 const { isMobile } = useScreenSize()
-const { preferences, save, flag, setFlag } = useAccountPreferences()
+const { preferences, read: preferencesRead, save, flag, setFlag } = useAccountPreferences()
 
 // Reading
 

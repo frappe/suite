@@ -194,7 +194,7 @@ for (const phone of [false, true]) {
 			await failRequest(page, USAGE);
 			let panel = await openStatistics(page);
 			const failure = panel.getByRole("alert");
-			await expect(failure).toContainText("Could not load storage usage");
+			await expect(failure).toContainText("Could not load these settings");
 			await expect(failure.getByRole("button", { name: "Retry" })).toBeVisible();
 			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toHaveCount(0);
 

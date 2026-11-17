@@ -396,14 +396,11 @@ import {
   type AreaDefinition,
   type PaletteSearchResult,
 } from '@/platform/contracts'
+import { SETTINGS_SHORTCUT } from '@/platform/settings'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
 import { userTimeZone } from '@/platform/time-zone'
-import {
-  SETTINGS_SHORTCUT,
-  SHELL_SETTINGS_COMMAND_ID,
-  useSettingsShortcut,
-} from '@/shell/settings/settingsShortcut'
+import { SHELL_SETTINGS_COMMAND_ID, useSettingsShortcut } from '@/shell/settings/settingsShortcut'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 

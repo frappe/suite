@@ -11,7 +11,7 @@ type AccountField = keyof AccountChanges & keyof AccountPreferences
  * The active account's Mail preferences (sending, screening, remote images), for Settings tabs
  * where each control saves on change. `preferences` is what the controls show: a change shows at
  * once, and goes back to what it was when the save fails. The save's own error feedback reports
- * the failure.
+ * the failure. `read` is the read behind them, for the tab's load failure and retry.
  */
 export function useAccountPreferences() {
   // Read store.accountId live; destructuring would miss an account switch while the tab is open.
@@ -51,5 +51,5 @@ export function useAccountPreferences() {
   const flag = (field: FlagField) => !!preferences.value?.[field]
   const setFlag = (field: FlagField, on: boolean) => save(field, on ? 1 : 0)
 
-  return { preferences, save, flag, setFlag }
+  return { preferences, read: saved, save, flag, setFlag }
 }

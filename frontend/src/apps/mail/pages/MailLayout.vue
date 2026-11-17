@@ -29,6 +29,7 @@ import { useGoToShortcuts } from '@/apps/mail/utils/goToShortcuts'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import { currentMailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { mailServerUnavailable } from '@/boot/config'
+import { SETTINGS_SHORTCUT } from '@/platform/settings'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { useRootStore } from '@/stores/root'
 
@@ -124,7 +125,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
             {
               id: 'mail-settings',
               label: 'Settings',
-              shortcut: 'Mod+Shift+Comma',
+              shortcut: SETTINGS_SHORTCUT,
               enterHint: 'open settings',
               icon: 'lucide-settings',
               run: () => openSettings('mail.general'),

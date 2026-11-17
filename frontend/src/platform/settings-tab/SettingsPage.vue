@@ -10,6 +10,9 @@
     section header. Save belongs to its form.
   - `loading` shows the one loading state in place of the body. Pass it while
     the data the tab renders is still on its way, so no tab shows blank.
+  - `reads` are the reads `loading` waits on. When one of them fails while
+    the tab loads, a message and a Retry button take the loading state's
+    place, and Retry runs the failed reads again.
 
   In the dialog, the header stays in place while the body scrolls. On the
   phone page the page bar already shows the title, so the description and
@@ -25,7 +28,12 @@
     <div class="flex flex-col gap-6 px-4 pb-8 pt-4">
       <p v-if="description" class="text-p-base text-ink-gray-6">{{ description }}</p>
       <div class="flex flex-col gap-8">
-        <SettingsLoading v-if="loading" />
+        <LoadFailed
+          v-if="loading && failedReads.length"
+          :title="__('Could not load these settings')"
+          :retry="retry"
+        />
+        <SettingsLoading v-else-if="loading" />
         <slot v-else />
       </div>
     </div>
@@ -38,7 +46,12 @@
     </SettingsHeader>
     <SettingsBody>
       <div class="flex flex-col gap-10 pt-6">
-        <SettingsLoading v-if="loading" />
+        <LoadFailed
+          v-if="loading && failedReads.length"
+          :title="__('Could not load these settings')"
+          :retry="retry"
+        />
+        <SettingsLoading v-else-if="loading" />
         <slot v-else />
       </div>
     </SettingsBody>
@@ -47,18 +60,33 @@
 
 <script setup lang="ts">
 import { SettingsBody, SettingsHeader } from 'frappe-ui'
-import { inject } from 'vue'
+import { computed, inject } from 'vue'
 
+import { LoadFailed } from '@/platform/load-failed'
 import { SETTINGS_PAGE_ACTIONS_ID, SETTINGS_PHONE_PAGE } from '@/platform/settings'
+import { translate as __ } from '@/platform/translation'
 
 import SettingsLoading from './SettingsLoading.vue'
 
-defineProps<{
+/** A read a tab waits on, as `useQuery` and the app stores' resources give it. */
+interface SettingsRead {
+  readonly error: unknown
+  refetch(): Promise<unknown>
+}
+
+const props = defineProps<{
   title: string
   description?: string
   loading?: boolean
+  reads?: readonly SettingsRead[]
 }>()
 defineSlots<{ default?: () => unknown; actions?: () => unknown }>()
 
 const phonePage = inject(SETTINGS_PHONE_PAGE, false)
+
+const failedReads = computed(() => (props.reads ?? []).filter((read) => read.error))
+// In order, so a read whose input comes from an earlier one runs after it.
+async function retry() {
+  for (const read of failedReads.value) await read.refetch()
+}
 </script>

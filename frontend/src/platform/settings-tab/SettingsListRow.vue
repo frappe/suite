@@ -10,6 +10,10 @@
   - `menu`: the row's actions, behind one "…" button.
   - `@open`: the row's main action, usually "edit". With a listener the whole
     row is the button for it and shows the hover; without one it is static.
+  - `selected` / `selecting`: a list with bulk actions puts a checkbox first in
+    each row. Bind them with `v-bind="selection.row(key)"` from
+    `useSettingsSelection`. The checkbox shows on hover or focus, on a touch
+    screen, and on every row once any row is selected.
 
   The row's content and its divider stay on the content column's edges, like
   a `SettingsRow`. Only the hover background reaches 8px past them, so the
@@ -17,12 +21,24 @@
 -->
 <template>
   <div
-    class="relative isolate flex min-h-12 items-center gap-3 py-2"
+    class="group/row relative isolate flex min-h-12 items-center gap-3 py-2"
     :class="{
       'before:absolute before:-inset-x-2 before:inset-y-0 before:-z-10 before:rounded-6 hover:before:bg-surface-gray-1':
         onOpen,
     }"
   >
+    <!-- Above the stretched title button, so a click selects instead of opening. -->
+    <Checkbox
+      v-if="selected !== undefined"
+      class="relative"
+      :class="
+        !selecting &&
+        'opacity-0 focus-within:opacity-100 group-hover/row:opacity-100 [@media(hover:none)]:opacity-100'
+      "
+      :model-value="selected"
+      :aria-label="__('Select {0}', [title])"
+      @update:model-value="(on) => emit('update:selected', !!on)"
+    />
     <div v-if="$slots.leading" class="flex shrink-0 items-center">
       <slot name="leading" />
     </div>
@@ -54,17 +70,27 @@
 </template>
 
 <script setup lang="ts">
-import { Button, type DropdownOptions } from 'frappe-ui'
+import { Button, Checkbox, type DropdownOptions } from 'frappe-ui'
 
 import { Dropdown } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
-defineProps<{
-  title: string
-  subtitle?: string
-  menu?: DropdownOptions
-  /** Declared as a prop so the row knows whether `@open` has a listener. */
-  onOpen?: () => void
-}>()
+// `selected` defaults to undefined, not to false as a boolean prop would: undefined means the row
+// has no checkbox.
+withDefaults(
+  defineProps<{
+    title: string
+    subtitle?: string
+    menu?: DropdownOptions
+    /** Declared as a prop so the row knows whether `@open` has a listener. */
+    onOpen?: () => void
+    /** Whether the row is selected; left out, the row has no checkbox. */
+    selected?: boolean
+    /** Some row of the list is selected, so every checkbox shows. */
+    selecting?: boolean
+  }>(),
+  { selected: undefined },
+)
+const emit = defineEmits<{ 'update:selected': [selected: boolean] }>()
 defineSlots<{ leading?: () => unknown; trailing?: () => unknown }>()
 </script>

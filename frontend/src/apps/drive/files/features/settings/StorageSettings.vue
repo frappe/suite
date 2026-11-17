@@ -8,15 +8,10 @@
   <SettingsPage
     :title="__('Storage')"
     :description="__('How much space your files use, and what uses it')"
-    :loading="!failed && !data"
+    :loading="!data"
+    :reads="[discovered, usage]"
   >
-    <LoadFailed
-      v-if="failed"
-      variant="section"
-      :title="__('Could not load storage usage')"
-      :retry="retry"
-    />
-    <template v-else-if="data">
+    <template v-if="data">
       <SettingsSection>
         <div class="flex flex-col gap-2 py-3.5">
           <Progress :value="percent" size="md" :aria-label="__('Storage used')" />
@@ -70,7 +65,6 @@ import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
 import { formatBytes } from '@/apps/drive/files/internal/format'
-import { LoadFailed } from '@/platform/load-failed'
 import { SettingsPage, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
@@ -82,12 +76,6 @@ const usage = useQuery(api.drive.roots.usage, () => {
   return personal ? { root: personal, expand: 'breakdown' } : false
 })
 
-async function retry() {
-  if (discovered.error) await discovered.refetch()
-  await usage.refetch()
-}
-
-const failed = computed(() => discovered.status === 'error' || usage.status === 'error')
 const data = computed(() => {
   const answer = usage.data
   return answer && { ...answer, by_type: answer.by_type ?? [], largest: answer.largest ?? [] }

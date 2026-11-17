@@ -7,6 +7,7 @@
     :title="__('Profile')"
     :description="__('Your photo and name, as other people see them')"
     :loading="!user.data"
+    :reads="[user]"
   >
     <SettingsSection v-if="user.data">
       <!-- One child, so the section draws no line between photo and name. -->

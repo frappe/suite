@@ -1,6 +1,7 @@
 <!--
-  A list of addresses on an identity (Reply to, Bcc): each with a remove button, and a field to add
-  one more. Changes go to the identity's draft and save with it.
+  A list of addresses on an identity (Reply to, Bcc): each with a remove button, and fields to add
+  one more with an optional name ("Acme Support <support@acme.test>"). Changes go to the identity's
+  draft and save with it.
 -->
 <template>
   <div class="flex flex-col gap-1.5">
@@ -27,6 +28,12 @@
     </ul>
     <form class="flex gap-2" @submit.prevent="add">
       <TextInput
+        v-model="name"
+        class="min-w-0 flex-1"
+        :placeholder="__('Name (optional)')"
+        :aria-label="__('Name of the address to add to {0}', [label])"
+      />
+      <TextInput
         v-model="email"
         class="min-w-0 flex-1"
         type="email"
@@ -50,6 +57,7 @@ type Address = { email: string; display_name: string | null }
 const addresses = defineModel<Address[]>({ required: true })
 defineProps<{ label: string; description: string }>()
 
+const name = ref('')
 const email = ref('')
 const canAdd = computed(() => {
   const value = email.value.trim()
@@ -57,7 +65,11 @@ const canAdd = computed(() => {
 })
 function add() {
   if (!canAdd.value) return
-  addresses.value = [...addresses.value, { email: email.value.trim(), display_name: null }]
+  addresses.value = [
+    ...addresses.value,
+    { email: email.value.trim(), display_name: name.value.trim() || null },
+  ]
+  name.value = ''
   email.value = ''
 }
 </script>

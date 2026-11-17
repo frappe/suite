@@ -16,9 +16,25 @@
     </template>
     <SettingsLoading v-if="!subscriptions.data" />
     <template v-else-if="subscriptions.data.length">
+      <SettingsSelectionBar :selection="selection">
+        <template #actions>
+          <Button
+            :label="__('Renew')"
+            :loading="renewingSelected"
+            @click="void renewSelected().catch(() => {})"
+          />
+          <Button
+            theme="red"
+            :label="__('Delete')"
+            :loading="remove.isPending"
+            @click="void deleteSelected().catch(() => {})"
+          />
+        </template>
+      </SettingsSelectionBar>
       <SettingsListRow
         v-for="subscription in subscriptions.data"
         :key="subscription.name"
+        v-bind="selection.row(subscription.name)"
         :title="clientOf(subscription)"
         :subtitle="detailsOf(subscription)"
         :menu="subscriptionMenu(subscription)"
@@ -49,6 +65,8 @@ import {
   SettingsListRow,
   SettingsLoading,
   SettingsSection,
+  SettingsSelectionBar,
+  useSettingsSelection,
 } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
@@ -102,6 +120,53 @@ async function deleteSubscription(subscription: PushSubscription) {
   if (!confirmed) return
   await remove.run({ names: [subscription.name] })
   toast.success(__('Push subscription deleted'))
+  refetch()
+}
+
+const selection = useSettingsSelection(() =>
+  (subscriptions.data ?? []).map((subscription) => subscription.name),
+)
+const selectedSubscriptions = () => {
+  const names = new Set(selection.selected)
+  return (subscriptions.data ?? []).filter((subscription) => names.has(subscription.name))
+}
+
+// Renew has no batch endpoint, so each selected subscription renews in turn. The list reloads
+// whatever happens: after a failure part way, the ones before it are renewed.
+const renewingSelected = ref(false)
+async function renewSelected() {
+  const chosen = selectedSubscriptions()
+  renewingSelected.value = true
+  try {
+    for (const subscription of chosen)
+      await renew.run({ user: subscription.user, id: subscription.id })
+    selection.clear()
+    toast.success(
+      chosen.length === 1
+        ? __('Push subscription renewed')
+        : __('{0} push subscriptions renewed', [chosen.length]),
+    )
+  } finally {
+    renewingSelected.value = false
+    refetch()
+  }
+}
+
+async function deleteSelected() {
+  const chosen = selectedSubscriptions()
+  const [only] = chosen
+  // One subscription asks by its name, as its own menu does. A deleted row leaves the selection.
+  if (chosen.length === 1 && only) return deleteSubscription(only)
+  const confirmed = await confirm({
+    title: __('Delete {0} push subscriptions?', [chosen.length]),
+    message: __('They stop hearing about new mail until they subscribe again.'),
+    confirmLabel: __('Delete'),
+    destructive: true,
+  })
+  if (!confirmed) return
+  await remove.run({ names: chosen.map((subscription) => subscription.name) })
+  selection.clear()
+  toast.success(__('{0} push subscriptions deleted', [chosen.length]))
   refetch()
 }
 

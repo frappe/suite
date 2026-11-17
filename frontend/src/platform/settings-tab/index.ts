@@ -3,10 +3,12 @@
  * product owns its tabs and builds each one from these, so every tab has the
  * same header, sections, rows, lists, empty, loading and save behaviour:
  *
- *   SettingsPage            one per tab: title, description, #actions, loading
+ *   SettingsPage            one per tab: title, description, #actions, loading, load failure
  *     SettingsSection       heading, description, #actions ("New"), content
  *       SettingsRow         a single setting, saved on change (from frappe-ui)
  *       SettingsListRow     an item of a management list, with its menu
+ *       SettingsSelectionBar  select all, the count and bulk actions of a list
+ *                           (with `useSettingsSelection`)
  *       SettingsEmpty       a list or section with nothing in it
  *       SettingsForm        several text fields with one Save button
  *       SettingsCopyField   a read-only value with a copy button
@@ -27,3 +29,5 @@ export { default as SettingsListRow } from './SettingsListRow.vue'
 export { default as SettingsLoading } from './SettingsLoading.vue'
 export { default as SettingsPage } from './SettingsPage.vue'
 export { default as SettingsSection } from './SettingsSection.vue'
+export { default as SettingsSelectionBar } from './SettingsSelectionBar.vue'
+export { useSettingsSelection, type SettingsSelection } from './useSettingsSelection'

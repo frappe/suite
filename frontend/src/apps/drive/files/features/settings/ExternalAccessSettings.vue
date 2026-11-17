@@ -9,6 +9,7 @@
     :title="__('External access')"
     :description="__('Connect Drive to desktop, mobile, and other file apps')"
     :loading="!webdavAnswer.data"
+    :reads="[webdavAnswer]"
   >
     <SettingsSection v-if="answer.is_admin || connection">
       <SettingsRow

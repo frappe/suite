@@ -58,9 +58,11 @@ def _verify_current_password(old_password: str) -> None:
     Frappe raises AuthenticationError here, and its request handler clears the
     session cookies on that error, so a mistyped current password signed the
     user out. A wrong guess still counts toward the sign-in lockout, so an open
-    session cannot be used to guess the password.
+    session cannot be used to guess the password, and it is written to the
+    Authentication Log as Frappe's own sign-in writes a failed attempt.
     """
     from frappe.auth import get_login_attempt_tracker
+    from frappe.core.doctype.activity_log.activity_log import add_authentication_log
     from frappe.utils.password import check_password
 
     tracker = get_login_attempt_tracker(frappe.session.user)
@@ -68,6 +70,12 @@ def _verify_current_password(old_password: str) -> None:
         check_password(frappe.session.user, old_password)
     except frappe.AuthenticationError:
         tracker.add_failure_attempt()
+        # The error below rolls the request back. Commit the log first, as
+        # `LoginManager.fail` does, for a Frappe that keeps the log in the site
+        # database (one with a separate log database commits it at once).
+        # Nothing else has been written before this check.
+        add_authentication_log("Incorrect password", frappe.session.user, status="Failed")
+        frappe.db.commit()
         frappe.throw(_("Incorrect password"))
 
 

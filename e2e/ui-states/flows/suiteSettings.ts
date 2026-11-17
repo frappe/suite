@@ -136,7 +136,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Profile before Maya's preferences arrive (request held from page load): the Profile title and description over the settings spinner." },
 		},
 		profileFailed: {
-			meta: { description: "Maya's preferences failed to load: the spinner stays, with no message and no retry." },
+			meta: { description: "Maya's preferences failed to load: \"Could not load these settings\" with Retry where the body goes." },
 		},
 		memberProfile: {
 			meta: { description: "Leo, a member, opens Settings: the same list without Drive's External access, which only an admin sees while WebDAV is off." },
@@ -196,14 +196,14 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Mail > General before the account's settings arrive (held): the title and description over the settings spinner." },
 		},
 		mailAccountFailed: {
-			meta: { description: "Mail > General when the account's settings fail: the spinner stays, with no message and no retry." },
+			meta: { description: "Mail > General when the account's settings fail: \"Could not load these settings\" with Retry where the body goes." },
 		},
 		mailTabWaiting: {
-			meta: { description: "The mail account request failed at page load: Mail > General shows a spinner, and it stays, with no error and no retry. The Mail group is still listed, as it reads the session, not the account." },
+			meta: { description: "The mail account request failed at page load: Mail > General shows \"Could not load these settings\" with Retry, which asks for the account again. The Mail group is still listed, as it reads the session, not the account." },
 			on: { OPEN_CALENDAR_TAB: "calendarTabWaiting" },
 		},
 		calendarTabWaiting: {
-			meta: { description: "Calendar > Calendars waits on the same mail account request, so it spins for good too." },
+			meta: { description: "Calendar > Calendars waits on the same mail account request, so it shows the same message and Retry." },
 		},
 		phoneList: {
 			meta: { description: "Settings on a phone, opened from the account sheet: a full-screen list under a back arrow, grouped by app." },
@@ -346,7 +346,8 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("Recent", { exact: true })).toBeVisible();
 			await clickSettings(scene.page);
 			await expect(dialog(scene.page).getByRole("tab", { name: "Preferences" })).toBeVisible();
-			await scene.page.waitForTimeout(3000);
+			await expect(dialog(scene.page).getByText("Could not load these settings")).toBeVisible();
+			await expect(dialog(scene.page).getByRole("button", { name: "Retry" })).toBeVisible();
 			await expect(dialog(scene.page).getByLabel("First name")).toBeHidden();
 		},
 		async OPEN_AS_MEMBER(scene) {
@@ -364,13 +365,11 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await expect(scene.page.getByText("Recent", { exact: true })).toBeVisible();
 			await openSettings(scene.page);
 			await tab(scene.page, "General").click();
-			await expect(dialog(scene.page).getByRole("status", { name: "Loading" }).first()).toBeVisible();
-			await scene.page.waitForTimeout(5000);
-			await expect(dialog(scene.page).getByRole("status", { name: "Loading" }).first()).toBeVisible();
+			await expect(dialog(scene.page).getByText("Could not load these settings")).toBeVisible();
 		},
 		async OPEN_CALENDAR_TAB(scene) {
 			await tab(scene.page, "Calendars", true).click();
-			await expect(dialog(scene.page).getByRole("status", { name: "Loading" }).first()).toBeVisible();
+			await expect(dialog(scene.page).getByText("Could not load these settings")).toBeVisible();
 			await expect(dialog(scene.page).getByText("Default", { exact: true })).toHaveCount(0);
 		},
 		async NARROW(scene) {
@@ -470,7 +469,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			const hold = await scene.hold(MAIL_ACCOUNT_SETTINGS);
 			await hold.abort(500);
 			await tab(scene.page, "General").click();
-			await scene.page.waitForTimeout(5000);
+			await expect(dialog(scene.page).getByText("Could not load these settings")).toBeVisible();
 			await expect(dialog(scene.page).getByText("Block remote images")).toHaveCount(0);
 		},
 	},

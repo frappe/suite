@@ -47,11 +47,14 @@ const description = computed(() => {
 async function toggle() {
   if (switching.value) return
   switching.value = true
+  const turningOff = push.enabled.value
   try {
-    if (push.enabled.value) await push.disable()
+    if (turningOff) await push.disable()
     else await push.enable()
   } catch {
-    toast.error(__('Could not turn on notifications'))
+    toast.error(
+      turningOff ? __('Could not turn off notifications') : __('Could not turn on notifications'),
+    )
   } finally {
     permission.value = Notification.permission
     switching.value = false

@@ -8,6 +8,7 @@
     :title="__('Screener')"
     :description="__('Decide who can reach your Inbox')"
     :loading="!preferences"
+    :reads="[preferencesRead, store.userResource]"
   >
     <template v-if="preferences">
       <SettingsSection>
@@ -54,21 +55,44 @@
           "
         />
         <template v-else>
-          <div class="py-2">
+          <div class="flex gap-2 py-2">
             <TextInput
               v-model="search"
+              class="min-w-0 flex-1"
               type="search"
-              :placeholder="__('Search screened senders')"
+              :placeholder="__('Search senders')"
               :aria-label="__('Search screened senders')"
             >
               <template #prefix>
                 <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
               </template>
             </TextInput>
+            <Select v-model="sort" class="w-36 shrink-0" :options="SORT_OPTIONS" />
           </div>
+          <SettingsSelectionBar v-if="rows.length" :selection="selection">
+            <template #actions>
+              <Button
+                :label="__('Accept')"
+                :loading="setAction.isPending"
+                @click="void changeSelected('Accepted').catch(() => {})"
+              />
+              <Button
+                :label="__('Block')"
+                :loading="setAction.isPending"
+                @click="void changeSelected('Spam').catch(() => {})"
+              />
+              <Button
+                theme="red"
+                :label="__('Remove')"
+                :loading="remove.isPending"
+                @click="void removeSelected().catch(() => {})"
+              />
+            </template>
+          </SettingsSelectionBar>
           <SettingsListRow
             v-for="address in rows"
             :key="address.email"
+            v-bind="selection.row(address.email)"
             :title="address.email"
             :subtitle="address.subtitle"
             :menu="addressMenu(address)"
@@ -110,12 +134,14 @@ import {
   SettingsLoading,
   SettingsPage,
   SettingsSection,
+  SettingsSelectionBar,
+  useSettingsSelection,
 } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { screenedAddresses } = store
-const { preferences, save, flag, setFlag } = useAccountPreferences()
+const { preferences, read: preferencesRead, save, flag, setFlag } = useAccountPreferences()
 const showAddModal = ref(false)
 
 const ON_BLOCK_OLD_MAIL_OPTIONS = [
@@ -134,12 +160,23 @@ const ACTION_LABELS: Record<ScreeningAction, string> = {
   Spam: __('Blocked'),
 }
 
-// Most recently changed first, as the server lists them.
+// Most recently changed first by default, as the server lists them. Dates are newest first and
+// addresses A to Z; the raw values sort, not the labels shown.
+type SortField = 'modified' | 'creation' | 'email'
+const SORT_OPTIONS: { label: string; value: SortField }[] = [
+  { label: __('Last changed'), value: 'modified' },
+  { label: __('Date added'), value: 'creation' },
+  { label: __('Email'), value: 'email' },
+]
+const sort = ref<SortField>('modified')
 const search = ref('')
 const rows = computed(() => {
   const query = search.value.trim().toLowerCase()
+  const field = sort.value
+  const direction = field === 'email' ? 1 : -1
   return (screenedAddresses.data ?? [])
     .filter((address: ScreenedAddress) => !query || address.email.toLowerCase().includes(query))
+    .sort((a, b) => a[field].localeCompare(b[field]) * direction)
     .map((address: ScreenedAddress) => ({
       email: address.email,
       action: address.action,
@@ -158,7 +195,47 @@ async function changeAction(email: string, action: ScreeningAction) {
   toast.success(action === 'Spam' ? __('{0} blocked', [email]) : __('{0} accepted', [email]))
 }
 
+// Bulk changes go in one request each; the server rebuilds the screening rules once.
+const selection = useSettingsSelection(() => rows.value.map((address) => address.email))
+
+async function changeSelected(action: ScreeningAction) {
+  const emails = selection.selected
+  await setAction.run({ account: store.accountId, emails, action })
+  selection.clear()
+  const [only] = emails
+  if (emails.length === 1 && only)
+    toast.success(action === 'Spam' ? __('{0} blocked', [only]) : __('{0} accepted', [only]))
+  else
+    toast.success(
+      action === 'Spam'
+        ? __('{0} senders blocked', [emails.length])
+        : __('{0} senders accepted', [emails.length]),
+    )
+}
+
 const remove = useMutation(api.mail.screening.remove)
+async function removeSelected() {
+  const emails = selection.selected
+  const [only] = emails
+  const confirmed = await confirm({
+    title:
+      emails.length === 1 && only
+        ? __('Remove {0}?', [only])
+        : __('Remove {0} senders?', [emails.length]),
+    message: __('Their mail is no longer accepted or blocked for you.'),
+    confirmLabel: __('Remove'),
+    destructive: true,
+  })
+  if (!confirmed) return
+  await remove.run({ account: store.accountId, emails })
+  selection.clear()
+  toast.success(
+    emails.length === 1 && only
+      ? __('{0} removed', [only])
+      : __('{0} senders removed', [emails.length]),
+  )
+}
+
 async function removeAddress(email: string) {
   const confirmed = await confirm({
     title: __('Remove {0}?', [email]),

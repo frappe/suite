@@ -7,7 +7,7 @@ import { useAccountPreferences } from './useAccountPreferences'
 const state = vi.hoisted(() => ({
   saved: null as { data: Record<string, unknown> | undefined } | null,
   sent: [] as unknown[],
-  answer: null as null | { resolve: () => void; reject: (error: Error) => void },
+  answers: [] as { resolve: () => void; reject: (error: Error) => void }[],
 }))
 
 vi.mock('@/api', async () => {
@@ -15,12 +15,12 @@ vi.mock('@/api', async () => {
   return {
     api: { mail: api },
     useQuery: () => state.saved,
-    // Each save waits for the test to answer it.
+    // Each save waits for the test to answer it, in any order: `answers[i]` answers the i-th save.
     useMutation: () => ({
       run: (input: unknown) => {
         state.sent.push(input)
         return new Promise<void>((resolve, reject) => {
-          state.answer = { resolve, reject }
+          state.answers.push({ resolve, reject })
         })
       },
     }),
@@ -47,7 +47,7 @@ beforeEach(() => {
     data: { block_remote_images: 0, on_block_old_mail: 'Ask', default_outgoing_email: 'me@x.test' },
   })
   state.sent = []
-  state.answer = null
+  state.answers = []
 })
 
 it('shows a switch change at once and sends only that field', () => {
@@ -60,7 +60,7 @@ it('shows a switch change at once and sends only that field', () => {
 it('puts the switch back when the save fails', async () => {
   const { flag, setFlag } = mount()
   const saving = setFlag('block_remote_images', true)
-  state.answer!.reject(new Error('Server refused'))
+  state.answers[0]!.reject(new Error('Server refused'))
   await saving
   expect(flag('block_remote_images')).toBe(false)
 })
@@ -68,7 +68,7 @@ it('puts the switch back when the save fails', async () => {
 it('keeps a select change once the save lands', async () => {
   const { preferences, save } = mount()
   const saving = save('on_block_old_mail', 'Keep')
-  state.answer!.resolve()
+  state.answers[0]!.resolve()
   await saving
   expect(preferences.value?.on_block_old_mail).toBe('Keep')
 })
@@ -79,4 +79,15 @@ it('shows what the server sends after a reload', async () => {
   await nextTick()
   await settle()
   expect(preferences.value?.default_outgoing_email).toBe('alias@x.test')
+})
+
+it('keeps the newer value when an older save of the same field fails after it', async () => {
+  const { preferences, save } = mount()
+  const first = save('on_block_old_mail', 'Keep')
+  const second = save('on_block_old_mail', 'Move to Junk')
+  state.answers[1]!.resolve()
+  await second
+  state.answers[0]!.reject(new Error('Server refused'))
+  await first
+  expect(preferences.value?.on_block_old_mail).toBe('Move to Junk')
 })

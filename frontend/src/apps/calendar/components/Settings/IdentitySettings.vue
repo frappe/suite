@@ -14,6 +14,7 @@
         : __('The name shown to people you invite. Each of your addresses has one identity.')
     "
     :loading="!participantIdentities.data || !mailIdentities.data"
+    :reads="[participantIdentities, mailIdentities]"
   >
     <template v-if="freeAddresses.length" #actions>
       <Button icon-left="lucide-plus" :label="__('New')" @click="openNew" />

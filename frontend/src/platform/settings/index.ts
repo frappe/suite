@@ -23,6 +23,12 @@ export const showSettings = ref(false)
 export const settingsTab = ref<SettingsTabId | undefined>()
 
 /**
+ * The Settings key. An app's Settings command in the palette shows it as its
+ * shortcut hint, and the key runs that command.
+ */
+export const SETTINGS_SHORTCUT = 'Mod+Shift+Comma'
+
+/**
  * Opens Settings on `tab`. On phone, `tab` opens that tab's page over the list.
  * Called while Settings is open, it switches to `tab`.
  */

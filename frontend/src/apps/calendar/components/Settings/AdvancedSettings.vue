@@ -9,6 +9,7 @@
     :title="__('Advanced')"
     :description="__('Connect a calendar app such as Apple Calendar or Thunderbird')"
     :loading="!config"
+    :reads="[clientConfig]"
   >
     <SettingsSection
       v-if="config"

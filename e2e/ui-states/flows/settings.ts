@@ -76,7 +76,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Storage while its usage request is out: the tab title and description over the settings spinner, and no lists yet." },
 		},
 		storageFailed: {
-			meta: { description: "The usage request fails as Storage opens: a compact “Could not load storage usage” row offers Retry. The sidebar meter, a separate request, still shows." },
+			meta: { description: "The usage request fails as Storage opens: “Could not load these settings” with Retry where the body goes, as on every settings tab. The sidebar meter, a separate request, still shows." },
 		},
 		storageTrashOnly: {
 			meta: { description: "Usage rewritten to bytes with no active files behind them: By type explains that Trash and versions still count; Largest files says only \"No files\"." },
@@ -176,7 +176,7 @@ export const settings = defineFlow<Event>({
 			const hold = await scene.hold(BREAKDOWN);
 			await hold.abort(500);
 			await meter(scene).click();
-			await expect(scene.dialog("Settings").getByText("Could not load storage usage")).toBeVisible();
+			await expect(scene.dialog("Settings").getByText("Could not load these settings")).toBeVisible();
 		},
 		async ONLY_TRASH_LEFT(scene) {
 			await rewriteUsage(scene, { by_type: [], largest: [] });

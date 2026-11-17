@@ -10,6 +10,7 @@
     :title="__('Security')"
     :description="__('Your password, and the key apps use to sign in for you')"
     :loading="!user.data"
+    :reads="[user]"
   >
     <SettingsSection v-if="user.data">
       <SettingsRow

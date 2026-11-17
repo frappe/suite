@@ -7,6 +7,7 @@
     :title="__('Folders')"
     :description="__('Make, rename and arrange the folders you file mail into')"
     :loading="!mailboxes.data"
+    :reads="[mailboxes, store.userResource]"
   >
     <template #actions>
       <Button icon-left="lucide-plus" :label="__('New')" @click="editMailbox()" />
@@ -62,7 +63,8 @@ import {
 } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
-const { mailboxes } = userStore()
+const store = userStore()
+const { mailboxes } = store
 const showFolderModal = ref(false)
 const selectedMailbox = ref<MailboxData>()
 const showDeleteFolderModal = ref(false)

@@ -1,9 +1,7 @@
 import { useKeyboardShortcut } from 'frappe-ui'
 
-import { openSettings, showSettings } from '@/platform/settings'
-
-/** The Settings key. Palette commands show it as their shortcut hint. */
-export const SETTINGS_SHORTCUT = 'Mod+Shift+Comma'
+import { openSettings, SETTINGS_SHORTCUT, showSettings } from '@/platform/settings'
+import { translate as __ } from '@/platform/translation'
 
 /** The id of the shell's own Settings command in the palette. */
 export const SHELL_SETTINGS_COMMAND_ID = 'shell-settings'
@@ -24,7 +22,7 @@ interface ShortcutCommand {
 export function useSettingsShortcut(commands: () => readonly ShortcutCommand[]): void {
   useKeyboardShortcut({
     combo: SETTINGS_SHORTCUT,
-    description: 'Toggle settings',
+    description: __('Toggle settings'),
     allowInInput: true,
     allowInDialog: true,
     handler: () => {
