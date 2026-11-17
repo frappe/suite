@@ -319,9 +319,7 @@ export const getFormattedDate = (date: Date | string, omitDate = false) => {
   return dateObj.format(isCurrentYear ? 'D MMMM' : 'D MMMM YYYY')
 }
 
-export const getTheme = (
-  status: 'Draft' | 'Queued' | 'In Progress' | 'Completed' | 'Failed' | 'Cancelled',
-) => {
+export const getTheme = (status: string | null | undefined) => {
   switch (status) {
     case 'Draft':
       return 'gray'

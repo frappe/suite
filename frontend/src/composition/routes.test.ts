@@ -24,6 +24,17 @@ describe('canonical route metadata', () => {
   })
 })
 
+describe('the notifications page', () => {
+  const router = createRouter({ history: createMemoryHistory(), routes })
+
+  it('opens at /notifications in the shell, for signed-in people only', () => {
+    const page = router.resolve('/notifications')
+    expect(page.name).toBe('notifications')
+    expect(page.meta.frame).toBe('shell')
+    expect(page.meta.allowGuest).not.toBe(true)
+  })
+})
+
 describe('document routes', () => {
   const router = createRouter({ history: createMemoryHistory(), routes: canonicalRoutes })
 

@@ -31,6 +31,7 @@ from suite.drive.patches.build.ports import (
     UserQuotaRow,
 )
 from suite.drive.patches.build.report import REPORT_KEYS
+from suite.drive.patches.build.state import KEPT_RIGHTS_FILENAME, KeptRightsPlan, KeptRightsPlanError
 from suite.drive.patches.build.tests.fakes import (
     FakeDrive,
     FakeRecords,
@@ -157,6 +158,35 @@ class ContentPassTest(OrderCase):
             run_build(self.env)
         self.assertEqual(self.calls.count("link_content_documents"), CONTENT_PASSES)
         self.assertNotIn("recompute_usage", self.calls)
+
+
+class KeptRightsPlanAtStartTest(OrderCase):
+    """Step 6 would refuse this plan hours into the run. The run refuses it before step 1."""
+
+    def write_plan(self, content):
+        (self.env.state.path.parent / KEPT_RIGHTS_FILENAME).write_text(content)
+
+    def test_a_plan_left_from_another_record_stops_the_run_before_any_step(self):
+        """The operator moved the record aside to start over, and left the plan beside it."""
+        plan = {"rights": [], "counts": {"kept": 0}, "marker": "another-record"}
+        self.write_plan(json.dumps({"plan": plan}))
+        with self.assertRaises(ForeignRecordError):
+            run_build(self.env)
+        self.assertEqual(self.calls, [])
+
+    def test_an_unreadable_plan_stops_the_run_before_any_step(self):
+        self.write_plan("{")
+        with self.assertRaises(KeptRightsPlanError):
+            run_build(self.env)
+        self.assertEqual(self.calls, [])
+
+    def test_a_plan_this_record_saved_is_resumed(self):
+        run_build(self.env)
+        marker = self.env.state.load()["database_marker"]
+        self.env.state.put_kept_rights(KeptRightsPlan(rights=[], counts={"kept": 0}, marker=marker))
+        self.calls.clear()
+        run_build(self.env)
+        self.assertEqual(self.calls, list(STEP_NAMES))
 
 
 class EntryPointTest(unittest.TestCase):

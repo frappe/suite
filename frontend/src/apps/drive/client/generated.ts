@@ -2026,6 +2026,7 @@ export type NodeVersionsOutputVersionShape = {
   pinned: number
   actor: string
   person: NodeVersionsOutputPerson
+  deleted_author: string | null
   size: number
   creation: string | null
 }
@@ -2082,6 +2083,7 @@ export type NodeVersionCreateOutput = {
   pinned: number
   actor: string
   person: NodeVersionCreateOutputPerson
+  deleted_author: string | null
   size: number
   creation: string | null
 }
@@ -2125,6 +2127,7 @@ export type NodeVersionPatchOutput = {
   pinned: number
   actor: string
   person: NodeVersionPatchOutputPerson
+  deleted_author: string | null
   size: number
   creation: string | null
 }
@@ -2219,6 +2222,7 @@ export type NodeVersionRestoreOutputVersionShape = {
   pinned: number
   actor: string
   person: NodeVersionRestoreOutputPerson
+  deleted_author: string | null
   size: number
   creation: string | null
 }
@@ -2612,6 +2616,8 @@ export type NotificationsListOutputNotificationShape = {
   activity: NotificationsListOutputActivityShape
   node_title: string
   node_kind: string
+  node_mime: string | null
+  node_content_doctype: string | null
   actor: NotificationsListOutputPerson
 }
 

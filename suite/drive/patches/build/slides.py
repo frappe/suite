@@ -528,7 +528,14 @@ def _media_mapping(env, deck, files, host, writer, titles, result):
 def _borrowed_mapping(env, deck, references, local, result, host, writer, titles):
     parent = writer.parent
     unresolved = tuple(sorted(value for value in references if _resolve(value, local, host) is None))
-    candidates = env.content.media_files_by_urls(tuple(sorted(_url_lookup(unresolved, host))))
+    lookup = tuple(sorted(_url_lookup(unresolved, host)))
+    candidates = env.content.media_files_by_urls(lookup)
+    # A Drive file is a fallback: a value any deck's media spells keeps the
+    # outcome it had before Drive files counted.
+    drive_files = defaultdict(list)
+    for row in _drive_files(env.content_target, env.content.drive_files_by_urls(lookup)):
+        for alias in _aliases(row, host):
+            drive_files[alias].append(row)
     all_files = defaultdict(list)
     by_url = defaultdict(list)
     for row in candidates:
@@ -546,6 +553,9 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
     collapsed = 0
     for value in unresolved:
         rows = _named_rows(by_url, value, host)
+        from_drive = not _named_rows(all_files, value, host)
+        if from_drive:
+            rows = _named_rows(drive_files, value, host)
         if not rows:
             if (
                 not _named_rows(all_files, value, host)
@@ -576,6 +586,15 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
             # names the same bytes either way, so it resolves instead of
             # refusing the deck. Different bytes are still ambiguous.
             chosen = _same_content_blob(env.content_target, blobs, prefer=_exact_url_blobs(rows, value))
+            if chosen is None and from_drive:
+                # Before Drive files counted this reference was only reported,
+                # so two Drive files of different bytes don't refuse the deck.
+                result.record_issue(
+                    f"Presentation:{deck.name}",
+                    f"media reference {value!r} names Drive files of different bytes; was not adopted",
+                    phase="slides",
+                )
+                continue
             if chosen is None:
                 raise InvalidLegacyContent(f"borrowed media {value!r} is ambiguous")
             collapsed += len(blobs) - 1
@@ -602,6 +621,25 @@ def _borrowed_mapping(env, deck, references, local, result, host, writer, titles
         nodes.add(name)
         mapping[value] = name
     return mapping, nodes, collapsed
+
+
+def _drive_files(target, rows):
+    """The Drive file nodes these `File` rows became, each with the node's blob.
+
+    A slide can name a plain Drive file by its old `/private/files/` address.
+    §14.4 made that row a file node, Cleanup deletes the row, and then nothing
+    serves the address. Like a picture another deck holds, the deck shows its
+    own copy: a node under the deck for the node's blob, which §14.4 already
+    made private. A row that became no file node with bytes is left out, so its
+    reference is reported as before.
+    """
+    nodes = target.nodes(tuple(sorted({row.name for row in rows})))
+    found = []
+    for row in rows:
+        node = nodes.get(row.name)
+        if node and node.get("kind") == "file" and node.get("blob"):
+            found.append(replace(row, blob=node["blob"]))
+    return found
 
 
 def _media_node(row, parent, name, blob, title):
@@ -762,7 +800,7 @@ def thumbnail_preview(target, source):
 
             image.thumbnail((512, 512))
             output = io.BytesIO()
-            image.convert("RGB").save(output, "WEBP")
+            image.convert("RGBA" if image.has_transparency_data else "RGB").save(output, "WEBP")
     except Exception as error:
         raise UnusableThumbnail(f"thumbnail is unreadable ({type(error).__name__})") from error
 

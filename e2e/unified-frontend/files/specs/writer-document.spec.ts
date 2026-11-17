@@ -118,9 +118,10 @@ test("losing edit access freezes the editor and cancels the pending save", async
 		.filter((line) => /\/method\/(save_doc|save_html|new_version|update_settings)/.test(line));
 	expect(writes).toEqual([]);
 
-	// The recovery copy has a way out: an HTML file of the unsaved work.
+	// The recovery copy has a way out: the toast's Download saves an HTML file of the unsaved work.
+	await expect(page.getByText("Can't edit now. Unsaved changes are kept on this device.")).toBeVisible();
 	const download = page.waitForEvent("download");
-	await page.getByRole("button", { name: "Download my changes" }).first().click();
+	await page.getByRole("button", { name: "Download", exact: true }).click();
 	const file = await download;
 	expect(file.suggestedFilename()).toBe("Writer journey (recovered).html");
 	const saved = await file.path();

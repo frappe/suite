@@ -62,6 +62,9 @@ suite.sheets.patches.turn_collaboration_on
 # --- slides ---
 # After Sheets', for the same reason
 suite.slides.patches.turn_collaboration_on
+# --- content ---
+# After every app's turn-on, which makes its conversion table
+suite.content.patches.retry_over_quota_conversions
 # --- mail ---
 suite.mail.patches.create_push_subscriptions
 suite.mail.patches.rename_user_settings
