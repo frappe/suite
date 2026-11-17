@@ -93,28 +93,37 @@ const withMarks = (runs: Segment[], marks: readonly { index: number; length: num
 }
 
 // A mark is focusable so Tab reaches it, but a browser starts no selection at the edge of a
-// focusable element: while a press lasts it isn't one. Where the press began tells a tap from a
+// focusable element: while a press on it lasts it isn't one. It is again once the press ends,
+// wherever it ends, and before any key can move focus. Where the press began tells a tap from a
 // drag.
-let pressedAt: { x: number; y: number } | undefined
-const press = (event: PointerEvent) => {
-  pressedAt = { x: event.clientX, y: event.clientY }
-  const mark = event.currentTarget
-  if (!(mark instanceof HTMLElement)) return
-  mark.removeAttribute('tabindex')
-  const refocusable = () => {
-    mark.setAttribute('tabindex', '0')
-    window.removeEventListener('pointerup', refocusable, true)
-    window.removeEventListener('pointercancel', refocusable, true)
+let pressed: { x: number; y: number; mark: number } | undefined
+const ENDS_A_PRESS = ['pointerup', 'pointercancel', 'lostpointercapture', 'keydown'] as const
+const press = (event: PointerEvent, mark: number) => {
+  pressed = { x: event.clientX, y: event.clientY, mark }
+  const element = event.currentTarget
+  if (!(element instanceof HTMLElement)) return
+  element.removeAttribute('tabindex')
+  const refocusable = (end: Event) => {
+    // A drag let go outside the window sends no pointerup: the pointer back with no button down
+    // says it is over.
+    if (end.type === 'pointermove' && end instanceof MouseEvent && end.buttons) return
+    if (end.type === 'pointercancel') pressed = undefined
+    element.setAttribute('tabindex', '0')
+    for (const type of [...ENDS_A_PRESS, 'pointermove'])
+      window.removeEventListener(type, refocusable, true)
   }
-  window.addEventListener('pointerup', refocusable, true)
-  window.addEventListener('pointercancel', refocusable, true)
+  for (const type of [...ENDS_A_PRESS, 'pointermove'])
+    window.addEventListener(type, refocusable, true)
 }
 
 // A pick is a press and release in place that selected nothing: a drag, or a press that ends a
-// selection, is the reader selecting text.
+// selection, is the reader selecting text. A click with no press of its own on the mark (a screen
+// reader's, say) is a pick.
 const pick = (mark: number, event?: MouseEvent) => {
+  const from = pressed
+  pressed = undefined
   const moved =
-    event && pressedAt && Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > 4
+    event && from?.mark === mark && Math.hypot(event.clientX - from.x, event.clientY - from.y) > 4
   if (moved || window.getSelection()?.isCollapsed === false) return
   emit('pick', mark)
 }
@@ -139,7 +148,7 @@ const pick = (mark: number, event?: MouseEvent) => {
         tabindex="0"
         :title="markLabel"
         class="cursor-pointer underline decoration-[color:color-mix(in_srgb,currentColor_50%,transparent)] underline-offset-2 hover:decoration-current"
-        @pointerdown="press"
+        @pointerdown="press($event, segment.mark)"
         @click="pick(segment.mark, $event)"
         @keydown.enter.prevent="pick(segment.mark)"
         @keydown.space.prevent="pick(segment.mark)"

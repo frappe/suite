@@ -168,7 +168,15 @@ describe('dates in a message', () => {
       pointer('pointerup', element, to)
       pointer('click', element, to)
     }
-    return { document: dom.window.document, window: dom.window, posted, opened, press, drag }
+    return {
+      document: dom.window.document,
+      window: dom.window,
+      posted,
+      opened,
+      press,
+      drag,
+      pointer,
+    }
   }
 
   it('asks the app for an event when a date is pressed, and does nothing else with the press', async () => {
@@ -185,6 +193,30 @@ describe('dates in a message', () => {
     drag(mark, 10, 120, () => expect(mark.hasAttribute('tabindex')).toBe(false))
     expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mail-date' }), '*')
     // Tab reaches it again once the press is over.
+    expect(mark.getAttribute('tabindex')).toBe('0')
+  })
+
+  it('takes a click with no press of its own, as a screen reader makes, for a pick', async () => {
+    const { document, posted, pointer } = await inFrame(
+      '<p>Can we meet Thursday at 3pm?</p><p>Elsewhere.</p>',
+    )
+    // An earlier press somewhere else in the message, far from the date.
+    pointer('pointerdown', document.querySelectorAll('p')[1], 300)
+    pointer('pointerup', document.querySelectorAll('p')[1], 300)
+    pointer('click', document.querySelectorAll('p')[1], 300)
+    pointer('click', document.querySelector('[data-mail-date]')!, 0)
+    expect(posted.mock.calls.filter(([data]) => data.type === 'mail-date')).toEqual([
+      [{ type: 'mail-date', index: '0' }, '*'],
+    ])
+  })
+
+  it('puts a date back in the Tab order when a drag from it is let go outside the frame', async () => {
+    const { document, pointer } = await inFrame('<p>Can we meet Thursday at 3pm?</p>')
+    const mark = document.querySelector('[data-mail-date]')!
+    pointer('pointerdown', mark, 10)
+    expect(mark.hasAttribute('tabindex')).toBe(false)
+    // No pointerup reaches the frame; the pointer comes back with no button down.
+    pointer('pointermove', document.body, 50)
     expect(mark.getAttribute('tabindex')).toBe('0')
   })
 

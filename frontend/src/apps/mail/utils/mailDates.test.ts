@@ -58,6 +58,10 @@ describe('dates in a mail', () => {
     expect(dates('I’m free 3–4pm on Friday, if that works').map((date) => date.text)).toEqual([
       '3–4pm on Friday',
     ])
+    // The stop that ends "p.m." is the time's.
+    expect(dates('Meet Thursday at 3 p.m., then lunch').map((date) => date.text)).toEqual([
+      'Thursday at 3 p.m.',
+    ])
   })
 
   it('reads a day with no time as the whole day', () => {

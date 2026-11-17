@@ -55,6 +55,18 @@ describe('dates in a mail sent as text', () => {
     expect(mark.getAttribute('tabindex')).toBe('0')
   })
 
+  it('takes a click with no press of its own, as a screen reader makes, for a pick', async () => {
+    const onPickDate = vi.fn()
+    const root = mount(text, { sentAt, onPickDate })
+    await vi.waitFor(() => expect(marks(root)).toHaveLength(1))
+    const mark = root.querySelector<HTMLElement>('[role="button"]')!
+    // An earlier tap on the same date, then a click far from it with no press before it.
+    for (const type of ['pointerdown', 'pointerup', 'click'])
+      mark.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: 10, clientY: 10 }))
+    mark.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 300, clientY: 10 }))
+    expect(onPickDate).toHaveBeenCalledTimes(2)
+  })
+
   it('marks nothing when it is not offered as an event', async () => {
     const root = mount(text)
     await nextTick()

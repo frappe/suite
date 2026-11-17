@@ -470,9 +470,10 @@ const rendered = computed(() => {
 					pickDate(mark);
 				});
 				// A date is focusable so Tab reaches it, but a browser starts no selection at the edge of
-				// a focusable element: while a press lasts it isn't one. Where the press began tells a
-				// tap from a drag.
-				let pressedAt = null;
+				// a focusable element: while a press on it lasts it isn't one. It is again once the press
+				// ends, wherever it ends, and before any key can move focus. Where the press began tells
+				// a tap from a drag; a click with no press of its own (a screen reader's) is a pick.
+				let press = null;
 				let unfocused = null;
 				const refocusable = () => {
 					unfocused?.setAttribute('tabindex', '0');
@@ -480,16 +481,30 @@ const rendered = computed(() => {
 				};
 				document.addEventListener('pointerdown', (e) => {
 					refocusable();
-					pressedAt = { x: e.clientX, y: e.clientY };
-					const mark = e.target.closest?.('[data-mail-date][tabindex]');
-					if (!mark) return;
+					const mark = e.target.closest?.('[data-mail-date]');
+					press = mark ? { x: e.clientX, y: e.clientY, date: mark.dataset.mailDate } : null;
+					if (!mark?.hasAttribute('tabindex')) return;
 					mark.removeAttribute('tabindex');
 					unfocused = mark;
 				}, true);
-				document.addEventListener('pointerup', refocusable, true);
-				document.addEventListener('pointercancel', refocusable, true);
-				const moved = (e) =>
-					!!pressedAt && Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > 4;
+				['pointerup', 'lostpointercapture', 'keydown'].forEach((type) =>
+					document.addEventListener(type, refocusable, true),
+				);
+				document.addEventListener('pointercancel', () => {
+					refocusable();
+					press = null;
+				}, true);
+				// A drag let go outside the frame sends no pointerup here: the pointer back without a
+				// button down says it is over.
+				document.addEventListener('pointermove', (e) => {
+					if (!e.buttons) refocusable();
+				}, true);
+				const moved = (e, mark) => {
+					const pressed = press;
+					press = null;
+					if (!pressed || pressed.date !== mark.dataset.mailDate) return false;
+					return Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > 4;
+				};
 
 				// Forward link clicks to parent. A link comes first, whatever is around it: the frame
 				// never follows one itself.
@@ -511,7 +526,7 @@ const rendered = computed(() => {
 					const mark = e.target.closest('[data-mail-date]');
 					if (!mark) return;
 					e.preventDefault();
-					if (!moved(e) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
+					if (!moved(e, mark) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
 				// Forward horizontal swipes to the parent — touches never leave the iframe, so
