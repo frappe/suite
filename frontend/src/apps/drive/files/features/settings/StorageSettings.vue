@@ -19,16 +19,18 @@
       </SettingsSection>
 
       <SettingsSection :title="__('By type')">
-        <div v-for="row in data.by_type" :key="row.type" class="flex h-10 items-center gap-2">
-          <span
-            :class="[storageTypeIcon(row.type), storageTypeTint(row.type)]"
-            class="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="flex-1 truncate text-base text-ink-gray-8">{{ __(row.type) }}</span>
-          <span class="text-base text-ink-gray-7 tabular-nums">{{ formatBytes(row.bytes) }}</span>
-        </div>
-        <p v-if="!data.by_type.length" class="py-3.5 text-p-base text-ink-gray-6">
+        <ul v-if="data.by_type.length" role="list" class="divide-y divide-outline-gray-1">
+          <li v-for="row in data.by_type" :key="row.type" class="flex h-10 items-center gap-2">
+            <span
+              :class="[storageTypeIcon(row.type), storageTypeTint(row.type)]"
+              class="size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span class="flex-1 truncate text-base text-ink-gray-8">{{ __(row.type) }}</span>
+            <span class="text-base text-ink-gray-7 tabular-nums">{{ formatBytes(row.bytes) }}</span>
+          </li>
+        </ul>
+        <p v-else class="py-3.5 text-p-base text-ink-gray-6">
           {{ emptyText }}
         </p>
       </SettingsSection>
@@ -39,18 +41,20 @@
         :title="__('Largest files')"
         :description="__('Pictures and videos inside a document count towards that document.')"
       >
-        <div v-for="file in data.largest" :key="file.node" class="flex h-10 items-center gap-2">
-          <span
-            :class="[storageTypeIcon(file.type), storageTypeTint(file.type)]"
-            class="size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="flex-1 truncate text-base text-ink-gray-8" :title="file.title">
-            {{ file.title }}
-          </span>
-          <span class="text-base text-ink-gray-7 tabular-nums">{{ formatBytes(file.size) }}</span>
-        </div>
-        <p v-if="!data.largest.length" class="py-3.5 text-p-base text-ink-gray-6">
+        <ul v-if="data.largest.length" role="list" class="divide-y divide-outline-gray-1">
+          <li v-for="file in data.largest" :key="file.node" class="flex h-10 items-center gap-2">
+            <span
+              :class="[storageTypeIcon(file.type), storageTypeTint(file.type)]"
+              class="size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span class="flex-1 truncate text-base text-ink-gray-8" :title="file.title">
+              {{ file.title }}
+            </span>
+            <span class="text-base text-ink-gray-7 tabular-nums">{{ formatBytes(file.size) }}</span>
+          </li>
+        </ul>
+        <p v-else class="py-3.5 text-p-base text-ink-gray-6">
           {{ __('No files') }}
         </p>
       </SettingsSection>
