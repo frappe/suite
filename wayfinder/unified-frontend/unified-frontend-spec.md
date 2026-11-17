@@ -1186,8 +1186,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   `DriveRestoreDestinationRequired` (409), a `DriveConflict` subtype
   (ask D14) [T007, Drive §8.8].
 - In a batch, the client collects the items that need a destination. One
-  prompt ("8 items' folders are gone") opens the folder picker limited to
-  the same root and to folders with UPLOAD [T007].
+  prompt opens the folder picker limited to the same root and to folders
+  with UPLOAD [T007]. It names one item ("“Budget.pdf” was in a folder that
+  is in Trash. Choose where to restore it.") and counts several ("These 8
+  items were in folders that are in Trash. Choose where to restore them.").
 - A second batch sends `{state: Active, parent}` for those items only
   [T007].
 - Cancel leaves them in Trash. An access change before submit returns as a
