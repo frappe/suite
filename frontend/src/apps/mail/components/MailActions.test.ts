@@ -7,7 +7,7 @@ import type { BodyView, Mail } from '@/apps/mail/types'
 
 // The menu, drawn as one button per item it would show: a Dropdown leaves out an item whose
 // condition says no.
-vi.mock('@/components/AdaptiveDropdown.vue', async () => {
+vi.mock('@/platform/feedback', async () => {
   const { h } = await import('vue')
   interface Option {
     label: string
@@ -15,7 +15,7 @@ vi.mock('@/components/AdaptiveDropdown.vue', async () => {
     condition?: () => boolean
   }
   return {
-    default: ({ options }: { options: { options: Option[] }[] }) =>
+    Dropdown: ({ options }: { options: { options: Option[] }[] }) =>
       h(
         'menu',
         options
