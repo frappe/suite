@@ -18,6 +18,7 @@ import type {
   NodeVersionsOutputVersionShape,
 } from './generated'
 import { driveLinks } from './links'
+import { openMediaReader, type MediaHandle } from './mediaReader'
 import { folderOf } from './nodes'
 import { createStar } from './star'
 import {
@@ -30,20 +31,8 @@ import {
 } from './types'
 
 export const ACCESS_REFRESH_MS = 5 * 60_000
-export const MEDIA_REFRESH_MS = 10 * 60_000
-const MEDIA_RETRY_MS = 2_000
-const MEDIA_RETRY_GROWTH = 2
-const MEDIA_RETRY_MAX_MS = 30_000
+export { MEDIA_REFRESH_MS, type MediaHandle, type MediaStatus } from './mediaReader'
 export type SessionState = 'Active' | 'Trashed' | 'Refused'
-/** `unanswered`: a read for this picture failed in passing and none has answered for it yet. */
-export type MediaStatus = 'loading' | 'unanswered' | 'ready' | 'refused'
-export interface MediaHandle {
-  readonly id: string
-  readonly src: Readonly<Ref<string | null>>
-  readonly cacheKey: Readonly<Ref<string>>
-  readonly status: Readonly<Ref<MediaStatus>>
-  refresh(): Promise<void>
-}
 export { CredentialOverflowError } from './links'
 
 /**
@@ -212,11 +201,7 @@ export async function openDriveDocumentSession(
     () => state.value === 'Active' && !access.value.via_link && !!signedIn(),
     controller.signal,
   )
-  const handles = new Map<string, InternalMediaHandle>()
   let disposed = false
-  let mediaPromise: Promise<void> | null = null
-  let failedReads = 0
-  let mediaRetry: ReturnType<typeof setTimeout> | undefined
   const refreshAccess = async () => {
     if (disposed) return
     try {
@@ -244,124 +229,18 @@ export async function openDriveDocumentSession(
       access.value = {}
     }
   }
-  const refreshMedia = async () => {
-    if (disposed) return
-    if (mediaPromise) return mediaPromise
-
-    clearTimeout(mediaRetry)
-
-    // a handle made after the read began may name a picture newer than its answer
-    const asked = new Set(handles.keys())
-
-    mediaPromise = requester
-      .query(
-        api.drive.nodes.media,
-        {
-          node: nodeId,
-        },
-        {
-          signal: controller.signal,
-        },
-      )
-      .then(({ media }) => {
-        failedReads = 0
-        const seen = new Set<string>()
-        for (const row of media ?? []) {
-          seen.add(row.node)
-          const handle = getHandle(row.node)
-          handle.src.value = row.url
-          handle.cacheKey.value = signatureFreeMediaKey(row.url, row.node)
-          handle.status.value = 'ready'
-        }
-        for (const [id, handle] of handles) {
-          if (!seen.has(id) && asked.has(id)) {
-            handle.status.value = 'refused'
-          }
-        }
-      })
-      .catch((error) => {
-        if (disposed) return
-
-        // a passing failure says nothing about a picture, so the next read settles it
-        if (!isRefusal(error)) {
-          markUnanswered(asked)
-          retryMedia()
-          return
-        }
-
-        for (const [id, handle] of handles) {
-          if (asked.has(id)) {
-            handle.status.value = 'refused'
-          }
-        }
-      })
-      .finally(() => {
-        mediaPromise = null
-
-        if (hasLoadingBeyond(asked)) {
-          void refreshMedia()
-        }
-      })
-    return mediaPromise
-  }
-
-  function markUnanswered(asked: Set<string>) {
-    for (const [id, handle] of handles) {
-      if (asked.has(id) && handle.status.value === 'loading') {
-        handle.status.value = 'unanswered'
-      }
-    }
-  }
-
-  function retryMedia() {
-    const delay = Math.min(MEDIA_RETRY_MS * MEDIA_RETRY_GROWTH ** failedReads, MEDIA_RETRY_MAX_MS)
-    failedReads += 1
-    mediaRetry = setTimeout(() => void refreshMedia(), delay)
-  }
-
-  function hasLoadingBeyond(asked: Set<string>) {
-    return [...handles].some(([id, handle]) => !asked.has(id) && handle.status.value === 'loading')
-  }
-  function getHandle(id: string): InternalMediaHandle {
-    let handle = handles.get(id)
-    if (!handle) {
-      const src = ref<string | null>(null)
-      const cacheKey = ref(`drive-media:${id}`)
-      const status = ref<MediaStatus>('loading')
-      handle = {
-        id,
-        src,
-        cacheKey,
-        status,
-        public: {
-          id,
-          src: readonly(src),
-          cacheKey: readonly(cacheKey),
-          status: readonly(status),
-          refresh: refreshMedia,
-        },
-      }
-      handles.set(id, handle)
-      void refreshMedia()
-    }
-    return handle
-  }
   const targetWindow = dependencies.window ?? (typeof window === 'undefined' ? undefined : window)
   const setEvery = dependencies.setInterval ?? globalThis.setInterval
   const clearEvery = dependencies.clearInterval ?? globalThis.clearInterval
   const accessTimer = setEvery(() => void refreshAccess(), ACCESS_REFRESH_MS)
-  const mediaTimer = setEvery(() => {
-    if (handles.size) void refreshMedia()
-  }, MEDIA_REFRESH_MS)
+  const mediaReader = openMediaReader(nodeId, {
+    client: requester,
+    window: targetWindow,
+    setInterval: setEvery,
+    clearInterval: clearEvery,
+  })
   const onFocus = () => void refreshAccess()
   targetWindow?.addEventListener('focus', onFocus)
-  function onOnline() {
-    if (handles.size) {
-      void refreshMedia()
-    }
-  }
-
-  targetWindow?.addEventListener('online', onOnline)
   // A share write can lower the caller's own access: react before the dialog closes.
   const stopAccessChanges = onAccessChange(nodeId, () => void refreshAccess())
   return {
@@ -569,7 +448,7 @@ export async function openDriveDocumentSession(
           },
         ),
     },
-    media: (id) => getHandle(id).public,
+    media: mediaReader.media,
     credentials: documentCredentials(nodeId),
     refreshAccess,
     dispose() {
@@ -577,10 +456,8 @@ export async function openDriveDocumentSession(
       disposed = true
       controller.abort()
       clearEvery(accessTimer)
-      clearEvery(mediaTimer)
-      clearTimeout(mediaRetry)
+      mediaReader.dispose()
       targetWindow?.removeEventListener('focus', onFocus)
-      targetWindow?.removeEventListener('online', onOnline)
       stopAccessChanges()
     },
   }
@@ -615,12 +492,17 @@ async function fetchWith(
   url: string,
   init: RequestInit = {},
 ): Promise<Response> {
-  const headers = new Headers(scope.headers)
+  // Link codes go to this site only. Drive's own routes answer a request that carries them
+  // from this origin, never with a redirect to the storage host.
+  const own = new URL(url, window.location.href).origin === window.location.origin
+  const headers = new Headers(own ? scope.headers : undefined)
   new Headers(init.headers).forEach((value, name) => headers.set(name, value))
   const response = await globalThis.fetch(url, {
     ...init,
     headers,
   })
+  // Another host's refusal says nothing about a link, so only this site's answer is recorded.
+  if (!own) return response
   if (response.ok)
     scope.settled?.({
       ok: true,
@@ -652,13 +534,6 @@ async function responseError(response: Response): Promise<TransportError> {
     status: response.status,
   })
 }
-interface InternalMediaHandle {
-  id: string
-  src: Ref<string | null>
-  cacheKey: Ref<string>
-  status: Ref<MediaStatus>
-  public: MediaHandle
-}
 
 /** Share needs MANAGE on an Active node. The server refuses a grant on a trashed one. */
 export function canShare(state: SessionState, access: DriveAccess): boolean {
@@ -668,14 +543,4 @@ export function canShare(state: SessionState, access: DriveAccess): boolean {
 function toSessionState(node: DriveNode): SessionState {
   if ((node.access?.role ?? 0) < 10) return 'Refused'
   return node.state === 'Trashed' ? 'Trashed' : 'Active'
-}
-function signatureFreeMediaKey(url: string, nodeId: string): string {
-  try {
-    const path = new URL(url, 'http://drive.local').pathname
-    // A Frappe blob URL, `[/private]/files/<blob>/<filename>`, keys on the blob alone.
-    const blobPath = path.match(/^(?:\/private)?\/files\/[0-9a-z]{10}\//)?.[0] ?? path
-    return `drive-media:${blobPath}`
-  } catch {
-    return `drive-media:${nodeId}`
-  }
 }

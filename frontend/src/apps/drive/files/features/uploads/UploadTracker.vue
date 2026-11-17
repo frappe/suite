@@ -46,8 +46,9 @@
         :aria-label="__('Close uploads')"
         @click="queue.closeTracker()"
       />
+      <!-- One file has its bar on its row, so the header leaves it out. -->
       <Progress
-        v-if="active"
+        v-if="active && !single"
         :value="overallPercent"
         size="sm"
         class="mt-2 basis-full"
@@ -67,17 +68,18 @@
       }"
     />
     <ul class="min-h-0 flex-1 divide-y divide-outline-gray-1 overflow-y-auto">
-      <!-- On a 4 px grid: rows inset to the header's edges, so names, bars and dividers line up.
-           A row is 52 px with its divider, so the divided rows give up 1 px of top padding. -->
+      <!-- On a 4 px grid: rows inset to the header's edges, so dividers line up with the header's bar.
+           A row is 64 px with its divider, so the divided rows give up 1 px of top padding.
+           The height holds room for the bar, so a row keeps its size as the bar comes and goes. -->
       <li
         v-for="entry in entries"
         :key="entry.id"
         data-slot="upload-entry"
         :data-state="entry.state"
-        class="relative mx-4 flex min-h-[52px] items-center gap-3 pb-2 pt-[7px] first:pt-2"
+        class="mx-4 flex min-h-16 gap-3 pb-2 pt-[7px] first:pt-2"
       >
         <!-- The icon sits on the name's line, and a finished upload gets a filled check. -->
-        <span class="flex h-5 shrink-0 items-center self-start" aria-hidden="true">
+        <span class="flex h-5 shrink-0 items-center" aria-hidden="true">
           <span
             v-if="entry.state === 'done'"
             data-slot="upload-done"
@@ -87,56 +89,63 @@
           </span>
           <span v-else :class="iconClass(entry)" class="size-4" />
         </span>
+        <!-- Everything beside the icon, so the bar starts where the name and status start. -->
         <div class="min-w-0 flex-1">
-          <RouterLink
-            v-if="entry.state === 'done' && entry.node"
-            :to="driveNodeRoute({ name: entry.node, title: entry.title, kind: 'file' })"
-            class="block truncate text-base leading-5 text-ink-gray-8 hover:underline focus-visible:underline focus-visible:outline-none"
-            :title="entry.title"
-          >
-            {{ entry.title }}
-          </RouterLink>
-          <p v-else class="truncate text-base leading-5 text-ink-gray-8" :title="entry.title">
-            {{ entry.title }}
-          </p>
-          <p
-            class="text-sm leading-4"
-            :class="[
-              entry.state === 'failed' || entry.note ? 'line-clamp-2' : 'truncate',
-              entry.state === 'failed' ? 'text-ink-red-7' : 'text-ink-gray-5',
-            ]"
-            :title="entry.state === 'failed' ? status(entry) : undefined"
-          >
-            {{ status(entry) }}
-          </p>
+          <div class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <RouterLink
+                v-if="entry.state === 'done' && entry.node"
+                :to="driveNodeRoute({ name: entry.node, title: entry.title, kind: 'file' })"
+                class="block truncate text-base leading-5 text-ink-gray-8 hover:underline focus-visible:underline focus-visible:outline-none"
+                :title="entry.title"
+              >
+                {{ entry.title }}
+              </RouterLink>
+              <p v-else class="truncate text-base leading-5 text-ink-gray-8" :title="entry.title">
+                {{ entry.title }}
+              </p>
+              <p
+                data-slot="upload-status"
+                class="text-sm leading-4"
+                :class="[
+                  entry.state === 'failed' || entry.note ? 'line-clamp-2' : 'truncate',
+                  entry.state === 'failed' ? 'text-ink-red-7' : 'text-ink-gray-5',
+                ]"
+                :title="entry.state === 'failed' ? status(entry) : undefined"
+              >
+                {{ status(entry) }}
+              </p>
+            </div>
+            <Button
+              v-if="entry.state === 'interrupted'"
+              :label="__('Resume')"
+              @click="queue.resume(entry.id)"
+            />
+            <Button
+              v-else-if="canRetry(entry)"
+              :label="__('Retry')"
+              @click="queue.retry(entry.id)"
+            />
+            <Button
+              v-if="canCancel(entry)"
+              variant="ghost"
+              icon="lucide-x"
+              :aria-label="__('Cancel upload of {0}', [entry.title])"
+              @click="queue.cancel(entry.id)"
+            />
+            <Button
+              v-else-if="dismissible(entry)"
+              variant="ghost"
+              icon="lucide-x"
+              :aria-label="__('Remove {0}', [entry.title])"
+              @click="queue.dismiss(entry.id)"
+            />
+          </div>
+          <!-- The bar runs from the name's left edge to the row's right edge, centred in a 4 px slot under the status. -->
+          <div v-if="showsProgress(entry)" class="mt-2 flex h-1 items-center">
+            <Progress :value="percent(entry)" size="sm" />
+          </div>
         </div>
-        <!-- The bar runs along the row's bottom edge, as wide as the dividers. -->
-        <Progress
-          v-if="showsProgress(entry)"
-          :value="percent(entry)"
-          size="sm"
-          class="absolute inset-x-0 bottom-0"
-        />
-        <Button
-          v-if="entry.state === 'interrupted'"
-          :label="__('Resume')"
-          @click="queue.resume(entry.id)"
-        />
-        <Button v-else-if="canRetry(entry)" :label="__('Retry')" @click="queue.retry(entry.id)" />
-        <Button
-          v-if="canCancel(entry)"
-          variant="ghost"
-          icon="lucide-x"
-          :aria-label="__('Cancel upload of {0}', [entry.title])"
-          @click="queue.cancel(entry.id)"
-        />
-        <Button
-          v-else-if="dismissible(entry)"
-          variant="ghost"
-          icon="lucide-x"
-          :aria-label="__('Remove {0}', [entry.title])"
-          @click="queue.dismiss(entry.id)"
-        />
       </li>
     </ul>
   </section>
@@ -177,6 +186,8 @@ const active = computed(() => entries.value.filter(isActive).length)
 /** Anything still uploading, or a folder still being read or created. */
 const busy = computed(() => active.value > 0 || !!queue.state.preparing || !!queue.state.reading)
 const retryable = computed(() => entries.value.filter(isInRetryAll).length)
+/** One file: its row shows the bytes and the bar, so the header does not repeat them. */
+const single = computed(() => entries.value.length === 1)
 const heading = computed(summaryHeading)
 const subline = computed(summaryLine)
 const overallPercent = computed(() => Math.round((queue.indicator.value?.fraction ?? 0) * 100))
@@ -209,6 +220,7 @@ function summaryLine(): string | null {
   if (preparing) return __('{0} of {1}', [folders.created, folders.total])
   const bytes = queue.indicator.value?.bytes
   if (!active.value || !bytes) return null
+  if (single.value) return timeLeft.value
   const sent = __('{0} of {1}', [formatBytes(bytes.sent), formatBytes(bytes.total)])
   return timeLeft.value ? `${sent} · ${timeLeft.value}` : sent
 }

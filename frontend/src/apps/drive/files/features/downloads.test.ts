@@ -4,12 +4,13 @@ import { api, client } from '@/api'
 import { useSession } from '@/platform/session'
 import { TransportError, type Operation } from '@/platform/transport'
 
-import { settledDownload, type DriveDownload } from './downloads'
+import { downloadItems, settledDownload, type DriveDownload } from './downloads'
 
 // The download poll's server: each poll takes the next answer, an Error is thrown.
 const server = vi.hoisted(() => {
   const polls: unknown[] = []
-  return { polls, calls: 0 }
+  const signed: unknown[] = []
+  return { polls, signed, calls: 0 }
 })
 
 vi.mock('@/platform/transport', async (original) => {
@@ -17,7 +18,11 @@ vi.mock('@/platform/transport', async (original) => {
   return {
     ...actual,
     transport: {
-      request: async (operation: Operation) => {
+      request: async (operation: Operation, input: { node?: string; download?: boolean }) => {
+        if (operation.id === 'node_content_url') {
+          server.signed.push(input)
+          return { url: `https://bucket.storage.example/${input.node}?sig&save`, expires: 1 }
+        }
         if (operation.id !== 'download_get') return {}
         server.calls += 1
         const answer = server.polls.shift()
@@ -49,6 +54,7 @@ beforeAll(async () => {
 })
 beforeEach(() => {
   server.polls = []
+  server.signed = []
   server.calls = 0
   vi.useFakeTimers({ toFake: ['setTimeout'] })
 })
@@ -91,5 +97,30 @@ describe('Waiting for a zip', () => {
 
     await stopped
     expect(server.calls).toBe(1)
+  })
+})
+
+describe('Downloading one file', () => {
+  let assign: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    assign = vi.fn()
+    vi.stubGlobal('location', { ...window.location, assign })
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('goes to the content route for a file the viewer holds in their own right', async () => {
+    await downloadItems([{ name: 'n1', title: 'Plan.pdf', kind: 'file', access: { role: 10 } }])
+    expect(assign).toHaveBeenCalledWith('/api/suite/drive/nodes/n1/content?download=1')
+    expect(server.signed).toEqual([])
+  })
+
+  it('goes to a signed download URL for a file held through a share link', async () => {
+    await downloadItems([
+      { name: 'n2', title: 'Plan.pdf', kind: 'file', access: { role: 10, via_link: '$LINK:a' } },
+    ])
+    expect(server.signed).toEqual([{ node: 'n2', download: true }])
+    expect(assign).toHaveBeenCalledWith('https://bucket.storage.example/n2?sig&save')
   })
 })

@@ -116,12 +116,16 @@ describe('Upload tracker header', () => {
       summary: '8 MB of 20 MB',
     },
     {
-      rows: [entry('held')],
+      rows: [entry('held'), entry('held')],
       state: { halted: 'Full' },
       heading: 'Upload paused',
-      summary: '4 MB of 10 MB',
+      summary: '8 MB of 20 MB',
     },
-    { rows: [entry('reconnecting')], heading: 'Waiting for connection', summary: '4 MB of 10 MB' },
+    {
+      rows: [entry('reconnecting'), entry('reconnecting')],
+      heading: 'Waiting for connection',
+      summary: '8 MB of 20 MB',
+    },
     { rows: [entry('interrupted'), entry('done')], heading: '1 upload stopped', summary: null },
     {
       rows: [entry('failed'), entry('failed'), entry('done')],
@@ -149,6 +153,24 @@ describe('Upload tracker header', () => {
 })
 
 describe('Upload tracker rows', () => {
+  it('shows the bytes and bar of a lone file on its row only', () => {
+    const bars = (root: Element | null) => root?.querySelectorAll("[data-slot='progress']").length
+    const one = mount(fakeQueue([entry('uploading')]))
+    expect(one.heading).toBe('Uploading 1 file')
+    expect(one.summary ?? '').not.toContain('MB')
+    expect(bars(one.root.querySelector('header'))).toBe(0)
+    const row = one.root.querySelector("[data-slot='upload-entry']")
+    expect(row?.querySelector("[data-slot='upload-status']")?.textContent?.trim()).toBe(
+      '4 MB of 10 MB',
+    )
+    expect(bars(row)).toBe(1)
+    app!.unmount()
+
+    const many = mount(fakeQueue([entry('uploading'), entry('uploading'), entry('done')]))
+    expect(many.summary).toMatch(/^18 MB of 30 MB/)
+    expect(bars(many.root.querySelector('header'))).toBe(1)
+  })
+
   it('links a finished upload to its file', () => {
     const linked = mount(fakeQueue([entry('done')]))
     expect(linked.root.querySelector('a')?.getAttribute('href')).toBe('/d/n1')
