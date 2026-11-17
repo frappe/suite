@@ -102,7 +102,7 @@ const adminTasks = computed<Task[]>(() => [
   {
     id: 'logo',
     title: __('Add your logo'),
-    description: __('Shows in the rail, invitations and shared links'),
+    description: __('Shows in the navigation, invitations and shared links'),
     done: !!workspaceLogo.value,
   },
 ])
