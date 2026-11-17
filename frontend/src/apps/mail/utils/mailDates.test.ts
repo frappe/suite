@@ -65,6 +65,48 @@ describe('dates in a mail', () => {
     expect(dates('Thanks for the numbers, I’ll look at them now and get back to you.')).toEqual([])
     expect(dates('Room 4, version 2.3, call +44 20 7946 0958')).toEqual([])
   })
+
+  it.each([
+    'I sat with him for an hour',
+    'the Sun is out',
+    '3/4 of the team agreed',
+    'it took 1/2 an hour',
+    'support is open 24/7',
+    'we rated it 4/5',
+    'enjoy the weekend',
+    'I will march on',
+  ])('underlines nothing in "%s"', (text) => {
+    expect(dates(text)).toEqual([])
+  })
+
+  it('takes a weekday in short only with a clock time beside it', () => {
+    expect(dates('Thu 3pm works')).toEqual([
+      { text: 'Thu 3pm', start: { date: '2026-11-19', time: '15:00' }, end: undefined },
+    ])
+    expect(dates('see you thursday')[0].start).toEqual({ date: '2026-11-19' })
+  })
+
+  it('reads an hour with no am or pm as a working hour', () => {
+    expect(dates('Can we meet at 5?')[0].start).toEqual({ date: '2026-11-17', time: '17:00' })
+    expect(dates('Friday at 2 then')[0].start).toEqual({ date: '2026-11-20', time: '14:00' })
+    expect(dates('Call at 9 tomorrow')[0].start).toEqual({ date: '2026-11-18', time: '09:00' })
+    expect(dates('Lunch at 12 on Friday')[0].start).toEqual({ date: '2026-11-20', time: '12:00' })
+  })
+
+  it('offers no date before the day the mail was sent', () => {
+    // Sent on the 17th, the reader's day: 20 October is last month's, not next year's.
+    expect(dates('The deadline was 20 Oct.')).toEqual([])
+    expect(dates('We met on 3 Nov 2026 at 10:00.')).toEqual([])
+    expect(dates('Due 20 Dec')[0].start).toEqual({ date: '2026-12-20' })
+  })
+
+  it('offers nothing in the line that opens a quoted trail, however it wraps', () => {
+    const text =
+      'Thursday at 3pm suits me.\n\nOn Tue, Nov 17, 2026 at 10:00 AM Lena Park <lena@example.com>\nwrote:'
+    expect(dates(text).map((date) => date.text)).toEqual(['Thursday at 3pm'])
+    const outlook = 'Friday works.\nSent: Tuesday, November 17, 2026 10:00 AM\nSubject: Q4'
+    expect(dates(outlook).map((date) => date.text)).toEqual(['Friday'])
+  })
 })
 
 const marked = (html: string) => {
@@ -85,6 +127,10 @@ describe('dates marked in a mail’s body', () => {
       m.getAttribute('data-mail-date'),
     )
     expect(new Set(ids)).toEqual(new Set(['0']))
+    // One control, one tab stop, named for the whole date.
+    const buttons = [...doc.querySelectorAll('[role="button"]')]
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual(['Thursday at 3pm'])
+    expect(doc.querySelectorAll('[tabindex]')).toHaveLength(1)
     expect(doc.body.textContent).toBe(
       new DOMParser().parseFromString(html, 'text/html').body.textContent,
     )
@@ -104,6 +150,21 @@ describe('dates marked in a mail’s body', () => {
       '<div>Friday works.</div><div class="gmail_quote"><div class="gmail_attr">On Mon, 16 Nov 2026 at 09:00, Lena wrote:</div><blockquote class="gmail_quote">Thursday at 3pm?</blockquote></div>',
     )
     expect(marks).toEqual(['Friday'])
+  })
+
+  it('leaves the line opening a trail alone when the writer answered inside it', () => {
+    const { marks } = marked(
+      '<div>Friday works.</div><div class="gmail_quote"><div class="gmail_attr">On Tue, Nov 17, 2026 at 10:00 AM Lena &lt;<a href="mailto:lena@example.com">lena@example.com</a>&gt; wrote:<br></div><blockquote class="gmail_quote">Thursday?</blockquote><div>Yes, Thursday at 3pm.</div><blockquote class="gmail_quote">Room?</blockquote></div>',
+    )
+    expect(marks).toEqual(['Friday', 'Thursday at 3pm'])
+  })
+
+  it('takes no mark a mail brings of its own', () => {
+    const { doc, found } = marked(
+      '<span data-mail-date="0"><a href="https://example.com" target="_top">Invoice</a></span>',
+    )
+    expect(found).toEqual([])
+    expect(doc.querySelector('[data-mail-date]')).toBeNull()
   })
 
   it('does not run a date across a line break', () => {
