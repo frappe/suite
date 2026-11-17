@@ -420,21 +420,22 @@ const srcdoc = computed(() => {
 				// widens gets the message back at full size.
 				const root = document.documentElement;
 				const bodyStyle = document.body.style;
-				// A sent <body style> lands on this body, so the hold saves the author's own value of
-				// each property it writes and puts it back on release; mail that fits is never touched.
-				let authorValues = null;
+				// The hold saves the value each property had just before it (a sent <body style>, or
+				// what normalizeWidths wrote this pass) and puts it back on release; mail that fits
+				// is never touched.
+				let heldOver = null;
 				const hold = (values) => {
-					authorValues ??= {};
+					heldOver ??= {};
 					Object.entries(values).forEach(([name, value]) => {
-						if (!(name in authorValues))
-							authorValues[name] = [bodyStyle.getPropertyValue(name), bodyStyle.getPropertyPriority(name)];
+						if (!(name in heldOver))
+							heldOver[name] = [bodyStyle.getPropertyValue(name), bodyStyle.getPropertyPriority(name)];
 						bodyStyle.setProperty(name, value, 'important');
 					});
 				};
 				const release = () => {
-					if (!authorValues) return;
-					Object.entries(authorValues).forEach(([name, saved]) => bodyStyle.setProperty(name, ...saved));
-					authorValues = null;
+					if (!heldOver) return;
+					Object.entries(heldOver).forEach(([name, saved]) => bodyStyle.setProperty(name, ...saved));
+					heldOver = null;
 				};
 				const fitToPane = () => {
 					const pane = root.clientWidth;
@@ -449,6 +450,7 @@ const srcdoc = computed(() => {
 				};
 
 				const normalizeAll = () => {
+					// Release first: normalizeWidths writes the same properties the hold saved.
 					release();
 					normalizeWidths();
 					unsquashImages();
@@ -459,6 +461,7 @@ const srcdoc = computed(() => {
 				// An image that fails changes the layout as surely as one that arrives, so both
 				// refit; the window's own load is the backstop once every image has settled.
 				const refit = () => {
+					// Release first, so what follows measures the unheld layout.
 					release();
 					unsquashImages();
 					fitToPane();
