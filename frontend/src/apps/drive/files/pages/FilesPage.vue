@@ -1606,7 +1606,7 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
         ? [
             {
               key: 'restore',
-              label: 'Restore',
+              label: __('Restore'),
               icon: 'lucide-undo-2',
               onClick: () => trash.restore([itemOf(row)]),
             },
