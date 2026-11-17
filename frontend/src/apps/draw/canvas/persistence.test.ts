@@ -30,12 +30,12 @@ const rectangle = {
 const scene = { rectangles: [rectangle], lines: [] }
 let unmount: (() => void) | undefined
 let persistence: DrawingPersistence
-async function editor(loadedScene: unknown = scene) {
+async function editor(loadedScene: unknown = scene, contentDocname = crypto.randomUUID()) {
   network.query.mockResolvedValue({ content: JSON.stringify(loadedScene), modified: 'original' })
   network.mutation.mockResolvedValue({ modified: 'saved' })
   persistence = new DrawingPersistence(
     fromPartial<DocumentSession>({
-      contentDocname: crypto.randomUUID(),
+      contentDocname,
       nodeId: 'node',
       title: ref('Drawing'),
       state: ref('Active'),
@@ -102,6 +102,45 @@ it('keeps newer text drafts when an older scene save is acknowledged', async () 
   expect(drafts).toHaveLength(1)
   expect(drafts[0]!.value.content.rectangles[0]!.x).toBe(95)
   expect(drafts[0]!.value.baseModified).toBe('saved')
+})
+
+/** Saves `edit` from a tab that reloads before the server's answer arrives. */
+async function reloadDuringSave(edit: typeof scene): Promise<string> {
+  const empty = { rectangles: [], lines: [] }
+  const first = await editor(empty)
+  await first.loadDrawing()
+  network.mutation.mockReturnValueOnce(new Promise(() => {}))
+  first.queueSave(edit)
+  void first.saveDrawing()
+  await first.retainRecovery()
+  await vi.waitFor(() => expect(network.mutation).toHaveBeenCalledOnce())
+  return first.session.contentDocname
+}
+
+it('reopens cleanly when the save sent before a reload reached the server', async () => {
+  const drawing = await reloadDuringSave(scene)
+  const reopened = await editor(scene, drawing)
+  network.query.mockResolvedValue({ content: JSON.stringify(scene), modified: 'saved' })
+
+  expect(await reopened.loadDrawing()).toEqual(scene)
+  expect(reopened.conflict.value).toBe(false)
+  expect(reopened.dirty.value).toBe(false)
+  expect(reopened.editable.value).toBe(true)
+  await reopened.retainRecovery()
+  expect(await readDrafts(`artist@example.com:${drawing}`)).toEqual([])
+})
+
+it('still pauses editing when someone else saved over the draft', async () => {
+  const drawing = await reloadDuringSave(scene)
+  const theirs = { rectangles: [{ ...rectangle, id: 'theirs', x: 300 }], lines: [] }
+  const reopened = await editor(scene, drawing)
+  network.query.mockResolvedValue({ content: JSON.stringify(theirs), modified: 'theirs' })
+
+  expect(await reopened.loadDrawing()).toEqual(scene)
+  expect(reopened.conflict.value).toBe(true)
+  expect(reopened.editable.value).toBe(false)
+  const drafts = await readDrafts(`artist@example.com:${drawing}`)
+  expect(drafts.map((draft) => draft.value.content)).toEqual([scene])
 })
 
 it('does not remove another revision or another editor draft', async () => {
