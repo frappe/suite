@@ -116,14 +116,18 @@ const fileOf = (url: string) => {
   return new File([bytes], `image.${extension}`, { type })
 }
 
-/** The bytes of `text` with each `%XX` turned into its byte. */
+/**
+ * The bytes of `text` with each `%XX` turned into its byte. This and the base64 step run while the
+ * writer types, on images of many megabytes, so neither does more per byte than copy it.
+ */
 const percentDecoded = (text: string) => {
   const encoded = new TextEncoder().encode(text)
+  if (!text.includes('%')) return encoded
   const bytes = new Uint8Array(encoded.length)
   let length = 0
   for (let i = 0; i < encoded.length; i++) {
-    const hex = encoded[i] === 0x25 ? String.fromCharCode(encoded[i + 1], encoded[i + 2]) : ''
-    if (/^[0-9a-f]{2}$/i.test(hex)) {
+    const hex = encoded[i] === 0x25 && String.fromCharCode(encoded[i + 1], encoded[i + 2])
+    if (hex && /^[0-9a-f]{2}$/i.test(hex)) {
       bytes[length++] = parseInt(hex, 16)
       i += 2
     } else bytes[length++] = encoded[i]
@@ -135,7 +139,9 @@ const percentDecoded = (text: string) => {
 const base64Decoded = (text: Uint8Array<ArrayBuffer>) => {
   try {
     const decoded = atob(new TextDecoder('latin1').decode(text))
-    return Uint8Array.from(decoded, (character) => character.charCodeAt(0))
+    const bytes = new Uint8Array(decoded.length)
+    for (let i = 0; i < decoded.length; i++) bytes[i] = decoded.charCodeAt(i)
+    return bytes
   } catch {
     return
   }
