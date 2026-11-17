@@ -89,8 +89,9 @@ export async function mediaSettled(ids: string[], signal?: AbortSignal): Promise
     }
 
     signal?.addEventListener('abort', finish, { once: true })
-    // the session reads its media together, so one handle asks for them all
-    void handles.find(isWaiting)?.refresh()
+    // a reader reads its media together, so a second ask joins the first; a
+    // composite's pictures come from more than one reader
+    for (const handle of handles.filter(isWaiting)) void handle.refresh()
   })
 
   return waitingIds(handles)

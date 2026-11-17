@@ -120,6 +120,7 @@ import {
 } from './compositeGroups'
 import { withSavedSlides } from './compositeSaved'
 import { conversionNotice, type ConversionStatus } from './conversionNotice'
+import { createDeckMedia } from './deckMedia'
 import ExportView from './ExportView.vue'
 import { resolveDocumentUnload, useDocumentLeaveGuard, type DocumentSaveState } from './navigation'
 import { useNewPresentationTheme } from './newPresentation'
@@ -278,8 +279,14 @@ const releaseContext = setDocumentContext(
   props.session.contentDocname,
   props.session.credentials.context,
 )
-// A migrated deck names its pictures by node id; the session signs their urls.
-const releaseMedia = setDocumentMedia((id) => props.session.media(id))
+// A migrated deck names its pictures by node id; Drive signs their urls. A
+// composite's pictures are read through the referenced deck that holds them.
+const deckMedia = createDeckMedia(
+  (id) => props.session.media(id),
+  props.session.credentials,
+  client,
+)
+const releaseMedia = setDocumentMedia(deckMedia.media)
 const releaseTemplateReader = setTemplateReader(readSource)
 const history = useCommandHistory(slides, {
   actions: historyMetaActions,
@@ -705,6 +712,8 @@ async function loadComposite(run: number) {
       compositeItems.value = items.map((item) => ({
         ...item,
       }))
+      // before the slides are drawn, so each picture asks the deck that holds it
+      deckMedia.addReferences(items)
       // A group that arrives moves indexes; the viewer stays on the slide they read.
       const place = placeAt(shown, slideIndex.value ?? 0)
       shown = mergeCompositeSlides(items)
@@ -1030,6 +1039,7 @@ onBeforeUnmount(() => {
   resetFocus()
   releaseContext()
   releaseMedia()
+  deckMedia.dispose()
   releaseTemplateReader()
   resetEditorState()
 })
