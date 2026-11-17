@@ -8,7 +8,7 @@ import { TransportError } from '@/platform/transport'
 
 import { inBatches } from '../batches'
 import type { BatchVerb } from '../batchResult'
-import { announceRestore, subject, type ChangedItem } from '../changeToast'
+import { announceRestore, ONE_LINE, subject, type ChangedItem } from '../changeToast'
 import { presentDialog } from '../dialogHost'
 
 const DESTINATION_REQUIRED = 'DriveRestoreDestinationRequired'
@@ -148,7 +148,7 @@ export function useTrashActions(root: () => string | null) {
         (nodes) => purging.run({ nodes }),
       )
       const deleted = items.filter((item) => result.ok.includes(item.node))
-      if (deleted.length) toast.success(__('Deleted {0} forever', [subject(deleted)]))
+      if (deleted.length) toast.success(__('Deleted {0} forever', [subject(deleted)]), ONE_LINE)
       show(result, 'deleted forever')
       return result
     } catch {

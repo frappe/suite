@@ -33,6 +33,12 @@ export interface MovedItem extends ChangedItem {
 const UNDO_DURATION = 10_000
 
 /**
+ * Keeps a toast that names an item on one line. A long name ends in an ellipsis
+ * instead of wrapping, since the toast has room beside its Undo for one line only.
+ */
+export const ONE_LINE = { classes: { content: 'min-w-0', title: 'truncate' } }
+
+/**
  * The changes announced on each node, latest last. Undo takes a change back
  * only on the nodes where it is still the latest, so the Undo of an earlier
  * move cannot pull an item out of the folder a later move put it in. A change
@@ -86,6 +92,7 @@ function announce<Item extends ChangedItem>(items: readonly Item[], change: Undo
     void takeBack(id, items, change)
   }
   const shown = toast.success(change.done, {
+    ...ONE_LINE,
     duration: UNDO_DURATION,
     onDismiss: forget,
     onAutoClose: forget,
