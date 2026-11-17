@@ -157,13 +157,40 @@ describe('dates in a message', () => {
       !element.dispatchEvent(
         new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
       )
-    return { document: dom.window.document, window: dom.window, posted, opened, press }
+    // A press as a pointer makes it: down at one spot, up and the click at another.
+    const pointer = (type: string, element: Element, x: number) =>
+      element.dispatchEvent(
+        new dom.window.MouseEvent(type, { bubbles: true, clientX: x, clientY: 10 }),
+      )
+    const drag = (element: Element, from: number, to: number, during = () => {}) => {
+      pointer('pointerdown', element, from)
+      during()
+      pointer('pointerup', element, to)
+      pointer('click', element, to)
+    }
+    return { document: dom.window.document, window: dom.window, posted, opened, press, drag }
   }
 
   it('asks the app for an event when a date is pressed, and does nothing else with the press', async () => {
     const { document, posted, press } = await inFrame('<p>Can we meet Thursday at 3pm?</p>')
     const mark = document.querySelector('[data-mail-date]')!
     expect(press(mark)).toBe(true)
+    expect(posted).toHaveBeenCalledWith({ type: 'mail-date', index: '0' }, '*')
+  })
+
+  it('lets a drag that starts on a date select text, and opens nothing for it', async () => {
+    const { document, posted, drag } = await inFrame('<p>Can we meet Thursday at 3pm?</p>')
+    const mark = document.querySelector('[data-mail-date]')!
+    // A browser starts no selection at a focusable element, so the date isn't one while pressed.
+    drag(mark, 10, 120, () => expect(mark.hasAttribute('tabindex')).toBe(false))
+    expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mail-date' }), '*')
+    // Tab reaches it again once the press is over.
+    expect(mark.getAttribute('tabindex')).toBe('0')
+  })
+
+  it('takes a tap in place for a pick', async () => {
+    const { document, posted, drag } = await inFrame('<p>Can we meet Thursday at 3pm?</p>')
+    drag(document.querySelector('[data-mail-date]')!, 10, 12)
     expect(posted).toHaveBeenCalledWith({ type: 'mail-date', index: '0' }, '*')
   })
 

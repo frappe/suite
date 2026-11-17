@@ -92,9 +92,30 @@ const withMarks = (runs: Segment[], marks: readonly { index: number; length: num
   return result
 }
 
-// A press that ends a text selection is the reader selecting, not picking.
-const pick = (mark: number) => {
-  if (window.getSelection()?.isCollapsed === false) return
+// A mark is focusable so Tab reaches it, but a browser starts no selection at the edge of a
+// focusable element: while a press lasts it isn't one. Where the press began tells a tap from a
+// drag.
+let pressedAt: { x: number; y: number } | undefined
+const press = (event: PointerEvent) => {
+  pressedAt = { x: event.clientX, y: event.clientY }
+  const mark = event.currentTarget
+  if (!(mark instanceof HTMLElement)) return
+  mark.removeAttribute('tabindex')
+  const refocusable = () => {
+    mark.setAttribute('tabindex', '0')
+    window.removeEventListener('pointerup', refocusable, true)
+    window.removeEventListener('pointercancel', refocusable, true)
+  }
+  window.addEventListener('pointerup', refocusable, true)
+  window.addEventListener('pointercancel', refocusable, true)
+}
+
+// A pick is a press and release in place that selected nothing: a drag, or a press that ends a
+// selection, is the reader selecting text.
+const pick = (mark: number, event?: MouseEvent) => {
+  const moved =
+    event && pressedAt && Math.hypot(event.clientX - pressedAt.x, event.clientY - pressedAt.y) > 4
+  if (moved || window.getSelection()?.isCollapsed === false) return
   emit('pick', mark)
 }
 </script>
@@ -118,7 +139,8 @@ const pick = (mark: number) => {
         tabindex="0"
         :title="markLabel"
         class="cursor-pointer underline decoration-[color:color-mix(in_srgb,currentColor_50%,transparent)] underline-offset-2 hover:decoration-current"
-        @click="pick(segment.mark)"
+        @pointerdown="press"
+        @click="pick(segment.mark, $event)"
         @keydown.enter.prevent="pick(segment.mark)"
         @keydown.space.prevent="pick(segment.mark)"
         ><HighlightedText :text="segment.text" :term="term"

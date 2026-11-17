@@ -39,6 +39,22 @@ describe('dates in a mail sent as text', () => {
     )
   })
 
+  it('lets a drag that starts on a date select text, and opens nothing for it', async () => {
+    const onPickDate = vi.fn()
+    const root = mount(text, { sentAt, onPickDate })
+    await vi.waitFor(() => expect(marks(root)).toHaveLength(1))
+    const mark = root.querySelector<HTMLElement>('[role="button"]')!
+    const at = (type: string, x: number) =>
+      mark.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: 10 }))
+    at('pointerdown', 10)
+    // A browser starts no selection at a focusable element, so the date isn't one while pressed.
+    expect(mark.hasAttribute('tabindex')).toBe(false)
+    at('pointerup', 120)
+    at('click', 120)
+    expect(onPickDate).not.toHaveBeenCalled()
+    expect(mark.getAttribute('tabindex')).toBe('0')
+  })
+
   it('marks nothing when it is not offered as an event', async () => {
     const root = mount(text)
     await nextTick()

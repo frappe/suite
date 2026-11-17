@@ -458,8 +458,9 @@ const rendered = computed(() => {
 					window.parent.postMessage({ type: 'pointerdown' }, '*');
 				});
 
-				// A date picked in the message goes to the app to make an event of — unless the press
-				// ended a selection, which is the reader selecting text, not picking.
+				// A date picked in the message goes to the app to make an event of: a press and release
+				// in place that selected nothing. A drag, or a press that ends a selection, is the reader
+				// selecting text.
 				const pickDate = (mark) =>
 					window.parent.postMessage({ type: 'mail-date', index: mark.dataset.mailDate }, '*');
 				document.addEventListener('keydown', (e) => {
@@ -468,6 +469,27 @@ const rendered = computed(() => {
 					e.preventDefault();
 					pickDate(mark);
 				});
+				// A date is focusable so Tab reaches it, but a browser starts no selection at the edge of
+				// a focusable element: while a press lasts it isn't one. Where the press began tells a
+				// tap from a drag.
+				let pressedAt = null;
+				let unfocused = null;
+				const refocusable = () => {
+					unfocused?.setAttribute('tabindex', '0');
+					unfocused = null;
+				};
+				document.addEventListener('pointerdown', (e) => {
+					refocusable();
+					pressedAt = { x: e.clientX, y: e.clientY };
+					const mark = e.target.closest?.('[data-mail-date][tabindex]');
+					if (!mark) return;
+					mark.removeAttribute('tabindex');
+					unfocused = mark;
+				}, true);
+				document.addEventListener('pointerup', refocusable, true);
+				document.addEventListener('pointercancel', refocusable, true);
+				const moved = (e) =>
+					!!pressedAt && Math.hypot(e.clientX - pressedAt.x, e.clientY - pressedAt.y) > 4;
 
 				// Forward link clicks to parent. A link comes first, whatever is around it: the frame
 				// never follows one itself.
@@ -489,7 +511,7 @@ const rendered = computed(() => {
 					const mark = e.target.closest('[data-mail-date]');
 					if (!mark) return;
 					e.preventDefault();
-					if (document.getSelection()?.isCollapsed !== false) pickDate(mark);
+					if (!moved(e) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
 				// Forward horizontal swipes to the parent — touches never leave the iframe, so
