@@ -11,11 +11,13 @@
             @click="create"
           />
         </template>
-        <div v-if="calendars.data?.length">
+        <!-- mt-2 keeps a row's hover fill off the title and its button. -mx-3 with px-3 lets
+             that fill run past the column while the row's own ends line up with the title's. -->
+        <div v-if="calendars.data?.length" class="mt-2">
           <div
             v-for="calendar in calendars.data"
             :key="calendar.name"
-            class="-mx-2 flex items-center justify-between gap-3 rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
+            class="-mx-3 flex items-center justify-between gap-3 rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
             :class="canEdit(calendar) && 'cursor-pointer hover:bg-surface-gray-1'"
             @click="canEdit(calendar) && edit(calendar)"
           >
