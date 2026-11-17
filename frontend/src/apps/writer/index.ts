@@ -17,6 +17,7 @@ export const writerDocument: DocumentTypeDefinition = {
   contentDoctype: 'Writer Document',
   newLabel: () => __('Document'),
   icon: WriterIcon,
+  hasTemplates: true,
   loadSurface: async () => (await import('@/apps/writer/surface/WriterSurface.vue')).default,
   loadOpeningEditor: async () => (await import('@/apps/writer/opening/OpeningEditor.vue')).default,
   loadUnsavedWork: async () => (await import('@/apps/writer/recovery/UnsavedWork.vue')).default,

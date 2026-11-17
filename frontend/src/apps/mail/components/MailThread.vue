@@ -20,6 +20,7 @@
       @delete-thread="emit('deleteThread')"
       @prev-thread="emit('prevThread')"
       @next-thread="emit('nextThread')"
+      @print="printThread"
     />
     <!-- The swipe slide (`slide` prop) pages only the thread-specific part — subject,
 		     messages, reply bar — while the toolbar above stays put. Keyed per thread on
@@ -206,7 +207,12 @@
                         @click.stop="mail.collapsed = !mail.collapsed"
                       >
                         <div class="flex items-center space-x-2">
-                          <Badge v-if="mail.draft" :label="__('Draft')" theme="red" class="w-fit" />
+                          <Badge
+                            v-if="mail.draft"
+                            :label="__('Draft')"
+                            theme="gray"
+                            class="w-fit"
+                          />
                           <MailDate :datetime="mail.received_at" />
                         </div>
                         <MailActions
@@ -230,6 +236,7 @@
                             (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                           "
                           @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                          @print="printMail"
                         />
                       </div>
                       <!-- An expanded mail always needs the gap between header and body —
@@ -497,6 +504,7 @@
                                     (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                                   "
                                   @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                                  @print="printMail"
                                 />
                               </div>
                             </div>
@@ -847,6 +855,8 @@ import {
   getFormattedDate,
   getGroupedRecipients,
   hasHtmlContent,
+  isMac,
+  isOverlayPresent,
   matchesScreenedValue,
   plainTextToHtml,
   raiseError,
@@ -866,6 +876,7 @@ import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
+import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { returnedStrip } from '@/apps/mail/utils/snoozeTimes'
 import { submissionRow } from '@/apps/mail/utils/submission'
@@ -1840,8 +1851,17 @@ const discardLocalDraft = (mail: string) => {
 const handleKeydown = (e: KeyboardEvent) => {
   // Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
   // The listener sits on window, so it only acts while a Mail route is active.
-  if (readonly || !isMailRoute(route) || shouldIgnoreKeypress(e)) return
+  if (readonly || !isMailRoute(route)) return
   const key = e.key.toLowerCase()
+  // ⌘P / Ctrl+P prints the conversation rather than the app around it — from a field too, which
+  // shouldIgnoreKeypress would rule out. Over a dialog or the attachment viewer it is the browser's.
+  if (key === 'p' && (isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey) {
+    if (isOverlayPresent() || !printableMails.value.length) return
+    e.preventDefault()
+    printThread()
+    return
+  }
+  if (shouldIgnoreKeypress(e)) return
   const lastMail = thread.value?.at(-1)
   if (!lastMail || lastMail.draft) return
 
@@ -2111,14 +2131,41 @@ const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || ma
 // Deliberately not a <pre>: the editor parses one as a code block, so quoting or forwarding
 // a plain-text mail used to hand the recipient the sender's prose in monospace that never
 // wrapped. plainTextToHtml keeps the line breaks without asking for that.
-const getBodyContent = (mail: Mail) => {
-  // Contained, not verbatim: the original's body/html style rules would otherwise
-  // repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
-  // bleeding over the sender's own text).
-  if (hasHtmlContent(mail.html_body)) return containEmailHtml(mail.html_body)
+const bodyHtml = (mail: Mail) => {
+  if (hasHtmlContent(mail.html_body)) return mail.html_body
   const text = getPlainTextBody(mail)
   return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
+// Contained, not verbatim: the original's body/html style rules would otherwise
+// repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
+// bleeding over the sender's own text).
+const getBodyContent = (mail: Mail) => containEmailHtml(bodyHtml(mail))
+// ── Printing ────────────────────────────────────────────────────────────────────────────────────
+
+// A message as it goes on paper: its own body, with remote content held back where the reader holds
+// it back — printing is no reason to load what the reader chose not to.
+const printed = (mail: Mail): PrintedMessage => {
+  // Bcc is only ever on the sender's own copy, which is theirs to print.
+  const { to, cc, bcc } = getGroupedRecipients(mail.recipients ?? [], true, true)
+  return {
+    from: mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email,
+    to,
+    cc,
+    bcc,
+    receivedAt: mail.received_at,
+    body: bodyHtml(mail),
+    blockRemote: isBlocked(mail),
+    attachments: filteredAttachments(mail).map((attachment) => attachment.filename),
+  }
+}
+const printMail = (mail: Mail) => printMessages(mail.subject, [printed(mail)])
+// The whole conversation, drafts aside, as it reads from the top.
+const printableMails = computed(() => thread.value.filter((mail) => !mail.draft))
+const printThread = () => {
+  const mails = printableMails.value
+  if (mails.length) printMessages(mails[0].subject, mails.map(printed))
+}
+
 const getQuotedContent = (mail: Mail) => `
 		<div class="frappe_mail_quote">
 			On ${dayjs(mail.received_at).format('DD MMM YYYY [at] h:mm A')}, ${mail.from_email} wrote:

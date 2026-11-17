@@ -197,6 +197,8 @@ export const registration: OwnerRegistration = {
       effects,
     }
     if (reference.id === 'roots_discover') policy.staleTime = 5 * 60_000
+    // A signed URL lasts 15 minutes, and a new one reloads the frame or media that shows it.
+    if (reference.id === 'node_content_url') policy.staleTime = 10 * 60_000
     if (reference.id === 'node_children') {
       // A trashed folder lists what was trashed with it: rows whose trash root is above them.
       policy.member = (row, input) =>

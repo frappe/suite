@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, ref } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
-import { DOCUMENT_TYPES_KEY } from '@/platform/contracts'
+import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { createApiClient, installApiErrorHandler } from '@/platform/server-state'
 import { createTransport } from '@/platform/transport'
 
@@ -65,7 +65,25 @@ afterEach(() => {
   engine.dispose()
 })
 
-function mountPicker() {
+function documentType(
+  key: string,
+  contentDoctype: string,
+  label: string,
+  hasTemplates?: true,
+): DocumentTypeDefinition {
+  return {
+    key,
+    contentDoctype,
+    newLabel: () => label,
+    icon: {},
+    loadSurface: async () => ({}),
+    hasTemplates,
+  }
+}
+
+const writer = documentType('writer', 'Writer Document', 'Document', true)
+
+function mountPicker(types = [writer]) {
   const open = ref(true)
   const created = vi.fn()
   const root = document.createElement('div')
@@ -81,15 +99,7 @@ function mountPicker() {
         onCreated: created,
       }),
   })
-  app.provide(DOCUMENT_TYPES_KEY, [
-    {
-      key: 'writer',
-      contentDoctype: 'Writer Document',
-      newLabel: () => 'Document',
-      icon: {},
-      loadSurface: async () => ({}),
-    },
-  ])
+  app.provide(DOCUMENT_TYPES_KEY, types)
   app.config.errorHandler = diagnostics
   installApiErrorHandler(app)
   app.mount(root)
@@ -101,7 +111,25 @@ function mountPicker() {
 }
 
 describe('Template picker', () => {
-  it('with no templates, shows the empty state and no Create button', async () => {
+  it('offers a tab for each type that has templates, and only those', async () => {
+    fetcher.mockImplementation(
+      async () => new Response(JSON.stringify({ data: { rows: [], next_cursor: null } })),
+    )
+    mountPicker([
+      writer,
+      documentType('sheets', 'Sheet', 'Spreadsheet'),
+      documentType('slides', 'Presentation', 'Presentation', true),
+    ])
+
+    const tabs = await vi.waitFor(() => {
+      const shown = [...document.querySelectorAll('[role="dialog"] [role="radio"]')]
+      expect(shown).not.toHaveLength(0)
+      return shown
+    })
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Document', 'Presentation'])
+  })
+
+  it('with no templates, shows the empty state and a Create that cannot be pressed', async () => {
     fetcher.mockImplementation(
       async () => new Response(JSON.stringify({ data: { rows: [], next_cursor: null } })),
     )
@@ -111,11 +139,11 @@ describe('Template picker', () => {
       expect(dialog?.textContent).toContain('No templates yet')
       return dialog!
     })
-    const labels = [...dialog.querySelectorAll('button')].map((button) =>
-      button.textContent?.trim(),
+    // Kept in its place, so the footer does not jump between an empty type and a full one
+    const create = [...dialog.querySelectorAll('button')].find(
+      (button) => button.textContent?.trim() === 'Create',
     )
-    expect(labels).toContain('Cancel')
-    expect(labels).not.toContain('Create')
+    expect(create?.disabled).toBe(true)
   })
 
   it('owns a refused double-click, retains the selection, and closes only after a successful retry', async () => {
