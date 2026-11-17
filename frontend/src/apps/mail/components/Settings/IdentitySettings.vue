@@ -6,7 +6,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Identities & signatures')"
     :description="__('The addresses you send mail as, and the signatures you sign it with')"
     :loading="!identities.data"
     :reads="[identities, store.userResource]"

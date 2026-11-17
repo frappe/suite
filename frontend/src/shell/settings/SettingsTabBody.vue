@@ -1,7 +1,8 @@
 <!--
   One tab's body, loaded on the tab's first open. Until the chunk arrives, the
   tab's header and the settings loading state show, in the place the loaded
-  tab puts them, so nothing jumps when the body shows.
+  tab puts them, so nothing jumps when the body shows. It provides the tab's
+  label, which the body's `SettingsPage` shows as its title.
 -->
 <template>
   <component :is="body" />
@@ -20,7 +21,7 @@ function placeholder(tab: SettingsTab, failed: boolean): Component {
     setup: () => () =>
       h(
         SettingsPage,
-        { title: tab.label(), loading: !failed },
+        { loading: !failed },
         failed
           ? () =>
               h(
@@ -52,8 +53,14 @@ function bodyOf(tab: SettingsTab): Component {
 </script>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, provide } from 'vue'
+
+import { SETTINGS_TAB_TITLE } from '@/platform/settings'
 
 const props = defineProps<{ tab: SettingsTab }>()
 const body = computed(() => bodyOf(props.tab))
+provide(
+  SETTINGS_TAB_TITLE,
+  computed(() => props.tab.label()),
+)
 </script>

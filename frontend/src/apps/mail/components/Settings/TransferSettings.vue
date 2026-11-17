@@ -5,7 +5,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Import & export')"
     :description="__('Bring in mail and contacts from a file, or download a copy of them')"
   >
     <!-- The switch belongs to the forms under it, so it sits closer to the

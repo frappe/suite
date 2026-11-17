@@ -5,7 +5,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Calendars')"
     :description="__('Your calendars and the ones shared with you')"
     :loading="!calendars.data"
     :reads="[calendars]"

@@ -4,7 +4,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Profile')"
     :description="__('Your photo and name, as other people see them')"
     :loading="!user.data"
     :reads="[user]"

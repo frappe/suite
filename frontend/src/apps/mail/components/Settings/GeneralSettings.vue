@@ -4,7 +4,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('General')"
     :description="__('How you read and send mail, and how much storage it uses')"
     :loading="!preferences"
     :reads="[preferencesRead, store.userResource]"

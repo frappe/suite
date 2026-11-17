@@ -6,7 +6,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('External access')"
     :description="__('Connect Drive to desktop, mobile, and other file apps')"
     :loading="!webdavAnswer.data"
     :reads="[webdavAnswer]"

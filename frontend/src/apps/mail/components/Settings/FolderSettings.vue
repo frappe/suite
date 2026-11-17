@@ -4,7 +4,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Folders')"
     :description="__('Make, rename and arrange the folders you file mail into')"
     :loading="!mailboxes.data"
     :reads="[mailboxes, store.userResource]"

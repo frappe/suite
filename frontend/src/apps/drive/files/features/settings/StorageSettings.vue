@@ -6,7 +6,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Storage')"
     :description="__('How much space your files use, and what uses it')"
     :loading="!data"
     :reads="[discovered, usage]"

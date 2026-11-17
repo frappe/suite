@@ -4,7 +4,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Advanced')"
     :description="__('Your mail server connection, other mail apps, and server-side rules')"
   >
     <ConnectionSection />

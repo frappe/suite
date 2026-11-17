@@ -7,7 +7,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Identity')"
     :description="
       freeAddresses.length
         ? __('The name and email shown to people you invite')

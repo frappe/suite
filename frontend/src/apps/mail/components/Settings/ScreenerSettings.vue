@@ -5,7 +5,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Screener')"
     :description="__('Decide who can reach your Inbox')"
     :loading="!preferences"
     :reads="[preferencesRead, store.userResource]"

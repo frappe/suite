@@ -6,7 +6,7 @@
 -->
 <template>
   <slot v-if="userResource.data" />
-  <SettingsPage v-else :title="title" loading :reads="[userResource]" />
+  <SettingsPage v-else loading :reads="[userResource]" />
 </template>
 
 <script setup lang="ts">
@@ -16,7 +16,6 @@ import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { SettingsPage } from '@/platform/settings-tab'
 
-defineProps<{ title: string }>()
 defineSlots<{ default?: () => unknown }>()
 
 const { userResource } = userStore()

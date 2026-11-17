@@ -2,8 +2,8 @@
   The root of every settings tab body. Use it once per tab, with
   `SettingsSection`s inside.
 
-  - The title equals the tab's sidebar label; the description is one line
-    that says what the tab is for.
+  - The title is the tab's sidebar label, which the shell provides; the
+    description is one line that says what the tab is for.
   - `#actions` sits right of the title, for actions on the whole tab. When
     the body is one untitled list (Folders, Calendars), its "New" button goes
     here; when the tab has several titled lists, each "New" goes in its
@@ -39,7 +39,7 @@
     </div>
   </template>
   <template v-else>
-    <SettingsHeader :title="title" :description="description">
+    <SettingsHeader :title="title ?? ''" :description="description">
       <template v-if="$slots.actions" #actions>
         <slot name="actions" />
       </template>
@@ -63,7 +63,11 @@ import { SettingsBody, SettingsHeader } from 'frappe-ui'
 import { computed, inject } from 'vue'
 
 import { LoadFailed } from '@/platform/load-failed'
-import { SETTINGS_PAGE_ACTIONS_ID, SETTINGS_PHONE_PAGE } from '@/platform/settings'
+import {
+  SETTINGS_PAGE_ACTIONS_ID,
+  SETTINGS_PHONE_PAGE,
+  SETTINGS_TAB_TITLE,
+} from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
 import SettingsLoading from './SettingsLoading.vue'
@@ -75,7 +79,6 @@ interface SettingsRead {
 }
 
 const props = defineProps<{
-  title: string
   description?: string
   loading?: boolean
   reads?: readonly SettingsRead[]
@@ -83,6 +86,7 @@ const props = defineProps<{
 defineSlots<{ default?: () => unknown; actions?: () => unknown }>()
 
 const phonePage = inject(SETTINGS_PHONE_PAGE, false)
+const title = inject(SETTINGS_TAB_TITLE, undefined)
 
 const failedReads = computed(() => (props.reads ?? []).filter((read) => read.error))
 // In order, so a read whose input comes from an earlier one runs after it.

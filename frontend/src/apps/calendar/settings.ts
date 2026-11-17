@@ -9,9 +9,9 @@ type BodyModule = { default: Component }
 /**
  * Wraps a Calendar tab body in the Calendar injections, loaded with the body.
  * The scope shows the tab's header and the loading state until the account is
- * in, so `title` is the tab's label.
+ * in.
  */
-function scoped(title: () => string, load: () => Promise<BodyModule>) {
+function scoped(load: () => Promise<BodyModule>) {
   return async (): Promise<Component> => {
     const [{ default: Body }, { default: Scope }] = await Promise.all([
       load(),
@@ -19,15 +19,10 @@ function scoped(title: () => string, load: () => Promise<BodyModule>) {
     ])
     return defineComponent({
       name: 'CalendarSettingsTab',
-      setup: () => () => h(Scope, { title: title() }, { default: () => h(Body) }),
+      setup: () => () => h(Scope, null, { default: () => h(Body) }),
     })
   }
 }
-
-const calendarsLabel = () => __('Calendars')
-const identityLabel = () => __('Identity')
-const transferLabel = () => __('Import & export')
-const advancedLabel = () => __('Advanced')
 
 const calendar = {
   label: () => __('Calendar'),
@@ -35,39 +30,27 @@ const calendar = {
   tabs: [
     {
       id: 'calendar.calendars',
-      label: calendarsLabel,
+      label: () => __('Calendars'),
       icon: 'lucide-calendar-days',
-      body: scoped(
-        calendarsLabel,
-        () => import('@/apps/calendar/components/Settings/CalendarsSettings.vue'),
-      ),
+      body: scoped(() => import('@/apps/calendar/components/Settings/CalendarsSettings.vue')),
     },
     {
       id: 'calendar.identity',
-      label: identityLabel,
+      label: () => __('Identity'),
       icon: 'lucide-contact',
-      body: scoped(
-        identityLabel,
-        () => import('@/apps/calendar/components/Settings/IdentitySettings.vue'),
-      ),
+      body: scoped(() => import('@/apps/calendar/components/Settings/IdentitySettings.vue')),
     },
     {
       id: 'calendar.transfer',
-      label: transferLabel,
+      label: () => __('Import & export'),
       icon: 'lucide-arrow-down-up',
-      body: scoped(
-        transferLabel,
-        () => import('@/apps/calendar/components/Settings/TransferSettings.vue'),
-      ),
+      body: scoped(() => import('@/apps/calendar/components/Settings/TransferSettings.vue')),
     },
     {
       id: 'calendar.advanced',
-      label: advancedLabel,
+      label: () => __('Advanced'),
       icon: 'lucide-code',
-      body: scoped(
-        advancedLabel,
-        () => import('@/apps/calendar/components/Settings/AdvancedSettings.vue'),
-      ),
+      body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
     },
   ],
 } as const

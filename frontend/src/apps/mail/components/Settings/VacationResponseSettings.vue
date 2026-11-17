@@ -4,7 +4,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Vacation response')"
     :description="__('Reply automatically to mail that comes in while you are away')"
     :loading="!vacationResponse.data"
     :reads="[vacationResponse, store.userResource]"

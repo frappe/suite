@@ -4,7 +4,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Preferences')"
     :description="__('How Suite looks, its language and time zone, and notifications')"
     :loading="!user.data"
     :reads="[user]"

@@ -5,7 +5,6 @@
 -->
 <template>
   <SettingsPage
-    :title="__('Import & export')"
     :description="__('Bring in events from a file, or download a copy of your calendars')"
   >
     <!-- The switch belongs to the form under it, so it sits closer to it than

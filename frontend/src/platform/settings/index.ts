@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, type InjectionKey, type Ref } from 'vue'
 
 /**
  * The tab ids of the composition settings list. `composition/settings.ts`
@@ -42,6 +42,13 @@ export function openSettings(tab?: SettingsTabId): void {
  * header and padding, because the page bar already shows the title.
  */
 export const SETTINGS_PHONE_PAGE = 'app-settings-mobile-page'
+
+/**
+ * Provided by the shell around each tab body: the open tab's sidebar label.
+ * The tab's `SettingsPage` shows it as its title, so the label is written once,
+ * in the tab list.
+ */
+export const SETTINGS_TAB_TITLE: InjectionKey<Readonly<Ref<string>>> = Symbol('settings-tab-title')
 
 /** The id of the phone page bar's slot for a tab's header actions. */
 export const SETTINGS_PAGE_ACTIONS_ID = 'app-settings-page-actions'
