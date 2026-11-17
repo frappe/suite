@@ -11,15 +11,12 @@
             @click="create"
           />
         </template>
-        <!-- mt-2 keeps a row's hover fill off the title and its button. -mx-3 with px-3 lets
-             that fill run past the column while the row's own ends line up with the title's. -->
         <div v-if="calendars.data?.length" class="mt-2">
+          <!-- A row holding only a badge stands as tall as one with a button -->
           <div
             v-for="calendar in calendars.data"
             :key="calendar.name"
-            class="-mx-3 flex items-center justify-between gap-3 rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
-            :class="canEdit(calendar) && 'cursor-pointer hover:bg-surface-gray-1'"
-            @click="canEdit(calendar) && edit(calendar)"
+            class="flex min-h-9 items-center justify-between gap-3 py-1 max-sm:min-h-12 max-sm:py-2"
           >
             <div class="flex min-w-0 items-center gap-2 max-sm:gap-3">
               <span
@@ -28,21 +25,27 @@
               />
               <span class="truncate text-base text-ink-gray-8">{{ calendar._name }}</span>
             </div>
-            <div class="flex shrink-0 items-center gap-3 max-sm:-mr-1.5">
+            <div class="flex shrink-0 items-center gap-3">
               <Badge v-if="calendar.default" :label="__('Default')" />
               <Badge v-if="!canEdit(calendar)" :label="__('Read-only')" />
-              <!-- .stop on the wrapper, as mail's folder list has it: the phone's sheet opens
-					     on the click bubbling to AdaptiveDropdown's own span. Invisible rather than
-					     gone with nothing to offer, so the row keeps the button's height. -->
-              <div class="flex" :class="!hasMenuOptions(calendar) && 'invisible'" @click.stop>
-                <AdaptiveDropdown :options="menuOptions(calendar)" :title="calendar._name">
-                  <Button variant="ghost" :aria-label="__('Calendar options')">
-                    <template #icon>
-                      <Ellipsis class="size-4 text-ink-gray-5" />
-                    </template>
-                  </Button>
-                </AdaptiveDropdown>
-              </div>
+              <!-- Ahead of Edit, so every Edit button ends on the line New and Manage end on. -->
+              <AdaptiveDropdown
+                v-if="hasMoreOptions(calendar)"
+                :options="moreOptions(calendar)"
+                :title="calendar._name"
+              >
+                <Button variant="ghost" :aria-label="__('Calendar options')">
+                  <template #icon>
+                    <Ellipsis class="size-4 text-ink-gray-5" />
+                  </template>
+                </Button>
+              </AdaptiveDropdown>
+              <Button
+                v-if="canEdit(calendar)"
+                :label="__('Edit')"
+                :size="buttonSize"
+                @click="edit(calendar)"
+              />
             </div>
           </div>
         </div>
@@ -69,6 +72,7 @@
 <script setup lang="ts">
 import { Badge, Button } from 'frappe-ui'
 import { Ellipsis } from 'lucide-vue-next'
+import { computed } from 'vue'
 
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
@@ -86,6 +90,7 @@ import SettingsSection from '@/platform/settings/SettingsSection.vue'
 
 const { calendars } = userStore()
 const { isMobile } = useScreenSize()
-const { selected, showEdit, showDelete, create, edit, canEdit, menuOptions, hasMenuOptions } =
+const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
+const { selected, showEdit, showDelete, create, edit, canEdit, moreOptions, hasMoreOptions } =
   useCalendarActions()
 </script>
