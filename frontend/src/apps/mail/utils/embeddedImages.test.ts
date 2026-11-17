@@ -56,6 +56,25 @@ describe('uploadEmbeddedImages', () => {
     expect(uploads.inHtml(html)).not.toContain('data:')
   })
 
+  it('reads base64 written the loose ways a data URL allows, at any size', async () => {
+    const { uploaded, upload } = uploadedTo('/private/files/image.png')
+    const bytes = Uint8Array.from({ length: 300_000 }, (_, index) => index % 251)
+    let binary = ''
+    for (const byte of bytes) binary += String.fromCharCode(byte)
+    const spaced = PNG_BASE64.replace(/=+$/, '').replace(/(.{20})/g, '$1 ')
+    const html =
+      `<img src="data:image/jpeg;base64,${btoa(binary)}">` +
+      `<img src="DATA:IMAGE/PNG; BASE64,${spaced.replace(/\+/g, '%2B')}">`
+
+    await uploadEmbeddedImages(html, upload)
+
+    expect(uploaded.map((file) => [file.name, file.type, file.size])).toEqual([
+      ['image.jpeg', 'image/jpeg', 300_000],
+      ['image.png', 'image/png', 68],
+    ])
+    expect(new Uint8Array(await uploaded[0].arrayBuffer())).toEqual(bytes)
+  })
+
   it('leaves a body without data URLs exactly as it was', async () => {
     const upload = vi.fn()
     const html = '<div>Hi</div><img src="/private/files/a.png" data-cid="x">'
@@ -66,13 +85,15 @@ describe('uploadEmbeddedImages', () => {
 
   it('says why an image was left as a data URL', async () => {
     const refusal = new Error('Server error')
-    const html = `<img src="${PNG}"><img src="data:text/plain,hello">`
+    const broken = 'data:image/png;base64,not*base64'
+    const html = `<img src="${PNG}"><img src="data:text/plain,hello"><img src="${broken}">`
 
     const uploads = await uploadEmbeddedImages(html, () => Promise.reject(refusal))
 
     expect([...uploads.failures]).toEqual([
       [PNG, refusal],
       ['data:text/plain,hello', undefined],
+      [broken, undefined],
     ])
   })
 })

@@ -24,7 +24,7 @@ export const uploadEmbeddedImages = async (
   const failures = new Map<string, unknown>()
   for (const url of new Set(embeddedImagesIn(html).map((image) => image.url))) {
     try {
-      const file = await fileOf(url)
+      const file = fileOf(url)
       if (file) fileUrls.set(url, (await upload(file)).file_url)
       else failures.set(url, undefined)
     } catch (error) {
@@ -100,12 +100,43 @@ const pointAtFiles = (html: string, fileUrls: Map<string, string>) => {
 
 /**
  * The image a data URL holds, decoded the way the browser reads one, parameters (`;name=`,
- * `;charset=`) and all. Nothing for one that holds something other than an image.
+ * `;charset=`) and all. Nothing for one that holds something other than an image, or that doesn't
+ * decode.
  */
-const fileOf = async (url: string) => {
-  const response = await fetch(url)
-  const type = response.headers.get('content-type')?.split(';')[0].trim() ?? ''
+const fileOf = (url: string) => {
+  const match = /^data:([^,]*),(.*)$/is.exec(url.trim().split('#')[0])
+  if (!match) return
+  const header = match[1].trim()
+  const base64 = /;\s*base64$/i.test(header)
+  const type = header.split(';')[0].trim().toLowerCase()
   if (!type.startsWith('image/')) return
+  const bytes = base64 ? base64Decoded(percentDecoded(match[2])) : percentDecoded(match[2])
+  if (!bytes) return
   const extension = type.split('/')[1].split('+')[0]
-  return new File([await response.arrayBuffer()], `image.${extension}`, { type })
+  return new File([bytes], `image.${extension}`, { type })
+}
+
+/** The bytes of `text` with each `%XX` turned into its byte. */
+const percentDecoded = (text: string) => {
+  const encoded = new TextEncoder().encode(text)
+  const bytes = new Uint8Array(encoded.length)
+  let length = 0
+  for (let i = 0; i < encoded.length; i++) {
+    const hex = encoded[i] === 0x25 ? String.fromCharCode(encoded[i + 1], encoded[i + 2]) : ''
+    if (/^[0-9a-f]{2}$/i.test(hex)) {
+      bytes[length++] = parseInt(hex, 16)
+      i += 2
+    } else bytes[length++] = encoded[i]
+  }
+  return bytes.subarray(0, length)
+}
+
+/** The bytes base64 text stands for, spaces and missing padding allowed. Nothing if it isn't base64. */
+const base64Decoded = (text: Uint8Array<ArrayBuffer>) => {
+  try {
+    const decoded = atob(new TextDecoder('latin1').decode(text))
+    return Uint8Array.from(decoded, (character) => character.charCodeAt(0))
+  } catch {
+    return
+  }
 }
