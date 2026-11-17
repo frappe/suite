@@ -12,31 +12,26 @@
       <div
         v-for="mailbox in managedMailboxes"
         :key="mailbox.name"
-        class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
-        @click="editMailbox(mailbox)"
+        class="flex min-h-9 items-center justify-between gap-3 py-1 max-sm:min-h-12 max-sm:py-2"
       >
-        <div class="flex items-center gap-2 max-sm:gap-3">
+        <div class="text-ink-gray-6 flex min-w-0 items-center gap-2">
           <Icon
             :name="getIcon(mailbox)"
-            class="icon shrink-0"
+            class="size-4 shrink-0"
             :class="mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined"
           />
-          <span class="text-base">{{ mailbox._name }}</span>
+          <span class="text-ink-gray-8 truncate text-base">{{ mailbox._name }}</span>
+          <Badge v-if="isHidden(mailbox)" :label="__('Hidden')" />
         </div>
-        <div class="flex items-center gap-3 max-sm:-mr-1.5">
-          <EyeOff v-if="!mailbox.subscribed" class="text-ink-gray-5 h-4 w-4" />
-          <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens
-					     via the click bubbling to its own span, so stopping on the Button
-					     itself would keep the sheet from opening. -->
-          <div class="flex" @click.stop>
-            <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-              <Button variant="ghost">
-                <template #icon>
-                  <Ellipsis class="text-ink-gray-5 h-4 w-4" />
-                </template>
-              </Button>
-            </AdaptiveDropdown>
-          </div>
+        <div class="flex shrink-0 items-center gap-2">
+          <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
+            <Button variant="ghost" :aria-label="__('Folder options')">
+              <template #icon>
+                <Ellipsis class="text-ink-gray-5 h-4 w-4" />
+              </template>
+            </Button>
+          </AdaptiveDropdown>
+          <Button :label="__('Edit')" :size="buttonSize" @click="editMailbox(mailbox)" />
         </div>
       </div>
     </div>
@@ -55,9 +50,9 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { Ellipsis, Eye, EyeOff, Settings, Trash2 } from 'lucide-vue-next'
+import { Ellipsis, Eye, EyeOff, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import { api, useMutation } from '@/api'
@@ -94,11 +89,6 @@ const mailboxOptions = (mailbox: MailboxData) => [
       }),
   },
   {
-    label: __('Configure'),
-    icon: Settings,
-    onClick: () => editMailbox(mailbox),
-  },
-  {
     label: __('Delete'),
     icon: Trash2,
     theme: 'red' as const,
@@ -109,4 +99,9 @@ const mailboxOptions = (mailbox: MailboxData) => [
   },
 ]
 const updateFolder = useMutation(api.mail.mailboxes.subscribe)
+
+// A hidden folder stays out of the Mail sidebar
+function isHidden(mailbox: MailboxData) {
+  return !mailbox.subscribed
+}
 </script>
