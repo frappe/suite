@@ -3,6 +3,8 @@ import Collaboration from '@tiptap/extension-collaboration'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
+import { fromPartial } from '@total-typescript/shoehorn'
+import { toast } from 'frappe-ui'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as Y from 'yjs'
 
@@ -27,11 +29,20 @@ vi.mock('@/platform/session', async (importOriginal) => {
     useSession: () => ({ ...session.useSession(), user: { value: 'me@x.test' } }),
   }
 })
+vi.mock('frappe-ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('frappe-ui')>()),
+  toast: { info: vi.fn(), error: vi.fn() },
+}))
 vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
 vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
 
+// jsdom has no layout; a paste scrolls the caret into view.
+Range.prototype.getClientRects = () => fromPartial<DOMRectList>({ length: 0, item: () => null })
+Range.prototype.getBoundingClientRect = () => new DOMRect()
+
 let live: Editor | undefined
 afterEach(() => {
+  vi.mocked(toast.info).mockClear()
   live?.destroy()
   closeOpeningEditor()
   document.body.replaceChildren()
@@ -126,4 +137,43 @@ it('asks about the new document for its mention menu, not the one open before it
   placeOpeningEditor('doc-new', place())
 
   expect(vi.mocked(client.query).mock.lastCall?.[1]).toEqual({ node: 'doc-new' })
+})
+
+/** Pastes into the editor in `where` the way a browser does: a paste event carrying clipboard data. */
+function pasteInto(where: HTMLElement, data: { text?: string; files?: File[] }) {
+  const view = where.querySelector<HTMLElement & { editor?: Editor }>('.ProseMirror')!
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  const clipboardData = {
+    files: data.files ?? [],
+    items: [],
+    types: data.text ? ['text/plain'] : data.files?.length ? ['Files'] : [],
+    getData: (type: string) => (type === 'text/plain' ? (data.text ?? '') : ''),
+  }
+  Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+  view.dispatchEvent(event)
+  return view.editor!
+}
+
+it('refuses a pasted file while the document opens, and says to try again', () => {
+  const info = vi.mocked(toast.info)
+  const where = place()
+  placeOpeningEditor('doc-6', where)
+  const picture = new File([new Uint8Array([137, 80, 78, 71])], 'shot.png', { type: 'image/png' })
+
+  const editor = pasteInto(where, { files: [picture] })
+
+  expect(info).toHaveBeenCalledOnce()
+  expect(info).toHaveBeenCalledWith('Wait a moment for the document to open, then try again')
+  expect(editor.isEmpty).toBe(true)
+})
+
+it('still takes pasted text while the document opens', () => {
+  const info = vi.mocked(toast.info)
+  const where = place()
+  placeOpeningEditor('doc-7', where)
+
+  const editor = pasteInto(where, { text: 'Pasted words' })
+
+  expect(editor.getText()).toBe('Pasted words')
+  expect(info).not.toHaveBeenCalled()
 })

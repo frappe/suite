@@ -2,7 +2,9 @@ import { inject } from 'vue'
 
 import { createSiteSocket } from '@/realtime'
 
-export const initSocket = () => createSiteSocket()
+// Reconnects without a cap: the lists hear of new mail through it, and a laptop lid outlasts five
+// attempts.
+export const initSocket = () => createSiteSocket({ reconnectionAttempts: Infinity })
 
 export function useMailSocket(): ReturnType<typeof initSocket> {
   const socket = inject<ReturnType<typeof initSocket>>('$socket')

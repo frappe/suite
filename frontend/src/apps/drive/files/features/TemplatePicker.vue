@@ -79,7 +79,6 @@
       <div class="flex justify-end gap-2">
         <Button label="Cancel" @click="open = false" />
         <Button
-          v-if="!hasNoTemplates"
           type="submit"
           variant="solid"
           theme="gray"
@@ -106,7 +105,7 @@ import { nodeIcon, nodeIconTint } from '../internal/icons'
 import { useOpenedKey } from '../internal/openedKey'
 
 /**
- * New from template (spec §5.12): one tab per registered document type, the
+ * New from template (spec §5.12): one tab per document type that has templates, the
  * readable templates of that type, and a Name. Create copies the template into
  * `parent`. The server keeps its own title on a conflict.
  */
@@ -119,7 +118,7 @@ const open = defineModel<boolean>('open', {
 const emit = defineEmits<{
   created: [node: DriveNode]
 }>()
-const documentTypes = inject(DOCUMENT_TYPES_KEY, [])
+const documentTypes = inject(DOCUMENT_TYPES_KEY, []).filter((definition) => definition.hasTemplates)
 const tabsKey = useOpenedKey(useTemplateRef<HTMLFormElement>('form'))
 const typeOptions = computed(() =>
   documentTypes.map((definition) => ({
@@ -141,7 +140,6 @@ const templates = useInfiniteQuery(api.drive.views.list, () =>
     : false,
 )
 const templateRows = computed(() => templates.rows.filter((row): row is DriveNode => 'name' in row))
-const hasNoTemplates = computed(() => templates.status === 'success' && !templateRows.value.length)
 const selected = ref<DriveNode | null>(null)
 const title = ref('')
 const failedPreviews = reactive(new Set<string>())

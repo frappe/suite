@@ -34,7 +34,7 @@
       <div v-else class="relative">
         <div
           v-if="addMember.isPending"
-          class="bg-surface-white/60 absolute inset-0 z-10 flex items-center justify-center rounded-4"
+          class="bg-surface-base/60 absolute inset-0 z-10 flex items-center justify-center rounded-4"
         >
           <LoadingIndicator class="text-ink-gray-6 h-6 w-6" />
         </div>

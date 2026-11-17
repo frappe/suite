@@ -22,7 +22,7 @@ export const useThreadPin = () => {
   const pinMails = (account: string, ids: string[], pinned: boolean, mailbox: string) =>
     raiseOptimisticToast(
       client.mutation(api.mail.messages.pin, { account, ids, pinned, mailbox }),
-      said(pinned),
+      { onClick: said(pinned) },
     )
 
   // `mailbox` is the list's folder; a merged list's rows are pinned in their account's Inbox.
@@ -42,7 +42,7 @@ export const useThreadPin = () => {
           client.mutation(api.mail.messages.pin, { account, ids, pinned, mailbox }),
         ),
       ),
-      said(pinned, threads.length > 1),
+      { onClick: said(pinned, threads.length > 1) },
     )
   }
 
