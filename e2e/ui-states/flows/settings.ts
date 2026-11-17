@@ -85,11 +85,11 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "A Drive admin while WebDAV is off for the site (answer rewritten): one switch to enable it, nothing else." },
 		},
 		externalAccessConnected: {
-			meta: { description: "WebDAV on and allowed for this user (answer rewritten): the admin switch, the user's own switch, server URL and username to copy, and Generate keys." },
+			meta: { description: "WebDAV on and allowed for this user (answer rewritten): the user's own switch, then server URL and username to copy, the password line with Generate API key, and the admin's Workspace switch below." },
 			on: { GENERATE_KEYS: "apiSecretDialog" },
 		},
 		apiSecretDialog: {
-			meta: { description: "Generate keys: a dialog shows the API key and secret once, each with Copy." },
+			meta: { description: "Generate API key: a dialog shows the API key and secret once, each with Copy." },
 		},
 	},
 });
@@ -188,7 +188,7 @@ export const settings = defineFlow<Event>({
 			await meter(scene).click();
 			const dialog = scene.dialog("Settings");
 			await dialog.getByText("External access", { exact: true }).first().click();
-			await expect(dialog.getByRole("switch", { name: "Enable WebDAV" })).toBeVisible();
+			await expect(dialog.getByRole("switch", { name: "Let everyone connect file apps" })).toBeVisible();
 		},
 		async OPEN_EXTERNAL_ACCESS(scene) {
 			await answerWebdav(scene, {
@@ -203,10 +203,10 @@ export const settings = defineFlow<Event>({
 			await meter(scene).click();
 			const dialog = scene.dialog("Settings");
 			await dialog.getByText("External access", { exact: true }).first().click();
-			await expect(dialog.getByRole("button", { name: "Generate keys" })).toBeVisible();
+			await expect(dialog.getByRole("button", { name: "Generate API key" })).toBeVisible();
 		},
 		async GENERATE_KEYS(scene) {
-			await scene.dialog("Settings").getByRole("button", { name: "Generate keys" }).click();
+			await scene.dialog("Settings").getByRole("button", { name: "Generate API key" }).click();
 			const secret = scene.dialog("API access");
 			await expect(secret.getByText("API secret", { exact: true })).toBeVisible();
 		},

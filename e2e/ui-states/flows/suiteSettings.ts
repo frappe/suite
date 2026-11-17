@@ -515,7 +515,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 		},
 		async EXTERNAL_ACCESS(scene) {
 			await tab(scene.page, "External access").click();
-			await expect(dialog(scene.page).getByRole("switch", { name: "Enable WebDAV" })).toBeVisible();
+			await expect(dialog(scene.page).getByRole("switch", { name: "Let everyone connect file apps" })).toBeVisible();
 		},
 		async MAIL_ACCOUNT_SLOWLY(scene) {
 			await scene.hold(MAIL_ACCOUNT_SETTINGS);

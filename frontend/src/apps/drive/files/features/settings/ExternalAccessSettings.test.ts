@@ -51,27 +51,45 @@ beforeEach(() => {
 })
 afterEach(() => app.unmount())
 
+const MEMBER = {
+  globally_enabled: true,
+  enabled_for_user: true,
+  server_url: 'https://suite.test/dav',
+  username: 'maya@suite.test',
+}
+
 it('offers an admin the site switch while WebDAV is off', () => {
   state.webdav = { data: { is_admin: true, globally_enabled: false } }
   const text = mount().textContent
 
   expect(text).toContain('External access')
-  expect(text).toContain('Enable WebDAV')
+  expect(text).toContain('Let everyone connect file apps')
   expect(text).not.toContain('Server URL')
 })
 
 it('gives a member the connection details, without the site switch', () => {
-  state.webdav = {
-    data: {
-      globally_enabled: true,
-      enabled_for_user: true,
-      server_url: 'https://suite.test/dav',
-      username: 'maya@suite.test',
-    },
-  }
+  state.webdav = { data: MEMBER }
   const text = mount().textContent
 
   expect(text).toContain('Server URL: https://suite.test/dav')
   expect(text).toContain('Username: maya@suite.test')
-  expect(text).not.toContain('Enable WebDAV')
+  expect(text).toContain('Your Suite password, or an API key.')
+  expect(text).not.toContain('Let everyone connect file apps')
+})
+
+it("keeps the connection details back until the user's own switch is on", () => {
+  state.webdav = { data: { ...MEMBER, enabled_for_user: false } }
+  const text = mount().textContent
+
+  expect(text).toContain('Connect file apps')
+  expect(text).not.toContain('Server URL')
+  expect(text).not.toContain('Generate API key')
+})
+
+it('sends a two-factor user to an API key, as their password will not sign in', () => {
+  state.webdav = { data: { ...MEMBER, two_factor_blocked: true } }
+  const text = mount().textContent
+
+  expect(text).toContain('Use an API key.')
+  expect(text).not.toContain('Your Suite password')
 })
