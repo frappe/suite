@@ -36,7 +36,7 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
-import { blockRemoteAssets } from '@/apps/mail/utils'
+import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
   declaresFixedPalette,
@@ -45,9 +45,9 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
-import { escapeBracketedAddresses, sanitizeMail } from '@/apps/mail/utils/html'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
+import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
@@ -99,7 +99,9 @@ const handleMessage = (event: MessageEvent) => {
     iframe.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
     return
   }
-  if (event.data?.type !== 'keyboard') return
+  // Only this message's own keys: every expanded message hears every frame's, and replaying them
+  // all would press each key once per message.
+  if (event.data?.type !== 'keyboard' || event.source !== frame.value?.$el?.contentWindow) return
 
   // Create a synthetic keyboard event in the parent
   const keyboardEvent = new KeyboardEvent(event.data.eventType, {
@@ -147,9 +149,7 @@ const collapseQuotes = (doc: Document) => {
 }
 
 const body = computed(() => {
-  let sanitized = sanitizeMail(escapeBracketedAddresses(content))
-  if (blockImages) sanitized = blockRemoteAssets(sanitized)
-  const doc = new DOMParser().parseFromString(sanitized, 'text/html')
+  const doc = new DOMParser().parseFromString(sanitizeEmailHtml(content, blockImages), 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
   // declaring a fixed palette (suite's own templates), and art-directed ones
   // — the author claimed the full canvas and painted with color — where
@@ -475,6 +475,10 @@ const srcdoc = computed(() => {
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
 					document.addEventListener(eventType, (e) => {
+						// ⌘P on a Mac, Ctrl+P elsewhere, is the thread's: forwarded, it prints the
+						// conversation. Left to the browser too, it would first print the whole app.
+						if (eventType === 'keydown' && e.${isMac ? 'metaKey' : 'ctrlKey'} && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p')
+							e.preventDefault();
 						window.parent.postMessage({
 							type: 'keyboard',
 							eventType: eventType,

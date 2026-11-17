@@ -186,6 +186,20 @@ _DECLARED = (
         public_name="nodes.replaceContent",
         entity={"tag": "DriveNode", "id": "name", "version": "modified"},
     ),
+    # The signed URL `nodes/{node}/content` would redirect to, as JSON. A page
+    # opened through a link reads it with `X-Drive-Links`, then hands the URL
+    # to a frame, a media element or a download, which cannot send a header.
+    Route(
+        "GET",
+        "nodes/{node}/content-url",
+        "node_content_url",
+        errors=(DriveForbidden, DriveConflict),
+        allow_guest=True,
+        query=shapes.ContentUrlQuery,
+        output=shapes.ContentUrl,
+        kind="query",
+        public_name="nodes.contentUrl",
+    ),
     # A file answers a signed redirect; a document streams its export.
     Route(
         "GET",

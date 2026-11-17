@@ -1,0 +1,77 @@
+import { fromPartial } from '@total-typescript/shoehorn'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { effectScope, ref } from 'vue'
+
+import { useListRows } from '@/apps/mail/composables/useListRows'
+import { CURSOR_BAR_CLASS } from '@/apps/mail/constants'
+import type { Thread } from '@/apps/mail/types'
+
+vi.mock('@/apps/mail/stores/user', () => ({
+  userStore: () => ({ userResource: { data: { group_by_date: false } } }),
+}))
+vi.mock('@/apps/mail/utils/composables', () => ({
+  useScreenSize: () => ({ isMobile: { value: false } }),
+}))
+
+const thread = (id: string, sender: string) =>
+  fromPartial<Thread>({
+    thread_id: id,
+    name: id,
+    from_email: sender,
+    received_at: '2026-11-05T10:00:00Z',
+    subject: id,
+    messages: [],
+  })
+
+let scope: ReturnType<typeof effectScope>
+const mountRows = () =>
+  scope.run(() =>
+    useListRows({
+      threads: () => [thread('one', 'a@example.com'), thread('two', 'b@example.com')],
+      rowKey: (row) => row.thread_id,
+      openThreadID: () => undefined,
+      onOpenThreadHidden: () => {},
+      container: ref(null),
+    }),
+  )!
+
+// Whether the cursor's bar is drawn on the first row.
+const barOnFirstRow = (rows: ReturnType<typeof mountRows>) => {
+  const row = rows.navigableRows.value[0]
+  return row.type === 'group' ? undefined : rows.rowClasses(row)[CURSOR_BAR_CLASS]
+}
+
+beforeEach(() => {
+  scope = effectScope()
+})
+afterEach(() => {
+  scope.stop()
+  vi.useRealTimers()
+})
+
+it('draws the cursor bar when the keys move the cursor, and a click takes it away', () => {
+  const rows = mountRows()
+  rows.focusRow(rows.navigableRows.value[0])
+  expect(barOnFirstRow(rows)).toBe(true)
+
+  // The click takes the bar away, and leaves the cursor where it is for the next key.
+  window.dispatchEvent(new PointerEvent('pointerdown'))
+  expect(barOnFirstRow(rows)).toBe(false)
+  expect(rows.focusedRowKey.value).toBe('one')
+})
+
+// A thread opened with the mouse leaves the cursor on its row, so the keys carry on from there. Once
+// its pane is closed, a bar left on that row would read as the thread still being open.
+it('leaves no bar on the row of a thread opened with the mouse', () => {
+  vi.useFakeTimers()
+  const rows = mountRows()
+  window.dispatchEvent(new PointerEvent('pointerdown'))
+  rows.revealThread('one')
+  vi.runAllTimers()
+  expect(rows.focusedRowKey.value).toBe('one')
+  expect(barOnFirstRow(rows)).toBe(false)
+
+  // The next key carries on from that row, and draws the bar where it lands.
+  rows.focusRow(rows.navigableRows.value[1])
+  expect(rows.cursorRowKey.value).toBe('two')
+})

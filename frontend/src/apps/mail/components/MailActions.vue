@@ -54,6 +54,7 @@ import {
   LockOpen,
   Mail as MailIcon,
   Moon,
+  Printer,
   Reply,
   ReplyAll,
   ShieldCheck,
@@ -70,6 +71,7 @@ import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import type { BodyView, ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
 import {
+  afterLanding,
   downloadUrlAsFile,
   matchesScreenedValue,
   raiseError,
@@ -124,6 +126,7 @@ const emit = defineEmits([
   'moveMail',
   'markMailSpam',
   'deleteMail',
+  'print',
   'toggleAsSent',
 ])
 const { isMobile } = useScreenSize()
@@ -314,6 +317,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
         condition: () => !!bodyView,
       },
       {
+        label: __('Print'),
+        onClick: () => emit('print', mail),
+        icon: Printer,
+        condition: () => !mail.draft,
+      },
+      {
         label: __('Download Email'),
         onClick: () => downloadEmail(),
         icon: Download,
@@ -420,16 +429,18 @@ const unblockSender = (isUndo = false) => {
     { account: scopeAccountId.value, emails: [mail.from_email] },
     { silent: true },
   )
-  if (isUndo) return raiseOptimisticToast(forward, __('Sender blocked'))
-  setUndoAction(() => {
-    const back = client.mutation(
-      api.mail.screening.set,
-      { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
-      { silent: true },
-    )
-    raiseOptimisticToast(back, __('Sender blocked'))
-  })
-  raiseOptimisticToast(forward, __('Sender unblocked'), undo)
+  if (isUndo) return raiseOptimisticToast(forward, { onClick: __('Sender blocked') })
+  setUndoAction(
+    afterLanding(forward, () => {
+      const back = client.mutation(
+        api.mail.screening.set,
+        { account: scopeAccountId.value, emails: [mail.from_email], action: 'Spam' },
+        { silent: true },
+      )
+      raiseOptimisticToast(back, { onClick: __('Sender blocked') })
+    }),
+  )
+  raiseOptimisticToast(forward, { onClick: __('Sender unblocked') }, undo)
 }
 
 // Blocking sends the sender's future mail to Junk, and this message with it — they were blocked while
@@ -461,7 +472,7 @@ const blockSender = () => {
         ),
         client.mutation(api.mail.messages.spam, { account, ids, spam: false }, { silent: true }),
       ]).then(() => reloadMails(true))
-      raiseOptimisticToast(back, __('Sender unblocked'))
+      raiseOptimisticToast(back, { onClick: __('Sender unblocked') })
     },
     landed,
     account,

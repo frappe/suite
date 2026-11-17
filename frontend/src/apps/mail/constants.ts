@@ -76,6 +76,13 @@ export const SPLIT_LIST_CLASS = 'w-[28vw] min-w-64 shrink-0 border-r lg:min-w-80
 export const SPLIT_PANE_CLASS = 'min-w-56 flex-1 lg:min-w-64'
 
 /**
+ * A mail list row's box: its padding, the gap between its columns, and the line under it. MailRow
+ * and the loading list's outline rows (MailListSkeleton) share it, so the outline holds the rows'
+ * own rhythm.
+ */
+export const ROW_BOX_CLASS = 'flex space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5 sm:py-2'
+
+/**
  * The mail list's "you are here": a dark bar down a row's left side. 1.5px for the keyboard's
  * cursor (a row or a date header); 3px for the thread open in the pane, so the one being read
  * stands out from a ticked row the cursor is on.

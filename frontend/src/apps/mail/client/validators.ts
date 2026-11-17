@@ -359,6 +359,8 @@ import type {
   SnoozeMailsOutput,
   SubscribeMailboxInput,
   SubscribeMailboxOutput,
+  SyncChangesInput,
+  SyncChangesOutput,
   UndoScreeningVerdictInput,
   UndoScreeningVerdictOutput,
   UnscreenEmailAddressesInput,
@@ -2844,6 +2846,34 @@ export const operationScreenEmailAddresses: Validators<
   },
   validateOutput(value: unknown): asserts value is ScreenEmailAddressesOutput {
     assertSchema(value, { type: 'null' }, 'screen_email_addresses output')
+  },
+}
+
+export const operationSyncChanges: Validators<SyncChangesInput, SyncChangesOutput> = {
+  validateInput(value: unknown): asserts value is SyncChangesInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'sync_changes input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SyncChangesOutput {
+    assertSchema(
+      value,
+      {
+        description:
+          "What a sync found for the lists, and whether some account's changes could not be fetched.",
+        properties: {
+          new_mail_in: { items: { type: 'string' }, title: 'New Mail In', type: 'array' },
+          changed: { title: 'Changed', type: 'boolean' },
+          failed: { title: 'Failed', type: 'boolean' },
+        },
+        required: ['new_mail_in', 'changed', 'failed'],
+        title: 'SyncedChanges',
+        type: 'object',
+      },
+      'sync_changes output',
+    )
   },
 }
 

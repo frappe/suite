@@ -127,22 +127,74 @@ export const raisePromiseToast = async (
   }
 }
 
-// Rows can update optimistically; confirmation follows the successful server write. The message
-// can be read off the write's answer, where what happened decides what it says.
+/**
+ * The Undo for a write still in flight: it runs once the write has landed, and not at all if the
+ * write was refused. Sent alongside the write, the inverse could land first and be overtaken by it,
+ * leaving the change in place under a toast that says it was taken back.
+ */
+export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
+  void forward.then(undo, () => {})
+
+/**
+ * When an action's toast shows, which its caller says. `onClick`: the screen already shows the change
+ * and the message doesn't hang on the answer, so it shows at once, with its Undo, and comes down with
+ * the error if the write is refused. `onAnswer`: it waits for the write to land, its message given or
+ * read off the answer.
+ */
+export type ToastTiming<T = unknown> =
+  { onClick: string } | { onAnswer: string | ((result: T) => string) }
+
 export const raiseOptimisticToast = <T>(
   forward: Promise<T>,
-  success: string | ((result: T) => string),
+  timing: ToastTiming<T>,
   undoAction?: () => void,
+  refused: (error: unknown) => void = raiseError,
 ) => {
   toast.dismiss()
+  const options = undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined
+  if ('onClick' in timing) {
+    const shown = toast.success(timing.onClick, options)
+    void forward.catch((error) => {
+      toast.dismiss(shown)
+      refused(error)
+    })
+    return
+  }
+  const { onAnswer } = timing
   void forward.then(
-    (result) =>
-      toast.success(
-        typeof success === 'string' ? success : success(result),
-        undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined,
-      ),
-    raiseError,
+    (result) => toast.success(typeof onAnswer === 'string' ? onAnswer : onAnswer(result), options),
+    refused,
   )
+}
+
+/**
+ * One action carried out in several accounts, told as one toast with one Undo, timed as a single
+ * write's is. Every account refusing says why; some refusing says why and still offers the Undo, which
+ * takes back the accounts that went through.
+ */
+export const raisePerAccountToast = <T>(
+  settled: Promise<PromiseSettledResult<T>[]>,
+  timing: ToastTiming<T[]>,
+  undoAction: () => void,
+) => {
+  let someLanded = false
+  const forward = settled.then((results) => {
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    someLanded = results.some((r) => r.status === 'fulfilled')
+    if (failure) throw failure.reason
+    return results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+  })
+  raiseOptimisticToast(forward, timing, undoAction, (error) => {
+    if (!someLanded) return raiseError(error)
+    toast.error(
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not complete the action'),
+      { action: { label: __('Undo'), onClick: undoAction } },
+    )
+  })
 }
 
 /**

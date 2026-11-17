@@ -68,6 +68,8 @@ export const registration: OwnerRegistration = {
       return { effects: { invalidates: ['mail.get_participant_identities'] } }
     if (['signup', 'resend_otp', 'verify_otp', 'send_reset_password_link'].includes(reference.id))
       return { effects: 'none' }
+    // What it finds reaches the lists through the socket, as a push's changes do.
+    if (reference.id === 'sync_changes') return { effects: 'none' }
     if (reference.id === 'create_account')
       return {
         effects: {

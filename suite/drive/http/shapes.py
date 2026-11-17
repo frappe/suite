@@ -275,6 +275,18 @@ class ContentQuery(TypedDict, total=False):
     download: bool
 
 
+class ContentUrlQuery(TypedDict, total=False):
+    # Sign a URL that saves the file instead of showing it.
+    download: bool
+
+
+class ContentUrl(TypedDict):
+    """A file's short-lived signed URL, for a frame or a download that cannot send a header."""
+
+    url: str
+    expires: int
+
+
 class MediaItem(TypedDict):
     node: str
     title: str

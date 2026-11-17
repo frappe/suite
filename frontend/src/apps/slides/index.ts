@@ -36,6 +36,7 @@ export const slidesDocument: DocumentTypeDefinition = {
   contentDoctype: 'Presentation',
   newLabel: () => __('Presentation'),
   icon: SlidesIcon,
+  hasTemplates: true,
   loadSurface: async () => (await import('@/apps/slides/surface/SlidesSurface.vue')).default,
   loadUnsavedWork: async () => (await import('@/apps/slides/recovery/UnsavedWork.vue')).default,
   listUnsavedCopies: async () => (await import('@/apps/slides/recovery/copies')).copyEntries(),
