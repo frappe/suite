@@ -1,6 +1,6 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
 import { toast } from '@/platform/feedback'
 import { requireTestElement } from '@/platform/testing/dom'
@@ -14,6 +14,8 @@ const state = vi.hoisted(() => ({
   account: 'personal',
   admin: false,
 }))
+
+const calendarState = reactive(state)
 
 vi.mock('@/platform/session', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/platform/session')>()
@@ -41,10 +43,18 @@ vi.mock('@/apps/calendar', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/apps/calendar')>()),
   useCalendarUserStore: () => ({
     get accountId() {
-      return state.account
+      return calendarState.account
     },
     loadUser: state.loadUser,
-    userResource: { data: { name: 'me@example.com', full_name: 'Me' } },
+    userResource: {
+      get data() {
+        return {
+          name: 'me@example.com',
+          full_name: 'Me',
+          accounts: calendarState.account ? [{ id: calendarState.account }] : [],
+        }
+      },
+    },
   }),
   ParticipantSelector: defineComponent({
     props: ['modelValue', 'displayParticipants'],
@@ -97,9 +107,10 @@ vi.mock('frappe-ui', () => ({
     },
   }),
   Button: defineComponent({
-    props: ['disabled'],
+    props: { disabled: Boolean, label: String },
     setup(props, { slots, attrs }) {
-      return () => h('button', { ...attrs, disabled: props.disabled }, slots.default?.())
+      return () =>
+        h('button', { ...attrs, disabled: props.disabled }, slots.default?.() ?? props.label)
     },
   }),
 }))
@@ -108,7 +119,7 @@ let cleanup = () => {}
 afterEach(() => {
   cleanup()
   vi.clearAllMocks()
-  state.account = 'personal'
+  calendarState.account = 'personal'
   state.admin = false
   state.run.mockResolvedValue({})
   state.loadUser.mockResolvedValue(undefined)
@@ -173,22 +184,26 @@ describe('Shared meeting scheduler', () => {
   })
 
   it.each([false, true])('offers account recovery appropriate to admin=%s', async (admin) => {
-    state.account = ''
+    calendarState.account = ''
     state.admin = admin
     const { root } = await mount()
-    expect(root.querySelector('input')).toBeNull()
+    expect(root.querySelector('input[aria-label="Title"]')).not.toBeNull()
     expect(root.textContent).toContain(admin ? 'Open Admin users' : 'Ask your admin to add one')
     expect(root.textContent?.includes('Open Admin users')).toBe(admin)
     expect(state.run).not.toHaveBeenCalled()
   })
 
   it('retries account loading without claiming setup is missing', async () => {
+    calendarState.account = ''
     state.loadUser.mockRejectedValueOnce(new Error('offline'))
     const { root } = await mount()
     expect(root.textContent).toContain('Could not load Calendar account. Retry')
     expect(root.textContent).not.toContain('Ask your admin')
+    state.loadUser.mockImplementationOnce(async () => {
+      calendarState.account = 'personal'
+    })
     root.querySelector<HTMLButtonElement>('button')?.click()
-    await vi.waitFor(() => expect(root.querySelector('input')).not.toBeNull())
+    await vi.waitFor(() => expect(root.textContent).toContain('Invite guest'))
   })
 
   it.each([
