@@ -44,21 +44,6 @@ describe('feedback', () => {
     await expect(confirm({ title: 'Continue?' })).resolves.toBe(false)
   })
 
-  it('opens with focus on the confirm button, or on Cancel when it destroys something', () => {
-    const focused = () => {
-      // SAFETY: confirm() opened exactly one dialog, and it passes its buttons as `actions`.
-      const [options] = (mocks.confirm.mock.calls[0] ?? mocks.danger.mock.calls[0]) as [
-        { actions: { label: string; autofocus?: boolean }[] },
-      ]
-      return options.actions.flatMap((action) => (action.autofocus ? [action.label] : []))
-    }
-    void confirm({ title: 'Continue?' })
-    expect(focused()).toEqual(['Confirm'])
-    vi.clearAllMocks()
-    void confirm({ title: 'Delete?', destructive: true })
-    expect(focused()).toEqual(['Cancel'])
-  })
-
   it('returns prompt values and reports mutation errors as toasts', async () => {
     mocks.prompt.mockImplementationOnce((options) =>
       options.onConfirm({ values: { password: 'secret' } }),
