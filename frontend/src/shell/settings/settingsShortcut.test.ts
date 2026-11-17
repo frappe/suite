@@ -52,19 +52,16 @@ function registerSettingsCommand(id: string, run: () => void) {
   commands.push({ id, shortcut: 'Mod+Shift+Comma', run })
 }
 
-it("opens the app's main settings tab where the app offers one", () => {
-  registerSettingsCommand('shell-settings', () => {
-    throw new Error('the shell command must not run where an app offers its own')
-  })
-  registerSettingsCommand('mail-settings', () => {
-    settingsTab.value = 'mail.general'
-    showSettings.value = true
-  })
+it("runs the app's own Settings command where the app offers one", () => {
+  const shellCommand = vi.fn()
+  const mailCommand = vi.fn()
+  registerSettingsCommand('shell-settings', shellCommand)
+  registerSettingsCommand('mail-settings', mailCommand)
 
   pressSettingsKey()
 
-  expect(showSettings.value).toBe(true)
-  expect(settingsTab.value).toBe('mail.general')
+  expect(mailCommand).toHaveBeenCalledOnce()
+  expect(shellCommand).not.toHaveBeenCalled()
 })
 
 it('opens the first tab where no app offers Settings, and closes Settings on a second press', () => {
