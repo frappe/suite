@@ -92,6 +92,11 @@ const remove = useMutation(api.mail.participantIdentities.delete)
 const editing = ref<Identity>()
 const showForm = ref(false)
 const draft = reactive({ name: '', email: '', default: false })
+// What the dialog opened with: an edit saves only once a field differs from it.
+const opened = ref('')
+const dirty = computed(
+  () => !!draft.email.trim() && (!editing.value || JSON.stringify(draft) !== opened.value),
+)
 
 // The account's addresses are the ones its mail identities send as.
 const freeAddresses = computed(() => {
@@ -113,7 +118,7 @@ const formDialog = computed(() => ({
     {
       label: __('Save'),
       variant: 'solid' as const,
-      disabled: !draft.email.trim(),
+      disabled: !dirty.value,
       loading: create.isPending || update.isPending,
       onClick: submit,
     },
@@ -133,12 +138,13 @@ function openEdit(identity: Identity) {
     email: identity.email,
     default: Boolean(identity.default),
   })
+  opened.value = JSON.stringify(draft)
   showForm.value = true
 }
 
 async function submit() {
   const fields = { name: draft.name.trim(), email: draft.email.trim(), default: draft.default }
-  if (!fields.email || create.isPending || update.isPending) return
+  if (!dirty.value || create.isPending || update.isPending) return
   const identity = editing.value
   if (identity) {
     await update.run({ account: identity.account, id: identity.id, ...fields })
