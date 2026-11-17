@@ -1310,7 +1310,7 @@ describe('Search', () => {
     server.searchGate = new Promise((resolve) => (answer = resolve))
     const { root, router } = await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
     type(root, 'report')
     await vi.advanceTimersByTimeAsync(300)
@@ -1329,7 +1329,7 @@ describe('Search', () => {
   it('keeps typing that lands while the URL takes the term before it', async () => {
     const { root, router } = await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
     type(root, 'rep')
     vi.advanceTimersByTime(300)
@@ -1342,10 +1342,17 @@ describe('Search', () => {
     expect(router.currentRoute.value.query.q).toBe('report')
   })
 
-  it('clears at once with Escape, and a search the user typed before stays cleared', async () => {
+  /** Every URL the router goes to, or refuses as the one it is on, from now on. */
+  function navigations(router: Router): string[] {
+    const seen: string[] = []
+    router.afterEach((to) => void seen.push(to.fullPath))
+    return seen
+  }
+
+  it('clears at once with Escape, and leaves no search waiting', async () => {
     const { root, router } = await mount('/drive/f/folder-1/talks?q=old')
     await vi.waitFor(() => expect(field(root).value).toBe('old'))
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
     type(root, 'report')
     field(root).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
@@ -1353,9 +1360,58 @@ describe('Search', () => {
     expect(field(root).value).toBe('')
     expect(router.currentRoute.value.query.q).toBeUndefined()
 
+    const later = navigations(router)
     await vi.advanceTimersByTimeAsync(300)
+    expect(later).toEqual([])
     expect(field(root).value).toBe('')
+  })
+
+  it('clears at once with the clear button, and leaves no search waiting', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks?q=old')
+    await vi.waitFor(() => expect(field(root).value).toBe('old'))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    type(root, 'report')
+    root.querySelector<HTMLButtonElement>('button[aria-label="Clear search"]')!.click()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(field(root).value).toBe('')
+    expect(document.activeElement).toBe(field(root))
     expect(router.currentRoute.value.query.q).toBeUndefined()
+
+    const later = navigations(router)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(later).toEqual([])
+    expect(field(root).value).toBe('')
+  })
+
+  it('does not put a term typed just before leaving into the next page', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    type(root, 'report')
+    await router.push('/d/doc-1/notes')
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(router.currentRoute.value.fullPath).toBe('/d/doc-1/notes')
+  })
+
+  it('goes back to the same term in another view, over a term not yet searched', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks?q=foo&view=list')
+    await router.push('/drive/f/folder-1/talks?q=foo')
+    await vi.waitFor(() => expect(field(root).value).toBe('foo'))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+    type(root, 'bar')
+    router.back()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(router.currentRoute.value.fullPath).toBe('/drive/f/folder-1/talks?q=foo&view=list')
+    expect(field(root).value).toBe('foo')
+
+    const later = navigations(router)
+    await vi.advanceTimersByTimeAsync(300)
+    expect(later).toEqual([])
+    expect(field(root).value).toBe('foo')
   })
 
   it('shows the term of a page the user goes back to', async () => {

@@ -101,7 +101,7 @@
                 placeholder="Search all files"
                 aria-label="Search all files"
                 class="files-search w-full max-w-64"
-                @update:model-value="routeSearchLater"
+                @update:model-value="searchLater.start()"
                 @keydown.escape="clearSearch"
               >
                 <template #prefix
@@ -285,7 +285,7 @@
 </template>
 
 <script setup lang="ts">
-import { useDebounceFn, useMediaQuery } from '@vueuse/core'
+import { useMediaQuery, useTimeoutFn } from '@vueuse/core'
 import {
   Alert,
   Breadcrumbs,
@@ -424,8 +424,8 @@ const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : f
 const presentationVersion = ref(0)
 const picked = useListingSelection(() => listing.rows.map((row) => row.name))
 const searchText = ref(String(route.query.q ?? ''))
-/** The term the field last put in the URL, so the field skips its own echo. */
-let routedSearch = searchText.value.trim()
+/** Where the field's own search is going, until that navigation ends. */
+let searchingTo: string | null = null
 const activeNode = ref<DriveNode | null>(null)
 const contextOptions = ref<DropdownItem[]>([])
 const contextOpen = ref(false)
@@ -889,13 +889,12 @@ watch(
   { immediate: true },
 )
 watch(
-  () => [route.path, route.fullPath] as const,
-  ([path], [before]) => {
-    // A term the field put there itself is older than the field by now
-    const q = String(route.query.q ?? '')
-    if (path !== before || q.trim() !== routedSearch) {
-      searchText.value = q
-      routedSearch = q.trim()
+  () => route.fullPath,
+  (fullPath) => {
+    // The field's own search lands with a term older than the field by now
+    if (fullPath !== searchingTo) {
+      searchLater.stop()
+      searchText.value = String(route.query.q ?? '')
     }
     clearSelected()
   },
@@ -1338,13 +1337,19 @@ function changeSort(column: FilesSort) {
   if (!arrangeable.value) return
   setPresentation(nextSort(settingsPresentation.value, column))
 }
-/** Searches for the field's term. It reads the field when it runs, so a late call keeps up. */
+/** Searches for the field's term now. */
 function routeSearch() {
-  routedSearch = searchText.value.trim()
-  void router.replace({ query: { ...route.query, q: routedSearch || undefined } })
+  searchLater.stop()
+  const to = { query: { ...route.query, q: searchText.value.trim() || undefined } }
+  const target = router.resolve(to).fullPath
+  searchingTo = target
+  void router.replace(to).finally(() => {
+    if (searchingTo === target) searchingTo = null
+  })
 }
-// The field shows each key at once. The URL, and so the search, follows after a pause
-const routeSearchLater = useDebounceFn(routeSearch, 250)
+// The field shows each key at once. The URL, and so the search, follows after a
+// pause. The page leaving, a clear or another URL drops a search still waiting
+const searchLater = useTimeoutFn(routeSearch, 250, { immediate: false })
 function clearSearch() {
   searchText.value = ''
   routeSearch()
