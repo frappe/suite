@@ -330,12 +330,15 @@ const typedRecipient = computed<DraftRecipient | null>(() => {
 // these", not "start over", and the key must not reach the composer, where it would dock an
 // expanded window instead.
 const isDismissed = ref(false)
+// Whether the area below the field, the list or the notice, may show: there is somewhere to render
+// it, the field has focus, and Esc has not put it away.
+const showsInline = computed(() => Boolean(suggestionsTo) && isFocused.value && !isDismissed.value)
 /**
  * Capped at five: the list sits in flow above the keyboard, and more than that just pushes the
  * message body off the screen.
  */
 const inlineSuggestions = computed(() => {
-  if (!suggestionsTo || !isFocused.value || isDismissed.value) return []
+  if (!showsInline.value) return []
 
   const contacts = options.value
   const typed = typedRecipient.value
@@ -347,7 +350,7 @@ const inlineSuggestions = computed(() => {
 // Typed text that is no address and matches no contact: nothing Enter could add. It stays in the
 // field to be corrected, under a line that says why.
 const invalidTyped = computed(() => {
-  if (!suggestionsTo || !isFocused.value || isDismissed.value) return ''
+  if (!showsInline.value) return ''
   const text = searchText.value.trim()
   return text && !isEmail(text) && !options.value.length ? text : ''
 })
