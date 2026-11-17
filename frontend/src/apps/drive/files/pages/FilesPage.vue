@@ -12,23 +12,29 @@
          bar above it. A signed-in phone keeps its header, which opens the Drive panel. -->
     <PageHeader v-if="!locked" class="hidden md:flex">
       <div class="flex w-full items-center justify-between gap-3">
-        <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
-        <Breadcrumbs
-          :items="breadcrumbs"
-          :data-drop-crumbs="dragOn ? '' : undefined"
-          :class="
-            dragOn &&
-            '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
-          "
-        >
-          <template v-if="dragOn" #prefix="{ item }">
-            <span
-              v-if="typeof item.node === 'string'"
-              :data-drop-target="item.node"
-              :data-drop-over="dragOn.accepts(item.node) || undefined"
-            />
-          </template>
-        </Breadcrumbs>
+        <div class="flex min-w-0 items-center gap-2">
+          <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
+          <Breadcrumbs
+            :items="breadcrumbs"
+            :data-drop-crumbs="dragOn ? '' : undefined"
+            :class="
+              dragOn &&
+              '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
+            "
+          >
+            <template v-if="dragOn" #prefix="{ item }">
+              <span
+                v-if="typeof item.node === 'string'"
+                :data-drop-target="item.node"
+                :data-drop-over="dragOn.accepts(item.node) || undefined"
+              />
+            </template>
+          </Breadcrumbs>
+          <!-- No sidebar place holds a folder opened only from a link, so the header says how it was reached. -->
+          <span v-if="fromLink" class="shrink-0 text-sm text-ink-gray-5">{{
+            __('Opened from a link')
+          }}</span>
+        </div>
         <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
           <Button
             variant="subtle"
@@ -409,6 +415,7 @@ import {
   LOCATION_LABELS,
   locationLabel,
   locationTitle,
+  openedFromLink,
   rootPath,
   trashLocation,
 } from '../internal/locations'
@@ -526,6 +533,14 @@ const detail = useQuery(api.drive.nodes.get, () =>
   parentId.value && concreteDestination.value
     ? { node: parentId.value, expand: 'access,breadcrumbs' }
     : false,
+)
+/** A signed-in member's folder that only a share link opens. A guest reaches everything that way. */
+const fromLink = computed(
+  () =>
+    signedIn.value &&
+    props.destination === 'folder' &&
+    !!detail.data &&
+    openedFromLink(detail.data, discovered.data),
 )
 // A password link shows the unlock screen in place of the folder (spec §10.2),
 // also when its ticket expires and the next listing refresh is refused.

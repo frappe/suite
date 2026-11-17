@@ -1773,6 +1773,8 @@ Each app's later migration owns these. They are named and baselined
 - With access through the link only: no sidebar location is selected; the
   trail starts at the shared item; the item is not in Shared with me,
   Recent or Starred [T011].
+- On a wide screen the header says "Opened from a link" beside that trail,
+  since no sidebar place names where the item is.
 - Star is hidden and no visit is recorded. Those lists send no link codes
   and could never show the item [T011].
 - Not verified: that Recent and Starred drop link-only items. It follows

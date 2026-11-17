@@ -55,6 +55,18 @@ export function locationOf(
     return 'organization'
   return 'shared'
 }
+/**
+ * Whether the caller reaches a folder only through a share link: it sits in
+ * none of their roots and a link, not their own access, opens it. Such a
+ * folder is not in Shared with me, so no sidebar place is lit for it.
+ */
+export function openedFromLink(
+  folder: Pick<DriveNode, 'root' | 'access'>,
+  discovered: DriveRoots | null | undefined,
+): boolean {
+  return locationOf(folder, discovered) === 'shared' && !!folder.access?.via_link
+}
+
 interface TrashLocationResult {
   path: string
   query: Record<string, string>
