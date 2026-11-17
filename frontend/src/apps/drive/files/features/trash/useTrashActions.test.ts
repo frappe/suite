@@ -55,9 +55,15 @@ interface ShownToast {
   message: string
   action?: { label: string; onClick: () => void }
 }
-const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
+const feedback = vi.hoisted(() => ({
+  toasts: fromPartial<ShownToast[]>([]),
+  questions: [] as string[],
+}))
 vi.mock('@/platform/feedback', () => ({
-  confirm: async () => true,
+  confirm: async ({ title }: { title: string }) => {
+    feedback.questions.push(title)
+    return true
+  },
   toast: {
     success: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>
       feedback.toasts.push({ kind: 'success', message, ...options }),
@@ -70,6 +76,7 @@ let unmount: (() => void) | undefined
 afterEach(() => {
   unmount?.()
   feedback.toasts.length = 0
+  feedback.questions.length = 0
   net.states.clear()
   net.purges = 0
 })
@@ -109,6 +116,17 @@ describe('Trash actions', () => {
       kind: 'success',
       message: 'Moved “Report.pdf” back to Trash',
     })
+  })
+
+  it('names the item in the Delete forever question, and counts several', async () => {
+    const actions = mountActions()
+
+    await actions.purge(items('Budget <draft>.xlsx'))
+    await actions.purge(items('a', 'b', 'c'))
+    expect(feedback.questions).toEqual([
+      'Delete “Budget <draft>.xlsx” forever?',
+      'Delete 3 items forever?',
+    ])
   })
 
   it('reports Delete forever in a toast with no Undo', async () => {

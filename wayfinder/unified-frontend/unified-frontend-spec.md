@@ -1202,6 +1202,8 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   [T007].
 - The Empty trash confirm reads: "Delete everything in Trash forever?"
   [T007]
+- The Delete forever confirm names one item, "Delete “Budget.pdf”
+  forever?", and counts several, "Delete 3 items forever?".
 
 ### 6.11 Batch outcomes and retry
 

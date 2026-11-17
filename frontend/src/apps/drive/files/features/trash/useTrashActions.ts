@@ -118,10 +118,15 @@ export function useTrashActions(root: () => string | null) {
     return result
   }
   async function purge(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
+    const [only] = items
     const agreed = await confirm({
-      title: items.length === 1 ? 'Delete forever?' : `Delete ${items.length} items forever?`,
-      message: 'You cannot undo this.',
-      confirmLabel: 'Delete forever',
+      // The dialog title is plain text, so the name is not escaped as `subject` does for toasts.
+      title:
+        items.length === 1 && only
+          ? __('Delete “{0}” forever?', [only.title])
+          : __('Delete {0} items forever?', [items.length]),
+      message: __('You cannot undo this.'),
+      confirmLabel: __('Delete forever'),
       destructive: true,
     })
     if (!agreed) return null
