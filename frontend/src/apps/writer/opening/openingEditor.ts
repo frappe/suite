@@ -1,5 +1,5 @@
 import { Editor, Extension } from '@tiptap/core'
-import { TextSelection } from '@tiptap/pm/state'
+import { Plugin, TextSelection } from '@tiptap/pm/state'
 import { toast } from 'frappe-ui'
 import { setPlaceholder } from 'frappe-ui/editor'
 import { shallowRef } from 'vue'
@@ -94,7 +94,7 @@ function createOpening(node: string): Opening {
       onAnchors: () => {},
       scrollParent: () => element.parentElement ?? window,
       media: null,
-    }),
+    }).concat(NoFilesWhileOpening),
     editorProps: {
       attributes: {
         class: `prose max-w-none ${EDITOR_TEXT_CLASS}`,
@@ -108,6 +108,37 @@ function createOpening(node: string): Opening {
   setPlaceholder(editor, __('Type / for blocks, @ to mention…'))
   return { node, editor, element }
 }
+
+/**
+ * Refuses pasted and dropped files with a message. The opening editor cannot
+ * upload, and an upload still running at handover would leave a picture stuck
+ * loading in the document. Without this, frappe-ui's paste and drop handlers
+ * take the file and drop it silently.
+ */
+const NoFilesWhileOpening = Extension.create({
+  name: 'noFilesWhileOpening',
+  // Runs before the paste and drop handlers of the kit and the media extensions
+  priority: 1000,
+
+  addProseMirrorPlugins() {
+    const refuse = (event: Event, files: FileList | undefined) => {
+      if (!files?.length) return false
+      event.preventDefault()
+      toast.info(__('Wait a moment for the document to open, then add the file again'))
+      return true
+    }
+    return [
+      new Plugin({
+        props: {
+          handlePaste: (_view, event) => refuse(event, event.clipboardData?.files),
+          handleDOMEvents: {
+            drop: (_view, event) => refuse(event, event.dataTransfer?.files),
+          },
+        },
+      }),
+    ]
+  },
+})
 
 function styleText(style: Record<string, string | number | undefined>): string {
   return Object.entries(style)
