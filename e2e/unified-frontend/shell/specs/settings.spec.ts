@@ -58,8 +58,10 @@ test.describe("desktop", () => {
 		await page.goto("/home");
 		const settings = await openSettingsFromRail(page);
 
-		// The sidebar's group labels, in heading order.
-		const headings = settings.getByRole("tablist").locator(":scope > div > div > div:first-child:not([role='tab'])");
+		// The sidebar's group labels, in heading order. The search box is no group
+		const headings = settings
+			.getByRole("tablist")
+			.locator(":scope > div > div:not(:has(input)) > div:first-child:not([role='tab'])");
 		await expect(headings).toHaveText(FIRST_TABS.map(({ heading }) => heading));
 
 		for (const { tab } of FIRST_TABS) {
