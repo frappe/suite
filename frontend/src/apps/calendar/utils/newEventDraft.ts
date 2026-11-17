@@ -15,6 +15,16 @@ export interface NewEventDraft {
   title?: string
   description?: string
   participants?: readonly { email: string; name?: string }[]
+  /** When it starts. */
+  start?: DraftMoment
+  /** When it ends, for a range; without one it runs the usual length. */
+  end?: DraftMoment
+}
+
+/** A day (`YYYY-MM-DD`), and the time on it (`HH:mm`) when there is one. A day alone is all day. */
+export interface DraftMoment {
+  date: string
+  time?: string
 }
 
 export interface NewEventDrafts {
@@ -108,15 +118,54 @@ export const seatOrganizer = <O extends { email: string }, P extends { email: st
   ...participants.filter((person) => lower(person.email) !== lower(organizer.email)),
 ]
 
+/** When a new event runs, as its form holds it. */
+export interface NewEventTimes {
+  isAllDay: boolean
+  startDate: string
+  startTime: string
+  endDate: string
+  endTime: string
+}
+
 /**
- * When a new event runs as its form opens: `start`, for the default length. One filled in from
- * elsewhere leaves it empty for the reader to pick, and the form won't save until they have.
+ * When a new event runs as its form opens. A draft that says when opens there: a range from its
+ * start to its end, a time alone for `minutes`, and a day with no time as an all-day event. Any
+ * other opens on the slot it was asked from, for `minutes`. An all-day event still carries the
+ * slot's hours, for the form to fall back on if the reader makes it a timed one.
  */
 export const newEventTimes = (
   draft: NewEventDraft | undefined,
-  start: string,
+  slot: { date: string; time: string; isAllDay: boolean },
   minutes: number,
-): { startTime: string; endTime: string } =>
-  draft
-    ? { startTime: '', endTime: '' }
-    : { startTime: start, endTime: dayjs(start, 'HH:mm').add(minutes, 'minute').format('HH:mm') }
+): NewEventTimes => {
+  const slotEnd = dayjs(slot.time, 'HH:mm').add(minutes, 'minute').format('HH:mm')
+  const start = draft?.start
+  if (!start)
+    return {
+      isAllDay: slot.isAllDay,
+      startDate: slot.date,
+      startTime: slot.time,
+      endDate: slot.date,
+      endTime: slotEnd,
+    }
+  if (!start.time) {
+    const last = draft?.end?.date
+    return {
+      isAllDay: true,
+      startDate: start.date,
+      startTime: slot.time,
+      endDate: last && last > start.date ? last : start.date,
+      endTime: slotEnd,
+    }
+  }
+  const startsAt = dayjs(`${start.date}T${start.time}`)
+  const named = draft?.end?.time ? dayjs(`${draft.end.date}T${draft.end.time}`) : undefined
+  const endsAt = named?.isAfter(startsAt) ? named : startsAt.add(minutes, 'minute')
+  return {
+    isAllDay: false,
+    startDate: startsAt.format('YYYY-MM-DD'),
+    startTime: startsAt.format('HH:mm'),
+    endDate: endsAt.format('YYYY-MM-DD'),
+    endTime: endsAt.format('HH:mm'),
+  }
+}

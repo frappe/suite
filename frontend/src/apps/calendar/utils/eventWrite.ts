@@ -77,60 +77,6 @@ export const occurrenceStart = (occurrence: OpenedOccurrence) =>
 export const formStart = (form: EventForm) =>
   dayjs(`${form.startDate}T${form.isAllDay ? '00:00' : form.startTime}`)
 
-/** A day and a time on the form, either of which may still be empty. */
-export interface FormMoment {
-  date?: string
-  time?: string
-}
-
-// An empty time is unset, not midnight — `dayjs('2026-11-16T')` would read it as 00:00.
-const momentAt = ({ date, time }: FormMoment) => {
-  if (!date || !time) return null
-  const at = dayjs(`${date}T${time}`)
-  return at.isValid() ? at : null
-}
-const toMoment = (at: ReturnType<typeof dayjs>): FormMoment => ({
-  date: at.format('YYYY-MM-DD'),
-  time: at.format('HH:mm'),
-})
-
-/**
- * Where a timed event's end goes once its start moves from `previous` to `start`: along with
- * it, keeping the length the user set. With no earlier start there is no length to keep, so an
- * end already after the new start stands. Otherwise — no end, or one the start has overtaken —
- * the end falls `defaultMinutes` after the start. `null` leaves the end as it is.
- */
-export function endFollowingStart(
-  previous: FormMoment,
-  start: FormMoment,
-  end: FormMoment,
-  defaultMinutes: number,
-): FormMoment | null {
-  const startsAt = momentAt(start)
-  if (!startsAt) return null
-  const endsAt = momentAt(end)
-  const before = momentAt(previous)
-  if (!before && endsAt?.isAfter(startsAt)) return null
-  const length = before && endsAt ? endsAt.diff(before, 'minute') : 0
-  return toMoment(startsAt.add(length > 0 ? length : defaultMinutes, 'minute'))
-}
-
-/**
- * Where a timed event's start goes once its end is set to `end`: an end at or before the start
- * pulls the start back to `defaultMinutes` before it. An unset start stays unset. `null` leaves
- * the start as it is.
- */
-export function startPrecedingEnd(
-  start: FormMoment,
-  end: FormMoment,
-  defaultMinutes: number,
-): FormMoment | null {
-  const startsAt = momentAt(start)
-  const endsAt = momentAt(end)
-  if (!startsAt || !endsAt || endsAt.isAfter(startsAt)) return null
-  return toMoment(endsAt.subtract(defaultMinutes, 'minute'))
-}
-
 const formDuration = (form: EventForm) => {
   if (form.isAllDay) {
     const days = dayjs(form.endDate).diff(dayjs(form.startDate), 'day') + 1

@@ -34,13 +34,10 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
 import {
-  endFollowingStart,
   formEventFields,
   formStart,
   occurrenceStart,
-  startPrecedingEnd,
   type EventForm,
-  type FormMoment,
 } from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
 import {
@@ -159,22 +156,25 @@ const defaultStartTime = (date: string) =>
 // "7:30 am" reads the 7 and stops.
 const SLOT_TIME_FORMATS = ['h:mm a', 'h a', 'HH:mm']
 const getDefaultEventData = () => {
-  // Filled in by another area (an event from a mail): its title and words, and the people in it
-  // as participants beside the organizer, each still to reply. When is left to the reader.
+  // Filled in by another area (an event from a mail): its title, words and time, and the people in
+  // it as participants beside the organizer, each still to reply.
   const prefill: NewEventDraft | undefined = selectedEvent?.prefill
-  const { startTime, endTime } = newEventTimes(
-    prefill,
-    selectedEvent?.time
-      ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
-      : defaultStartTime(selectedEvent.date),
-    DEFAULT_DURATION_MINUTES,
-  )
-
+  const slotDate = dayjs(selectedEvent.date).format('YYYY-MM-DD')
   // A new event is a timed one. Only a click in the all-day lane says otherwise — that is
   // the reader pointing at the all-day row, not the absence of a time: a month cell and the
   // New Event button carry no time either, and neither is a statement that the event runs
   // all day. Off by default, and a switch away when it isn't.
-  const isAllDay = selectedEvent?.isFullDay === true
+  const { isAllDay, startDate, startTime, endDate, endTime } = newEventTimes(
+    prefill,
+    {
+      date: slotDate,
+      time: selectedEvent?.time
+        ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
+        : defaultStartTime(selectedEvent.date),
+      isAllDay: selectedEvent?.isFullDay === true,
+    },
+    DEFAULT_DURATION_MINUTES,
+  )
 
   // Shared calendars are never writable, so the default is always the account's own.
   const calendar = defaultCalendar(calendars.data)
@@ -188,13 +188,13 @@ const getDefaultEventData = () => {
     calendar_ids: [calendar?.id].filter(Boolean),
     isAllDay,
     repeat: false,
-    startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
+    startDate,
     startTime,
-    endDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
+    endDate,
     endTime,
     locations: [],
     links: [],
-    alerts: [defaultAlert(isAllDay, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
+    alerts: [defaultAlert(isAllDay, startDate)],
     followsDefaults: false,
     description: prefill?.description ?? '',
     free_busy_status: 'Busy',
@@ -330,9 +330,9 @@ const meetLinkDisplay = computed(() =>
 
 // --- Watchers ---
 
-// Moving the start drags the end along, keeping the gap the user set; an end picked
-// before any start stays put unless the start overtakes it (see endFollowingStart).
-let previousStart: FormMoment | null = null
+// Moving the start drags the end along, keeping the gap the user set. A gap that
+// hasn't been set — or one the start has overtaken — falls back to the default.
+let previousStart: { date?: string; time?: string } | null = null
 watch(show, (val) => {
   if (!val) return
   Object.assign(event, getEventData())
@@ -386,29 +386,26 @@ watch(
       event.endDate = dayjs(startDate).add(Math.max(days, 0), 'day').format('YYYY-MM-DD')
       return
     }
-    const end = endFollowingStart(
-      previous,
-      { date: startDate, time: startTime },
-      { date: event.endDate, time: event.endTime },
-      DEFAULT_DURATION_MINUTES,
+    const start = dayjs(`${startDate}T${startTime}`)
+    if (!start.isValid()) return
+    const gap = dayjs(`${event.endDate}T${event.endTime}`).diff(
+      dayjs(`${previous.date}T${previous.time}`),
+      'minute',
     )
-    if (!end) return
-    event.endDate = end.date
-    event.endTime = end.time
+    const end = start.add(gap > 0 ? gap : DEFAULT_DURATION_MINUTES, 'minute')
+    event.endDate = end.format('YYYY-MM-DD')
+    event.endTime = end.format('HH:mm')
   },
 )
 watch(
   () => [event.endDate, event.endTime],
   ([endDate, endTime]) => {
-    if (event.isAllDay) return
-    const start = startPrecedingEnd(
-      { date: event.startDate, time: event.startTime },
-      { date: endDate, time: endTime },
-      DEFAULT_DURATION_MINUTES,
-    )
-    if (!start) return
-    event.startDate = start.date
-    event.startTime = start.time
+    if (event.isAllDay || !endDate || !endTime) return
+    const end = dayjs(`${endDate}T${endTime}`)
+    if (!end.isValid() || end.isAfter(startsAt.value)) return
+    const start = end.subtract(DEFAULT_DURATION_MINUTES, 'minute')
+    event.startDate = start.format('YYYY-MM-DD')
+    event.startTime = start.format('HH:mm')
   },
 )
 const showRepeatSettings = ref(false)
