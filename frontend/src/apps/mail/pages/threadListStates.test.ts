@@ -44,6 +44,7 @@ vi.mock('frappe-ui', async () => {
   const nothing = defineComponent({ setup: () => () => null })
   return {
     toast: { success: () => {}, error: () => {}, warning: () => {}, info: () => {} },
+    usePortalTarget: () => undefined,
     Breadcrumbs: nothing,
     Dialog: nothing,
     Checkbox: nothing,
@@ -136,6 +137,8 @@ async function open(path: string) {
   app.config.globalProperties.__ = translate
   app.config.errorHandler = (error) => errors.push(error)
   app.provide('$socket', { on: () => {}, off: () => {}, emit: () => {} })
+  // The loading outline lays its rows out by the reader's settings.
+  app.provide('$user', { data: { show_reading_pane: true } })
   app.use(createPinia())
   app.use(router)
   apps.push(app)
