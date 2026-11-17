@@ -16,6 +16,7 @@ function node(title = 'Budget', name = 'budget') {
     root: 'root',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 3,
     mime: 'text/plain',
     url: null,

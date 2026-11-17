@@ -230,6 +230,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -369,6 +380,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -645,6 +657,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -784,6 +807,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -1045,6 +1069,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -1184,6 +1219,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -1458,6 +1494,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -1597,6 +1644,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -2039,6 +2087,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -2178,6 +2237,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -2427,6 +2487,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -2566,6 +2637,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -2824,6 +2896,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -2963,6 +3046,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -3218,6 +3302,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -3357,6 +3452,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -3616,6 +3712,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -3755,6 +3862,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -4009,6 +4117,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -4148,6 +4267,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -4534,6 +4654,17 @@
                 ],
                 "title": "Trash Root"
               },
+              "trashed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Trashed At"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -4673,6 +4804,7 @@
               "root",
               "state",
               "trash_root",
+              "trashed_at",
               "size",
               "mime",
               "url",
@@ -5003,6 +5135,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -5142,6 +5285,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -5403,6 +5547,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -5542,6 +5697,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -6249,6 +6405,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -6388,6 +6555,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -7898,6 +8066,17 @@
                 ],
                 "title": "Trash Root"
               },
+              "trashed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Trashed At"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -8037,6 +8216,7 @@
               "root",
               "state",
               "trash_root",
+              "trashed_at",
               "size",
               "mime",
               "url",

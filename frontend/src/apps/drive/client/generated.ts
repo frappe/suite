@@ -39,6 +39,7 @@ export type NodeCreateCreateFolderOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -125,6 +126,7 @@ export type NodeCreateCreateFileOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -208,6 +210,7 @@ export type NodeCreateCreateLinkOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -294,6 +297,7 @@ export type NodeCreateCreateDocumentOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -429,6 +433,7 @@ export type NodeGetOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -503,6 +508,7 @@ export type NodePatchRenameOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -594,6 +600,7 @@ export type NodePatchMoveOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -689,6 +696,7 @@ export type NodePatchTrashOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -784,6 +792,7 @@ export type NodePatchRestoreOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -879,6 +888,7 @@ export type NodePatchStampOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1028,6 +1038,7 @@ export type NodeChildrenOutputNodeShape = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1124,6 +1135,7 @@ export type NodeCopyOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1216,6 +1228,7 @@ export type NodePutContentOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1488,6 +1501,7 @@ export type UploadFinishOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1979,6 +1993,7 @@ export type ViewListOutputNodeShape = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null

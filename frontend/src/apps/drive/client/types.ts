@@ -70,6 +70,8 @@ export interface DriveNode {
   state: string
   /** The node whose trashing trashed this one: its own name on a trash root, null while Active. */
   trash_root: string | null
+  /** When the trash root was trashed, on every node trashed with it; null while Active. */
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null

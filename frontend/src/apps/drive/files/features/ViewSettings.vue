@@ -49,9 +49,7 @@
             "
             @click="emit('toggle-column', column, !shown(column))"
           >
-            {{
-              column === 'modified' && dateColumn === 'opened' ? 'Opened' : COLUMN_LABELS[column]
-            }}
+            {{ column === 'modified' ? dateLabel : COLUMN_LABELS[column] }}
           </button>
         </div>
       </div>
@@ -111,6 +109,13 @@ const COLUMN_LABELS: Record<FilesColumn, string> = {
   kind: 'Type',
   size: 'Size',
 }
+/** The date column's pill, named as the list heads it. */
+const DATE_LABELS: Record<FilesDateColumn, string> = {
+  modified: 'Modified',
+  opened: 'Opened',
+  trashed: 'Trashed',
+}
+const dateLabel = computed(() => DATE_LABELS[props.dateColumn ?? 'modified'])
 
 /** Each direction in the words of its field: `A to Z`, `Newest first`. */
 function orderLabel(sort: FilesSort, dir: FilesDirection): string {

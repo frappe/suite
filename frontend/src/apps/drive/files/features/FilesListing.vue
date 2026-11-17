@@ -109,8 +109,14 @@
             v-if="shows('modified')"
             :class="columnClass('modified')"
             v-bind="headerProps('modified', 'end')"
-            >{{ byOpened ? 'Opened' : 'Modified' }}</component
+            :aria-sort="byTrashed ? 'descending' : undefined"
           >
+            <!-- Trash comes newest trashed first and offers no sort, so its arrow only shows the order. -->
+            <template v-if="byTrashed" #prefix
+              ><span class="lucide-arrow-down block size-3.5" aria-hidden="true"
+            /></template>
+            {{ dateLabel }}
+          </component>
           <ListHeaderCell><span class="sr-only">Actions</span></ListHeaderCell>
         </ListHeader>
         <ListSkeletonRows v-if="loading" :cells="skeletonCells()" />
@@ -617,6 +623,12 @@ function rulerLabel(column: MeasuredColumn, row: DriveNode) {
   return row.audience ? audienceLabel(row.audience) : null
 }
 const byOpened = computed(() => props.dateColumn === 'opened')
+const byTrashed = computed(() => props.dateColumn === 'trashed' && props.sortable === false)
+const dateLabel = computed(() => {
+  if (props.dateColumn === 'opened') return __('Opened')
+  if (props.dateColumn === 'trashed') return __('Trashed')
+  return __('Modified')
+})
 const headerCell = computed(() => (props.sortable === false ? ListHeaderCell : ListHeaderCellSort))
 const allSelected = computed(() => rows.value.length > 0 && rows.value.every(isSelected))
 const someSelected = computed(() => !allSelected.value && rows.value.some(isSelected))
@@ -771,6 +783,7 @@ function onAccessDblclick(event: MouseEvent, row: DriveNode) {
   if (sharesOnClick(event, row)) event.stopPropagation()
 }
 function rowDate(row: DriveNode) {
+  if (props.dateColumn === 'trashed') return formatModified(row.trashed_at)
   return formatModified(byOpened.value ? (row.opened_at ?? null) : row.modified)
 }
 /** A folder shows the total of its files when the listing read it, and nothing when it holds none. */

@@ -967,9 +967,12 @@ watch(
 // their own order, so they offer no sort.
 const arrangeable = computed(() => concreteDestination.value && !isSearching.value)
 /** The listing hides Owner in the user's own space, so View settings does not offer it there. */
-const dateColumn = computed<FilesDateColumn>(() =>
-  props.destination === 'recent' && !isSearching.value ? 'opened' : 'modified',
-)
+const dateColumn = computed<FilesDateColumn>(() => {
+  if (isSearching.value) return 'modified'
+  if (props.destination === 'recent') return 'opened'
+  if (props.destination === 'trash') return 'trashed'
+  return 'modified'
+})
 const offeredColumns = computed(() => FILES_COLUMNS.filter(isOfferedColumn))
 /**
  * Owner says nothing in the user's own space, and Access nothing in Trash.

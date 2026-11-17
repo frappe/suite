@@ -29,6 +29,7 @@ const net = vi.hoisted(() => {
     root: personalRoot,
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 0,
     mime: null,
     url: null,

@@ -76,6 +76,7 @@ const drive = vi.hoisted(() => {
     root: 'root',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     mime: null,
     url: null,
     content_doctype: null,

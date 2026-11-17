@@ -6,8 +6,11 @@ export type FilesDirection = 'asc' | 'desc'
 /** The optional list columns, in the order View settings offers them. Name is always shown. */
 export const FILES_COLUMNS = ['access', 'owner', 'modified', 'kind', 'size'] as const
 export type FilesColumn = (typeof FILES_COLUMNS)[number]
-/** The date the date column shows. Recent shows when the user opened each file. */
-export type FilesDateColumn = 'modified' | 'opened'
+/**
+ * The date the date column shows. Recent shows when the user opened each file,
+ * and Trash when each item was trashed.
+ */
+export type FilesDateColumn = 'modified' | 'opened' | 'trashed'
 
 /** How the listing shows its rows: what the user chose, and what folder links and the saved preference carry. */
 export interface PresentationState {

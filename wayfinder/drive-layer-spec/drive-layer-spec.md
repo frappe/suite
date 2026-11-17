@@ -3541,7 +3541,7 @@ Base fields, identical in a list row and in a detail fetch [014 §7]:
 ```json
 { "name": "a1b2c3d4e5", "title": "Q3 deck", "kind": "document",
   "parent_node": "f9e8d7c6b5", "root": "r1a2b3c4d5", "state": "Active",
-  "trash_root": null, "size": 0, "mime": "frappe/slides", "url": null,
+  "trash_root": null, "trashed_at": null, "size": 0, "mime": "frappe/slides", "url": null,
   "content_doctype": "Presentation", "content_docname": "deck-7",
   "is_template": 0,
   "owner": { "id": "priya@example.com", "full_name": "Priya Nair",
@@ -3576,6 +3576,10 @@ meant. A browser formats every time in the viewer's zone.
 root, the trash root's `name` on a node trashed with it, and `null` while
 Active. A client uses it to tell the node it may restore from the nodes
 inside it, and to name and link that node from a trashed folder (§5.6).
+
+`trashed_at` is the stored column (§3.1): when the trash root was trashed,
+on every node trashed with it, and `null` while Active. Trash is ordered by
+it, newest first, and shows it as its date column.
 
 Five expansions, each costing its queries only when named in `?expand=`:
 

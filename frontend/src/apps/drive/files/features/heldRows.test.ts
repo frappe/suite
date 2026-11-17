@@ -92,6 +92,7 @@ describe('rows this tab created', () => {
       root: 'root',
       state: 'Active',
       trash_root: null,
+      trashed_at: null,
       size: 0,
       mime: null,
       url: null,

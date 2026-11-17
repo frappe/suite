@@ -51,6 +51,7 @@ NODE_SHAPE_FIELDS = {
     "root",
     "state",
     "trash_root",
+    "trashed_at",
     "size",
     "mime",
     "url",

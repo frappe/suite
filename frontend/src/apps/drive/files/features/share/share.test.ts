@@ -42,6 +42,7 @@ const node = (kind: string, role = 50) => ({
   root: 'root',
   state: 'Active',
   trash_root: null,
+  trashed_at: null,
   size: 0,
   mime: null,
   url: null,

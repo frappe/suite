@@ -41,6 +41,7 @@ vi.mock('@/platform/transport', async (actual) => ({
         root: 'r',
         state: trashed ? 'Trashed' : 'Active',
         trash_root: trashed ? input.node : null,
+        trashed_at: trashed ? '2026-01-02T03:04:05Z' : null,
         size: 1,
         mime: 'application/pdf',
         url: `/f/${input.node}`,

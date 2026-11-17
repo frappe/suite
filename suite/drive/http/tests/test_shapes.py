@@ -150,6 +150,7 @@ class TestNodeShape(UnitTestCase):
                     "root",
                     "state",
                     "trash_root",
+                    "trashed_at",
                     "size",
                     "mime",
                     "url",
@@ -166,7 +167,7 @@ class TestNodeShape(UnitTestCase):
 
     def test_the_shape_withholds_tree_bookkeeping_and_storage_ids(self):
         answer = shapes.node_shape(STORED)
-        for withheld in ("path", "trashed_at", "blob", "modified_by"):
+        for withheld in ("path", "blob", "modified_by"):
             self.assertNotIn(withheld, answer)
 
     def test_a_root_node_reports_its_own_id_as_its_root(self):

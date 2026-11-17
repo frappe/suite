@@ -373,6 +373,7 @@ function node(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
     root: 'root',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 10,
     mime: 'image/png',
     url: null,
@@ -806,6 +807,7 @@ describe('A row menu in Trash', () => {
     const trashed = node('t', 'Old.png', {
       state: 'Trashed',
       trash_root: 't',
+      trashed_at: '2026-01-02T03:04:05Z',
       access: { role: DRIVE_ROLES.manage },
     })
 

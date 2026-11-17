@@ -167,6 +167,7 @@ vi.mock('@/platform/transport', async (original) => ({
         parent_node: input.node,
         state: folderState,
         trash_root: trashRoot,
+        trashed_at: trashRoot ? '2026-01-02T03:04:05Z' : null,
       }))
       return { rows: listed.sort((a, b) => a.title.localeCompare(b.title)), next_cursor: null }
     },
