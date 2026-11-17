@@ -152,7 +152,7 @@ test.describe("the server resolves a share link", () => {
 			expect(page).not.toContain(doc.title);
 		}
 		expect(signedInPage).toContain("Go to Home");
-		expect(signedInPage).not.toContain("Sign in");
+		expect(signedInPage).not.toContain("/login");
 		await Promise.all([guest.dispose(), member.dispose()]);
 	});
 

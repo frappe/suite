@@ -118,11 +118,11 @@ class TestDeadLinkPage(DriveHTTPCase):
         self.assertNotIn("Folder", expired)
         self.assertNotIn(self.folder, expired)
 
-    def test_a_visitor_without_a_session_gets_no_home_and_no_sign_in(self):
+    def test_a_visitor_without_a_session_gets_sign_in_and_no_home(self):
         body = self.page(self.UNKNOWN, 404)
         self.assertNotIn("Go to Home", body)
-        self.assertNotIn("/login", body)
-        self.assertNotIn("Sign in", body)
+        # A dead link has nothing to return to, so Sign in lands on Home.
+        self.assertIn('href="/login?redirect-to=%2Fhome">Sign in</a>', body)
 
     def test_a_signed_in_visitor_can_go_to_home(self):
         sid = self.session_for(OWNER)
@@ -130,4 +130,5 @@ class TestDeadLinkPage(DriveHTTPCase):
         for path, status in ((self.UNKNOWN, 404), (expired, 410)):
             with self.subTest(status=status):
                 body = self.page(path, status, sid=sid)
-                self.assertIn('<a class="home" href="/home">Go to Home</a>', body)
+                self.assertIn('href="/home">Go to Home</a>', body)
+                self.assertNotIn("/login", body)
