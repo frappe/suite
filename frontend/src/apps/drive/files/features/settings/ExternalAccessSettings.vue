@@ -6,27 +6,27 @@
 <template>
   <!-- The route answers `{}` when WebDAV is off and the caller is no admin: nothing to show. -->
   <SettingsSection v-if="isOffered" :title="__('External access')">
-    <p class="text-base text-ink-gray-6">
+    <p class="mt-1 text-base text-ink-gray-6">
       {{ __('Connect Drive to desktop, mobile, and other file apps') }}
     </p>
-    <div class="mt-4 flex flex-col gap-6">
-      <SettingsRow
-        v-if="answer.is_admin"
-        :title="__('Enable WebDAV')"
-        :description="
-          __('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive')
-        "
-      >
-        <Switch
-          :model-value="siteEnabled"
-          :disabled="saveSite.isPending"
-          :aria-label="__('Enable WebDAV')"
-          @update:model-value="setSiteEnabled"
-        />
-      </SettingsRow>
-
-      <template v-if="connection">
+    <div class="mt-2 flex flex-col gap-6">
+      <div class="divide-y divide-outline-gray-1">
         <SettingsRow
+          v-if="answer.is_admin"
+          :title="__('Enable WebDAV')"
+          :description="
+            __('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive')
+          "
+        >
+          <Switch
+            :model-value="siteEnabled"
+            :disabled="saveSite.isPending"
+            :aria-label="__('Enable WebDAV')"
+            @update:model-value="setSiteEnabled"
+          />
+        </SettingsRow>
+        <SettingsRow
+          v-if="connection"
           :title="__('Allow WebDAV access to my files')"
           :description="__('Turn this on before you connect a client')"
         >
@@ -37,7 +37,9 @@
             @update:model-value="setUserEnabled"
           />
         </SettingsRow>
+      </div>
 
+      <template v-if="connection">
         <section class="flex flex-col gap-4">
           <div class="space-y-1">
             <h3 class="text-base font-semibold text-ink-gray-8">

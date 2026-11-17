@@ -85,7 +85,7 @@
       <!-- Read-only, so it sits after the settings rather than ahead of them; the sidebar shows
            this meter only once the account is nearly full. -->
       <SettingsSection :title="__('Storage')">
-        <StorageMeter :used-percentage :label :limited="isLimited" />
+        <StorageMeter class="mt-3" :used-percentage :label :limited="isLimited" />
       </SettingsSection>
     </div>
   </AppSettingsBody>
