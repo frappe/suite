@@ -12,6 +12,9 @@ import { translationPlugin } from '@/platform/translation'
 import { downloaded, realEditors, realtime, rooms, signedIn, stored } from './writer-surface-fakes'
 
 export type Versions = DocumentSession['versions']
+
+/** Who took a fixture's versions, as Drive names them. */
+export const ANA = { id: 'ana@example.com', full_name: 'Ana Silva', user_image: null }
 export type Comments = DocumentSession['comments']
 
 // The editor element's tiptap editor, as tiptap hangs it on the element
@@ -158,7 +161,7 @@ export async function previewAndReturn(
 
 export const oneVersion = fromPartial<Versions>({
   list: async () => ({
-    rows: [{ seq: 3, kind: 'named', label: 'Before review' }],
+    rows: [{ seq: 3, kind: 'named', label: 'Before review', person: ANA }],
     next_cursor: null,
   }),
 })

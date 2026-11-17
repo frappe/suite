@@ -89,7 +89,7 @@ const machine = setupFlow<Event>().createMachine({
 	initial: "domainsList",
 	states: {
 		redirectedToOverview: {
-			meta: { description: "Without Suite Cloud (answered “not configured” in the test), Maya opens /admin/mail/domains and lands on the self-hosted Overview: Active users and Where storage goes, and no Mail section in the sidebar. Nothing says why the page she asked for is missing." },
+			meta: { description: "Without Suite Cloud (answered “not configured” in the test), Maya opens /admin/mail/domains and lands on the self-hosted Overview: Active users and the storage card, and no Mail section in the sidebar. Nothing says why the page she asked for is missing." },
 		},
 		domainsList: {
 			meta: { description: "Domains: one row per domain with a status badge (Active, Pending Verification, Disabled), its description, when it was last verified and when it was added, and Add domain at the top. Every row says “2 months ago” and “—” because the stand-in fixes those dates." },

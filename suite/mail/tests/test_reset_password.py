@@ -10,7 +10,7 @@ from frappe.utils.password import check_password, update_password
 
 from suite.mail import events
 from suite.mail.api import admin
-from suite.mail.api.account import set_reset_password_key
+from suite.mail.api.account import send_reset_password_link, set_reset_password_key
 from suite.mail.tests.test_suite_cloud_directory import DOMAIN, SuiteCloudTestCase
 
 OLD_PASSWORD = "a-strong-password-9"
@@ -82,3 +82,19 @@ class TestResetPassword(SuiteCloudTestCase):
             events.update_password(NEW_PASSWORD, key=key), "The reset password link has been expired"
         )
         self.assertEqual(self.fake.passwords[self.email], self.mail_password)
+
+    def test_a_reset_request_answers_the_same_for_an_unknown_address(self) -> None:
+        # Only the answer is under test here, not the hourly limit on the endpoint.
+        self.enterContext(patch("suite.utils.rate_limiter.get_rate_limits", return_value=[]))
+
+        sent_before = len(self.fake.emails)
+
+        known = send_reset_password_link(self.email)
+        unknown = send_reset_password_link(f"nobody-here@{DOMAIN}")
+
+        self.assertEqual(known, unknown)
+        self.assertNotIn("backup.test", str(known))
+        # The real account still gets its link, at the backup address; the unknown one gets nothing.
+        self.assertEqual(
+            [email["recipient"] for email in self.fake.emails[sent_before:]], ["reset-member@backup.test"]
+        )

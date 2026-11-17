@@ -1,6 +1,8 @@
 <!--
   The phone account sheet, opened from the avatar in the bottom nav [T010]:
-  who is signed in, then Settings and Theme, and Log out set apart. The sheet shows no title,
+  who is signed in, the areas that have no bottom bar tab on a phone (Mail, Calendar, People),
+  Settings and Theme, and Log out set apart. An area's row shows the count the rail's dot
+  counts (unread mail, upcoming events), as the area has no tab to put a dot on. The sheet shows no title,
   so a visually hidden one names the dialog "Account".
 -->
 <template>
@@ -18,6 +20,15 @@
 
         <nav :aria-label="__('Account')">
           <div class="space-y-0.5">
+            <SidebarItem
+              v-for="area in areas"
+              :key="area.id"
+              :label="area.label()"
+              :icon="area.menuIcon"
+              :route="area.to"
+              :suffix="badges[area.id] ? String(badges[area.id]) : undefined"
+              @click="close"
+            />
             <SidebarItem :label="__('Settings')" icon="lucide-settings" @click="showSettings" />
             <div class="flex h-7 items-center justify-between gap-3 pl-2">
               <span class="flex items-center gap-2 text-sm text-ink-gray-8">
@@ -48,12 +59,19 @@ import { Avatar, BottomSheet, SidebarItem, TabButtons } from 'frappe-ui'
 import { DialogTitle } from 'reka-ui'
 import { computed } from 'vue'
 
+import type { AccountSheetArea } from '@/platform/contracts'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 
-defineProps<{ open: boolean }>()
+defineProps<{
+  open: boolean
+  /** The areas listed as rows here, already filtered by capability. */
+  areas: readonly AccountSheetArea[]
+  /** Each area's count, as the rail's dot counts it. */
+  badges: Readonly<Record<string, number>>
+}>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 
 const session = useSession()

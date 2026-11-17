@@ -7,6 +7,7 @@ import { client } from '@/api'
 
 import { downloadHTML } from './exports'
 import {
+  ANA,
   buttonLabelled,
   discardCopies,
   liveRoom,
@@ -122,11 +123,11 @@ describe('Writer surface', () => {
     const pages = new Map<string, unknown>(
       Object.entries({
         first: {
-          rows: [{ seq: 2, kind: 'named', label: 'Draft two' }],
+          rows: [{ seq: 2, kind: 'named', label: 'Draft two', person: ANA }],
           next_cursor: 'page-2',
         },
         'page-2': {
-          rows: [{ seq: 1, kind: 'named', label: 'Draft one' }],
+          rows: [{ seq: 1, kind: 'named', label: 'Draft one', person: ANA }],
           next_cursor: null,
         },
       }),
@@ -154,6 +155,7 @@ describe('Writer surface', () => {
             kind: 'named',
             label: 'Before review',
             actor: 'ana@example.com',
+            person: ANA,
             creation: '2025-03-04T10:41:00Z',
           },
         ],
@@ -167,7 +169,7 @@ describe('Writer surface', () => {
     await vi.waitFor(() => expect(root.textContent).toContain('Before review'))
     const row = versionRow(root, 'Before review')
     const day = row.closest('section')!.querySelector('h3')!
-    expect(row.textContent).toMatch(/ana@example\.com · 10:41(\s(AM|am))?$/)
+    expect(row.textContent).toMatch(/Ana Silva · 10:41(\s(AM|am))?$/)
     expect(day.textContent).toMatch(/^(Mar 4, 2025|4 Mar 2025)$/)
     vi.unstubAllEnvs()
   })
@@ -275,7 +277,7 @@ describe('Writer surface', () => {
 
   it('shows a version in place of the editor until Current version', async () => {
     const list = vi.fn(async () => ({
-      rows: [{ seq: 3, kind: 'named', label: 'Before review' }],
+      rows: [{ seq: 3, kind: 'named', label: 'Before review', person: ANA }],
       next_cursor: null,
     }))
     const root = await openedSurface(fromPartial<Versions>({ list }))

@@ -111,6 +111,12 @@ def image_bytes(fmt, size=(32, 24), **save):
     return output.getvalue()
 
 
+def encoded(image, fmt, **save):
+    output = io.BytesIO()
+    image.save(output, fmt, **save)
+    return output.getvalue()
+
+
 def rotated_jpeg(size=(40, 20)):
     """A JPEG whose EXIF orientation 6 swaps its stored width and height."""
     image = Image.new("RGB", size, "red")
@@ -151,6 +157,11 @@ def png_with_broken_chunk(width=64, height=48):
 def preview_size(target):
     with Image.open(io.BytesIO(target.blob_bytes[target.preview_rows["deck-node"]["blob"]])) as image:
         return image.size
+
+
+def preview_alpha(target, point):
+    with Image.open(io.BytesIO(target.blob_bytes[target.preview_rows["deck-node"]["blob"]])) as image:
+        return image.convert("RGBA").getchannel("A").getpixel(point)
 
 
 class SlidesTest(unittest.TestCase):
@@ -949,6 +960,67 @@ class SlidesTest(unittest.TestCase):
         self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": copied[0]["name"]}])
         self.assertEqual(again.issues_total, 0)
 
+    def test_a_picture_filed_in_a_drive_folder_is_copied_into_the_deck_that_shows_it(self):
+        # A slide can name a plain Drive upload, attached to nothing, by its
+        # private address. That row is a Drive file node now, and Cleanup
+        # deletes the row that served the address, so the deck must hold its
+        # own copy of the bytes, as it does for a picture another deck holds.
+        address = "/private/files/team-photo.png"
+        upload = TreeRow(
+            "drive-upload",
+            file_name="team-photo.png",
+            folder="folder",
+            file_url=address,
+            blob="blob-a",
+            owner="uploader@example.com",
+            creation=STAMP,
+            modified=STAMP,
+        )
+        source = FakeContent(
+            documents=[deck()],
+            files=[upload],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": address}]))],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        target.add_blob("blob-a", b"photo", mime_type="image/png")
+        self.tree_node(target, "drive-upload", "folder", blob="blob-a", owner="uploader@example.com")
+
+        result = convert_slides_and_templates(env)
+        copied = self.media_children(target, "deck-node")
+        again = convert_slides_and_templates(env)
+
+        self.assertEqual([(row["blob"], row["owner"]) for row in copied], [("blob-a", OWNER)])
+        self.assertEqual(target.read_blob(copied[0]["blob"]), b"photo")
+        self.assertEqual(json.loads(source.slide_rows["slide-1"].elements), [{"src": copied[0]["name"]}])
+        # The upload stays where its owner filed it
+        self.assertEqual(target.node_rows["drive-upload"]["parent_node"], "folder")
+        self.assertEqual((result.issues_total, result.media_references_missing_file_rows), (0, 0))
+        self.assertEqual(self.media_children(target, "deck-node"), copied)
+        self.assertEqual(again.issues_total, 0)
+
+    def test_a_reference_another_deck_also_names_ignores_a_drive_file_at_that_address(self):
+        # Another deck's media wins, so a deck that converted before Drive
+        # files counted converts the same way now.
+        other = deck("other", node="other-node", title="Other")
+        address = "/private/files/shared.png"
+        source = FakeContent(
+            documents=[deck(), other],
+            files=[TreeRow("drive-upload", file_name="shared.png", file_url=address, blob="blob-b")],
+            slides=[SlideRow("slide-1", "deck-1", 1, json.dumps([{"src": address}]))],
+            media=[media("other-file", deck_name=other.name, blob="blob-a", url=address)],
+            users={"Administrator": True},
+        )
+        env, target = self.environment(source)
+        self.document_node(target, other.node, other.name, other.title)
+        target.add_blob("blob-a", b"a", mime_type="image/png")
+        target.add_blob("blob-b", b"b", mime_type="image/png")
+        self.tree_node(target, "drive-upload", "folder", blob="blob-b")
+
+        convert_slides_and_templates(env)
+
+        self.assertEqual([row["blob"] for row in self.media_children(target, "deck-node")], ["blob-a"])
+
     def test_private_small_webp_thumbnail_becomes_the_deck_preview(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.webp", field="thumbnail")
         source = FakeContent(
@@ -1515,6 +1587,33 @@ class SlidesTest(unittest.TestCase):
                 self.assertEqual(preview_blob.is_private, 1)
                 self.assertEqual(preview_size(target), (64, 48))
                 self.assertEqual(target.blob_bytes["thumb-blob"], image_bytes(fmt, (64, 48)))
+
+    def test_a_see_through_thumbnail_keeps_its_transparency_and_an_opaque_one_stays_opaque(self):
+        see_through = Image.new("RGBA", (64, 48), (0, 0, 0, 0))
+        see_through.paste((255, 0, 0, 255), (16, 12, 48, 36))
+        palette = Image.new("P", (64, 48), 0)
+        palette.putpalette([0, 0, 0, 255, 0, 0])
+        palette.paste(1, (16, 12, 48, 36))
+        cases = (
+            ("rgba", "png", "image/png", encoded(see_through, "PNG"), (0, 255)),
+            ("palette", "png", "image/png", encoded(palette, "PNG", transparency=0), (0, 255)),
+            ("jpeg", "jpg", "image/jpeg", image_bytes("JPEG", (64, 48)), (255, 255)),
+        )
+        for case, suffix, mime, raw, (corner_alpha, centre_alpha) in cases:
+            with self.subTest(case=case):
+                row = media("thumb", blob="thumb-blob", url=f"/files/thumb.{suffix}", field="thumbnail")
+                source = FakeContent(
+                    documents=[deck(thumbnail=row.file_url)],
+                    media=[row],
+                    users={"Administrator": True},
+                )
+                env, target = self.environment(source)
+                target.add_blob("thumb-blob", raw, mime_type=mime)
+
+                convert_slides_and_templates(env)
+
+                self.assertEqual(preview_alpha(target, (0, 0)), corner_alpha)
+                self.assertEqual(preview_alpha(target, (32, 24)), centre_alpha)
 
     def test_a_truncated_thumbnail_is_reported_and_the_next_deck_converts(self):
         row = media("thumb", blob="thumb-blob", url="/files/thumb.png", field="thumbnail")

@@ -307,7 +307,7 @@ function insertLayout(layout: unknown) {
   handleInsertSlide(insertIndex.value, layout)
 }
 
-/** A theme write rewrites the deck on the server, so it pauses editing like a restore. */
+/** A theme write only records the theme on the server: the slides stay, so the editor stays up. */
 async function writeTheme(theme: string) {
   showThemeDialog.value = false
   showThemeChange.value = false
@@ -317,19 +317,21 @@ async function writeTheme(theme: string) {
   }
 
   try {
-    restoring.value = true
-    await client.mutation(
+    const { modified } = await client.mutation(
       api.slides.documents.updateTheme,
       { name: props.session.contentDocname, theme },
       { context: contextFor(props.session.contentDocname) },
     )
-    await load()
+    // a late answer must not land in the next presentation
+    if (isLeft || !presentationDoc.value) {
+      return
+    }
+
+    Object.assign(presentationDoc.value, { theme, modified })
   } catch (error) {
     const message =
       error instanceof TransportError && error.type !== 'NetworkError' && error.message
     toast.error(message || __('Could not change the theme'))
-  } finally {
-    restoring.value = false
   }
 }
 
@@ -1044,7 +1046,7 @@ onBeforeUnmount(() => {
       :session="session"
       title-label="Presentation title"
       :save-state="saveState"
-      :view-only="!editable"
+      :view-only="!loading && !editable"
       :recoverable="canDownloadChanges"
       @download-changes="downloadChanges"
     >
