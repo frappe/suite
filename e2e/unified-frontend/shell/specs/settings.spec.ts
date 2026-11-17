@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
@@ -179,17 +179,7 @@ for (const phone of [false, true]) {
 			return settings.getByRole("region", { name: "Storage", exact: true });
 		}
 
-		async function headingTops(panel: Locator) {
-			const tops = [];
-			for (const name of ["By type", "Largest files"]) {
-				const heading = panel.getByRole("heading", { name, exact: true });
-				await expect(heading).toBeVisible();
-				tops.push((await heading.boundingBox())?.y);
-			}
-			return tops;
-		}
-
-		test("a failed load offers Retry, and loading and loaded share one layout", async ({ page }) => {
+		test("a failed load offers Retry, and a slow load shows the loading state until it answers", async ({ page }) => {
 			await patchAccount(page, FULL_ACCOUNT);
 			await failRequest(page, USAGE);
 			let panel = await openStatistics(page);
@@ -201,14 +191,17 @@ for (const phone of [false, true]) {
 			await page.unroute(USAGE);
 			const release = await holdUsage(page, FILLED);
 			panel = await openStatistics(page);
-			await expect(panel.getByText("Loading…")).toBeVisible();
-			const loading = await headingTops(panel);
+			const loading = panel.getByRole("status", { name: "Loading" }).first();
+			await expect(loading).toBeVisible();
+			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toHaveCount(0);
 
 			release();
 			await expect(panel.getByText("report.pdf")).toBeVisible();
 			await expect(panel.getByRole("listitem").filter({ hasText: "PDF" }).first()).toContainText("900 KB");
 			await expect(panel.getByRole("listitem").filter({ hasText: "photo.png" })).toContainText("500 KB");
-			expect(await headingTops(panel)).toEqual(loading);
+			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toBeVisible();
+			await expect(panel.getByRole("heading", { name: "Largest files", exact: true })).toBeVisible();
+			await expect(loading).toHaveCount(0);
 		});
 
 		test("usage with no active file explains what still counts", async ({ page }) => {
