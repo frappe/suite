@@ -106,7 +106,7 @@ const machine = setupFlow<Event>().createMachine({
 				OPEN_GROUPS_FAIL: "groupsStuck",
 				OPEN_PROFILE_SLOWLY: "profileLoading",
 				OPEN_PROFILE_FAILS: "profileFailed",
-				OPEN_AS_MEMBER: "memberStorage",
+				OPEN_AS_MEMBER: "memberProfile",
 				OPEN_WITHOUT_MAIL_ACCOUNT: "mailTabWaiting",
 				NARROW: "phoneList",
 			},
@@ -130,7 +130,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		profile: {
-			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, first and last name fields that save on blur, and Change password. The sidebar lists Account, Drive, Mail and Calendar." },
+			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, first and last name fields that save on blur, and Change password. The sidebar lists Account, Drive with External access, Mail and Calendar." },
 			on: {
 				...appTabTransitions(),
 				RENAME: "nameSaved",
@@ -153,8 +153,8 @@ const machine = setupFlow<Event>().createMachine({
 		profileFailed: {
 			meta: { description: "Maya's preferences failed to load: the same empty body as loading, with no message and no retry." },
 		},
-		memberStorage: {
-			meta: { description: "Leo, a member, on Drive > Storage: the page ends after the two lists, without External access, which only an admin sees while WebDAV is off." },
+		memberProfile: {
+			meta: { description: "Leo, a member, opens Settings: the same list without Drive's External access, which only an admin sees while WebDAV is off." },
 		},
 		nameSaved: {
 			meta: { description: "A last name typed and the field left: \"Name saved\" in a toast, and the field keeps the new name (the save is answered in the browser, so Maya's name stays as seeded on the site)." },
@@ -204,7 +204,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Drive > Storage, the same body Drive's own settings flow covers: bytes used, totals by type and the largest files." },
 		},
 		externalAccess: {
-			meta: { description: "Drive > Storage for an admin while WebDAV is off on this site: External access, the page's last part, is one switch to enable it." },
+			meta: { description: "Drive > External access for an admin while WebDAV is off on this site: one switch to enable it." },
 		},
 		...appTabStates(),
 		mailGeneralLoading: {
@@ -411,9 +411,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await openHome(page);
 			await openSettings(page);
 			await expect(dialog(page).getByLabel("First name")).toHaveValue("Leo");
-			await tab(page, "Storage").click();
-			await expect(dialog(page).getByText("Largest files")).toBeVisible();
-			await expect(dialog(page).getByText("External access")).toHaveCount(0);
+			await expect(dialog(page).getByRole("tab", { name: "External access" })).toHaveCount(0);
 		},
 		async OPEN_WITHOUT_MAIL_ACCOUNT(scene) {
 			const hold = await scene.hold(MAIL_USER);
@@ -515,10 +513,8 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await expect(dialog(scene.page).getByText("Largest files")).toBeVisible();
 		},
 		async EXTERNAL_ACCESS(scene) {
-			await tab(scene.page, "Storage").click();
-			const enable = dialog(scene.page).getByRole("switch", { name: "Enable WebDAV" });
-			await enable.scrollIntoViewIfNeeded();
-			await expect(enable).toBeVisible();
+			await tab(scene.page, "External access").click();
+			await expect(dialog(scene.page).getByRole("switch", { name: "Enable WebDAV" })).toBeVisible();
 		},
 		async MAIL_ACCOUNT_SLOWLY(scene) {
 			await scene.hold(MAIL_ACCOUNT_SETTINGS);
@@ -564,6 +560,6 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 		},
 	},
 	frame(scene, state) {
-		return state === "memberStorage" ? member.get(scene).locator("body") : null;
+		return state === "memberProfile" ? member.get(scene).locator("body") : null;
 	},
 });

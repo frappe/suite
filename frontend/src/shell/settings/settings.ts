@@ -25,6 +25,8 @@ export interface SettingsTab {
   readonly label: () => string
   /** A lucide class, for example `'lucide-key-round'`. */
   readonly icon: string
+  /** Other words people look for the tab by, for example `'WebDAV'`. */
+  readonly keywords?: () => string
   /** Cheap and synchronous. It must not load a product store. */
   readonly condition?: () => boolean
   /** Loads the body when its tab first opens. */

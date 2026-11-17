@@ -13,6 +13,18 @@ const groups: VisibleSettingsGroup[] = [
     tabs: [{ id: 'account.profile', label: () => 'Profile', icon: '', body }],
   },
   {
+    label: 'Drive',
+    tabs: [
+      {
+        id: 'drive.external-access',
+        label: () => 'External access',
+        icon: '',
+        keywords: () => 'WebDAV, API key',
+        body,
+      },
+    ],
+  },
+  {
     label: 'Mail',
     tabs: [
       {
@@ -65,6 +77,7 @@ function found(query: string) {
 it('lists every tab and no section when nothing is searched for', () => {
   expect(found('  ')).toEqual([
     'Account > Profile: ',
+    'Drive > External access: ',
     'Mail > Sending: ',
     'Mail > Advanced: ',
     'Calendar > Advanced: ',
@@ -75,6 +88,9 @@ it('finds a section by its label, under each tab that has one', () => {
 })
 it('finds a section by a keyword that is not on the page', () => {
   expect(found('vacation')).toEqual(['Mail > Sending: Auto-reply'])
+})
+it('finds a tab by a keyword that is not its name', () => {
+  expect(found('webdav')).toEqual(['Drive > External access: '])
 })
 it('narrows a section to one app when the app is named too, in any order', () => {
   expect(found('import mail')).toEqual(['Mail > Advanced: Import'])

@@ -19,7 +19,14 @@ vi.mock('frappe-ui', () => {
     },
   })
   const empty = defineComponent({ render: () => null })
-  return { Button: titled, Dialog: empty, SettingsRow: titled, Switch: empty }
+  return {
+    Button: titled,
+    Dialog: empty,
+    SettingsBody: titled,
+    SettingsHeader: titled,
+    SettingsRow: titled,
+    Switch: empty,
+  }
 })
 vi.mock('../../internal/locations', () => ({ locationLabel: () => 'Shared files' }))
 vi.mock('./CopyField.vue', () => ({
@@ -43,12 +50,6 @@ beforeEach(() => {
   window.__ = (text: string) => text
 })
 afterEach(() => app.unmount())
-
-it('shows nothing where WebDAV is off and the reader is no admin', () => {
-  state.webdav = { data: {} }
-
-  expect(mount().textContent).toBe('')
-})
 
 it('offers an admin the site switch while WebDAV is off', () => {
   state.webdav = { data: { is_admin: true, globally_enabled: false } }

@@ -21,12 +21,12 @@ type Event =
 const gigabytes = (count: number) => Math.round(count * 1024 ** 3);
 
 /**
- * The sidebar storage meter and Drive's Storage page in Settings. In the code the
+ * The sidebar storage meter and Drive's two Settings tabs. In the code the
  * meter is `StorageMeter.vue` (`usage.data`, `failed`) and `storageMeter()`'s
  * `ok`/`near`/`full` levels; Statistics is `StatisticsSettings.vue`'s
- * `data`/`failed` pair; External access is `ExternalAccessSettings.vue`, the
- * page's last part, whose layout follows which of three shapes `webdav.get`
- * answers, and which shows nothing when the answer is `{}`. This site sets no quota
+ * `data`/`failed` pair; External access is `ExternalAccessSettings.vue`, whose
+ * layout follows which of three shapes `webdav.get` answers, and whose tab
+ * `settingsGroup.ts` hides when the answer is `{}`. This site sets no quota
  * and has WebDAV off, so quota levels and External access come from answers
  * the flow rewrites in the browser; the description of each such state says so.
  */
@@ -67,7 +67,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Usage rewritten to 10.4 GB of 10 GB: the bar is full and red, and the line still reads \"10.4 GB of 10 GB used\"." },
 		},
 		statistics: {
-			meta: { description: "The meter opens Settings on Drive > Storage: the bytes used over an empty bar track (there is no quota, but the bar still shows), totals by type and the largest files. The page has no External access part, because WebDAV is off and the user is no admin." },
+			meta: { description: "The meter opens Settings on Drive > Storage: the bytes used over an empty bar track (there is no quota, but the bar still shows), totals by type and the largest files. External access is absent from the nav because WebDAV is off and the user is no admin." },
 		},
 		statisticsNearQuota: {
 			meta: { description: "Statistics with the rewritten 9.3 GB of 10 GB: the progress bar stays neutral, unlike the amber sidebar meter." },
@@ -82,10 +82,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Usage rewritten to bytes with no active files behind them: By type explains that Trash and versions still count; Largest files says only \"No files\"." },
 		},
 		externalAccessOff: {
-			meta: { description: "A Drive admin while WebDAV is off for the site (answer rewritten): External access, last on the Storage page, is one switch to enable it, nothing else." },
+			meta: { description: "A Drive admin while WebDAV is off for the site (answer rewritten): one switch to enable it, nothing else." },
 		},
 		externalAccessConnected: {
-			meta: { description: "WebDAV on and allowed for this user (answer rewritten): External access, last on the Storage page, has the admin switch, the user's own switch, server URL and username to copy, and Generate keys." },
+			meta: { description: "WebDAV on and allowed for this user (answer rewritten): the admin switch, the user's own switch, server URL and username to copy, and Generate keys." },
 			on: { GENERATE_KEYS: "apiSecretDialog" },
 		},
 		apiSecretDialog: {
@@ -187,7 +187,7 @@ export const settings = defineFlow<Event>({
 			await answerWebdav(scene, { globally_enabled: false, is_admin: true });
 			await meter(scene).click();
 			const dialog = scene.dialog("Settings");
-			await dialog.getByRole("heading", { name: "External access", exact: true }).scrollIntoViewIfNeeded();
+			await dialog.getByText("External access", { exact: true }).first().click();
 			await expect(dialog.getByRole("switch", { name: "Enable WebDAV" })).toBeVisible();
 		},
 		async OPEN_EXTERNAL_ACCESS(scene) {
@@ -202,7 +202,7 @@ export const settings = defineFlow<Event>({
 			});
 			await meter(scene).click();
 			const dialog = scene.dialog("Settings");
-			await dialog.getByRole("button", { name: "Generate keys" }).scrollIntoViewIfNeeded();
+			await dialog.getByText("External access", { exact: true }).first().click();
 			await expect(dialog.getByRole("button", { name: "Generate keys" })).toBeVisible();
 		},
 		async GENERATE_KEYS(scene) {

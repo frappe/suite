@@ -1,6 +1,11 @@
+import { api, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
-export const driveSettings = {
+// Held for the session: the group condition and the External access body
+// read the same answer.
+const webdavAnswer = useQuery(api.drive.webdav.get, {})
+
+const drive = {
   label: () => __('Drive'),
   area: 'files',
   tabs: [
@@ -10,13 +15,21 @@ export const driveSettings = {
       label: () => __('Storage'),
       icon: 'lucide-chart-pie',
       body: () => import('./StatisticsSettings.vue'),
-      sections: [
-        {
-          id: 'external-access',
-          label: () => __('External access'),
-          keywords: () => __('WebDAV, API key'),
-        },
-      ],
+    },
+    {
+      id: 'drive.external-access',
+      label: () => __('External access'),
+      icon: 'lucide-hard-drive',
+      keywords: () => __('WebDAV, API key'),
+      // The route answers `{}` when WebDAV is off and the caller is no admin.
+      condition: () => Object.keys(webdavAnswer.data ?? {}).length > 0,
+      body: () => import('./ExternalAccessSettings.vue'),
     },
   ],
 } as const
+
+/** Reads the WebDAV answer again, then resolves the Drive settings group. */
+export async function driveSettings() {
+  await webdavAnswer.refetch().catch(() => undefined)
+  return drive
+}

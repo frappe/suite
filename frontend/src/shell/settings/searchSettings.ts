@@ -26,7 +26,7 @@ function findIn(
   tab: SettingsTab,
   words: readonly string[],
 ): FoundSettingsTab[] {
-  const tabText = searchable(group.label, tab.label())
+  const tabText = searchable(group.label, tab.label(), tab.keywords?.())
   const sections = (tab.sections ?? []).filter((section) => {
     const own = searchable(section.label(), section.keywords?.())
     return (
@@ -45,7 +45,7 @@ function findIn(
  * The tabs and sections a search finds, in the order Settings lists them. Every word searched for
  * must be found, in any order, as part of a word: `'mail imp'` finds Mail's Import.
  *
- * A tab is found by its group's name and its own. A section is found by those names with its own
+ * A tab is found by its group's name, its own and its keywords. A section is found by those names with its own
  * label and keywords, and at least one word must be the section's own: `'mail'` finds Mail's tabs,
  * not every section under them. Nothing searched for finds every tab and no section.
  */
