@@ -7,18 +7,25 @@
 	     stops reporting size at all. The message is blank from then on however tall its content is,
 	     and nothing recovers it — not a resize, not content changing inside the frame, not even
 	     being handed a real height. Only reloading the frame does, which is why re-selecting the
-	     mail was the one thing that worked. -->
+	     mail was the one thing that worked. The frame also waits for the date reader, so the dates
+	     are in the first document it loads rather than reloading it under the reader; the skeleton
+	     holds the space until then. -->
   <div class="relative w-full">
     <IframeResizer
+      v-if="rendered"
       ref="frame"
       class="w-full"
       :class="{ invisible: !isIframeReady }"
       license="GPLv3"
       :scrolling="true"
-      :srcdoc
+      :srcdoc="rendered.srcdoc"
       @on-ready="isIframeReady = true"
     />
-    <div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
+    <div
+      v-if="!isIframeReady"
+      class="animate-pulse space-y-2 py-4"
+      :class="{ 'absolute inset-0': rendered }"
+    >
       <div
         v-for="i in 5"
         :key="i"
@@ -37,6 +44,7 @@ import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import DOMPurify from 'dompurify'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
+import { useMailDates } from '@/apps/mail/composables/useMailDates'
 import { blockRemoteAssets } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
@@ -47,17 +55,24 @@ import {
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
+import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
+import { userTimeZone } from '@/platform/time-zone'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
-// `highlight`: the words a search found the message by, marked in its body.
+// `highlight`: the words a search found the message by, marked in its body. `sentAt`: when the mail
+// was sent; given it, the dates in the mail's own words are marked, read from then, and picking one
+// asks for an event at it (`pickDate`).
 const {
   content,
   blockImages = false,
   highlight = '',
-} = defineProps<{ content: string; blockImages?: boolean; highlight?: string }>()
+  sentAt,
+} = defineProps<{ content: string; blockImages?: boolean; highlight?: string; sentAt?: string }>()
+const emit = defineEmits<{ pickDate: [date: NamedDate] }>()
+const mailDates = useMailDates()
 
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
@@ -72,6 +87,13 @@ const handleMessage = (event: MessageEvent) => {
   // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
   if (event.data?.type === 'swipe') {
     window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+    return
+  }
+  // A date in the message the reader picked (see markMailDates), by its place in this render's list.
+  if (event.data?.type === 'mail-date') {
+    if (event.source !== frame.value?.$el?.contentWindow) return
+    const date = rendered.value?.dates[Number(event.data.index)]
+    if (date) emit('pickDate', date)
     return
   }
   // A `mailto:` the reader clicked inside the message — open our own composer on it.
@@ -141,7 +163,9 @@ const collapseQuotes = (doc: Document) => {
   })
 }
 
-const srcdoc = computed(() => {
+const rendered = computed(() => {
+  // Until the date reader has loaded, or failed to, there is nothing to show yet.
+  if (sentAt && mailDates.value === undefined) return null
   let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
   if (blockImages) sanitized = blockRemoteAssets(sanitized)
   const doc = new DOMParser().parseFromString(sanitized, 'text/html')
@@ -159,11 +183,16 @@ const srcdoc = computed(() => {
   normalizeToLightScheme(doc)
   const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
   if (remapped) remapEmailForDarkMode(doc)
+  // Before the search highlight, which cuts text into pieces a date could straddle.
+  const dates =
+    sentAt && mailDates.value
+      ? mailDates.value.markMailDates(doc, sentAt, userTimeZone(), __('Create event'))
+      : []
   if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)
   const transformedContent = doc.documentElement.outerHTML
 
-  return `
+  const srcdoc = `
 		<!DOCTYPE html>
 		<html>
 		<head>
@@ -275,6 +304,19 @@ const srcdoc = computed(() => {
 
 				img[data-blocked-image] {
 					display: none !important;
+				}
+
+				/* A date the reader can make an event of: underlined in the text's own colour, faintly,
+				   so it reads on any canvas the mail paints, and drawn without moving a thing. */
+				.mail-date {
+					text-decoration: underline;
+					text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+					text-underline-offset: 2px;
+					cursor: pointer;
+				}
+
+				.mail-date:hover {
+					text-decoration-color: currentColor;
 				}
 
 				pre, code {
@@ -416,8 +458,24 @@ const srcdoc = computed(() => {
 					window.parent.postMessage({ type: 'pointerdown' }, '*');
 				});
 
+				// A date picked in the message goes to the app to make an event of — unless the press
+				// ended a selection, which is the reader selecting text, not picking.
+				const pickDate = (mark) =>
+					window.parent.postMessage({ type: 'mail-date', index: mark.dataset.mailDate }, '*');
+				document.addEventListener('keydown', (e) => {
+					const mark = e.target.closest?.('[data-mail-date]');
+					if (!mark || (e.key !== 'Enter' && e.key !== ' ')) return;
+					e.preventDefault();
+					pickDate(mark);
+				});
+
 				// Forward link clicks to parent
 				document.addEventListener('click', (e) => {
+					const mark = e.target.closest('[data-mail-date]');
+					if (mark) {
+						if (document.getSelection()?.isCollapsed !== false) pickDate(mark);
+						return;
+					}
 					const anchor = e.target.closest('a');
 					if (anchor) {
 						e.preventDefault();
@@ -483,6 +541,7 @@ const srcdoc = computed(() => {
 		</body>
 		</html>
 	`
+  return { srcdoc, dates }
 })
 
 const colors = computed(() => THEME_CONFIG[dataTheme.value])

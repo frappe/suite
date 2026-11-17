@@ -52,6 +52,15 @@ export const splitPlainText = (text: string): PlainTextBlock[] => {
   return blocks.filter((block) => block.kind !== 'body' || block.text.trim())
 }
 
+/**
+ * A body block's text up to the quote below it: without the "On Mon, Lena wrote:" line that leads
+ * into it, which is the trail's and not the writer's. Always a prefix of `text`.
+ */
+export const withoutQuoteLead = (text: string): string => {
+  const lines = text.trimEnd().split('\n')
+  return lines.at(-1)?.trimEnd().endsWith(':') ? lines.slice(0, -1).join('\n') : text
+}
+
 interface PlainTextSegment {
   kind: PlainTextBlockKind
   blocks: PlainTextBlock[]

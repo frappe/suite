@@ -15,10 +15,20 @@ const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/
 interface Segment {
   text: string
   href?: string
+  /** Which of `marks` this piece of text belongs to. */
+  mark?: number
 }
 
-// `term`: the words a search found this by, marked where they appear.
-const props = defineProps<{ text?: string | null; term?: string }>()
+// `term`: the words a search found this by, marked where they appear. `marks`: stretches of the
+// text the caller acts on when one is clicked or tapped (`pick`, with its index), each saying so
+// with `markLabel`; never inside a link, which does something of its own.
+const props = defineProps<{
+  text?: string | null
+  term?: string
+  marks?: readonly { index: number; length: number }[]
+  markLabel?: string
+}>()
+const emit = defineEmits<{ pick: [mark: number] }>()
 
 // Splits the text into plain runs and link runs. Rendered as <span>/<a> elements with the text in
 // {{ }} (auto-escaped), so the body can never be interpreted as markup — for rich HTML bodies use
@@ -52,8 +62,40 @@ const segments = computed<Segment[]>(() => {
   const rest = text.slice(lastIndex)
   if (rest) result.push({ text: rest })
 
-  return result
+  return props.marks?.length ? withMarks(result, props.marks) : result
 })
+
+// The plain runs cut at the marks' edges. The runs spell out the text end to end, so a run's place
+// in it is the length of those before it.
+const withMarks = (runs: Segment[], marks: readonly { index: number; length: number }[]) => {
+  const result: Segment[] = []
+  let offset = 0
+  for (const run of runs) {
+    const start = offset
+    offset += run.text.length
+    if (run.href) {
+      result.push(run)
+      continue
+    }
+    let last = 0
+    marks.forEach((mark, index) => {
+      const from = Math.max(mark.index - start, last)
+      const to = Math.min(mark.index + mark.length - start, run.text.length)
+      if (from >= to) return
+      if (from > last) result.push({ text: run.text.slice(last, from) })
+      result.push({ text: run.text.slice(from, to), mark: index })
+      last = to
+    })
+    if (last < run.text.length) result.push({ text: run.text.slice(last) })
+  }
+  return result
+}
+
+// A press that ends a text selection is the reader selecting, not picking.
+const pick = (mark: number) => {
+  if (window.getSelection()?.isCollapsed === false) return
+  emit('pick', mark)
+}
 </script>
 
 <template>
@@ -69,6 +111,17 @@ const segments = computed<Segment[]>(() => {
         class="text-ink-blue-6 hover:underline"
         ><HighlightedText :text="segment.text" :term="term"
       /></a>
+      <span
+        v-else-if="segment.mark !== undefined"
+        role="button"
+        tabindex="0"
+        :title="markLabel"
+        class="cursor-pointer underline decoration-outline-gray-3 underline-offset-2 hover:decoration-current"
+        @click="pick(segment.mark)"
+        @keydown.enter.prevent="pick(segment.mark)"
+        @keydown.space.prevent="pick(segment.mark)"
+        ><HighlightedText :text="segment.text" :term="term"
+      /></span>
       <span v-else><HighlightedText :text="segment.text" :term="term" /></span>
     </template>
   </div>

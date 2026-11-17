@@ -36,10 +36,10 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 // mount left standing would still be listening while the next test runs.
 const mounted: App[] = []
 
-const mount = (content = '<p>A message with a body.</p>') => {
+const mount = (content = '<p>A message with a body.</p>', props: Record<string, unknown> = {}) => {
   const root = document.createElement('div')
   document.body.appendChild(root)
-  const app = createApp(EmailContent, { content })
+  const app = createApp(EmailContent, { content, ...props })
   app.mount(root)
   mounted.push(app)
   return root
@@ -91,5 +91,53 @@ describe('EmailContent', () => {
     const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
     expect(doc.querySelector('.quote-toggle')).not.toBeNull()
     expect(doc.querySelector('blockquote')!.classList).toContain('quote-hidden')
+  })
+})
+
+describe('dates in a message', () => {
+  // Sent on Monday 16 November 2026.
+  const sentAt = '2026-11-16T09:00:00Z'
+  const shown = async (root: HTMLElement) => {
+    await vi.waitFor(() => expect(frame(root)?.getAttribute('srcdoc')).toBeTruthy())
+    return new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
+  }
+
+  it('marks a date in its own words for the reader to pick, and nothing in its links or code', async () => {
+    const root = mount(
+      '<p>Can we meet Thursday at 3pm?</p><p><a href="https://example.com">tomorrow 10:30</a> <code>20 Nov 14:00</code></p>',
+      { sentAt },
+    )
+    const doc = await shown(root)
+    expect([...doc.querySelectorAll('[data-mail-date]')].map((mark) => mark.textContent)).toEqual([
+      'Thursday at 3pm',
+    ])
+  })
+
+  it('asks for an event at the date picked in its frame', async () => {
+    const onPickDate = vi.fn()
+    const root = mount('<p>Can we meet Thursday at 3pm?</p>', { sentAt, onPickDate })
+    await shown(root)
+    const own = frame(root)
+    if (!(own instanceof HTMLIFrameElement)) throw new Error('no frame')
+    const pick = (source: Window | null) =>
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { type: 'mail-date', index: '0' }, source }),
+      )
+
+    // A window other than this message's own frame can't ask for one.
+    pick(window)
+    expect(onPickDate).not.toHaveBeenCalled()
+
+    pick(own.contentWindow)
+    expect(onPickDate).toHaveBeenCalledWith(
+      expect.objectContaining({ start: expect.objectContaining({ date: '2026-11-19' }) }),
+    )
+  })
+
+  it('marks nothing when it is not offered as an event', async () => {
+    const root = mount('<p>Can we meet Thursday at 3pm?</p>')
+    await nextTick()
+    const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
+    expect(doc.querySelector('[data-mail-date]')).toBeNull()
   })
 })
