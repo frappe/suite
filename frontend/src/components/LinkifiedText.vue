@@ -66,7 +66,8 @@ const segments = computed<Segment[]>(() => {
 })
 
 // The plain runs cut at the marks' edges. The runs spell out the text end to end, so a run's place
-// in it is the length of those before it.
+// in it is the length of those before it. A mark is one control or none: one that reaches into a
+// link, or past its run, is left out.
 const withMarks = (runs: Segment[], marks: readonly { index: number; length: number }[]) => {
   const result: Segment[] = []
   let offset = 0
@@ -79,9 +80,9 @@ const withMarks = (runs: Segment[], marks: readonly { index: number; length: num
     }
     let last = 0
     marks.forEach((mark, index) => {
-      const from = Math.max(mark.index - start, last)
-      const to = Math.min(mark.index + mark.length - start, run.text.length)
-      if (from >= to) return
+      if (mark.index < start || mark.index + mark.length > offset) return
+      const from = mark.index - start
+      const to = from + mark.length
       if (from > last) result.push({ text: run.text.slice(last, from) })
       result.push({ text: run.text.slice(from, to), mark: index })
       last = to
@@ -116,7 +117,7 @@ const pick = (mark: number) => {
         role="button"
         tabindex="0"
         :title="markLabel"
-        class="cursor-pointer underline decoration-outline-gray-3 underline-offset-2 hover:decoration-current"
+        class="cursor-pointer underline decoration-[color:color-mix(in_srgb,currentColor_50%,transparent)] underline-offset-2 hover:decoration-current"
         @click="pick(segment.mark)"
         @keydown.enter.prevent="pick(segment.mark)"
         @keydown.space.prevent="pick(segment.mark)"
