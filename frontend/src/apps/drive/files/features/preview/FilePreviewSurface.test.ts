@@ -127,12 +127,15 @@ const requests = vi.hoisted(() => fromPartial<Array<{ id: string; input: unknown
 vi.mock('@/platform/transport', async (original) => ({
   ...(await original<typeof import('@/platform/transport')>()),
   transport: {
-    request: async (operation: Operation, input: { type?: string; node?: string }) => {
+    request: async (
+      operation: Operation,
+      input: { type?: string; node?: string; download?: boolean },
+    ) => {
       requests.push({ id: operation.id, input })
       if (operation.id === 'node_patch.trash') return { name: input.node, state: 'Trashed' }
       if (operation.id === 'node_content_url') {
         if (input.node === 'refused') throw new Error('Refused')
-        const saves = (input as { download?: boolean }).download ? '&save' : ''
+        const saves = input.download ? '&save' : ''
         return { url: `https://bucket.storage.example/${input.node}?sig${saves}`, expires: 0 }
       }
       if (operation.id === 'node_get') {
