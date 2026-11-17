@@ -6,8 +6,8 @@ import { translate } from '@/platform/translation'
 
 import ComposeView from './ComposeView.vue'
 
-// The phone's full-page composer, mounted whole as its own route, against a small Frappe that
-// answers each call as the test tells it to.
+// The phone's full-page composer, mounted whole as its own route at phone width, against a small
+// Frappe that answers each call as the test tells it to.
 const server = vi.hoisted<{
   asked: string[]
   answer: (method: string) => Promise<Response> | Response
@@ -24,7 +24,8 @@ const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
 
 // The real frappe-ui pieces the page is built from (tests otherwise get the recorder's stand-ins).
-// Its dialogs stay shut, so they render nothing.
+// Its dialogs stay shut, so they render nothing; its bottom sheet is the real one, since that is
+// what a phone's menus open as.
 vi.mock('frappe-ui', async () => {
   const { defineComponent } = await import('vue')
   const shut = defineComponent({ setup: () => () => null })
@@ -37,12 +38,17 @@ vi.mock('frappe-ui', async () => {
     ...(await import('../../../../../node_modules/frappe-ui/src/components/Tooltip')),
     ...(await import('../../../../../node_modules/frappe-ui/src/composables/usePortalTarget')),
     ...(await import('../../../../../node_modules/frappe-ui/src/utils/useFileUpload')),
-    BottomSheet: shut,
+    ...(await import('../../../../../node_modules/frappe-ui/src/components/BottomSheet')),
     Dialog: shut,
     ErrorMessage: shut,
     FormControl: shut,
     toast: { error: vi.fn(), success: vi.fn(), dismiss: vi.fn(), warning: vi.fn(), info: vi.fn() },
   }
+})
+// A phone: the page is only ever reached at that width, and its menus open as bottom sheets there.
+// Set before anything loads, since the app reads the width once, at load.
+vi.hoisted(() => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
 })
 const { none } = vi.hoisted(() => ({ none: () => ({ default: { render: () => null } }) }))
 vi.mock('@/apps/mail/components/Modals/ScheduleSendModal.vue', none)
@@ -104,22 +110,25 @@ async function openComposePage() {
   app.use(router)
   app.mount(document.body.appendChild(document.createElement('div')))
   apps.push(app)
-  await vi.waitFor(() => expect(button('Attach files')).not.toBeNull())
+  await vi.waitFor(() => expect(button('Attach')).not.toBeNull())
 }
 
 const button = (name: string) =>
   [...document.querySelectorAll('button')].find(
     (b) => b.getAttribute('aria-label') === name || b.textContent?.trim() === name,
   ) ?? null
-const menuItem = (label: string) =>
-  [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
-    (el) => el.textContent?.trim() === label,
+// The open bottom sheet's rows, by what they read.
+const sheetRows = () =>
+  [...document.querySelectorAll<HTMLElement>('[role="dialog"] button')].map((row) =>
+    row.textContent?.trim(),
   )
-const openPaperclip = async () => {
-  button('Attach files')!.dispatchEvent(
-    new MouseEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }),
+const sheetRow = (label: string) =>
+  [...document.querySelectorAll<HTMLElement>('[role="dialog"] button')].find(
+    (row) => row.textContent?.trim() === label,
   )
-  await vi.waitFor(() => expect(menuItem('Upload from computer')).toBeDefined())
+const openSheet = async (trigger: string) => {
+  button(trigger)!.click()
+  await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
 }
 // The browser shows its file chooser when a file input is clicked: each one clicked, in order.
 const watchFileChooser = () => {
@@ -137,11 +146,9 @@ describe("the compose page's paperclip", () => {
   it('offers a file from the device and one from Drive, and nothing else', async () => {
     await openComposePage()
 
-    await openPaperclip()
+    await openSheet('Attach')
 
-    expect(
-      [...document.querySelectorAll('[role="menuitem"]')].map((el) => el.textContent?.trim()),
-    ).toEqual(['Upload from computer', 'Attach from Drive'])
+    expect(sheetRows()).toEqual(['Upload from computer', 'Attach from Drive'])
   })
 
   it('attaches the file chosen on the device from Upload from computer', async () => {
@@ -154,8 +161,8 @@ describe("the compose page's paperclip", () => {
     await openComposePage()
     const chooserOpened = watchFileChooser()
 
-    await openPaperclip()
-    menuItem('Upload from computer')!.click()
+    await openSheet('Attach')
+    sheetRow('Upload from computer')!.click()
     await nextTick()
 
     expect(chooserOpened).toHaveLength(1)
@@ -189,12 +196,23 @@ describe("the compose page's paperclip", () => {
     await openComposePage()
     const chooserOpened = watchFileChooser()
 
-    await openPaperclip()
-    menuItem('Attach from Drive')!.click()
+    await openSheet('Attach')
+    sheetRow('Attach from Drive')!.click()
 
     await vi.waitFor(() => expect(document.body.textContent).toContain('Invoice.pdf'))
     expect(pickFiles).toHaveBeenCalledOnce()
     expect(server.asked).toContain('attach_drive_files')
     expect(chooserOpened).toHaveLength(0)
+  })
+})
+
+describe("the compose page's More actions", () => {
+  it('leaves Drive to the paperclip', async () => {
+    await openComposePage()
+
+    await openSheet('More actions')
+
+    expect(sheetRows()).toContain('Schedule send')
+    expect(sheetRows()).not.toContain('Attach from Drive')
   })
 })
