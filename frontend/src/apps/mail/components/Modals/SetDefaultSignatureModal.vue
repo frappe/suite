@@ -4,7 +4,7 @@
       <FormControl
         v-model="identity"
         type="combobox"
-        :label="__('Identity')"
+        :label="__('Send-as address')"
         variant="outline"
         :options="
           (identities.data ?? []).map((identity: Identity) => ({
@@ -45,7 +45,7 @@ const { signature } = defineProps<{
 }>()
 const identity = ref(identities.data?.[0]?.name || '')
 const addSignatureOptions = computed(() => ({
-  title: __('Set Default Signature'),
+  title: __('Set as default signature'),
   actions: [
     {
       label: __('Save'),
@@ -65,6 +65,6 @@ async function setSignatureSubmit() {
     signature,
   }
   await setSignature.run(input)
-  raiseToast(__('Identity updated'))
+  raiseToast(__('Address updated'))
 }
 </script>

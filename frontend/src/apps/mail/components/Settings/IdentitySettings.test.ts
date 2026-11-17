@@ -159,9 +159,10 @@ const button = (root: HTMLElement, text: string) =>
   [...root.querySelectorAll('button')].find((b) => b.textContent === text) ?? null
 
 const displayName = (root: HTMLElement) =>
-  root.querySelector<HTMLInputElement>('input[data-label="Display Name"]')?.value
+  root.querySelector<HTMLInputElement>('input[data-label="Display name"]')?.value
 
-const confirmDialog = (root: HTMLElement) => root.querySelector('[data-dialog="Delete Identity"]')
+const confirmDialog = (root: HTMLElement) =>
+  root.querySelector('[data-dialog="Delete this address?"]')
 
 let mounted: ReturnType<typeof mount> | null = null
 
@@ -192,12 +193,10 @@ describe('IdentitySettings delete', () => {
 
     button(root, 'Delete')!.click()
     await nextTick()
-    expect(confirmDialog(root)?.textContent).toContain(
-      'Are you sure you want to delete this identity?',
-    )
+    expect(confirmDialog(root)?.textContent).toContain('This cannot be undone.')
     expect(resources.get(DELETE_URL)!.params).toBeNull()
 
-    button(root, 'Confirm')!.click()
+    button(root, 'Delete address')!.click()
     expect(resources.get(DELETE_URL)!.params).toEqual({ names: ['oa|a'] })
   })
 
@@ -206,13 +205,13 @@ describe('IdentitySettings delete', () => {
     const { root, identities } = mounted
     button(root, 'Delete')!.click()
     await nextTick()
-    button(root, 'Confirm')!.click()
+    button(root, 'Delete address')!.click()
 
     resources.get(DELETE_URL)!.onSuccess()
     await new Promise((resolve) => setTimeout(resolve, 0))
     await nextTick()
     expect(confirmDialog(root)).toBeNull()
-    expect(toasts).toHaveBeenCalledWith('Identity deleted')
+    expect(toasts).toHaveBeenCalledWith('Address deleted')
 
     // The reload answers without the deleted row.
     identities.data = [alias]
@@ -226,13 +225,13 @@ describe('IdentitySettings delete', () => {
     const { root, identities } = mounted
     button(root, 'Delete')!.click()
     await nextTick()
-    button(root, 'Confirm')!.click()
+    button(root, 'Delete address')!.click()
     resources.get(DELETE_URL)!.onSuccess()
     identities.data = []
     await nextTick()
     await nextTick()
 
-    expect(root.textContent).toContain('No identities.')
+    expect(root.textContent).toContain('No send-as addresses yet')
     expect(displayName(root)).toBeUndefined()
     expect(button(root, 'Delete')).toBeNull()
     expect(button(root, 'New')).not.toBeNull()
@@ -243,7 +242,7 @@ describe('IdentitySettings delete', () => {
     const { root } = mounted
     button(root, 'Delete')!.click()
     await nextTick()
-    button(root, 'Confirm')!.click()
+    button(root, 'Delete address')!.click()
 
     resources.get(DELETE_URL)!.onError({ messages: ['Identity Deletion Error'] })
     await new Promise((resolve) => setTimeout(resolve, 0))

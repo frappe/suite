@@ -90,26 +90,26 @@ beforeEach(() => {
 
 it('starts from no dates once an absence is off and over, keeping its words', async () => {
   const { field } = await mount(0, LONG_AGO)
-  expect(field('From Date').value).toBe('')
-  expect(field('To Date').value).toBe('')
+  expect(field('From date').value).toBe('')
+  expect(field('To date').value).toBe('')
   expect(field('Subject').value).toBe('Away on a trip')
 })
 
 it('keeps the dates of an absence still to come, though the responder is off', async () => {
   const { field } = await mount(0, AHEAD)
-  expect(field('From Date').value).toContain('2099-06')
-  expect(field('To Date').value).toContain('2099-06')
+  expect(field('From date').value).toContain('2099-06')
+  expect(field('To date').value).toContain('2099-06')
 })
 
 it('keeps the dates while the responder is on, over or not', async () => {
   const { field } = await mount(1, LONG_AGO)
-  expect(field('To Date').value).toContain('2020-06')
+  expect(field('To date').value).toContain('2020-06')
 })
 
 it('lets nothing be edited while the responder is off', async () => {
   const off = await mount(0, AHEAD)
   expect(off.field('Subject').disabled).toBe(true)
-  expect(off.field('To Date').disabled).toBe(true)
+  expect(off.field('To date').disabled).toBe(true)
   expect(off.editor.getAttribute('data-editable')).toBe('false')
 
   const on = await mount(1, AHEAD)

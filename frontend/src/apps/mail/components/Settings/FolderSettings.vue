@@ -41,10 +41,10 @@
     </div>
 
     <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No folders found.') }}</p>
+      <p class="text-base-medium">{{ __('No folders yet') }}</p>
 
       <p>
-        {{ __('Folders let you organize your emails into different categories.') }}
+        {{ __('Folders let you file your mail.') }}
       </p>
     </div>
 

@@ -7,7 +7,7 @@
   <!-- The route answers `{}` when WebDAV is off and the caller is no admin: nothing to show. -->
   <SettingsSection v-if="isOffered" :title="__('External access')">
     <p class="mt-1 text-base text-ink-gray-6">
-      {{ __('Connect Drive to desktop, mobile, and other file apps') }}
+      {{ __('Connect Drive to desktop, mobile and other file apps.') }}
     </p>
     <div class="mt-2 flex flex-col gap-6">
       <div class="divide-y divide-outline-gray-1">
@@ -15,7 +15,7 @@
           v-if="answer.is_admin"
           :title="__('Enable WebDAV')"
           :description="
-            __('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive')
+            __('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive.')
           "
         >
           <Switch
@@ -28,7 +28,7 @@
         <SettingsRow
           v-if="connection"
           :title="__('Allow WebDAV access to my files')"
-          :description="__('Turn this on before you connect a client')"
+          :description="__('Turn this on before you connect a client.')"
         >
           <Switch
             :model-value="userEnabled"

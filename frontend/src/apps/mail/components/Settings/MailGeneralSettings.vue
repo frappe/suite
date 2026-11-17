@@ -8,15 +8,13 @@
           <template v-if="hasListLayout">
             <SettingsRow
               :title="__('Split view')"
-              :description="__('Preview emails alongside the message list.')"
+              :description="__('Preview a message beside the list.')"
             >
               <Switch v-model="splitView" />
             </SettingsRow>
             <SettingsRow
               :title="__('Group by date')"
-              :description="
-                __('Section the message list by date: today, yesterday, this week, and so on.')
-              "
+              :description="__('Show the list under date headings such as Today and Yesterday.')"
             >
               <Switch v-model="groupByDate" />
             </SettingsRow>
@@ -24,7 +22,7 @@
           <SettingsRow
             v-if="preferences"
             :title="__('Block remote images')"
-            :description="__(`Don't load remote images from untrusted sources by default.`)"
+            :description="__(`Don’t load remote images from untrusted sources by default.`)"
           >
             <Switch v-model="blockRemoteImages" />
           </SettingsRow>
@@ -36,20 +34,18 @@
       <SettingsSection v-if="preferences" :title="__('Sent copies')">
         <div class="divide-y divide-outline-gray-1">
           <SettingsRow
-            :title="__('Don’t keep sent mail')"
+            :title="__('Delete mail once it is sent')"
             :description="
-              __(
-                'Mail you send is deleted once it has gone, and is not kept in Sent. You can’t find it, forward it or reply from it later.',
-              )
+              __('It is not kept in Sent, so you can’t find it, forward it or reply from it later.')
             "
           >
             <Switch v-model="dropSentMail" />
           </SettingsRow>
           <SettingsRow
-            :title="__('Don’t keep sent newsletters')"
+            :title="__('Delete newsletters once they are sent')"
             :description="
               __(
-                'Newsletters, the bulk mail your apps send through this account, are deleted once they have gone rather than kept in Sent.',
+                'Newsletters are the bulk mail your apps send through this account. They are not kept in Sent.',
               )
             "
           >

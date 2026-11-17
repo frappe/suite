@@ -27,7 +27,7 @@
 
     <Button
       class="min-h-7"
-      :label="__('Create Import')"
+      :label="__('Start import')"
       variant="solid"
       :loading="isImporting"
       :disabled="isImportBlocked"
@@ -76,7 +76,7 @@ const uploadLabel = computed(() => {
     return __('Uploading ({0}%)', [progress.value])
   }
 
-  return __('Upload File')
+  return __('Upload file')
 })
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
@@ -149,7 +149,7 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 socket.on('calendar_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
 const importSubtitle = computed(() => {
-  if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")
+  if (ongoingImport.data?.name) return __('Import in progress. We’ll email you when it’s ready.')
   return __('No imports in progress.')
 })
 const importHref = computed(() => {

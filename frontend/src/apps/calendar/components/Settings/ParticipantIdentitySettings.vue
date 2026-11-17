@@ -13,7 +13,7 @@
           <FormControl
             v-model="identityName"
             type="combobox"
-            :label="__('Identity')"
+            :label="__('Invite address')"
             variant="outline"
             :options="
               participantIdentities.data.map((identity) => ({
@@ -25,11 +25,11 @@
           />
 
           <template v-if="form">
-            <FormControl v-model="form.name" :label="__('Display Name')" variant="outline" />
+            <FormControl v-model="form.name" :label="__('Display name')" variant="outline" />
 
             <FormControl
               v-model="form.email"
-              :label="__('Email Address')"
+              :label="__('Email address')"
               type="email"
               variant="outline"
             />
@@ -37,7 +37,7 @@
             <FormControl
               v-model="form.default"
               type="checkbox"
-              :label="__('Set as default Participant Identity')"
+              :label="__('Set as default invite address')"
             />
 
             <Button
@@ -55,11 +55,11 @@
       v-else-if="!participantIdentities.isFetching"
       class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
     >
-      <p class="text-base font-medium">{{ __('No participant identities.') }}</p>
+      <p class="text-base font-medium">{{ __('No invite addresses yet') }}</p>
       <p>
         {{
           __(
-            'Participant identities are the addresses you organize and attend calendar events as. Create one to get started.',
+            'Invite addresses are the addresses you organize and attend calendar events as. Create one to get started.',
           )
         }}
       </p>
@@ -77,7 +77,7 @@
     <Dialog
       v-model:open="showAddDialogState"
       v-bind="{
-        title: __('New Participant Identity'),
+        title: __('New invite address'),
         actions: [
           {
             label: __('Save'),
@@ -92,7 +92,7 @@
       <template #default>
         <FormControl
           v-model="newEmail"
-          :label="__('Email')"
+          :label="__('Email address')"
           placeholder="johndoe@example.com"
           type="email"
           class="mb-4 w-full"
@@ -100,14 +100,14 @@
         />
         <FormControl
           v-model="newName"
-          :label="__('Display Name')"
+          :label="__('Display name')"
           placeholder="John Doe"
           class="mb-4 w-full"
         />
         <FormControl
           v-model="newDefault"
           type="checkbox"
-          :label="__('Set as default Participant Identity')"
+          :label="__('Set as default invite address')"
         />
       </template>
     </Dialog>
@@ -115,11 +115,11 @@
     <Dialog
       v-model:open="showDeleteDialog"
       v-bind="{
-        title: __('Delete Participant Identity'),
-        message: __('Are you sure you want to delete this participant identity?'),
+        title: __('Delete this invite address?'),
+        message: __('This cannot be undone.'),
         actions: [
           {
-            label: __('Confirm'),
+            label: __('Delete invite address'),
             variant: 'solid',
             theme: 'red',
             loading: deleteIdentity.isPending,
@@ -180,7 +180,7 @@ const updateIdentity = useMutation(api.mail.participantIdentities.update)
 async function save() {
   if (!form.value) return
   await updateIdentity.run({ ...form.value })
-  raiseToast(__('Participant identity updated'))
+  raiseToast(__('Invite address updated'))
   emit('saved')
 }
 const addIdentity = useMutation(api.mail.participantIdentities.create)
@@ -204,14 +204,14 @@ async function createIdentity() {
     email: newEmail.value,
     default: newDefault.value,
   })
-  raiseToast(__('Participant identity created'))
+  raiseToast(__('Invite address created'))
   showAddDialogState.value = false
   identityName.value = `${account}|${id}`
 }
 async function removeIdentity() {
   if (!identityName.value) return
   await deleteIdentity.run({ names: [identityName.value] })
-  raiseToast(__('Participant identity deleted'))
+  raiseToast(__('Invite address deleted'))
   showDeleteDialog.value = false
   identityName.value = ''
 }

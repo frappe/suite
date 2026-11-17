@@ -29,7 +29,7 @@
               class="flex items-center justify-between gap-3"
             >
               <span class="text-ink-gray-5">{{ field.label }}</span>
-              <Tooltip :text="__('Click to copy')">
+              <Tooltip :text="__('Copy')">
                 <span
                   class="text-ink-gray-8 cursor-copy truncate"
                   @click="copyToClipBoard(field.value)"
@@ -58,25 +58,25 @@
     <div class="flex flex-col gap-5">
       <CopyControl
         v-if="user.data?.api_key"
-        :label="__('API Key')"
+        :label="__('API key')"
         :value="user.data?.api_key ?? ''"
       />
       <p v-else class="text-base">
-        {{ __(`You don't have an API key yet. Generate one to access the API.`) }}
+        {{ __(`You do not have an API key yet. Generate one to access the API.`) }}
       </p>
       <Button
         class="min-h-7 self-start"
-        :label="user.data?.api_key ? __('Regenerate Secret') : __('Generate Keys')"
+        :label="user.data?.api_key ? __('Regenerate secret') : __('Generate keys')"
         @click="generateKeysSubmit()"
       />
 
-      <Dialog v-model:open="showSecret" v-bind="{ title: __('API Access') }">
+      <Dialog v-model:open="showSecret" v-bind="{ title: __('API access') }">
         <template #default>
           <p class="text-base">
-            {{ __(`Please copy the API secret now. You won’t be able to see it again!`) }}
+            {{ __(`Copy the API secret now. You cannot see it again.`) }}
           </p>
-          <CopyControl :label="__('API Key')" :value="user.data?.api_key ?? ''" />
-          <CopyControl :label="__('API Secret')" :value="apiSecret" />
+          <CopyControl :label="__('API key')" :value="user.data?.api_key ?? ''" />
+          <CopyControl :label="__('API secret')" :value="apiSecret" />
         </template>
       </Dialog>
     </div>

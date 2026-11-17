@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Screen a Sender'),
+      title: __('Screen a sender'),
       actions: [
         {
           label: __('Add'),
@@ -20,7 +20,7 @@
           v-model="email"
           type="text"
           variant="outline"
-          :label="__('Email or Domain')"
+          :label="__('Email or domain')"
           :placeholder="__('john@example.com or @example.com')"
           @keydown.enter="canAdd && screenEmailAddressSubmit()"
         />

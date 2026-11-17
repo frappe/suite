@@ -219,7 +219,7 @@ for (const phone of [false, true]) {
 			await expect(
 				panel.getByText("No active files. Files in the trash and their versions still count towards storage."),
 			).toBeVisible();
-			await expect(panel.getByText("No files", { exact: true })).toBeVisible();
+			await expect(panel.getByText("No files yet", { exact: true })).toBeVisible();
 			await expect(panel.getByText("4 KB used")).toBeVisible();
 		});
 	});

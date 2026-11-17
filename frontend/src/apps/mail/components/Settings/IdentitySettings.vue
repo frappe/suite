@@ -14,7 +14,7 @@
           <FormControl
             v-model="identityName"
             type="combobox"
-            :label="__('Identity')"
+            :label="__('Address')"
             variant="outline"
             :options="
               (identities.data ?? []).map((identity: Identity) => ({
@@ -26,18 +26,18 @@
           />
 
           <template v-if="draft">
-            <FormControl v-model="draft._name" :label="__('Display Name')" variant="outline" />
+            <FormControl v-model="draft._name" :label="__('Display name')" variant="outline" />
 
             <div class="space-y-1.5">
-              <label class="text-ink-gray-5 block text-xs"> {{ __('Reply To') }} </label>
+              <label class="text-ink-gray-5 block text-xs"> {{ __('Reply-to') }} </label>
               <IdentitySettingsListView
                 :data="draft.reply_to || []"
-                :empty-state-description="__('No Reply To addresses added.')"
+                :empty-state-description="__('No reply-to addresses yet')"
                 @delete="(index: number) => draft?.reply_to?.splice(index, 1)"
               />
             </div>
             <Button
-              :label="__('Add Reply To')"
+              :label="__('Add reply-to')"
               class="min-h-7 w-full"
               variant="outline"
               @click="() => showAddEmailAddress(true)"
@@ -47,7 +47,7 @@
               <label class="text-ink-gray-5 block text-xs"> {{ __('Bcc') }} </label>
               <IdentitySettingsListView
                 :data="draft.bcc || []"
-                :empty-state-description="__('No Bcc addresses added.')"
+                :empty-state-description="__('No Bcc addresses yet')"
                 @delete="(index: number) => draft?.bcc?.splice(index, 1)"
               />
             </div>
@@ -62,7 +62,7 @@
               v-if="signatures.data?.length"
               v-model="savedSignature"
               type="combobox"
-              :label="__('Use Saved Signature')"
+              :label="__('Use saved signature')"
               :options="
                 signatures.data?.map((sig) => ({
                   label: sig.signature_name,
@@ -76,7 +76,7 @@
 
             <div class="space-y-1.5">
               <label class="text-ink-gray-5 block text-xs">
-                {{ __('Default Signature') }}
+                {{ __('Default signature') }}
               </label>
               <MailRichTextField
                 :model-value="draft.html_signature"
@@ -99,7 +99,7 @@
         <Dialog
           v-model:open="showDialog"
           v-bind="{
-            title: isAddReplyTo ? __('New Reply To') : __('New Bcc'),
+            title: isAddReplyTo ? __('New reply-to') : __('New Bcc'),
             actions: [
               {
                 label: __('Save'),
@@ -113,7 +113,7 @@
           <template #default>
             <FormControl
               v-model="email"
-              :label="__('Email')"
+              :label="__('Email address')"
               placeholder="johndoe@example.com"
               type="email"
               class="mb-4 w-full"
@@ -121,7 +121,7 @@
             />
             <FormControl
               v-model="displayName"
-              :label="__('Display Name')"
+              :label="__('Display name')"
               placeholder="John Doe"
               class="w-full"
             />
@@ -130,9 +130,9 @@
       </div>
     </template>
     <div v-else-if="!identities.isFetching" class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base font-medium">{{ __('No identities.') }}</p>
+      <p class="text-base font-medium">{{ __('No send-as addresses yet') }}</p>
       <p>
-        {{ __('Identities are the addresses you send mail as. Create one to get started.') }}
+        {{ __('Send-as addresses are the addresses you send mail as. Create one to get started.') }}
       </p>
     </div>
     <Button
@@ -149,7 +149,7 @@
     <Dialog
       v-model:open="showAddIdentityDialog"
       v-bind="{
-        title: __('New Identity'),
+        title: __('New address'),
         actions: [
           {
             label: __('Save'),
@@ -164,7 +164,7 @@
       <template #default>
         <FormControl
           v-model="newEmail"
-          :label="__('Email')"
+          :label="__('Email address')"
           placeholder="johndoe@example.com"
           type="email"
           class="mb-4 w-full"
@@ -172,7 +172,7 @@
         />
         <FormControl
           v-model="newDisplayName"
-          :label="__('Display Name')"
+          :label="__('Display name')"
           placeholder="John Doe"
           class="w-full"
         />
@@ -182,11 +182,11 @@
     <Dialog
       v-model:open="showDeleteDialog"
       v-bind="{
-        title: __('Delete Identity'),
-        message: __('Are you sure you want to delete this identity?'),
+        title: __('Delete this address?'),
+        message: __('This cannot be undone.'),
         actions: [
           {
-            label: __('Confirm'),
+            label: __('Delete address'),
             variant: 'solid' as const,
             theme: 'red' as const,
             loading: deleteIdentity.isPending,
@@ -260,7 +260,7 @@ async function save() {
     bcc: identity.bcc ?? [],
     html_signature: identity.html_signature,
   })
-  raiseToast(__('Identity updated'))
+  raiseToast(__('Address updated'))
   emit('saved')
 }
 function setSignature(value: string) {
@@ -307,7 +307,7 @@ async function addIdentitySubmit() {
   }
   const result = await addIdentity.run(input)
   const id = result
-  raiseToast(__('Identity created'))
+  raiseToast(__('Address created'))
   showAddIdentityDialog.value = false
   identityName.value = `${store.accountId}|${id}`
 }
@@ -318,7 +318,7 @@ async function deleteIdentitySubmit() {
     names: [identityName.value],
   }
   await deleteIdentity.run(input)
-  raiseToast(__('Identity deleted'))
+  raiseToast(__('Address deleted'))
   showDeleteDialog.value = false
   identityName.value = ''
 }

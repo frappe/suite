@@ -119,7 +119,7 @@ async function saveNewName(root: HTMLElement) {
   await nextTick()
   const dialog = requireTestElement(root.querySelector('dialog'), HTMLElement)
   const name = requireTestElement(
-    dialog.querySelector('input[aria-label="Display Name"]'),
+    dialog.querySelector('input[aria-label="Display name"]'),
     HTMLInputElement,
   )
   name.value = 'Maya K'
@@ -154,6 +154,6 @@ it('keeps Invite addresses open, with what was typed, when the save is refused',
   state.save.mockRejectedValue(new Error('Not your address'))
   const root = mount()
   await saveNewName(root)
-  const name = root.querySelector('dialog input[aria-label="Display Name"]')
+  const name = root.querySelector('dialog input[aria-label="Display name"]')
   expect(requireTestElement(name, HTMLInputElement).value).toBe('Maya K')
 })

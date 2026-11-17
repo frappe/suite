@@ -53,8 +53,8 @@ const replyToOptions = computed(() => ({
 }))
 
 const REPLY_TO_COLUMNS = [
-  { label: __('Email'), key: 'email' },
-  { label: __('Display Name'), key: 'display_name' },
+  { label: __('Email address'), key: 'email' },
+  { label: __('Display name'), key: 'display_name' },
   { label: '', key: 'delete' },
 ]
 </script>

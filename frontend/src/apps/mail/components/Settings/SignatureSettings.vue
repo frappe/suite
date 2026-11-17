@@ -34,10 +34,10 @@
     </div>
 
     <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No signatures found.') }}</p>
+      <p class="text-base-medium">{{ __('No signatures yet') }}</p>
 
       <p>
-        {{ __('Signatures let you automatically add personalized content to your emails.') }}
+        {{ __('Signatures let you automatically add personalized content to your messages.') }}
       </p>
     </div>
 
@@ -88,7 +88,7 @@ const editSignature = (signature: string) => {
 
 const signatureOptions = (signature: OutputOf<typeof api.mail.signatures.list>[number]) => [
   {
-    label: __('Set Default'),
+    label: __('Set as default'),
     icon: Pin,
     onClick: () => {
       selectedSignature.value = signature.html_body!

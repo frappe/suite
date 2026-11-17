@@ -130,7 +130,7 @@ const machine = setupFlow<Event>().createMachine({
 			},
 		},
 		profile: {
-			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, first and last name fields that save on blur, and Update password. The sidebar lists Account, Drive, Mail and Calendar." },
+			meta: { description: "Settings opens on Account > Profile for Maya, a Suite Admin: her photo, name and email, first and last name fields that save on blur, and Change password. The sidebar lists Account, Drive, Mail and Calendar." },
 			on: {
 				...appTabTransitions(),
 				RENAME: "nameSaved",
@@ -166,10 +166,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "First name emptied and left: \"First name is required\" in a toast, and the field fills back with the saved name." },
 		},
 		avatarMenu: {
-			meta: { description: "Maya has a photo, so clicking it opens a menu: Change image and Remove image." },
+			meta: { description: "Maya has a photo, so clicking it opens a menu: Change picture and Remove picture." },
 		},
 		passwordDialog: {
-			meta: { description: "Update password opens Change password: current, new and confirm fields, and Confirm off until the first two are filled and the last matches." },
+			meta: { description: "Change password opens its dialog: current, new and confirm fields, and Change password off until the first two are filled and the last matches." },
 			on: { MISTYPE_CONFIRMATION: "passwordMismatch", WRONG_CURRENT_PASSWORD: "passwordRefused" },
 		},
 		passwordMismatch: {
@@ -345,7 +345,7 @@ function remoteImagesSwitch(page: Page): Locator {
 }
 
 async function openPasswordDialog(page: Page): Promise<Locator> {
-	await dialog(page).getByRole("button", { name: "Update password" }).click();
+	await dialog(page).getByRole("button", { name: "Change password" }).click();
 	const change = page.getByRole("dialog", { name: "Change password" });
 	await expect(change.getByLabel("Current password")).toBeVisible();
 	return change;
@@ -460,7 +460,7 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 		},
 		async AVATAR_MENU(scene) {
 			await dialog(scene.page).getByRole("button", { name: "Profile picture options" }).click();
-			await expect(scene.page.getByRole("menuitem", { name: "Remove image" })).toBeVisible();
+			await expect(scene.page.getByRole("menuitem", { name: "Remove picture" })).toBeVisible();
 		},
 		async CHANGE_PASSWORD(scene) {
 			await openPasswordDialog(scene.page);
@@ -478,10 +478,10 @@ export const suiteSettings = defineFlow<Event, BaseScene>({
 			await change.getByLabel("New password", { exact: true }).fill("harbour-light-42");
 			await change.getByLabel("Confirm new password").fill("harbour-light-42");
 			const answered = scene.page.waitForResponse((response) => response.request().method() !== "GET" && /password/i.test(response.url()));
-			await change.getByRole("button", { name: "Confirm" }).click();
+			await change.getByRole("button", { name: "Change password" }).click();
 			const response = await answered;
 			expect(response.ok()).toBe(false);
-			await expect(change.getByRole("button", { name: "Confirm" })).toBeEnabled();
+			await expect(change.getByRole("button", { name: "Change password" })).toBeEnabled();
 		},
 		async PREFERENCES(scene) {
 			await tab(scene.page, "Preferences").click();

@@ -17,7 +17,7 @@
     />
     <FormControl
       v-model="mailImport.seen"
-      :label="__('Mark as Read')"
+      :label="__('Mark as read')"
       type="select"
       variant="outline"
       :options="markAsReadOptions"
@@ -32,7 +32,7 @@
   />
   <Button
     class="w-full"
-    :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
+    :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload file')"
     :loading="uploading"
     @click="fileInput?.click()"
   />
@@ -40,7 +40,7 @@
 
   <Button
     class="min-h-7"
-    :label="__('Create Import')"
+    :label="__('Start import')"
     variant="solid"
     :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
     :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
@@ -161,7 +161,7 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 socket.on('mail_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
 const importSubtitle = computed(() => {
-  if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")
+  if (ongoingImport.data?.name) return __('Import in progress. We’ll email you when it’s ready.')
   return __('No imports in progress.')
 })
 const importHref = computed(() => {

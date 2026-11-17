@@ -137,7 +137,7 @@ it('saves a switch as it is flipped, sending only that preference', async () => 
 it('puts a switch back when its save is refused', async () => {
   state.save.mockRejectedValue(new Error('Server refused the update'))
   const root = mount()
-  const sentMail = control(root, 'Don’t keep sent mail', HTMLButtonElement)
+  const sentMail = control(root, 'Delete mail once it is sent', HTMLButtonElement)
   sentMail.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(state.save).toHaveBeenCalledTimes(1)

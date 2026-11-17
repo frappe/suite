@@ -4,7 +4,7 @@
     :title="__('Screen new senders')"
     :description="
       __(
-        'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
+        'Mail from new senders goes to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
       )
     "
   >
@@ -49,7 +49,7 @@
           <!-- Segmented sort control: field picker + direction toggle share a seam
 					(-ml-px collapses the doubled border). -->
           <div class="flex">
-            <AdaptiveDropdown :options="sortOptions" :title="__('Sort By')">
+            <AdaptiveDropdown :options="sortOptions" :title="__('Sort by')">
               <Button
                 variant="outline"
                 :label="sortLabel"
@@ -82,10 +82,10 @@
                   {{ __('{0} selected', [String(selections.size)]) }}
                 </span>
                 <div class="ml-auto flex items-center gap-1">
-                  <AdaptiveDropdown :options="bulkActionOptions" :title="__('Change Action')">
+                  <AdaptiveDropdown :options="bulkActionOptions" :title="__('Change action')">
                     <Button
                       variant="ghost"
-                      :label="__('Change Action')"
+                      :label="__('Change action')"
                       icon-right="lucide-chevron-down"
                     />
                   </AdaptiveDropdown>
@@ -106,7 +106,7 @@
         </div>
       </template>
       <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-        <p class="text-base font-medium">{{ __('No screened senders.') }}</p>
+        <p class="text-base font-medium">{{ __('No screened senders yet') }}</p>
         <p>{{ MESSAGE }}</p>
         <Button icon-left="lucide-plus" :label="__('New')" class="w-fit" @click="addSender" />
       </div>
@@ -166,7 +166,7 @@ const toggleScreening = async (val: boolean) => {
       enable_screening: val ? 1 : 0,
     },
   })
-  raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
+  raiseToast(val ? __('Screener turned on') : __('Screener turned off'))
 }
 
 // Future mail from a blocked sender always goes to Junk; this is only about what is already there
@@ -195,7 +195,7 @@ const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
 // Defaults to most-recently modified, matching the backend's default order.
 type SortField = 'modified' | 'creation' | 'email'
 const SORT_LABELS: Record<SortField, string> = {
-  modified: __('Last Modified'),
+  modified: __('Last modified'),
   creation: __('Created'),
   email: __('Email'),
 }
@@ -273,11 +273,11 @@ async function unscreenEmailAddressesSubmit() {
   listViewRef.value?.toggleAllRows()
 }
 const removeModalOptions = computed(() => ({
-  title: __('Remove Screened Senders'),
-  message: __('Are you sure you want to remove the selected senders from your screened list?'),
+  title: __('Remove the selected senders?'),
+  message: __('They are taken off your screened list.'),
   actions: [
     {
-      label: __('Confirm'),
+      label: __('Remove senders'),
       variant: 'solid' as const,
       onClick: () => unscreenEmailAddressesSubmit(),
       loading: unscreenEmailAddresses.isPending,
@@ -290,7 +290,7 @@ const removeModalOptions = computed(() => ({
 // instead, the table ran past the panel and clipped Last Modified.
 const COLUMNS = [
   {
-    label: __('Email or Domain'),
+    label: __('Email or domain'),
     key: 'email',
     width: 'minmax(0, 3fr)',
   },
@@ -300,12 +300,12 @@ const COLUMNS = [
     width: 'minmax(0, 1fr)',
   },
   {
-    label: __('Last Modified'),
+    label: __('Last modified'),
     key: 'modified',
     width: 'minmax(0, 1fr)',
   },
 ]
 const MESSAGE = __(
-  'Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Spam.',
+  'Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Junk.',
 )
 </script>

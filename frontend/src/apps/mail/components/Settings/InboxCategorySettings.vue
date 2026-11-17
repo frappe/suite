@@ -42,7 +42,7 @@ function isLastOn(choice: { on: boolean }) {
 
 const TAB_DESCRIPTIONS: Record<InboxCategory, string> = {
   primary: '',
-  updates: __('Receipts, alerts, confirmations and other mail sent by systems'),
+  updates: __('Receipts, alerts, confirmations and other mail sent by systems.'),
   forums: __('Mailing lists and discussion groups.'),
   promotions: __('Newsletters, offers and marketing.'),
   social: __('Mail from social networks.'),

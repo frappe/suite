@@ -39,7 +39,7 @@
       v-else-if="!pushSubscriptions.isFetching"
       class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
     >
-      <p class="text-base font-medium">{{ __('No push subscriptions.') }}</p>
+      <p class="text-base font-medium">{{ __('No push subscriptions yet') }}</p>
       <p>{{ MESSAGE }}</p>
     </div>
 
@@ -149,11 +149,11 @@ async function deletePushSubscriptionsSubmit() {
   pushSubscriptions.refetch().catch(() => {})
 }
 const deleteModalOptions = computed(() => ({
-  title: __('Delete Push Subscriptions'),
-  message: __('Are you sure you want to delete the selected push subscriptions?'),
+  title: __('Delete the selected push subscriptions?'),
+  message: __('Those devices and apps are no longer told when your mail changes.'),
   actions: [
     {
-      label: __('Confirm'),
+      label: __('Delete subscriptions'),
       variant: 'solid' as const,
       theme: 'red' as const,
       onClick: () => deletePushSubscriptionsSubmit(),

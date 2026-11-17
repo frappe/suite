@@ -2,22 +2,22 @@
   <div v-if="vacationResponse.data" class="flex flex-col gap-5">
     <SettingsRow
       class="!py-0"
-      :title="__('Enabled')"
-      :description="__('Auto-reply to incoming mails while you’re away.')"
+      :title="__('Send an auto-reply')"
+      :description="__('Reply to incoming mail while you’re away.')"
     >
       <Switch v-model="draft.enabled" />
     </SettingsRow>
     <FormControl
       v-model="draft.from_date"
       type="datetime-local"
-      :label="__('From Date')"
+      :label="__('From date')"
       variant="outline"
       :disabled="isOff"
     />
     <FormControl
       v-model="draft.to_date"
       type="datetime-local"
-      :label="__('To Date')"
+      :label="__('To date')"
       variant="outline"
       :disabled="isOff"
     />
@@ -32,7 +32,7 @@
       <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
       <MailRichTextField
         v-model="draft.html_body"
-        :placeholder="__('Type something...')"
+        :placeholder="__('Write your reply…')"
         :div-paragraphs="false"
         :editable="draft.enabled"
       />
@@ -139,7 +139,7 @@ async function updateVacationResponseSubmit() {
   }
   await updateVacationResponse.run(input)
   await vacationResponse.refetch()
-  raiseToast(__('Vacation response updated'))
+  raiseToast(__('Auto-reply updated'))
   showConfirmDialog.value = false
   emit('saved')
 }

@@ -78,8 +78,8 @@
         />
       </div>
 
-      <SettingsRow :title="__('Password')" :description="__('Manage password and account access')">
-        <Button :label="__('Update password')" @click="showPasswordDialog = true" />
+      <SettingsRow :title="__('Password')" :description="__('Manage password and account access.')">
+        <Button :label="__('Change password')" @click="showPasswordDialog = true" />
       </SettingsRow>
     </div>
   </SettingsTabContent>
@@ -186,12 +186,12 @@ const displayName = computed(() => {
 function avatarMenuOptions(openFileSelector: () => void) {
   return [
     {
-      label: __('Change image'),
+      label: __('Change picture'),
       icon: 'lucide-image-up',
       onClick: openFileSelector,
     },
     {
-      label: __('Remove image'),
+      label: __('Remove picture'),
       icon: 'lucide-trash-2',
       onClick: removeAvatar,
     },
@@ -265,7 +265,7 @@ const passwordDialogOptions = computed(() => ({
   title: __('Change password'),
   actions: [
     {
-      label: __('Confirm'),
+      label: __('Change password'),
       variant: 'solid' as const,
       onClick: () => changePassword(),
       disabled:

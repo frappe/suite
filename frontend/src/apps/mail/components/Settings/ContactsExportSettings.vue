@@ -8,14 +8,14 @@
   />
   <FormControl
     v-model="contactsExport.archive_type"
-    :label="__('Archive Type')"
+    :label="__('Archive type')"
     type="select"
     variant="outline"
     :options="ARCHIVE_TYPE_OPTIONS"
   />
   <SettingsRow
     class="!py-0"
-    :title="__('Custom Selection')"
+    :title="__('Custom selection')"
     :description="__('Apply filters to select specific contacts for export.')"
   >
     <Switch v-model="customSelection" />
@@ -23,7 +23,7 @@
   <template v-if="customSelection">
     <FormControl
       v-model="filter.inAddressBook"
-      :label="__('Address Book')"
+      :label="__('Address book')"
       type="select"
       variant="outline"
       :options="addressBookOptions"
@@ -32,7 +32,7 @@
     <FormControl v-model="filter.email" type="text" variant="outline" :label="__('Email')" />
     <FormControl
       v-model="contactsExport.limit"
-      :label="__('Max Number of Contacts')"
+      :label="__('Max number of contacts')"
       type="number"
       variant="outline"
       placeholder="1000"
@@ -41,7 +41,7 @@
 
   <Button
     class="min-h-7"
-    :label="__('Create Export')"
+    :label="__('Start export')"
     :loading="Boolean(ongoingExport.data?.name) || createContactsExport.isPending"
     :disabled="
       ongoingExport.isFetching || Boolean(ongoingExport.error) || createContactsExport.isPending
@@ -140,7 +140,7 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 socket.on('contacts_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('contacts_exchange_completed', onExchangeCompleted))
 const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
+  if (ongoingExport.data?.name) return __('Export in progress. We’ll email you when it’s ready.')
   return __('No exports in progress.')
 })
 const exportHref = computed(() => {

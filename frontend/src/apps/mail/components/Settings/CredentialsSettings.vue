@@ -18,7 +18,7 @@
     <FormControl
       v-model="appPassword"
       type="password"
-      :label="__('App Password')"
+      :label="__('App password')"
       variant="outline"
       :placeholder="hasPassword ? __('Leave blank to keep unchanged') : ''"
       :description="__('Used to connect to your mailbox.')"
@@ -27,9 +27,9 @@
     <h2 class="text-base-semibold text-ink-gray-8">{{ __('Recovery') }}</h2>
     <FormControl
       v-model="backupEmail"
-      :label="__('Backup Email')"
+      :label="__('Backup email address')"
       variant="outline"
-      :description="__(`We'll contact you here if there's an issue with your main account.`)"
+      :description="__(`We’ll contact you here if there’s an issue with your main account.`)"
     />
 
     <ErrorMessage :message="saveSettings.error?.message" />
@@ -92,7 +92,7 @@ async function save() {
   if (appPassword.value) credentials.app_password = appPassword.value
   await saveSettings.run(credentials)
   appPassword.value = ''
-  raiseToast(__('Credentials updated'))
+  raiseToast(__('Login details updated'))
   await userSettings.refetch()
   emit('saved')
 }

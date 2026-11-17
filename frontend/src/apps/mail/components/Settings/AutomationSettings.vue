@@ -3,7 +3,7 @@
     <div class="flex justify-end gap-2">
       <Button
         icon-left="lucide-refresh-cw"
-        :label="__('Rebuild Automation')"
+        :label="__('Rebuild folder rules')"
         :loading="rebuildAutomation.isPending"
         :tooltip="__('Regenerate the folder automation script from your saved folder rules.')"
         @click="rebuildAutomationSubmit()"
@@ -32,17 +32,17 @@
     </div>
 
     <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No sieve scripts found.') }}</p>
+      <p class="text-base-medium">{{ __('No rules yet') }}</p>
       <div class="space-x-1">
         <span>
-          {{ __('Sieve scripts let you automatically filter and organize incoming emails.') }}
+          {{ __('Rules are Sieve scripts that sort and file incoming mail for you.') }}
         </span>
         <a
           class="text-ink-blue-5 hover:underline"
           href="https://stalw.art/docs/category/sieve-scripting/"
           target="_blank"
         >
-          {{ __('Learn more.') }}
+          {{ __('Learn about Sieve scripts') }}
         </a>
       </div>
     </div>
@@ -83,7 +83,7 @@ async function rebuildAutomationSubmit() {
     account: store.accountId,
   }
   await rebuildAutomation.run(input)
-  raiseToast(__('Folder automation rebuilt from your saved rules'))
+  raiseToast(__('Folder rules rebuilt'))
 }
 const showSieveScript = ref(false)
 const selectedScript = ref<SieveScript>()

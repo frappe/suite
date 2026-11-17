@@ -9,14 +9,14 @@
     />
     <FormControl
       v-model="calendarExport.archive_type"
-      :label="__('Archive Type')"
+      :label="__('Archive type')"
       type="select"
       variant="outline"
       :options="ARCHIVE_TYPE_OPTIONS"
     />
     <SettingsRow
       class="!py-0"
-      :title="__('Custom Selection')"
+      :title="__('Custom selection')"
       :description="__('Apply filters to select specific events for export.')"
     >
       <Switch v-model="customSelection" />
@@ -30,11 +30,11 @@
         :options="calendarOptions"
       />
       <FormControl v-model="filter.title" type="text" variant="outline" :label="__('Title')" />
-      <FormControl v-model="filter.after" type="date" variant="outline" :label="__('From Date')" />
-      <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To Date')" />
+      <FormControl v-model="filter.after" type="date" variant="outline" :label="__('From date')" />
+      <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To date')" />
       <FormControl
         v-model="calendarExport.limit"
-        :label="__('Max Number of Events')"
+        :label="__('Max number of events')"
         type="number"
         variant="outline"
         placeholder="1000"
@@ -42,7 +42,7 @@
       <FormControl
         v-if="hasLimit"
         v-model="calendarExport.sort"
-        :label="__('Start From')"
+        :label="__('Start from')"
         type="select"
         variant="outline"
         :options="sortOptions"
@@ -51,7 +51,7 @@
 
     <Button
       class="min-h-7"
-      :label="__('Create Export')"
+      :label="__('Start export')"
       :loading="isExporting"
       :disabled="isExportBlocked"
       @click="createCalendarExport.run(makeInput())"
@@ -105,11 +105,11 @@ const calendarOptions = computed(() => [
 ])
 const sortOptions = computed(() => [
   {
-    label: __('Oldest Events'),
+    label: __('Oldest events'),
     value: 'Start (ASC)',
   },
   {
-    label: __('Newest Events'),
+    label: __('Newest events'),
     value: 'Start (DESC)',
   },
 ])
@@ -159,7 +159,7 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 socket.on('calendar_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
 const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
+  if (ongoingExport.data?.name) return __('Export in progress. We’ll email you when it’s ready.')
   return __('No exports in progress.')
 })
 const exportHref = computed(() => {

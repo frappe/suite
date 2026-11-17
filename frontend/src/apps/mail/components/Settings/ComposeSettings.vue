@@ -2,7 +2,7 @@
   <!-- Rows of the Sending page's list, there once the preferences are read. -->
   <template v-if="preferences">
     <SettingsRow
-      :title="__('Default outgoing email')"
+      :title="__('Default send-as address')"
       :description="__('The address selected automatically when composing a message.')"
     >
       <Combobox
@@ -28,14 +28,14 @@
       />
     </SettingsRow>
     <SettingsRow
-      :title="__('Create contacts after sending email')"
-      :description="__('Automatically creates contacts for new recipients after an email is sent.')"
+      :title="__('Add recipients to contacts')"
+      :description="__('New recipients become contacts once a message is sent.')"
     >
       <Switch v-model="createContacts" />
     </SettingsRow>
     <SettingsRow
-      :title="__('Keep forwarded email in thread')"
-      :description="__('Keep forwarded emails in the original thread.')"
+      :title="__('Keep forwards in the conversation')"
+      :description="__('A message you forward stays with the conversation it came from.')"
     >
       <Switch v-model="keepForwardedInThread" />
     </SettingsRow>
