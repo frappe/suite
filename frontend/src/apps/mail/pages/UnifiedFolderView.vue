@@ -581,8 +581,8 @@ const threadRows = computed(() =>
   ),
 )
 watch(threadRows, keptRead.keep)
-// Ask again for a list that failed to load.
-const retryList = () => void threads.refetch().catch(() => {})
+// Ask again for a list that failed to load, settling its drafts like any other read.
+const retryList = () => void refetchThreads()
 
 // After an action, and on the poll: every count the sidebar shows, the merged folders' included.
 const refreshCounts = () => void store.refreshCounts()

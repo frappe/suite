@@ -1066,8 +1066,8 @@ const refreshThreads = (reloadMailboxes = true) => {
   if (reloadMailboxes) void store.refreshCounts()
 }
 
-// Ask again for a list that failed to load.
-const retryList = () => void activeThreads.value.refetch().catch(() => {})
+// Ask again for a list that failed to load, settling its drafts like any other read.
+const retryList = () => void refetchThreads()
 
 // After an optimistic action whose threads stay in the list (add-to-mailbox, or a move that leaves
 // copies in the current mailbox): refresh selections + sidebar counts only, never refetch the list.
