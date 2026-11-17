@@ -35,10 +35,17 @@ type Listener = (...args: unknown[]) => void
 const fakeSocket = () => {
   const manager: Record<string, Listener[]> = {}
   const events: Record<string, Listener[]> = {}
-  return {
+  const socket = {
     connected: true,
     disconnected: false,
-    connect: vi.fn(),
+    // Still meant to be up: socket.io brings it back by itself whenever the manager reconnects.
+    active: true,
+    // Its CONNECT went out and waits for the server's answer.
+    awaitingConnect: false,
+    sentConnectTwice: false,
+    connect: vi.fn(() => {
+      if (socket.awaitingConnect) socket.sentConnectTwice = true
+    }),
     io: {
       on: (event: string, fn: Listener) => (manager[event] ??= []).push(fn),
       off: () => {},
@@ -47,6 +54,28 @@ const fakeSocket = () => {
     listeners: (event: string) => events[event] ?? [],
     reconnect: () => manager.reconnect?.forEach((fn) => fn()),
   }
+  return socket
+}
+
+// This side closes the connection (a ping timeout after a laptop sleep). A second later the
+// manager is back, says so, and the socket sends its CONNECT. A second CONNECT before the answer
+// makes the server drop the connection, and it all starts again.
+const dropFromThisSide = (socket: ReturnType<typeof fakeSocket>) => {
+  socket.connected = false
+  socket.disconnected = true
+  setTimeout(() => {
+    socket.awaitingConnect = true
+    socket.reconnect()
+    setTimeout(() => {
+      socket.awaitingConnect = false
+      if (socket.sentConnectTwice) {
+        socket.sentConnectTwice = false
+        return dropFromThisSide(socket)
+      }
+      socket.connected = true
+      socket.disconnected = false
+    }, 100)
+  }, 1000)
 }
 
 let visibility: DocumentVisibilityState = 'visible'
@@ -110,10 +139,24 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
     await vi.advanceTimersByTimeAsync(0)
     expect(server.syncs).toBe(1)
 
+    socket.connected = false
     socket.disconnected = true
+    socket.active = false
     document.dispatchEvent(new Event('visibilitychange'))
     await vi.advanceTimersByTimeAsync(0)
     expect(socket.connect).toHaveBeenCalled()
+  })
+
+  it('asks once when a dropped socket comes back, and leaves its way back to it', async () => {
+    const socket = start()
+    await vi.advanceTimersByTimeAsync(0)
+    server.syncs = 0
+
+    dropFromThisSide(socket)
+    await vi.advanceTimersByTimeAsync(10_000)
+
+    expect(server.syncs).toBe(1)
+    expect(socket.connected).toBe(true)
   })
 
   it("hands what it found to the lists' own listeners while the socket is down", async () => {
