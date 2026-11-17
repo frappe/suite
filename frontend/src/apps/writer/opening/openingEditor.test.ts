@@ -154,7 +154,7 @@ function pasteInto(where: HTMLElement, data: { text?: string; files?: File[] }) 
   return view.editor!
 }
 
-it('refuses a pasted file while the document opens, and says to add it again', () => {
+it('refuses a pasted file while the document opens, and says to try again', () => {
   const info = vi.mocked(toast.info)
   const where = place()
   placeOpeningEditor('doc-6', where)
@@ -163,9 +163,7 @@ it('refuses a pasted file while the document opens, and says to add it again', (
   const editor = pasteInto(where, { files: [picture] })
 
   expect(info).toHaveBeenCalledOnce()
-  expect(info).toHaveBeenCalledWith(
-    'Wait a moment for the document to open, then try again',
-  )
+  expect(info).toHaveBeenCalledWith('Wait a moment for the document to open, then try again')
   expect(editor.isEmpty).toBe(true)
 })
 
