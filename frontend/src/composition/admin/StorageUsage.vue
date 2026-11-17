@@ -61,7 +61,7 @@ const validLimit = computed(
       class="w-full min-w-0 space-y-1 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3"
     >
       <span class="inline-flex items-center gap-1 text-p-sm tabular-nums">
-        <span class="font-medium text-ink-gray-8">{{ amount }}</span>
+        <span class="text-ink-gray-7">{{ amount }}</span>
         <span v-if="user.cap_bytes !== null" class="text-ink-gray-5">{{
           validLimit ? __(' / {0}', [formatStorage(user.cap_bytes)]) : __(' / Limit unavailable')
         }}</span>

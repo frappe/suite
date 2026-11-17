@@ -2263,7 +2263,7 @@ const operationVerifyOtp: MutationRef<VerifyOtpInput, VerifyOtpOutput, VerifyOtp
 
 export type SendResetPasswordLinkInput = { user: string }
 
-export type SendResetPasswordLinkOutput = string
+export type SendResetPasswordLinkOutput = null
 
 export type SendResetPasswordLinkError =
   'PermissionError' | 'AuthenticationError' | 'ValidationError'
@@ -2277,6 +2277,7 @@ const operationSendResetPasswordLink: MutationRef<
   owner: 'mail',
   kind: 'mutation',
   publicName: 'public.sendResetLink',
+  empty: true,
   envelope: 'message',
   method: 'POST',
   path: '/api/method/suite.mail.api.account.send_reset_password_link',

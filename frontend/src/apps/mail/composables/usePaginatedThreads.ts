@@ -14,7 +14,16 @@ export const PAGE_LENGTH = 25
 // the whole mailbox 25 threads at a time.
 const MAX_FILL_WINDOWS = 20
 
-/** Reading the list again, keyboard navigation and viewport filling over engine-owned pages. */
+/**
+ * What stands in the list's place: a spinner, the refusal with a way to ask again, the empty
+ * message, or the rows.
+ */
+export type ThreadListState = 'loading' | 'error' | 'empty' | 'list'
+
+/**
+ * Reading the list again, keyboard navigation, viewport filling and the list's state over
+ * engine-owned pages.
+ */
 interface Options {
   query: () => InfiniteQueryState<unknown>
   rows: () => Thread[]
@@ -22,6 +31,17 @@ interface Options {
   onEdgeThread: (id: string, action: 'open' | 'focus') => void
   threadKey?: (thread: Thread) => string
   fillProgress?: () => number
+  /**
+   * Whether the list's frame (toolbar, Inbox tabs, filter chips, search header) stays up around an
+   * empty or reloading list, so the reader can leave it by them: a split Inbox, a filtered list.
+   */
+  framed?: () => boolean
+  /** Whether it stays up through the list's first load too: the reader just switched tab or filter. */
+  switching?: () => boolean
+  /** Work under way that will change the whole list (emptying the folder): the list waits for it. */
+  busy?: () => boolean
+  /** Whether there is a list to ask for at all; a search waits for its query, and is empty till then. */
+  asked?: () => boolean
 }
 export function usePaginatedThreads({
   query,
@@ -30,6 +50,10 @@ export function usePaginatedThreads({
   onEdgeThread,
   threadKey = (row) => row.thread_id,
   fillProgress,
+  framed = () => false,
+  switching = () => false,
+  busy = () => false,
+  asked = () => true,
 }: Options) {
   const container = useTemplateRef<HTMLElement>('mailList')
   const sentinel = useTemplateRef<HTMLElement>('loadMoreSentinel')
@@ -124,7 +148,26 @@ export function usePaginatedThreads({
       void loadMore()
     })
   }
+  // A refusal stands in for the list only while there is nothing to show: a failed refresh of a
+  // loaded list keeps its rows. Asking again shows the spinner, not the stale refusal.
+  const listState = computed<ThreadListState>(() => {
+    const state = query()
+    if (busy()) return 'loading'
+    if (rows().length) return 'list'
+    if (!asked()) return 'empty'
+    if (state.status === 'pending' || state.isFetching) return 'loading'
+    return state.status === 'error' ? 'error' : 'empty'
+  })
+  // A first load fills the whole view unless the reader's own switch asked for it.
+  const listFramed = computed(
+    () =>
+      switching() ||
+      listState.value === 'list' ||
+      (framed() && !busy() && query().status !== 'pending'),
+  )
   return {
+    listState,
+    listFramed,
     container,
     refetch,
     refresh,

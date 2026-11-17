@@ -208,6 +208,19 @@ class TestSiteDefaultQuota(IntegrationTestCase):
         with self.assertRaises(DriveOverQuota):
             admit(self.root, 1)
 
+    def test_only_a_site_limit_only_write_passes_a_full_root_and_it_still_counts(self):
+        self._set_site_default("default_personal_quota", 10)
+        admit(self.root, 10)
+
+        with self.assertRaises(DriveOverQuota):
+            admit(self.root, 1)
+
+        admit(self.root, 4, site_limit_only=True)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 14)
+        with self.assertRaises(DriveOverQuota):
+            admit(self.root, 1)
+
     def test_a_malformed_site_default_refuses_the_write(self):
         self._set_site_default("default_personal_quota", "5GB")
 
@@ -269,6 +282,45 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
                 admit(self.root, 1)
 
         self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 1)
+
+    def full_user_cap(self, site_mail: int, allowance: int) -> None:
+        from suite.suite_core.storage import state
+
+        doc, _policy, _measurements = state()
+        kept = (doc.policy, doc.measurements)
+        self.addCleanup(
+            lambda: frappe.db.set_value(
+                "Suite Storage State", "site", dict(zip(("policy", "measurements"), kept, strict=True))
+            )
+        )
+        frappe.db.set_value("Drive Root", self.root, "used_bytes", 0, update_modified=False)
+        frappe.db.set_value(
+            "Suite Storage State",
+            "site",
+            {
+                "policy": frappe.as_json({"users": {self.user: {"cap": 1}}}),
+                "measurements": frappe.as_json(
+                    {"site_mail": site_mail, "allowance": allowance, "personal": {self.user: 10}}
+                ),
+            },
+        )
+
+    def test_a_site_limit_only_write_passes_a_full_user_cap(self):
+        self.full_user_cap(site_mail=10, allowance=0)
+
+        with patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True):
+            self.assertRaises(DriveOverQuota, admit, self.root, 1)
+            admit(self.root, 5, site_limit_only=True)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 5)
+
+    def test_a_site_limit_only_write_is_refused_on_a_full_site(self):
+        self.full_user_cap(site_mail=10**12, allowance=1)
+
+        with patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True):
+            self.assertRaises(DriveOverQuota, admit, self.root, 5, site_limit_only=True)
+
+        self.assertEqual(frappe.db.get_value("Drive Root", self.root, "used_bytes"), 0)
 
     def test_storage_not_measured_yet_is_its_own_over_quota_and_an_overage_is_not(self):
         from suite.suite_core.storage import state

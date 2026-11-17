@@ -55,17 +55,9 @@
     class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
     :class="showDeleteBanner ? 'h-[calc(100dvh-6.125rem)]' : 'h-[calc(100dvh-3.0625rem)]'"
   >
-    <!-- Loading -->
-    <div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
-      <div class="text-ink-gray-5 flex items-center space-x-2">
-        <LoaderCircle class="h-5 w-5 animate-spin" />
-        <span>{{ __('Loading...') }}</span>
-      </div>
-    </div>
-
-    <template
-      v-else-if="threadRows.length || filter || filterChanged || mailbox === 'search' || inboxTab"
-    >
+    <!-- The list in its frame; the frame shows its own empty, loading and refused states (see
+         usePaginatedThreads). Without the frame, they fill the view below. -->
+    <template v-if="listFramed">
       <ThreadPane
         :thread-open="!!threadID"
         @touch-start="onThreadTouchStart"
@@ -295,15 +287,21 @@
             <!-- While the (still-mounted) search header's new query loads, this area is the
 						     loading surface — the empty message must not flash first. -->
             <LoaderCircle
-              v-if="activeThreads.isFetching"
+              v-if="listState === 'loading'"
               class="text-ink-gray-5 h-5 w-5 animate-spin"
+            />
+            <LoadError
+              v-else-if="listState === 'error'"
+              :title="__('Could not load the list.')"
+              :error="activeThreads.error"
+              @retry="retryList"
             />
             <p v-else class="text-ink-gray-5">
               {{
                 mailbox !== 'search'
                   ? filter
                     ? __('No mails found for the selected filter.')
-                    : __('You have no mails in this folder.')
+                    : __('No mails in {0}.', [inboxTab ? tabName(inboxTab) : mailboxName])
                   : hasSearchQuery
                     ? __('No results found for the given query.')
                     : __('Search your mail')
@@ -367,13 +365,31 @@
       </ThreadPane>
     </template>
 
-    <!-- No mails (the search view keeps its header and shows an inline message instead). A phone
-         keeps the title row above it: where you are, and the way to the folders. -->
+    <!-- Loading -->
+    <div
+      v-else-if="listState === 'loading'"
+      class="flex w-full flex-col items-center justify-center"
+    >
+      <div class="text-ink-gray-5 flex items-center space-x-2">
+        <LoaderCircle class="h-5 w-5 animate-spin" />
+        <span>{{ __('Loading...') }}</span>
+      </div>
+    </div>
+
+    <!-- Refused, or no mails. A phone keeps the title row above either: where you are, and the way
+         to the folders. -->
     <div v-else class="flex w-full flex-col">
       <MobileTitleHeader v-if="isMobile" with-menu :title="mailboxName" />
-      <div class="text-ink-gray-5 flex flex-1 flex-col items-center justify-center">
+      <LoadError
+        v-if="listState === 'error'"
+        class="flex-1"
+        :title="__('Could not load the list.')"
+        :error="activeThreads.error"
+        @retry="retryList"
+      />
+      <div v-else class="text-ink-gray-5 flex flex-1 flex-col items-center justify-center">
         <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
-        <p>{{ __('You have no mails in this folder.') }}</p>
+        <p>{{ __('No mails in {0}.', [mailboxName]) }}</p>
       </div>
     </div>
   </div>
@@ -410,6 +426,7 @@ import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelec
 import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
+import LoadError from '@/apps/mail/components/LoadError.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
@@ -499,6 +516,8 @@ const showReadingPane = useReadingPane()
 // usePaginatedThreads owns the state between the reset and append fetches: the epochs, the refresh
 // merge, the removal suppression, the sentinel, the edge crossing. See there.
 const {
+  listState,
+  listFramed,
   container: mailListRef,
   refetch: refetchThreads,
   refresh: refreshList,
@@ -516,6 +535,13 @@ const {
   onEdgeThread: (id, action) => (action === 'open' ? goToThread(id) : focusOnThread(id)),
   // Deferred read — visibleThreadCount is declared below, with the rows it counts.
   fillProgress: () => visibleThreadCount.value,
+  // Deferred reads too. The search view's header is its frame: it mounts at once and stays put
+  // across query changes, loading inline in the list area below it.
+  framed: () => mailbox === 'search' || !!inboxTab.value || !!filter.value || filterChanged.value,
+  switching: () =>
+    mailbox === 'search' || filterChanged.value || (tabSwitched.value && !!inboxTab.value),
+  busy: () => emptyMailbox.isPending || refillPending.value,
+  asked: () => mailbox !== 'search' || hasSearchQuery.value,
 })
 
 // Rows and the cursor
@@ -926,7 +952,6 @@ const {
   starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
   screenable: () => mailbox === mailboxIds.inbox && screener.active.value,
 })
-const isMailboxLoaded = ref(false)
 
 // The Inbox's category tabs; `inboxTab` is the open one, and undefined in any other list or when the
 // Inbox isn't split.
@@ -983,12 +1008,6 @@ const threadRows = computed(() =>
   ),
 )
 watch(threadRows, keptRead.keep)
-watch(
-  () => threads.status,
-  (status) => {
-    isMailboxLoaded.value = status !== 'pending'
-  },
-)
 
 // The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so show it whenever the
 // mailbox has threads — or a filter is applied (the filtered view may be empty while the mailbox isn't).
@@ -1004,21 +1023,6 @@ const showDeleteBanner = computed(
 // Keep infinite scroll alive while the rendered list is too short to scroll (see topUpIfShort). Must
 // stay below groupedRows: `watch` evaluates its source at setup.
 watch(groupedRows, topUpIfShort)
-const isLoading = computed(() => {
-  // Search is one page: its header (input + filter chips) mounts immediately and stays put
-  // across query changes — loading shows inline in the list area, never as the full spinner.
-  // Checked first: entering the route resets isMailboxLoaded, which must not blank the view.
-  if (mailbox === 'search') return false
-  if (tabSwitched.value && inboxTab.value) return false
-  // A new filter is a new query, pending as a mailbox's first is: checked before that.
-  if (filterChanged.value) return false
-  if (!isMailboxLoaded.value) return true
-  if (emptyMailbox.isPending) return true
-  if (refillPending.value) return true
-  // A split Inbox keeps its tabs up while an emptied tab refills (an Undo, a refresh).
-  if (inboxTab.value) return false
-  return !threadRows.value.length && activeThreads.value.isFetching
-})
 
 // Reset-to-top: refetch only the first window, replacing the loaded list and scrolling to the top
 // (via onResetSuccess). Bumping `epoch` discards any append/refresh still in flight. Used for
@@ -1030,7 +1034,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
   if (mailboxRoles.length && !mailboxRoles.map((m) => mailboxIds[m]).includes(mailbox)) return
 
   // This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
-  // the resource's `loading` drives isLoading, so the flag has done its job.
+  // the query's own state drives the list's, so the flag has done its job.
   refillPending.value = false
   resetSelections()
   // Clear the previous search's count so the header doesn't show a stale total while the new fetch runs.
@@ -1061,6 +1065,9 @@ const refreshThreads = (reloadMailboxes = true) => {
   refreshList()
   if (reloadMailboxes) void store.refreshCounts()
 }
+
+// Ask again for a list that failed to load.
+const retryList = () => void activeThreads.value.refetch().catch(() => {})
 
 // After an optimistic action whose threads stay in the list (add-to-mailbox, or a move that leaves
 // copies in the current mailbox): refresh selections + sidebar counts only, never refetch the list.
@@ -1100,9 +1107,6 @@ watch(
     // loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
     // every account, so a mere account switch mustn't reset it — keep the results and scroll position.
     if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
-    // Loaded already when the list is cached (back to the Inbox, say): its status never leaves
-    // 'success' then, so the watcher above, which only hears changes, would leave the spinner up.
-    isMailboxLoaded.value = threads.status !== 'pending'
     tabSwitched.value = false
     reloadFilter()
     focusedRowKey.value = undefined

@@ -96,6 +96,14 @@ EMAIL_PROPERTIES = [
 ]
 
 
+def _split_name(name: str) -> tuple[str, str]:
+    """A message's name is `<account>|<email id>`; any other name names no message."""
+    account, separator, id = (name or "").partition("|")
+    if not separator or not account or not id or "|" in id:
+        raise frappe.DoesNotExistError(_("Message not found or you do not have permission to view it."))
+    return account, id
+
+
 class MailMessage(Document):
     # begin: auto-generated types
     # This code is auto-generated. Do not modify anything in this block.
@@ -292,7 +300,7 @@ class MailMessage(Document):
         raise NotImplementedError
 
     def load_from_db(self) -> MailMessage:
-        account, id = self.name.split("|")
+        account, id = _split_name(self.name)
         if messages := get_messages(account, ids=[id]):
             return super(Document, self).__init__(messages[0])
 
@@ -302,7 +310,7 @@ class MailMessage(Document):
         raise NotImplementedError
 
     def delete(self) -> None:
-        account, id = self.name.split("|")
+        account, id = _split_name(self.name)
         delete_messages(account, [id])
 
     @staticmethod

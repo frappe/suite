@@ -26,6 +26,7 @@ from suite.drive.patches.build.report import (
 )
 from suite.drive.patches.build.state import (
     DROP_REASONS,
+    LEGACY_RIGHTS_COUNTS,
     LegacyComment,
     RelocatedMediaNode,
     RemovedFileDocument,
@@ -78,6 +79,13 @@ class KeyTest(ReportCase):
         self.assertEqual(sorted(report["grant_rows_dropped"]), sorted(DROP_REASONS))
         self.assertEqual(report["grant_rows_dropped"]["dead_principal"], 3)
         self.assertEqual(report["grant_rows_dropped"]["no_flags"], 0)
+
+    def test_legacy_rights_carries_every_count_of_the_kept_rights_pass(self):
+        self.put(grants={"legacy_rights": {"exceeded": 3}})
+        report = build_report(self.env)
+        self.assertEqual(sorted(report["legacy_rights"]), sorted(LEGACY_RIGHTS_COUNTS))
+        self.assertEqual(report["legacy_rights"]["exceeded"], 3)
+        self.assertEqual(report["legacy_rights"]["person_grants"], 0)
 
     def test_a_missing_key_fails_loudly(self):
         with mock.patch.object(report_module, "REPORT_KEYS", (*REPORT_KEYS, "invented")):

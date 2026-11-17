@@ -51,14 +51,19 @@ vi.mock('frappe-ui', async () => {
 })
 
 const icon = defineComponent({ setup: () => () => h('span') })
-const area = (id: string, label: string, to = `/${id}`): AreaDefinition => ({
+const area = (id: string, label: string, to = `/${id}`) => ({
   id,
   label: () => label,
   icon,
   to,
   loadRoutes: vi.fn(),
 })
-const areas = [area('home', 'Home'), area('files', 'Drive', '/drive')]
+const areas: AreaDefinition[] = [
+  area('home', 'Home'),
+  area('files', 'Drive', '/drive'),
+  { ...area('mail', 'Mail'), phonePlacement: 'account', menuIcon: 'lucide-mail' },
+  { ...area('people', 'People'), placement: 'account', menuIcon: 'lucide-users' },
+]
 
 const FilesPage = defineComponent({
   setup: () => () =>
@@ -121,6 +126,13 @@ describe('phone bottom nav', () => {
 
     item('Home').click()
     await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/home'))
+  })
+
+  it('leaves out the areas placed in the account menu or, on a phone, the account sheet', async () => {
+    const { item } = await mountAt('/home')
+    expect(item('Home')).not.toBeNull()
+    expect(item('People')).toBeNull()
+    expect(item('Mail')).toBeNull()
   })
 
   it('navigates to the area when the active page draws no sidebar', async () => {

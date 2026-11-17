@@ -1,7 +1,8 @@
 <template>
   <MailUsers v-if="storage.data?.cloud">
-    <template #users
-      ><LocalUsers
+    <template #tabs><UsersTabs /></template>
+    <template #users>
+      <LocalUsers
         embedded
         :status="route.query.status"
         :initial-transfer-user="
@@ -9,7 +10,10 @@
             ? route.query.user
             : undefined
         "
-    /></template>
+      >
+        <template #lead><UsersTabs /></template>
+      </LocalUsers>
+    </template>
   </MailUsers>
   <LocalUsers v-else-if="storage.data" />
   <LoadFailed
@@ -18,23 +22,12 @@
     :retry="() => storage.refetch()"
   />
   <DashboardLayout v-else area="admin" :breadcrumbs="[{ label: __('Users') }]">
-    <!-- Same tabs as the Mail users page; the directory below shows its own placeholder rows. -->
-    <Tabs
-      :model-value="onInvitations ? 'invitations' : 'users'"
-      :tabs="SKELETON_TABS"
-      class="pointer-events-none"
-    >
-      <template #tab-panel>
-        <div class="flex min-h-0 flex-1 flex-col gap-5 pt-5">
-          <LocalUsers v-if="!onInvitations" embedded />
-        </div>
-      </template>
-    </Tabs>
+    <!-- The directory below shows its own placeholder rows. -->
+    <LocalUsers v-if="!onInvitations" embedded />
   </DashboardLayout>
 </template>
 
 <script setup lang="ts">
-import { Tabs } from 'frappe-ui'
 import { computed, defineAsyncComponent } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -44,13 +37,11 @@ import { DashboardLayout } from '@/platform/dashboard'
 import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
+import UsersTabs from './UsersTabs.vue'
+
 const storage = useQuery(api.suite.storage.get)
 const route = useRoute()
 const MailUsers = defineAsyncComponent(loadMailAdminUsers)
 const LocalUsers = defineAsyncComponent(() => import('./LocalUsersView.vue'))
 const onInvitations = computed(() => route.path.endsWith('/invitations'))
-const SKELETON_TABS = [
-  { value: 'users', label: __('Users') },
-  { value: 'invitations', label: __('Invitations') },
-]
 </script>

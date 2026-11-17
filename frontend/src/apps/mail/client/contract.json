@@ -6568,7 +6568,7 @@
         "type": "object"
       },
       "output": {
-        "type": "string"
+        "type": "null"
       },
       "errors": [
         "PermissionError",
