@@ -3378,7 +3378,7 @@ export const operationSendResetPasswordLink: Validators<
     )
   },
   validateOutput(value: unknown): asserts value is SendResetPasswordLinkOutput {
-    assertSchema(value, { type: 'string' }, 'send_reset_password_link output')
+    assertSchema(value, { type: 'null' }, 'send_reset_password_link output')
   },
 }
 

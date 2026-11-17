@@ -14,7 +14,7 @@ import {
   Users,
   X,
 } from 'lucide-vue-next'
-import { DialogDescription } from 'reka-ui'
+import { DialogDescription, DialogTitle } from 'reka-ui'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
@@ -899,7 +899,7 @@ const recurringScopeModalProps = computed(() => ({
       <div class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">
         <!-- header -->
         <div class="flex items-center border-b px-6 py-4">
-          <span class="text-md font-semibold">{{ dialogTitle }}</span>
+          <DialogTitle class="text-md font-semibold">{{ dialogTitle }}</DialogTitle>
           <div class="ml-auto flex items-center gap-1">
             <Dropdown v-if="!isNew" :options="eventOptions">
               <Button variant="ghost" :disabled="isDeleting" :aria-label="__('Event options')">

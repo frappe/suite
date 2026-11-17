@@ -266,12 +266,12 @@ vi.mock('@/apps/drive', async (importOriginal) => ({
   ...(await importOriginal<object>()),
   documentSessionUrls: () => [],
   DriveDocumentHeader: {
-    props: { recoverable: Boolean },
+    props: { recoverable: Boolean, viewOnly: Boolean },
     emits: ['download-changes'],
     setup:
-      (props: { recoverable: boolean }, { slots, emit }: SetupContext) =>
+      (props: { recoverable: boolean; viewOnly: boolean }, { slots, emit }: SetupContext) =>
       () =>
-        h('header', [
+        h('header', { 'data-view-only': props.viewOnly }, [
           slots.actions?.(),
           slots.menu?.(),
           slots.primary?.(),

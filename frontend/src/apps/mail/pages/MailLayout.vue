@@ -13,7 +13,7 @@
 <script setup lang="ts">
 import { providePortalTarget } from 'frappe-ui'
 import { computed, nextTick, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
-import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
@@ -33,12 +33,9 @@ import {
   useUndo,
 } from '@/apps/mail/utils/composables'
 import dayjs from '@/apps/mail/utils/dayjs'
+import { useGoToShortcuts } from '@/apps/mail/utils/goToShortcuts'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import {
-  currentMailboxParam,
-  INBOX_FOLDER,
-  unifiedFolderRoute,
-} from '@/apps/mail/utils/unifiedFolders'
+import { currentMailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { mailServerUnavailable } from '@/boot/config'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { useRootStore } from '@/stores/root'
@@ -58,7 +55,7 @@ import { useRootStore } from '@/stores/root'
  * Public pre-auth routes (login/signup/...) sit OUTSIDE this layout since they
  * do not need the $user/$dayjs/$socket injects.
  */
-const { userResource, mailboxIds, accountId } = userStore()
+const { userResource, accountId } = userStore()
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
 const router = useRouter()
@@ -87,25 +84,7 @@ const gPrefix = useGPrefix()
 // `g` is also the prefix each list uses for its own g g / G jump to the ends. Both listeners
 // see the key and keep their own prefix state; this one only ever acts on a following letter,
 // so a `g g` falls through to the list untouched.
-// `g` then a letter. Beyond the account's own folders this reaches the two views that are not
-// folders at all — the merged list and the Outbox — so the map holds routes, not
-// mailbox ids.
-//
-// `a` is the Inbox of all accounts (as in Gmail's All Mail), which pushes Archive to `e` — the letter that
-// already archives a thread, so one letter means archive throughout.
-const mailboxRoute = (mailbox: string) => ({ name: 'mail-mailbox', params: { accountId, mailbox } })
-
-const GO_TO_KEYS = {
-  a: () => unifiedFolderRoute(INBOX_FOLDER),
-  o: () => ({ name: 'mail-outbox', params: { accountId } }),
-  i: () => mailboxRoute(mailboxIds.inbox),
-  f: () => mailboxRoute('starred'),
-  s: () => mailboxRoute(mailboxIds.sent),
-  d: () => mailboxRoute(mailboxIds.drafts),
-  j: () => mailboxRoute(mailboxIds.junk),
-  e: () => mailboxRoute(mailboxIds.archive),
-  t: () => mailboxRoute(mailboxIds.trash),
-} satisfies Record<string, () => RouteLocationRaw>
+const goTo = useGoToShortcuts()
 
 // ⌘Z takes back the last undoable action, wherever it was taken. The slot is app-wide (useUndo),
 // and so is what can fill it: a send is undoable from the composer window, which is open on every
@@ -134,7 +113,7 @@ const handleGlobalShortcuts = (e: KeyboardEvent) => {
   }
 
   if (gPrefix.armed.value) {
-    const destination = Object.entries(GO_TO_KEYS).find(([shortcut]) => shortcut === key)?.[1]()
+    const destination = goTo(key)
     gPrefix.disarm()
     if (!destination) return
     e.preventDefault()

@@ -57,7 +57,11 @@
         />
         <slot v-else />
       </ContentPane>
-      <AccountSheet v-model:open="accountSheetOpen" />
+      <AccountSheet
+        v-model:open="accountSheetOpen"
+        :areas="accountSheetAreas(areas)"
+        :badges="badges"
+      />
       <template v-if="!pageOwnsPhoneChrome" #nav>
         <!-- Everything under the page, measured: what floats over the page (a compose button)
              stands on it through --suite-phone-nav-height, whatever it holds. -->
@@ -72,7 +76,9 @@
             :areas="areas"
             :active-area="activeArea?.id"
             @open-account="accountSheetOpen = true"
-          />
+          >
+            <template #bell-tab><slot name="bell-tab" /></template>
+          </MobileNav>
         </div>
       </template>
     </MobileShell>
@@ -111,6 +117,7 @@ import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
 import { shellShortcutsOpen, ShortcutsDialog, useShortcutsKey } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
+import { accountSheetAreas } from '@/shell/accountMenu'
 import AccountSheet from '@/shell/AccountSheet.vue'
 import { progressDetail, useAreaProgress } from '@/shell/areaProgress'
 import AreaProgressDot from '@/shell/AreaProgressDot.vue'
@@ -130,7 +137,13 @@ const props = defineProps<{
   badges: Readonly<Record<string, number>>
 }>()
 
-defineSlots<{ default?: () => unknown; bell?: () => unknown }>()
+defineSlots<{
+  default?: () => unknown
+  /** The notifications bell, on the desktop rail. */
+  bell?: () => unknown
+  /** The notifications tab, in the phone bottom bar. */
+  'bell-tab'?: () => unknown
+}>()
 
 const route = useRoute()
 const SuiteSettingsDialog = defineAsyncComponent(

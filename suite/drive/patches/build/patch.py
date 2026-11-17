@@ -32,7 +32,7 @@ import frappe
 
 from suite.drive.patches.build.content import link_content_documents
 from suite.drive.patches.build.environment import BUILD_BATCH_SIZE, BuildEnvironment
-from suite.drive.patches.build.grants import convert_grants
+from suite.drive.patches.build.grants import convert_grants, saved_kept_rights
 from suite.drive.patches.build.history import convert_history_and_comments
 from suite.drive.patches.build.legacy_bytes import prepare_legacy_bytes
 from suite.drive.patches.build.records import convert_records
@@ -73,6 +73,9 @@ def run_build(env, *, batch_size: int = BUILD_BATCH_SIZE) -> dict:
     refuse_foreign_record(env.state, markers)
     _refuse_record_without_target(env)
     stamp_record(env.state, markers)
+    # Step 6 checks the kept-rights plan again before it replays it. This
+    # refuses a plan left from another record, or one it cannot read, now.
+    saved_kept_rights(env.state)
 
     # Step 1 is the gate, and step 2 and 3 are the byte preparation. The
     # gate runs inside `prepare_legacy_bytes`: it has to be the first thing
@@ -114,7 +117,7 @@ def _refuse_record_without_target(env) -> None:
         f"The Build record at {env.state.path} says the tree conversion completed over "
         f"{tree.roots_seen} legacy roots, but this site holds no Drive Root row. The database was "
         "restored without the site's private directory. Restore both from the same backup, or move "
-        "the Build record (and the journals beside it) aside to start Build over on this database."
+        "the Build record and every `drive-build-*` file beside it aside to start Build over on this database."
     )
 
 
