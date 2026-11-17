@@ -8,7 +8,9 @@
     >
       <FilesPanel :drag="dragOn" />
     </AreaSidebar>
-    <PageHeader class="hidden md:flex">
+    <!-- A locked folder shows only the unlock screen, as the other dead ends do, with no empty
+         bar above it. A signed-in phone keeps its header, which opens the Drive panel. -->
+    <PageHeader v-if="!locked" class="hidden md:flex">
       <div class="flex w-full items-center justify-between gap-3">
         <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
         <Breadcrumbs
@@ -37,7 +39,7 @@
         </Dropdown>
       </div>
     </PageHeader>
-    <PageHeaderMobile class="md:hidden">
+    <PageHeaderMobile v-if="!locked || signedIn" class="md:hidden">
       <template #prefix>
         <PageHeaderBackButton v-if="folderParent" :route="folderParent" />
       </template>
