@@ -123,14 +123,18 @@ const namesADate = (result: ParsedResult) => {
   return time && clock && SHORT_WEEKDAY.test(text)
 }
 
-// "at 5", "Friday at 2": an hour on its own, as people write one for a meeting. Not "07:30" or
-// "5:45", which say the hour as a clock does.
-const CLOCK_FORM = /\d[:.]\d|\b0\d/
+// Whether `hour` is written in `text` as a clock does, with its leading zero ("07:30", "at 05"),
+// and so means what it says. "at 5", "3:30" and "Friday at 2" are a meeting's hours.
+const zeroLed = (text: string, hour: number) =>
+  new RegExp(
+    `\\b0${hour}[:.]\\d\\d|(?:\\bat|@|\\bfrom|\\buntil|\\btill|\\bto|[-–])\\s*0${hour}\\b`,
+    'i',
+  ).test(text)
 
 const toNamedDate = (result: ParsedResult, timeZone: string, sent: Dayjs): NamedDate => {
   const lead = result.text.match(LEAD)?.[0].length ?? 0
   const sentDay = sent.format('YYYY-MM-DD')
-  const workingHours = !CLOCK_FORM.test(result.text)
+  const workingHours = (hour: number) => !zeroLed(result.text, hour)
   const from = moment(result.start, timeZone, {
     workingHours,
     // A time with no day is the next one after the mail was sent.
@@ -155,7 +159,7 @@ const pad = (value: number | null) => String(value ?? 0).padStart(2, '0')
 
 interface MomentRules {
   /** Whether an hour without am or pm is a working hour (1–7 the afternoon, 8–11 the morning). */
-  workingHours: boolean
+  workingHours: (hour: number) => boolean
   /** The day of a time that names none. */
   dayFor: (time: string) => string
   /** For a weekday at a time: the earliest it can be (`YYYY-MM-DDTHH:mm`), to pick the week by. */
@@ -173,7 +177,7 @@ const moment = (
   if (!components.isCertain('hour')) return { date: named }
   const written = components.get('hour') ?? 0
   const afternoon =
-    workingHours && !components.isCertain('meridiem') && written >= 1 && written <= 7
+    !components.isCertain('meridiem') && written >= 1 && written <= 7 && workingHours(written)
   const time = `${pad(afternoon ? written + 12 : written)}:${pad(components.get('minute'))}`
   let date = named
   if (!components.isCertain('day')) {

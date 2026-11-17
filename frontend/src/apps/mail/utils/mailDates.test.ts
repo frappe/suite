@@ -100,6 +100,11 @@ describe('dates in a mail', () => {
     expect(friday('2026-11-20T10:30:00Z')).toEqual({ date: '2026-11-27', time: '14:00' })
   })
 
+  it('reads an hour with minutes, and one beside a day written with a zero, as a working hour', () => {
+    expect(dates('Can we do 3:30?')[0].start).toEqual({ date: '2026-11-17', time: '15:30' })
+    expect(dates('Thursday 03 Dec at 2')[0].start).toEqual({ date: '2026-12-03', time: '14:00' })
+  })
+
   it('keeps a time written as a clock does', () => {
     expect(dates('tomorrow 07:30 works')[0].start).toEqual({ date: '2026-11-18', time: '07:30' })
     expect(dates('the train is at 05:45')[0].start).toEqual({ date: '2026-11-17', time: '05:45' })
