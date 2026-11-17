@@ -11,9 +11,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-import { highlightSegments } from '@/utils/highlight'
+import { highlightSegments, type HighlightSegment } from '@/utils/highlight'
 
-const props = defineProps<{ text: string; term?: string }>()
+const props = defineProps<{
+  text?: string
+  term?: string
+  /** Already cut, for words the server marked rather than a term to look for. */
+  segments?: HighlightSegment[]
+}>()
 
-const segments = computed(() => highlightSegments(props.text, props.term ?? ''))
+const segments = computed(
+  () => props.segments ?? highlightSegments(props.text ?? '', props.term ?? ''),
+)
 </script>

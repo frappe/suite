@@ -329,6 +329,10 @@ JMAP_REFUSALS = (
 # raises itself, for an answer it could not read and for a call the server left unanswered.
 MAYBE_APPLIED_ERRORS = ("serverPartialFail", "malformedResult", MISSING_RESPONSE)
 
+# Every way a call can fail on the mail server or the way to it, rather than as a bug on this side:
+# refused credentials, the server down or unreachable, a call or request it turned away.
+JMAP_ERRORS = (AuthenticationError, MailServerUnavailableError, MethodError, RequestError, TransportError)
+
 # The httpx failures after which nothing can have been sent: the same three jmaplib counts as
 # "the connection never established" (jmap.client), a URL httpx will not open at all, and a proxy
 # that refused the tunnel (httpcore raises ProxyError only for a CONNECT or SOCKS handshake that
@@ -458,8 +462,7 @@ def maybe_applied(error: Exception) -> bool:
     whether the request was applied. False for an error never_applied vouches for - and for one
     that is not about the server at all, such as a bug on this side."""
 
-    about_the_server = (MethodError, MailServerUnavailableError, RequestError, TransportError)
-    return isinstance(error, about_the_server) and not never_applied(error)
+    return isinstance(error, JMAP_ERRORS) and not never_applied(error)
 
 
 class SuiteJMAPClient(JMAPClient):

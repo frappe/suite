@@ -176,6 +176,9 @@ export interface Thread {
   trash?: string
   // A search result's newest matching message, which the row describes and the thread opens on.
   match_id?: string
+  // The messages that matched, newest first, and the words as they spell them.
+  matches?: SearchMatch[]
+  marked_words?: string[]
   id: string
   thread_id: string
   from_name: string
@@ -212,6 +215,7 @@ export interface Thread {
   messages: Mail[]
 }
 export type MailboxData = import('../client/generated').GetMailboxesOutput[number]
+export type SearchMatch = import('../client/generated').SearchMailsOutputSearchMatch
 
 /** One folder across all of the user's accounts, as get_unified_folders merges it. */
 export type UnifiedFolder = import('../client/generated').GetUnifiedFoldersOutput[number]

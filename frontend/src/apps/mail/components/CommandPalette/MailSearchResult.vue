@@ -3,7 +3,7 @@
     <span class="flex min-w-0 items-center gap-3">
       <span class="flex min-w-0 flex-1 items-center gap-1.5">
         <span class="truncate text-base-semibold text-ink-gray-8">
-          <HighlightedText :text="result.subject || '[No subject]'" :term="term" />
+          <HighlightedText :text="result.subject || '[No subject]'" :term="words" />
         </span>
         <span
           v-if="attachmentCount"
@@ -19,7 +19,13 @@
     </span>
     <span class="flex min-w-0 items-center gap-3">
       <span class="min-w-0 flex-1 truncate text-sm text-ink-gray-6">
-        <HighlightedText :text="interlocutors" :term="term" />
+        <!-- Why it's here, when that's something it says, rather than everyone it was said to. -->
+        <template v-if="newestMatch?.snippet">
+          <span class="text-ink-gray-8">{{ sender }}</span>
+          <span> · </span>
+          <SearchMatch :match="newestMatch" />
+        </template>
+        <HighlightedText v-else :text="interlocutors" :term="words" />
       </span>
       <span class="flex shrink-0 items-center gap-1.5">
         <span
@@ -37,7 +43,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import SearchMatch from '@/apps/mail/components/SearchMatch.vue'
 import { getFormattedDate } from '@/apps/mail/utils'
+import { searchWords } from '@/apps/mail/utils/searchFilters'
 import HighlightedText from '@/components/HighlightedText.vue'
 
 import type { MailSearchResult } from './types'
@@ -48,8 +56,11 @@ const props = defineProps<{
   term?: string
 }>()
 
+const words = computed(() => searchWords(props.term, props.result.marked_words))
+const newestMatch = computed(() => props.result.matches?.[0])
+const sender = computed(() => props.result.from_name || props.result.from_email)
+
 const interlocutors = computed(() => {
-  const sender = props.result.from_name || props.result.from_email
   const seen = new Set<string>()
   const recipients = (props.result.recipients ?? [])
     .filter(
@@ -61,7 +72,7 @@ const interlocutors = computed(() => {
     .map((recipient) => recipient.display_name || recipient.email)
     .join(', ')
 
-  return recipients ? `${sender}, ${recipients}` : sender
+  return recipients ? `${sender.value}, ${recipients}` : sender.value
 })
 
 const attachmentCount = computed(

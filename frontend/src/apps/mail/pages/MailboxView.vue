@@ -60,6 +60,7 @@
     <template v-if="listFramed">
       <ThreadPane
         :thread-open="!!threadID"
+        :beside="readsBesideResults"
         @touch-start="onThreadTouchStart"
         @touch-move="onThreadTouchMove"
         @touch-end="onThreadTouchEnd"
@@ -67,7 +68,24 @@
         <template #list>
           <!-- The search view's own header: the query (click to edit) + removable filter pills, above
 					     the results toolbar. It owns the query surface; the results below just read the route. -->
-          <SearchResultsHeader v-if="mailbox === 'search'" />
+          <SearchResultsHeader v-if="mailbox === 'search'" :count="isMobile ? title : undefined" />
+          <div
+            v-if="mailbox === 'search' && unavailableAccounts.length"
+            class="flex items-center justify-between gap-2 border-b px-3.5 py-1.5 sm:px-5"
+          >
+            <p class="text-p-sm text-ink-amber-6">
+              {{
+                __("Couldn't reach {0}, so its mail isn't here.", [unavailableAccounts.join(', ')])
+              }}
+            </p>
+            <Button
+              variant="ghost"
+              class="shrink-0"
+              :label="__('Try again')"
+              :loading="searchResults.isFetching"
+              @click="resetThreads(false)"
+            />
+          </div>
 
           <!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
@@ -255,6 +273,7 @@
                     :hide-sender="row.inStack"
                     :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
                     :screened="screener.active.value && screener.isScreened(row.thread)"
+                    :stacked="readsBesideResults"
                     :pinnable="pinnable"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
@@ -282,6 +301,18 @@
             <div v-if="loadingMore" class="flex justify-center py-3">
               <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
             </div>
+            <!-- The next page refused: what's listed still stands, and the rest can be asked for again. -->
+            <div
+              v-else-if="mailbox === 'search' && searchResults.error && searchResults.hasNext"
+              class="flex items-center justify-center gap-2 py-3"
+            >
+              <span class="text-p-sm text-ink-gray-5">{{ __("Couldn't load more results.") }}</span>
+              <Button
+                variant="ghost"
+                :label="__('Try again')"
+                @click="searchResults.fetchNext().catch(() => {})"
+              />
+            </div>
           </div>
           <div v-else class="flex h-full items-center justify-center">
             <!-- While the (still-mounted) search header's new query loads, this area is the
@@ -289,6 +320,16 @@
             <LoaderCircle
               v-if="listState === 'loading'"
               class="text-ink-gray-5 h-5 w-5 animate-spin"
+            />
+            <SearchResultsState
+              v-else-if="mailbox === 'search' && hasSearchQuery"
+              :failed="!!searchResults.error"
+              :text="typeof route.query.text === 'string' ? route.query.text : undefined"
+              :can-clear-filters="searchHasFilters"
+              :can-widen="searchCanWiden"
+              @retry="resetThreads(false)"
+              @clear-filters="searchWith(withoutFilters(searchQuery))"
+              @widen="searchWith(withAllAccounts(searchQuery))"
             />
             <LoadError
               v-else-if="listState === 'error'"
@@ -302,9 +343,7 @@
                   ? filter
                     ? __('No mails found for the selected filter.')
                     : __('No mails in {0}.', [inboxTab ? tabName(inboxTab) : mailboxName])
-                  : hasSearchQuery
-                    ? __('No results found for the given query.')
-                    : __('Search your mail')
+                  : __('Search your mail')
               }}
             </p>
           </div>
@@ -318,6 +357,11 @@
           :threads="threadIDs"
           :messages="currentThread?.messages"
           :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
+          :search-words="
+            mailbox === 'search'
+              ? searchWords(searchQuery.text, currentThread?.marked_words)
+              : undefined
+          "
           :can-go-next="canGoNext"
           :returned="!!currentThread?.returned"
           :no-reply="!!currentThread?.no_reply"
@@ -412,7 +456,17 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  h,
+  inject,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -433,6 +487,7 @@ import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
+import SearchResultsState from '@/apps/mail/components/SearchResultsState.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
@@ -461,6 +516,7 @@ import {
   useMobileSearch,
   useReadingPane,
   useScreenSize,
+  useSearchWith,
   useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
@@ -475,7 +531,16 @@ import {
   useGPrefix,
 } from '@/apps/mail/utils/listNavigation'
 import { commonMailboxIds } from '@/apps/mail/utils/mailboxTargets'
+import { threadMailIds, threadStarIds } from '@/apps/mail/utils/mailCopies'
 import { archivable, holdsReceivedMail, unarchivable } from '@/apps/mail/utils/receivedMail'
+import {
+  canWidenToAllAccounts,
+  searchQueryFrom,
+  searchWords,
+  shownSearchResults,
+  withAllAccounts,
+  withoutFilters,
+} from '@/apps/mail/utils/searchFilters'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { snoozeChoices } from '@/apps/mail/utils/snoozeTimes'
 import { threadRow } from '@/apps/mail/utils/threadRows'
@@ -561,6 +626,11 @@ const screener = useScreener()
 // Pinned mail heads the list, and a row can be pinned here (see suite/mail/pins.py).
 const pinnable = computed(() => takesPins(mailboxes.data?.find((m) => m.id === mailbox)))
 
+// Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
+// accounts' rows sit in one list and a name alone need not be unique.
+const rowKey = (mail: Thread) =>
+  isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name
+
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
@@ -584,10 +654,7 @@ const {
   revealThread,
 } = useListRows({
   threads: () => threadRows.value ?? [],
-  // Rows are keyed by mail name, prefixed with the account in an all-accounts search — where two
-  // accounts' rows sit in one list and a name alone need not be unique.
-  rowKey: (mail: Thread) =>
-    isAllAccountsSearch.value ? `${mail.account}:${mail.name}` : mail.name,
+  rowKey,
   stackingEnabled: () => stackingEnabled.value,
   pinsLead: () => pinnable.value,
   hasMore: () => canGoNext.value,
@@ -869,6 +936,44 @@ const pinSelected = (pinned: boolean) => {
 
 // Search
 
+// A result opens beside the list of them, whatever the view is otherwise, so there is no place to
+// lose: the list stays in sight and in position, and the arrows and j/k step down it as they do in a
+// folder. Until one is open the list has the width to itself, and nothing is opened or marked read
+// that wasn't picked.
+const readsBesideResults = computed(() => mailbox === 'search' && !!threadID)
+// With Split View off, that narrows the list and restacks every row in it, which moves the row just
+// opened by however much the rows above it grew. It is held where it was clicked. Measured before
+// the restack is drawn (the watcher runs ahead of the render) and put back once it is.
+watch(readsBesideResults, (beside) => {
+  const list = mailListRef.value
+  const opened = threadRows.value?.find((thread) => thread.thread_id === threadID)
+  const row = opened && list?.querySelector(`[data-row-key="${rowKey(opened)}"]`)
+  if (!beside || !list || !row) return
+  const offsetIn = (element: Element) =>
+    element.getBoundingClientRect().top - list.getBoundingClientRect().top
+  const before = offsetIn(row)
+  void nextTick(() => {
+    list.scrollTop += offsetIn(row) - before
+  })
+})
+
+const searchQuery = computed(() => searchQueryFrom(route.query))
+const searchWith = useSearchWith()
+const searchHasFilters = computed(() =>
+  Object.keys(searchQuery.value).some((key) => !['text', 'all_accounts'].includes(key)),
+)
+const searchCanWiden = computed(
+  () =>
+    !isAllAccountsSearch.value &&
+    (store.userResource.data?.accounts?.length ?? 0) > 1 &&
+    canWidenToAllAccounts(searchQuery.value),
+)
+// Each page asks every account again, so an account missed by any page loaded has mail missing
+// from the list.
+const unavailableAccounts = computed(() => [
+  ...new Set(searchResults.pages.flatMap((page) => page.unavailable_accounts ?? [])),
+])
+
 // An optimistic removal emptied the list but more threads exist, so a refill is coming once the server
 // mutation lands. Keeps the loading state (not the empty state) during the gap before the refill fetch.
 const refillPending = ref(false)
@@ -876,8 +981,9 @@ const refillPending = ref(false)
 // poll to detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
 
-// Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
-// the query (kept out of the filter conditions on the server). The merged results carry their owning
+// Cross-account search: a search started from All Inboxes (see searchesAllAccountsFrom), or widened
+// with "Search all accounts" on an empty result, carries the flag in the query (kept out of the filter
+// conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
 
@@ -1297,16 +1403,20 @@ const startThreadDrag = (thread: Thread, e: DragEvent) => {
 // account-agnostic (it targets Mail Message names), so it stays on the shared junk/delete flow below.
 const crossAccountSetSeen = (mail: Thread, seen: boolean) => {
   if (mail.seen === (seen ? 1 : 0)) return
-  mail.seen = seen ? 1 : 0
+  const applySeen = (value: 0 | 1) => {
+    mail.seen = value
+    mail.messages?.forEach((message) => (message.seen = value))
+  }
+  applySeen(seen ? 1 : 0)
   client
     .mutation(api.mail.messages.seen, {
       account: mail.account,
-      ids: [mail.id],
+      ids: threadMailIds(mail),
       seen,
     })
     .then(() => mailboxes.refetch().catch(() => {}))
     .catch((error) => {
-      mail.seen = seen ? 0 : 1 // revert the optimistic update
+      applySeen(seen ? 0 : 1) // revert the optimistic update
       raiseError(error)
     })
 }
@@ -1316,7 +1426,7 @@ const crossAccountSetFlagged = (mail: Thread, flagged: boolean) => {
   client
     .mutation(api.mail.messages.flag, {
       account: mail.account,
-      ids: [mail.id],
+      ids: threadStarIds(mail, flagged),
       flagged,
     })
     .catch((error) => {
@@ -1324,28 +1434,24 @@ const crossAccountSetFlagged = (mail: Thread, flagged: boolean) => {
       raiseError(error)
     })
 }
-const crossAccountMoveOut = (
+const crossAccountFile = (
   mail: Thread,
-  target: string | undefined,
+  action: 'archive' | 'trash',
   loading: string,
   success: string,
-  missing: string,
-) => {
-  if (!target) return raiseToast(missing, 'error')
+) =>
   raisePromiseToast(
     () =>
       client
-        .mutation(api.mail.messages.move, {
+        .mutation(api.mail.messages.file, {
           account: mail.account,
-          ids: [mail.id],
-          mailbox: target,
-          clear_junk: true,
+          ids: threadMailIds(mail),
+          action,
         })
         .then(() => resetThreads(false)),
     loading,
     success,
   )
-}
 
 // Route a list row's action to the cross-account handler in an all-accounts search, else to the shared
 // active-account handler (keeping single-account search behaviour identical).
@@ -1363,25 +1469,13 @@ const rowSetFlagged = (mail: Thread, flagged: boolean) =>
 
 const rowArchive = (mail: Thread) => {
   if (isAllAccountsSearch.value)
-    return crossAccountMoveOut(
-      mail,
-      mail.archive,
-      __('Archiving…'),
-      __('Thread archived'),
-      __('No Archive folder for this account'),
-    )
+    return crossAccountFile(mail, 'archive', __('Archiving…'), __('Thread archived'))
   return handleArchiveThreads([mail.thread_id])
 }
 
 const rowTrash = (mail: Thread) => {
   if (isAllAccountsSearch.value)
-    return crossAccountMoveOut(
-      mail,
-      mail.trash,
-      __('Moving to Trash…'),
-      __('Thread moved to Trash'),
-      __('No Trash folder for this account'),
-    )
+    return crossAccountFile(mail, 'trash', __('Moving to Trash…'), __('Thread moved to Trash'))
   return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
 }
 
@@ -1465,9 +1559,12 @@ const title = computed(() => {
       ? __('1 item selected')
       : __('{0} items selected', [String(selections.value.length)])
   if (mailbox === 'search') {
+    // A failed search counted nothing, and the body says so.
+    if (searchResults.error && !searchResults.rows.length) return ''
     // Null until the current search resolves — show a neutral label rather than a stale/zero count.
     if (searchTotal.value === null) return __('Searching…')
-    return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
+    const { total } = shownSearchResults(searchResults.rows, searchTotal.value)
+    return total === 1 ? __('1 result') : __('{0} results', [String(total)])
   }
   return filterTitle.value
 })

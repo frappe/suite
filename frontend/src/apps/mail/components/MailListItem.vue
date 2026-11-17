@@ -14,12 +14,13 @@
     :preview-italic="!mail.preview"
     :account-label="accountLabel"
     :draggable
+    :stacked
     :has-extra="hasExtra(true)"
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
     @drag-start="(e: DragEvent) => emit('dragStart', e)"
     @drag-end="emit('dragEnd')"
   >
-    <template #sender><HighlightedText :text="header" :term="searchTerm" /></template>
+    <template #sender><HighlightedText :text="header" :term="markedWords" /></template>
 
     <template #badges="{ isHovered }">
       <!-- How many messages the thread holds — only worth saying once it holds more than one. -->
@@ -85,10 +86,15 @@
     </template>
 
     <template #subject>
-      <HighlightedText :text="mail.subject || __('[No subject]')" :term="searchTerm" />
+      <HighlightedText :text="mail.subject || __('[No subject]')" :term="markedWords" />
     </template>
     <template #preview>
-      <HighlightedText :text="mail.preview || __('— No message body —')" :term="searchTerm" />
+      <SearchMatch v-if="newestMatch?.snippet" :match="newestMatch" />
+      <HighlightedText
+        v-else
+        :text="mail.preview || __('— No message body —')"
+        :term="markedWords"
+      />
     </template>
 
     <template #trailing="{ isHovered }">
@@ -109,6 +115,17 @@
     </template>
 
     <template #extra="{ isFullWidth }">
+      <p
+        v-if="isSearchRow && earlierMatches"
+        class="text-ink-gray-5 text-xs"
+        :class="{ 'shrink-0 whitespace-nowrap': isFullWidth }"
+      >
+        {{
+          earlierMatches === 1
+            ? __('Also in 1 earlier message')
+            : __('Also in {0} earlier messages', [String(earlierMatches)])
+        }}
+      </p>
       <!-- One family of chips, an even gap apart: files outlined, folders on the muted surface. -->
       <div
         v-if="hasExtra(isFullWidth)"
@@ -227,6 +244,7 @@ import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
+import SearchMatch from '@/apps/mail/components/SearchMatch.vue'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { getAttachmentUrl } from '@/apps/mail/resources'
@@ -242,6 +260,7 @@ import {
   threadParticipants,
 } from '@/apps/mail/utils/participants'
 import { isReceived, receivedFolders, searchFolders } from '@/apps/mail/utils/receivedMail'
+import { searchWords } from '@/apps/mail/utils/searchFilters'
 import { returnedReason } from '@/apps/mail/utils/snoozeTimes'
 import { threadLink } from '@/apps/mail/utils/unifiedFolders'
 import HighlightedText from '@/components/HighlightedText.vue'
@@ -261,6 +280,7 @@ const {
   hideAvatar = false,
   outgoing,
   screened = false,
+  stacked = false,
   pinnable = false,
 } = defineProps<{
   mailbox: string
@@ -295,6 +315,8 @@ const {
   outgoing?: boolean
   // A screened thread mixed into the inbox: an ordinary row, marked with the New sender icon.
   screened?: boolean
+  // Forwarded to MailRow — see there.
+  stacked?: boolean
   // The list's folder takes pins (see MailRowActions).
   pinnable?: boolean
 }>()
@@ -414,14 +436,19 @@ const messageCount = computed(() => mail.messages?.length ?? 0)
 const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail))
 
 // In search results, the words the row was found by are marked.
-const searchTerm = computed(() =>
-  mailbox === 'search'
-    ? (
-        ((Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '') ||
-        ''
-      ).trim()
+const isSearchRow = computed(() => mailbox === 'search')
+const markedWords = computed(() =>
+  isSearchRow.value
+    ? searchWords(
+        (Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '',
+        mail.marked_words,
+      )
     : '',
 )
+
+// How the row says which of its messages matched: the newest, and how many more.
+const newestMatch = computed(() => (isSearchRow.value ? mail.matches?.[0] : undefined))
+const earlierMatches = computed(() => Math.max((mail.matches?.length ?? 0) - 1, 0))
 
 const showAttachmentViewer = ref(false)
 const attachmentIndex = ref(0)

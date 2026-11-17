@@ -5,15 +5,6 @@
 	     answers to the same question. -->
   <div class="min-h-0 flex-1 overflow-y-auto">
     <div class="space-y-4 p-4">
-      <Switch
-        v-if="hasMultipleAccounts"
-        v-model="allAccounts"
-        :label="__('Search across all accounts')"
-        :description="
-          __('Look through every account you own — slower, but finds a mail wherever it landed.')
-        "
-        class="!p-0"
-      />
       <FormControl
         v-if="!allAccounts"
         v-model="filter.inMailbox"
@@ -51,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { FormControl, Switch } from 'frappe-ui'
+import { FormControl } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 
 import ContactCombobox from '@/apps/mail/components/Controls/ContactCombobox.vue'
@@ -74,9 +65,9 @@ const FILTER_KEYS = [
 const filters = defineModel<Record<string, string>>('filters', {
   required: true,
 })
-const allAccounts = defineModel<boolean>('allAccounts', { required: true })
-// Told, not re-derived: the search composable already knows, and hands it to whoever mounts this.
-defineProps<{ hasMultipleAccounts: boolean }>()
+// Where the search looks, which the page decides: a folder belongs to one account, so a search of
+// every account has none to look in.
+defineProps<{ allAccounts: boolean }>()
 
 const { mailboxes } = userStore()
 
@@ -97,10 +88,6 @@ watch(filter, (value) => {
       .map(([key, entry]) => [key, entry.trim()])
       .filter(([, entry]) => Boolean(entry)),
   )
-})
-// A folder belongs to one account, so it cannot survive the widening.
-watch(allAccounts, (value) => {
-  if (value) filter.inMailbox = ''
 })
 
 const mailboxOptions = computed(() =>

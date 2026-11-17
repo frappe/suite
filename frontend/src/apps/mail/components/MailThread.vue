@@ -898,6 +898,7 @@ const {
   slide,
   account,
   landOn,
+  searchWords,
 } = defineProps<{
   mailbox: string
   threadID?: string
@@ -905,6 +906,8 @@ const {
   messages?: Mail[]
   // The message to open on, for a search: its newest match (see scrollToLanding).
   landOn?: string
+  /** The words to mark in the message it opens on, where they aren't simply what was typed. */
+  searchWords?: string
   canGoNext?: boolean
   // In Reminders, as its row says: the strip under the subject offers to take it out.
   returned?: boolean
@@ -1192,10 +1195,8 @@ let landsPending = true
 // The words the search found the thread by, marked in the message it opens on.
 const searchTerm = computed(() =>
   mailbox === 'search'
-    ? (
-        ((Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '') ||
-        ''
-      ).trim()
+    ? searchWords ||
+      ((Array.isArray(route.query.text) ? route.query.text[0] : route.query.text) ?? '').trim()
     : '',
 )
 const isMatch = (mail: Mail) => !!landOn && mailCopyIds(mail).includes(landOn)

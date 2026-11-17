@@ -166,6 +166,9 @@ export function observe<I, O>(
       if (!record || !member) return rows
       return rows.filter((row) => !isRecord(row) || member(row, record.input))
     },
+    get pages() {
+      return materializedPages()
+    },
     get hasNext() {
       const last = materializedPages().at(-1)
       if (!page.page || !isRecord(last)) return false

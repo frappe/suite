@@ -17,7 +17,7 @@
         mailAppliedFilters.length && !mailSearchOnly
           ? `Search · ${removeMailFilterShortcut} removes last filter`
           : hasFilterPanel
-            ? 'Search'
+            ? (mailScopePlaceholder ?? 'Search')
             : palettePlaceholder
       "
       @mousedown="showFilters = false"
@@ -136,8 +136,7 @@
     <MailFilterPanel
       v-else-if="mailSearchActive && showFilters"
       v-model:filters="mailPanelFilters"
-      v-model:all-accounts="mailAllAccounts"
-      :has-multiple-accounts="hasMultipleMailAccounts"
+      :all-accounts="mailSearchesAllAccounts"
     />
 
     <CommandPaletteList v-else>
@@ -148,7 +147,8 @@
 			     here stands where the group's label would. -->
       <template
         v-if="
-          mailSearchOnly &&
+          mailSearchActive &&
+          !showFilters &&
           !normalizedQuery &&
           !mailAppliedFilters.length &&
           recentMailSearches.length
@@ -268,7 +268,29 @@
 
       <MailSearchSuggestions :suggestions="mailSuggestions" :roomy="mailSearchOnly" />
 
+      <!-- A search of every account that missed one says so, as the results page does, and Enter
+           takes it there, where it can be tried again. -->
+      <p
+        v-if="mailResults.length && mailUnavailableAccounts.length"
+        class="px-3 py-1.5 text-p-sm text-ink-gray-6"
+      >
+        {{
+          __("Couldn't reach {0}, so its mail isn't here. Press Enter to try again.", [
+            mailUnavailableAccounts.join(', '),
+          ])
+        }}
+      </p>
       <CommandPaletteGroup v-if="mailResults.length" :label="resultsLabel('Messages')">
+        <!-- First, so it is what Enter does: a search goes to its results, with nothing opened and
+             marked read that wasn't picked. The arrows reach a row from here. -->
+        <CommandPaletteItem v-if="!mailSearchOnly" :value="mailSearchPageItem">
+          <template #prefix>
+            <span class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7">
+              <span class="lucide-arrow-right size-4" aria-hidden="true" />
+            </span>
+          </template>
+          {{ mailSearchPageLabel }}
+        </CommandPaletteItem>
         <CommandPaletteItem
           v-for="mail in mailResults"
           :key="`${mail.account}-${mail.thread_id}`"
@@ -277,11 +299,12 @@
         >
           <MailSearchResult :result="mail" :term="mailSearchWords" />
         </CommandPaletteItem>
-        <!-- Last, not first: the palette activates its first item, and Enter on a search
-				     belongs to the mail you were looking for. This is the way out to the results
-				     page, where the whole set can be acted on at once — so it is here only when
-				     there is a set larger than the rows above it. -->
-        <CommandPaletteItem v-if="mailTotal > mailResults.length" :value="mailSearchPageItem">
+        <!-- A phone's Enter already goes to the results, and its highlight is hidden; this is where
+             a thumb finds the way there, past the rows on hand. -->
+        <CommandPaletteItem
+          v-if="mailSearchOnly && mailTotal > mailResults.length"
+          :value="mailSearchPageItem"
+        >
           <template #prefix>
             <span class="mr-3 flex size-4 shrink-0 items-center justify-center text-ink-gray-7">
               <span class="lucide-arrow-right size-4" aria-hidden="true" />
@@ -389,7 +412,12 @@ import {
   type MailFilterOption,
 } from '@/apps/mail/composables/useMailCommandPaletteSearch'
 import { userStore } from '@/apps/mail/stores/user'
-import { hasMailSearchQuery, mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
+import {
+  hasMailSearchQuery,
+  mailSearchRoute,
+  searchesAllAccountsFrom,
+  useScreenSize,
+} from '@/apps/mail/utils/composables'
 import HighlightedText from '@/components/HighlightedText.vue'
 import {
   PALETTE_SEARCH_KEY,
@@ -518,13 +546,14 @@ const isMailSearchRoute = computed(
 )
 const mailSearchActive = computed(() => activeApp.value === 'mail')
 const {
-  allAccounts: mailAllAccounts,
+  unavailableAccounts: mailUnavailableAccounts,
   appliedFilters: mailAppliedFilters,
   availableFilterOptions: availableMailFilterOptions,
   filter: mailFilter,
   filterValues: mailFilterValues,
   hasMultipleAccounts: hasMultipleMailAccounts,
   pending: mailSearchPending,
+  failed: mailSearchFailed,
   searchesAllAccounts: mailSearchesAllAccounts,
   operatorContext: mailOperatorContext,
   results: mailResults,
@@ -550,7 +579,7 @@ const {
   forgetSearch: forgetMailSearch,
   clearRecentSearches: clearRecentMailSearches,
   searchKey: mailSearchKey,
-} = useMailCommandPaletteSearch(query, mailSearchActive)
+} = useMailCommandPaletteSearch(query, mailSearchActive, () => searchesAllAccountsFrom(route))
 const showFilters = ref(false)
 const calendarSearchActive = computed(() => activeApp.value === 'calendar')
 const hasFilterPanel = computed(() => mailSearchActive.value || calendarSearchActive.value)
@@ -647,6 +676,14 @@ const mailSearchPageItem: MailSearchPageItem = {
 const mailSearchPageLabel = computed(() => {
   const text = query.value.trim()
   return text ? `See all results for "${text}"` : 'See all results for these filters'
+})
+// What a search covers, said before it runs. With one account there is nothing else it could be.
+const mailScopePlaceholder = computed(() => {
+  if (!mailSearchActive.value || !hasMultipleMailAccounts.value) return undefined
+  if (mailSearchesAllAccounts.value) return __('Search all accounts')
+  const store = userStore()
+  const name = store.userResource.data?.accounts?.find((a) => a.id === store.accountId)?._name
+  return name ? __('Search {0}', [name]) : undefined
 })
 let openSelectionInNewTab = false
 
@@ -922,7 +959,7 @@ watch(
 )
 
 watch(
-  [query, mailAppliedFilters, mailAllAccounts, showFilters, calendarFilterParams],
+  [query, mailAppliedFilters, mailSearchesAllAccounts, showFilters, calendarFilterParams],
   ([value]) => {
     // Nothing to search for while the filter panel is up: its results are not on screen, every
     // keystroke in a field would ask for a set nobody is reading — and nothing is in flight to
@@ -987,9 +1024,6 @@ watch(
     resetSearches()
     if (isMailSearchRoute.value) {
       query.value = typeof route.query.text === 'string' ? route.query.text : ''
-      // The search being edited says what it searched, so it wins over the remembered
-      // preference for as long as the palette is reopened on top of it.
-      mailAllAccounts.value = route.query.all_accounts != null
       const filters: Record<string, string> = {}
       for (const [key, value] of Object.entries(route.query)) {
         if (key !== 'text' && key !== 'all_accounts' && typeof value === 'string')
@@ -1030,6 +1064,13 @@ const emptyMessage = computed(() => {
     return `Type more to search ${contextSearchLabel.value}`
   if (!contextSearchLabel.value) return `No commands match "${text}"`
   if (isSearching.value) return 'Searching…'
+  if (mailSearchActive.value && mailSearchFailed.value)
+    return __("Couldn't search your mail. Press Enter to try again.")
+  if (mailSearchActive.value && mailUnavailableAccounts.value.length)
+    return __(
+      "Nothing found, and couldn't reach {0} to search its mail. Press Enter to try again.",
+      [mailUnavailableAccounts.value.join(', ')],
+    )
   if (mailAppliedFilters.value.length) return 'No mail matches these filters'
   // A filter-only search has no words to quote back, so it names the filters instead.
   if (calendarFilterAsked.value && !text) return 'No events match these filters'

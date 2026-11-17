@@ -14,6 +14,7 @@ const listing = (rows: DriveNode[]): InfiniteQueryState<DriveNode> => ({
   status: 'success',
   isFetching: false,
   total: undefined,
+  pages: [],
   isFetchingNext: false,
   error: null,
   async refetch() {},

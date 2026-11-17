@@ -10,7 +10,10 @@ const accounts = vi.hoisted(() => ({ value: ['work', 'personal'] }))
 // Every payload the search endpoint was submitted with, oldest first.
 const searches = vi.hoisted(() => fromPartial<Record<string, unknown>[]>([]))
 
-const answer = vi.hoisted(() => ({ value: async (_rows?: unknown[], _matched?: number) => {} }))
+const answer = vi.hoisted(() => ({
+  value: async (_rows?: unknown[], _matched?: number, _page?: Record<string, unknown>) => {},
+}))
+const refuse = vi.hoisted(() => ({ value: async () => {} }))
 const engines = vi.hoisted(() => ({ dispose: () => {} }))
 vi.mock('@vueuse/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@vueuse/core')>()),
@@ -28,11 +31,16 @@ vi.mock('@/api', async () => {
           request: async (reference, input) => {
             if (!reference.path.endsWith('search_mails')) return []
             searches.push(input)
-            return await new Promise((resolve) => {
-              answer.value = async (rows = [], total = 0) => {
+            return await new Promise((resolve, reject) => {
+              refuse.value = async () => {
+                reject(new Error('The mail server did not answer'))
+                await new Promise((done) => setTimeout(done, 0))
+              }
+              answer.value = async (rows = [], total = 0, page = {}) => {
                 resolve({
                   rows: rows.map((row) => ({ attachments: [], mailboxes: [], ...row })),
                   total,
+                  ...page,
                 })
                 await new Promise((done) => setTimeout(done, 0))
               }
@@ -556,26 +564,71 @@ describe('how many matched', () => {
   })
 })
 
-describe('searching every account', () => {
-  it('asks the server for every account only once it is turned on', async () => {
+describe('what a search found', () => {
+  it('leaves out a conversation only a reaction was found in, from the rows and the count', async () => {
     const search = openSearch()
+    search.query.value = 'budget'
+    search.search('budget', 'work')
+    await settle()
 
+    await answer.value(
+      [
+        { id: 'written', reaction_only: 0 },
+        { id: 'reacted', reaction_only: 1 },
+      ],
+      2,
+    )
+
+    expect(search.results.value.map((row) => row.id)).toEqual(['written'])
+    expect(search.total.value).toBe(1)
+  })
+
+  it('tells a search the server refused from one that found nothing', async () => {
+    const search = openSearch()
+    search.query.value = 'budget'
+    search.search('budget', 'work')
+    await settle()
+    expect(search.failed.value).toBe(false)
+
+    await refuse.value()
+    await vi.waitFor(() => expect(search.failed.value).toBe(true))
+    expect(search.results.value).toEqual([])
+
+    search.query.value = 'budgets'
+    search.search('budgets', 'work')
+    await settle()
+    await answer.value([], 0)
+    await vi.waitFor(() => expect(search.pending.value).toBe(false))
+    expect(search.failed.value).toBe(false)
+    expect(search.results.value).toEqual([])
+  })
+})
+
+describe('searching every account', () => {
+  // Where the palette looks is the page's to say: see searchesAllAccountsFrom.
+  function openSearchOver(allAccounts: boolean) {
+    const query = ref('')
+    return { query, ...useMailCommandPaletteSearch(query, ref(true), () => allAccounts) }
+  }
+
+  it('asks the server for every account when opened over every account', async () => {
+    const search = openSearchOver(true)
+    search.search('invoice', 'work')
+    await settle()
+    expect(searches.at(-1)).toMatchObject({ all_accounts: true })
+  })
+
+  it('asks for one account when opened over one', async () => {
+    const search = openSearchOver(false)
     search.search('invoice', 'work')
     await settle()
     expect(searches.at(-1)).toMatchObject({ all_accounts: false })
-
-    search.allAccounts.value = true
-    search.search('invoice', 'work')
-    await settle()
-
-    expect(searches.at(-1)).toMatchObject({ all_accounts: true })
   })
 
   it('does not widen a search for someone who only has one account', async () => {
     accounts.value = ['work']
-    const search = openSearch()
+    const search = openSearchOver(true)
 
-    search.allAccounts.value = true
     search.search('invoice', 'work')
     await settle()
 
@@ -583,22 +636,15 @@ describe('searching every account', () => {
     expect(searches.at(-1)).toMatchObject({ all_accounts: false })
   })
 
-  it('drops the folder filter, which belongs to a single account', async () => {
-    const search = openSearch()
-    search.applyFilter('inMailbox', 'mailbox-1')
+  it('names the accounts a search of every account could not reach', async () => {
+    const search = openSearchOver(true)
+    search.search('invoice', 'work')
+    await settle()
+    expect(search.unavailableAccounts.value).toEqual([])
 
-    search.allAccounts.value = true
-    await nextTick()
+    await answer.value([{ id: 'found' }], 1, { unavailable_accounts: ['personal'] })
 
-    expect(search.filterValues.value.inMailbox).toBeUndefined()
-  })
-
-  it('remembers the choice for the next search', async () => {
-    const first = openSearch()
-    first.allAccounts.value = true
-    await nextTick()
-
-    expect(openSearch().allAccounts.value).toBe(true)
+    expect(search.unavailableAccounts.value).toEqual(['personal'])
   })
 })
 

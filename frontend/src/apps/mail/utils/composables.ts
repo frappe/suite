@@ -7,6 +7,7 @@ import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, Identity, Thread } from '@/apps/mail/types'
+import { hasSearchConditions, type SearchQuery } from '@/apps/mail/utils/searchFilters'
 import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import {
   INBOX_FOLDER,
@@ -26,6 +27,7 @@ import { useRootStore } from '@/stores/root'
 // top rather than `export ... from`, which would re-export the name without binding it here — this
 // file calls it too.
 export { useScreenSize }
+export { isUnifiedRoute } from '@/apps/mail/utils/unifiedFolders'
 
 /**
  * Split View: the reading pane sits beside the list rather than over it. One user setting, read the
@@ -167,6 +169,37 @@ export const mailSearchRoute = (accountId: string, query: Record<string, string>
   query,
 })
 /**
+ * Whether a search started from this page looks in every account: from All Inboxes, or editing a
+ * search that already does. From an account, or a folder of it, it looks in that account only.
+ */
+export const searchesAllAccountsFrom = (route: {
+  name?: unknown
+  params: Record<string, unknown>
+  query: LocationQuery
+}) =>
+  isUnifiedRoute(route.name) ||
+  (route.params.mailbox === 'search' && route.query.all_accounts != null)
+
+/**
+ * Runs a search as the results page edited it. With nothing left to search it leaves the search view
+ * for the Inbox of where it looked: All Inboxes for a search of every account, else the account's.
+ */
+export const useSearchWith = () => {
+  const router = useRouter()
+  const store = userStore()
+  return (next: SearchQuery) =>
+    router.push(
+      hasSearchConditions(next)
+        ? mailSearchRoute(store.accountId, next)
+        : next.all_accounts
+          ? unifiedFolderRoute(INBOX_FOLDER)
+          : {
+              name: 'mail-mailbox',
+              params: { accountId: store.accountId, mailbox: store.mailboxIds.inbox },
+            },
+    )
+}
+/**
  * Whether a route query holds a mail search. `all_accounts` is the search's scope, not a
  * condition: a route carrying only that has no search on it.
  */
@@ -186,7 +219,13 @@ export const useMobileSearch = () => {
   // Keep the search route behind the palette so browser Back dismisses search and the
   // route watcher in DefaultLayout closes the palette.
   const openSearch = async () => {
-    if (!isSearchRoute.value) await router.push(mailSearchRoute(store.accountId))
+    if (!isSearchRoute.value)
+      await router.push(
+        mailSearchRoute(
+          store.accountId,
+          searchesAllAccountsFrom(route) ? { all_accounts: '1' } : {},
+        ),
+      )
     root.paletteOpen = true
   }
 

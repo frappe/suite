@@ -1,4 +1,4 @@
-import type { Attachment, Mailbox, Recipient } from '@/apps/mail/types'
+import type { Attachment, Mailbox, Recipient, SearchMatch } from '@/apps/mail/types'
 
 export interface MailSearchFilterBadge {
   key: string
@@ -52,4 +52,6 @@ export interface MailSearchResult {
   mailboxes?: Mailbox[]
   attachments?: Attachment[]
   received_at?: string
+  matches?: SearchMatch[]
+  marked_words?: string[]
 }
