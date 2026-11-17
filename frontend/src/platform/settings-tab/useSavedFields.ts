@@ -15,7 +15,9 @@ import { ref, watch, type Ref } from 'vue'
  * runs are cancelled when the scope goes.
  *
  * `source` is the server's copy. A new copy becomes the confirmed values, and the controls follow
- * it, except a field that still has a save on its way.
+ * it, except a field that still has a save on its way. A source that goes empty leaves the
+ * confirmed values as they were, so a queued save is always sent. The source must stay on one
+ * target (one account, say) for the life of the scope; for a new target, make a new scope.
  */
 export function useSavedFields<T extends object>(
   source: () => T | null | undefined,
@@ -23,6 +25,8 @@ export function useSavedFields<T extends object>(
 ) {
   // SAFETY: `ref<T>()` unwraps T in its type; the values here are plain field values.
   const shown = ref<T>() as Ref<T | undefined>
+  // Once the source loads, the values the server last confirmed. Reloads and landed saves update
+  // this one object in place, so a queued save reads the latest of them when its turn comes.
   let confirmed: T | undefined
   const pending = new Map<keyof T, number>()
   // The saves not yet settled, and the last of them. The first starts at once.
@@ -32,7 +36,7 @@ export function useSavedFields<T extends object>(
   watch(
     source,
     (data) => {
-      confirmed = data ? { ...data } : undefined
+      if (data) confirmed = confirmed ? Object.assign(confirmed, data) : { ...data }
       const next = data ? { ...data } : undefined
       const current = shown.value
       if (next && current)
@@ -44,7 +48,8 @@ export function useSavedFields<T extends object>(
 
   function save<K extends keyof T>(field: K, value: T[K]): Promise<void> {
     const current = shown.value
-    if (!current || current[field] === value) return Promise.resolve()
+    const base = confirmed
+    if (!current || !base || current[field] === value) return Promise.resolve()
     current[field] = value
     pending.set(field, (pending.get(field) ?? 0) + 1)
     const change: Partial<T> = {}
@@ -52,15 +57,14 @@ export function useSavedFields<T extends object>(
     const send = write(change)
     const step = async () => {
       try {
-        if (!confirmed) return
-        await send({ ...confirmed })
-        if (confirmed) confirmed[field] = value
+        await send({ ...base })
+        base[field] = value
       } catch {
         // `write` reported it; the field goes back below.
       } finally {
         const left = (pending.get(field) ?? 1) - 1
         pending.set(field, left)
-        if (!left && shown.value && confirmed) shown.value[field] = confirmed[field]
+        if (!left && shown.value) shown.value[field] = base[field]
         queued -= 1
       }
     }

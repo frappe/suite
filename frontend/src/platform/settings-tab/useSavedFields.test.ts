@@ -9,7 +9,7 @@ type Regional = { locale: string; time_zone: string }
 // the test to answer it.
 function setup() {
   const stored: Regional = { locale: 'en-US', time_zone: 'UTC' }
-  const server = reactive({ data: stored })
+  const server = reactive<{ data: Regional | null }>({ data: stored })
   const sent: Regional[] = []
   const answers: { resolve: () => void; reject: (error: Error) => void }[] = []
   const fields = effectScope().run(() =>
@@ -58,4 +58,22 @@ it('keeps a change on its way when the server copy reloads', async () => {
   answers[0]!.reject(new Error('Server refused'))
   await locale
   expect(shown.value).toEqual({ locale: 'en-US', time_zone: 'Asia/Kolkata' })
+})
+
+it('still sends a queued save when the server copy goes empty before its turn', async () => {
+  const { server, sent, answers, save } = setup()
+  const locale = save('locale', 'fr-FR')
+  const timeZone = save('time_zone', 'Europe/Paris')
+  // The read empties, as it does when it moves to an account not loaded yet.
+  server.data = null
+  await nextTick()
+  answers[0]!.resolve()
+  await locale
+  await settle()
+  expect(sent).toEqual([
+    { locale: 'fr-FR', time_zone: 'UTC' },
+    { locale: 'fr-FR', time_zone: 'Europe/Paris' },
+  ])
+  answers[1]!.resolve()
+  await timeZone
 })

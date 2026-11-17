@@ -5,7 +5,11 @@ import { translate as __ } from '@/platform/translation'
 
 type BodyModule = { default: Component }
 
-/** Wraps a Mail tab body in the Mail injections, loaded with the body. */
+/**
+ * Wraps a Mail tab body in the Mail injections, loaded with the body. The body is keyed by the
+ * active account: an account switch replaces it, so its state never carries over to another
+ * account, while saves it already queued finish against its own.
+ */
 function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } = {}) {
   return async (): Promise<Component> => {
     const [{ default: Body }, { default: Scope }] = await Promise.all([
@@ -14,7 +18,14 @@ function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } =
     ])
     return defineComponent({
       name: 'MailSettingsTab',
-      setup: () => () => h(Scope, { socket: options.socket }, { default: () => h(Body) }),
+      setup: () => () =>
+        h(
+          Scope,
+          { socket: options.socket },
+          {
+            default: ({ account }: { account: string }) => h(Body, { key: account }),
+          },
+        ),
     })
   }
 }

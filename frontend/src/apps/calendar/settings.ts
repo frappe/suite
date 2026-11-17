@@ -9,7 +9,8 @@ type BodyModule = { default: Component }
 /**
  * Wraps a Calendar tab body in the Calendar injections, loaded with the body.
  * The scope shows the tab's header and the loading state until the account is
- * in.
+ * in. The body is keyed by the active account, so an account switch replaces
+ * it and its state never carries over to another account.
  */
 function scoped(load: () => Promise<BodyModule>) {
   return async (): Promise<Component> => {
@@ -19,7 +20,10 @@ function scoped(load: () => Promise<BodyModule>) {
     ])
     return defineComponent({
       name: 'CalendarSettingsTab',
-      setup: () => () => h(Scope, null, { default: () => h(Body) }),
+      setup: () => () =>
+        h(Scope, null, {
+          default: ({ account }: { account: string }) => h(Body, { key: account }),
+        }),
     })
   }
 }

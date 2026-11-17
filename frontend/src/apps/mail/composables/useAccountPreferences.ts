@@ -7,24 +7,21 @@ type AccountChanges = InputOf<typeof api.mail.settings.updateAccount>['changes']
 type AccountField = keyof AccountChanges & keyof AccountPreferences
 
 /**
- * The active account's Mail preferences (sending, screening, remote images), for Settings tabs
- * where each control saves on change. `preferences` is what the controls show; `save` changes one
- * field, as `useSavedFields` describes. The save's own error feedback reports a failure. `read`
- * is the read behind them, for the tab's load failure and retry.
+ * The Mail preferences (sending, screening, remote images) of the account active when the caller
+ * is set up, for Settings tabs where each control saves on change. `preferences` is what the
+ * controls show; `save` changes one field, as `useSavedFields` describes. The save's own error
+ * feedback reports a failure. `read` is the read behind them, for the tab's load failure and retry.
+ *
+ * The account stays fixed for the caller's life, so a change goes to the account it was made in,
+ * and its queued saves finish there after an account switch. `MailSettingsScope` remounts the tab
+ * for the new account.
  */
 export function useAccountPreferences() {
-  // Read store.accountId live; destructuring would miss an account switch while the tab is open.
-  const store = userStore()
-  const saved = useQuery(api.mail.settings.account, () =>
-    store.accountId ? { account: store.accountId } : false,
-  )
-  // A change goes to the account it was made in, even if the account changes before it is sent.
+  const account = userStore().accountId
+  const saved = useQuery(api.mail.settings.account, () => (account ? { account } : false))
   const { shown: preferences, save } = useSavedFields<AccountPreferences>(
     () => saved.data,
-    (changes) => {
-      const account = store.accountId
-      return () => client.mutation(api.mail.settings.updateAccount, { account, changes })
-    },
+    (changes) => () => client.mutation(api.mail.settings.updateAccount, { account, changes }),
   )
 
   /** A 0/1 preference as a switch: its value, and its save. */
