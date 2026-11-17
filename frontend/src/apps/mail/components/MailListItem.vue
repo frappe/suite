@@ -11,7 +11,7 @@
     :avatar-image="mail.user_image"
     :datetime="mail.received_at"
     :subject-placeholder="!mail.subject"
-    :preview-placeholder="!mail.preview"
+    :preview-placeholder="!preview"
     :account-label="accountLabel"
     :draggable
     :has-extra="hasExtra(true)"
@@ -40,7 +40,12 @@
       </Tooltip>
       <!-- In Drafts every row is one, so it goes without saying. Gray, not red: a draft is not an
            error. -->
-      <Badge v-if="mail.draft && !drafts" size="sm" :label="__('Draft')" theme="gray" />
+      <Badge
+        v-if="(mail.draft || liveDraft) && !drafts"
+        size="sm"
+        :label="__('Draft')"
+        theme="gray"
+      />
       <Badge
         v-if="mail.snoozed_until"
         size="sm"
@@ -90,7 +95,7 @@
       <HighlightedText :text="mail.subject || __('[No subject]')" :term="searchTerm" />
     </template>
     <template #preview>
-      <HighlightedText :text="mail.preview || __('— No message body —')" :term="searchTerm" />
+      <HighlightedText :text="preview || __('— No message body —')" :term="searchTerm" />
     </template>
 
     <template #trailing="{ isHovered }">
@@ -242,6 +247,7 @@ import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
+import { draftInList } from '@/apps/mail/utils/draftsInList'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import {
   threadAvatarLabel,
@@ -329,6 +335,9 @@ const unknownSendersLabel = computed(() =>
 )
 const ownEmails = useOwnEmails()
 
+// A reply being written inline in this conversation, saved since the list last read it.
+const liveDraft = computed(() => draftInList(String(accountId || route.params.accountId), mail))
+const preview = computed(() => liveDraft.value?.preview ?? mail.preview)
 // Why it is back near the top: your own mail nobody answered, or a snooze come due.
 const returnedLabel = computed(() => returnedReason(!!mail.no_reply))
 const { clearReturned } = useClearReturned()
