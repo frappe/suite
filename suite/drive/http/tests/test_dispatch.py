@@ -1404,13 +1404,75 @@ class TestByteEgress(DriveHTTPCase):
         self.refusal(response, 404, "DriveNotFound")
         self.assertNotIn("Location", response.headers)
 
-    def test_a_guest_holding_a_read_link_is_redirected(self):
+    def test_a_guest_holding_a_read_link_gets_the_bytes_from_this_origin(self):
+        # A fetch keeps `X-Drive-Links` across a redirect, to the storage host too.
+        token = self.read_link()
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content", links=token)
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("Location", response.headers)
+        self.assertEqual(response.get_data(), b"drive bytes")
+
+    def test_a_link_holder_is_given_the_storage_hosts_signed_url_as_json(self):
+        # The S3 case: the storage driver signs a URL on another host. The page
+        # gives it to a frame or a download, which send no link code.
+        token = self.read_link()
+        bucket = "https://bucket.storage.example/blobs/b1?X-Amz-Signature=abc"
+        with patch("suite.drive._core.nodes.signed_url_for_blob", return_value=bucket) as signed:
+            shown = self.data(self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=token))
+            saved = self.data(
+                self.drive(
+                    "GET", f"{PREFIX}/nodes/{self.file}/content-url", query={"download": "1"}, links=token
+                )
+            )
+        self.assertEqual((shown["url"], saved["url"]), (bucket, bucket))
+        self.assertEqual([call.kwargs["as_attachment"] for call in signed.call_args_list], [False, True])
+        self.assertLessEqual(shown["expires"] - int(time.time()), 15 * 60 + 5)
+
+    def test_the_signed_url_from_a_link_saves_the_file_under_its_name(self):
+        token = self.read_link()
+        answer = self.data(
+            self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", query={"download": "1"}, links=token)
+        )
+        location = urlsplit(answer["url"])
+        self.assertNotIn(token, answer["url"])
+        saved = self.drive("GET", location.path, query=dict(parse_qsl(location.query)))
+        self.assertEqual(saved.status_code, 200, saved.get_data(as_text=True))
+        self.assertTrue(saved.headers["Content-Disposition"].startswith("attachment;"), saved.headers)
+        self.assertEqual(saved.get_data(), b"drive bytes")
+
+    def test_no_signed_url_without_a_link_or_with_a_wrong_one(self):
+        for links in (None, "x" * 22):
+            response = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=links)
+            self.assertIn(response.status_code, (404, 410), links)
+            self.assertNotIn("url", response.get_data(as_text=True))
+
+    def test_no_signed_url_from_a_revoked_link(self):
         created = grant(self.folder, "$LINK", READ, self.owner)
+        frappe.db.commit()
+        token = created["principal"].split(":", 1)[1]
+        self.revoke(created)
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=token)
+        self.assertIn(response.status_code, (404, 410))
+        self.assertNotIn("url", response.get_data(as_text=True))
+
+    def test_a_password_link_gives_a_signed_url_only_once_unlocked(self):
+        created = grant(self.folder, "$LINK", READ, self.owner, password="correct horse")
         frappe.db.commit()
         self.addCleanup(self.revoke, created)
         token = created["principal"].split(":", 1)[1]
-        response = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content", links=token)
-        self.assertEqual(response.status_code, 302)
+        locked = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=token)
+        self.refusal(locked, 401, "DriveLocked")
+        ticket = unlock_link(token, "correct horse")["ticket"]
+        answer = self.data(
+            self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=f"{token}.{ticket}")
+        )
+        self.assertTrue(answer["url"])
+
+    def read_link(self) -> str:
+        created = grant(self.folder, "$LINK", READ, self.owner)
+        frappe.db.commit()
+        self.addCleanup(self.revoke, created)
+        return created["principal"].split(":", 1)[1]
 
     def test_a_folder_has_no_content_to_send(self):
         response = self.as_owner("GET", f"{PREFIX}/nodes/{self.folder}/content")

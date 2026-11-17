@@ -39,11 +39,26 @@ const SETTLED_DOWNLOAD_TOAST_MS = 5000
  * from a notification, for whoever left the page meanwhile.
  */
 export async function downloadItems(
-  rows: readonly Pick<DriveNode, 'name' | 'title' | 'kind'>[],
+  rows: readonly (Pick<DriveNode, 'name' | 'title' | 'kind'> &
+    Pick<Partial<DriveNode>, 'access'>)[],
 ): Promise<void> {
   const [only] = rows
   if (rows.length === 1 && only && !ZIPPED_KINDS.has(only.kind)) {
-    window.location.assign(nodeContentUrl(only.name, { download: true }))
+    if (!only.access?.via_link) {
+      window.location.assign(nodeContentUrl(only.name, { download: true }))
+      return
+    }
+    // A link-only viewer's browser cannot send the link code on a navigation, so the page
+    // asks for the signed URL with it.
+    try {
+      const signed = await client.query(api.drive.nodes.contentUrl, {
+        node: only.name,
+        download: true,
+      })
+      window.location.assign(signed.url)
+    } catch {
+      toast.error(__('Could not download {0}', [only.title]))
+    }
     return
   }
   // One zip is one request, and the server takes at most this many nodes in one.
