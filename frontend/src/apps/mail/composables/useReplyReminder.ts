@@ -47,13 +47,14 @@ export const useReplyReminder = (
     toast.success(reminderSetMessage(setFor))
   }
 
+  // Said once it lands: the strip stays until the reminder is read again.
   const cancel = () =>
     raiseOptimisticToast(
       client.mutation(api.mail.messages.cancelReplyReminder, {
         account: account(),
         thread_id: threadId()!,
       }),
-      __('Reminder removed'),
+      { onAnswer: __('Reminder removed') },
     )
 
   return { remindAt, remindable, lastSentAt, remind, cancel }

@@ -4,6 +4,7 @@ import os
 import re
 import zipfile
 from datetime import datetime
+from typing import TypedDict
 
 import frappe
 import pydenticon
@@ -25,6 +26,7 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.bounces import dsn_blob_id, get_delivery_report
 from suite.mail.classification import Category, tab_filter
 from suite.mail.doctype.mail_message.mail_message import (
+    ListChanges,
     add_messages_to_mailbox,
     delete_messages,
     empty_mailbox,
@@ -35,7 +37,9 @@ from suite.mail.doctype.mail_message.mail_message import (
     get_messages,
     get_messages_mailboxes,
     is_unscreened_message,
+    merge_list_changes,
     move_messages_to_mailbox,
+    no_list_changes,
     query_message_ids,
     query_threads,
     remove_messages_from_mailbox,
@@ -45,6 +49,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_seen_status,
     set_spam_status,
     set_unscreened_status,
+    sync_account_changes,
     try_move_messages,
     try_set_seen,
 )
@@ -54,6 +59,7 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
     set_mailbox_settings,
 )
+from suite.mail.doctype.push_subscription.push_subscription import is_jmap_push_notifications_frozen
 from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_global_accepted_values,
     get_global_screened_email_addresses,
@@ -111,6 +117,7 @@ from suite.mail.reminders import (
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
+from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.reaction import (
     MAILING_LIST_PROPERTIES,
     emoji_key,
@@ -663,6 +670,44 @@ def get_user_jmap_accounts() -> list[dict]:
     personal = get_user_personal_jmap_account()
     accounts.sort(key=lambda a: (a["name"] != personal, a["_name"] or ""))
     return accounts
+
+
+class SyncedChanges(ListChanges):
+    """What a sync found for the lists, and whether some account's changes could not be fetched."""
+
+    # The client waits longer before it asks again.
+    failed: bool
+
+
+@frappe.whitelist(methods=["POST"])
+def sync_changes() -> SyncedChanges:
+    """Catch the user's open lists up with their mail server now.
+
+    What arrived or changed since the last look reaches every open list as a push's changes do,
+    through the socket, and is returned for the one that asked. Mailbox ids are per account, so
+    `new_mail_in` can name another account's folder; a list that reads one as its own only reads
+    again for nothing.
+
+    While an import has push frozen it does nothing, as a push does nothing then: the imported mail
+    would be announced, and notified, as new mail arriving.
+
+    An account that fails leaves the others to sync, and is answered as `failed` rather than as an
+    error: the client asks every few seconds, and an error would log each ask.
+    """
+
+    found, failed = no_list_changes(), False
+    user = frappe.session.user
+    if not is_jmap_configured(user) or is_jmap_push_notifications_frozen(user):
+        return SyncedChanges(**found, failed=failed)
+
+    for account in get_user_jmap_accounts():
+        try:
+            found = merge_list_changes(found, sync_account_changes(user, account["name"]))
+        except Exception:
+            # To the push log rather than as an Error Log row, which would pile up on each ask.
+            get_push_logger({"source": "sync", "account": account["name"]}).exception("sync-account-failed")
+            failed = True
+    return SyncedChanges(**found, failed=failed)
 
 
 def mailbox_slug(mailbox: dict) -> str | None:

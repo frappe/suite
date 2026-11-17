@@ -86,6 +86,7 @@ const shortcutGroups = computed<ShortcutGroup[][]>(() => [
         [['Delete'], __('Move to Trash')],
         [['Shift', 'Delete'], __('Permanently Delete')],
         [[modifier, 'Z'], __('Undo Last Action')],
+        [[modifier, 'P'], __('Print Conversation')],
       ],
     },
   ],

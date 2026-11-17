@@ -17,7 +17,7 @@ import {
   type XmlText,
 } from 'yjs'
 
-import type { DocumentComments, DocumentVersion } from '@/apps/drive'
+import type { DocumentComments, DocumentSession, DocumentVersion } from '@/apps/drive'
 import type { OldElement } from '@/apps/slides/collab/conversion'
 import type { StoreSlide } from '@/apps/slides/collab/liveDeck'
 import {
@@ -33,6 +33,7 @@ import {
   collabRoom,
   commentPanel,
   driveComments,
+  driveMedia,
   exported,
   fakeServer,
   forgetTemplates,
@@ -94,6 +95,9 @@ const { registerElementDiv } = await import('@/apps/slides/stores/elementRegistr
 const { default: FrameSection } = await import('@/apps/slides/components/FrameSection.vue')
 const { default: SelectionBox } = await import('@/apps/slides/components/SelectionBox.vue')
 const { convertLegacy } = await import('@/apps/slides/collab/conversion')
+const { documentCredentials, rememberDriveLink } = await import('@/apps/drive')
+const { driveLinks } = await import('@/apps/drive/client/links')
+const { getAttachmentUrl } = await import('@/apps/slides/utils/mediaUploads')
 const {
   addElement,
   addSlide,
@@ -836,6 +840,106 @@ describe('a deck on the content layer', () => {
         expect.objectContaining({ slides: EARLIER, sticky: false }),
         expect.objectContaining({ slides: editorSlides.value }),
       ])
+    })
+  })
+
+  describe("a deck's pictures", () => {
+    afterEach(() => {
+      savedStates.byNode.clear()
+      savedStates.reads = []
+      driveMedia.byNode.clear()
+      driveMedia.reads = []
+      driveLinks.clear()
+    })
+
+    function pictureDoc(picture: string) {
+      const converted = convertLegacy(
+        { slides: [{ id: 's1', elements: [{ id: 'e1', type: 'image', src: picture }] }] },
+        4 * 1024 * 1024,
+      )
+      if (converted.kind !== 'converted') {
+        throw new Error(JSON.stringify(converted))
+      }
+
+      const doc = new Doc()
+      applyUpdate(doc, converted.state)
+      return doc
+    }
+
+    // the url every view of the deck draws a picture with: canvas, thumbnails, show and print
+    function drawnPicture(picture: string) {
+      const drawn = fromPartial<Array<{ elements: Array<{ src?: string }> }>>(editorSlides.value)
+      expect(drawn.flatMap((slide) => slide.elements).map((element) => element.src)).toContain(
+        picture,
+      )
+      return getAttachmentUrl(picture)
+    }
+
+    // Drive answers each of the deck's own pictures; it lists none for a composite
+    function ownMedia(urls: Record<string, string>): DocumentSession['media'] {
+      return (id) =>
+        fromPartial({
+          id,
+          src: ref(urls[id] ?? null),
+          cacheKey: ref(id),
+          status: ref(id in urls ? 'ready' : 'refused'),
+          refresh: async () => {},
+        })
+    }
+
+    it('draws a composite picture from the media list of the deck that holds it', async () => {
+      savedStates.byNode.set('brand-node', pictureDoc('brand-picture'))
+      driveMedia.byNode.set('brand-node', [
+        { node: 'brand-picture', url: '/private/files/abcdefghij/logo.png?sig=1' },
+      ])
+
+      mounted = await openedSurface({
+        composite: { brand: { node: 'brand-node' } },
+        media: ownMedia({}),
+      })
+
+      await vi.waitFor(() =>
+        expect(drawnPicture('brand-picture')).toBe('/private/files/abcdefghij/logo.png?sig=1'),
+      )
+      expect(driveMedia.reads.map(({ node }) => node)).toContain('brand-node')
+    })
+
+    it("reads a composite opened through a link with the composite's link code", async () => {
+      const code = 'L000000000000000000001'
+      rememberDriveLink(code, 'node-1')
+      savedStates.byNode.set('brand-node', pictureDoc('brand-picture'))
+      driveMedia.byNode.set('brand-node', [
+        { node: 'brand-picture', url: '/private/files/abcdefghij/logo.png?sig=1' },
+      ])
+
+      mounted = await openedSurface({
+        composite: { brand: { node: 'brand-node' } },
+        media: ownMedia({}),
+        credentials: documentCredentials('node-1'),
+      })
+
+      await vi.waitFor(() =>
+        expect(drawnPicture('brand-picture')).toBe('/private/files/abcdefghij/logo.png?sig=1'),
+      )
+      expect(driveMedia.reads[0]).toEqual({ node: 'brand-node', links: code })
+    })
+
+    it('draws an ordinary deck picture through its own session', async () => {
+      mounted = await openedSurface({
+        slides: [
+          {
+            clientId: 'c1',
+            background: '#ffffffff',
+            elements: [{ id: 'e1', type: 'image', src: 'own-picture' }],
+          },
+        ],
+        media: ownMedia({ 'own-picture': '/private/files/klmnopqrst/chart.png?sig=1' }),
+      })
+
+      await vi.waitFor(() =>
+        expect(drawnPicture('own-picture')).toBe('/private/files/klmnopqrst/chart.png?sig=1'),
+      )
+      expect(driveMedia.reads).toEqual([])
     })
   })
 

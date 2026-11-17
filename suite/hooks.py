@@ -390,8 +390,11 @@ before_migrate = "suite.composition.lifecycle.before_migrate"
 after_migrate = "suite.composition.lifecycle.after_migrate"
 after_app_install = "suite.composition.lifecycle.after_app_install"
 
-# drive — lets the listed sites frame Drive pages and API answers
+# Frappe skips the remaining hooks once one raises, so the file redirect hook,
+# which must see every /files/ redirect, goes first. Drive's hook lets the
+# listed sites frame Drive pages and API answers.
 after_request = [
+    "suite.suite_core.file_redirects.make_file_redirects_private",
     "suite.mail.framework.close_mail_clients",
     "suite.drive.framework.allow_embedding",
     "suite.suite_core.build.after_request",

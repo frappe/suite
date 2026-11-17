@@ -44,7 +44,7 @@
         </span>
         <span
           v-if="'activity' in notification"
-          class="absolute -bottom-1 -right-1 flex size-[18px] items-center justify-center rounded-full bg-surface-white ring-1 ring-outline-gray-1"
+          class="absolute -bottom-1 -right-1 flex size-[18px] items-center justify-center rounded-full bg-surface-base ring-1 ring-outline-gray-1"
           aria-hidden="true"
         >
           <span class="size-3" :class="itemIcon(notification)" />

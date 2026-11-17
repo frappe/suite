@@ -70,6 +70,8 @@ export const registration: OwnerRegistration = {
       return { effects: 'none' }
     // Copies made for a mail being written: nothing anyone lists until the mail is saved.
     if (reference.id === 'attach_drive_files') return { effects: 'none' }
+    // What it finds reaches the lists through the socket, as a push's changes do.
+    if (reference.id === 'sync_changes') return { effects: 'none' }
     if (reference.id === 'create_account')
       return {
         effects: {

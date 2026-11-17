@@ -43,6 +43,7 @@ export type {
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
 export { documentCredentials } from '@/apps/drive/client/session'
+export { openMediaReader, type MediaReader } from '@/apps/drive/client/mediaReader'
 export { hasDefaultDocumentTitle, nodeContentUrl } from '@/apps/drive/client/nodes'
 
 /** Remembers the share link a `#link=` fragment carried, for the node it opened. */

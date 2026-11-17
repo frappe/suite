@@ -185,12 +185,7 @@ def version_content_url(
     title with no extension downloads as `application/octet-stream`.
     `versions.py` records the same handoff where the blob is written.
     """
-    _validate_seq(seq)
-    current = _node(node)
-    require_history_reader(current, principals)
-    _require_version_node(current)
-    version = _version(current.name, seq)
-    _validated_version_blob(version)
+    current, version = _readable_version(principals, node, seq)
     return {
         "url": signed_url_for_blob(
             version.blob,
@@ -199,6 +194,30 @@ def version_content_url(
         ),
         "expires": int(time.time()) + expires_in,
     }
+
+
+def stream_version_content(principals: Principals, node: str, seq: int):
+    """Send one readable version's bytes on this response, for a caller whose
+    request must not follow a redirect off this origin (§6.8)."""
+    from frappe.storage.serve import stream_blob
+
+    current, version = _readable_version(principals, node, seq)
+    return stream_blob(
+        version.blob,
+        content.download_filename(_version_filename(current, version)),
+        environ=frappe.local.request.environ,
+    )
+
+
+def _readable_version(principals: Principals, node: str, seq: int) -> tuple[frappe._dict, frappe._dict]:
+    """Check history READ on the node, and answer it with the version whose bytes are intact."""
+    _validate_seq(seq)
+    current = _node(node)
+    require_history_reader(current, principals)
+    _require_version_node(current)
+    version = _version(current.name, seq)
+    _validated_version_blob(version)
+    return current, version
 
 
 def _version_filename(node: frappe._dict, version: frappe._dict) -> str:

@@ -29,6 +29,8 @@ import type {
   NodeBatchPurgeOutput,
   NodeChildrenInput,
   NodeChildrenOutput,
+  NodeContentUrlInput,
+  NodeContentUrlOutput,
   NodeCopyInput,
   NodeCopyOutput,
   NodeCreateCreateDocumentInput,
@@ -2278,6 +2280,39 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
         type: 'object',
       },
       'node_put_content output',
+    )
+  },
+}
+
+export const operationNodeContentUrl: Validators<NodeContentUrlInput, NodeContentUrlOutput> = {
+  validateInput(value: unknown): asserts value is NodeContentUrlInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { download: { title: 'Download', type: 'boolean' }, node: { type: 'string' } },
+        required: ['node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'node_content_url input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is NodeContentUrlOutput {
+    assertSchema(
+      value,
+      {
+        description:
+          "A file's short-lived signed URL, for a frame or a download that cannot send a header.",
+        properties: {
+          url: { title: 'Url', type: 'string' },
+          expires: { title: 'Expires', type: 'integer' },
+        },
+        required: ['url', 'expires'],
+        title: 'ContentUrl',
+        type: 'object',
+      },
+      'node_content_url output',
     )
   },
 }

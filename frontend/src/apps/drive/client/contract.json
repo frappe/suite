@@ -5577,6 +5577,61 @@
       "bytes": false
     },
     {
+      "id": "node_content_url",
+      "kind": "query",
+      "publicName": "nodes.contentUrl",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "nodes/{node}/content-url",
+      "pathParams": [
+        "node"
+      ],
+      "query": {
+        "properties": {
+          "download": {
+            "title": "Download",
+            "type": "boolean"
+          }
+        },
+        "title": "ContentUrlQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "description": "A file's short-lived signed URL, for a frame or a download that cannot send a header.",
+        "properties": {
+          "url": {
+            "title": "Url",
+            "type": "string"
+          },
+          "expires": {
+            "title": "Expires",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "url",
+          "expires"
+        ],
+        "title": "ContentUrl",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "DriveForbidden",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "node_get_content",
       "kind": "query",
       "publicName": "nodes.download",
