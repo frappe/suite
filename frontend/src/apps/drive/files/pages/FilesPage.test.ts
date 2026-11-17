@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, type PropType } from 'vue'
 import {
   createMemoryHistory,
@@ -1384,16 +1384,47 @@ describe('Search', () => {
     expect(field(root).value).toBe('')
   })
 
+  /** Has the field fire `change` as it leaves the page, as browsers do for a field typed in. */
+  function changesAsItLeaves(input: HTMLInputElement) {
+    const removeChild = Node.prototype.removeChild
+    const spy = vi.spyOn(Node.prototype, 'removeChild')
+    spy.mockImplementation(function <T extends Node>(this: Node, child: T) {
+      if (child.contains(input)) {
+        input.dispatchEvent(new Event('change'))
+      }
+
+      return removeChild.call<Node, [T], T>(this, child)
+    })
+    onTestFinished(() => spy.mockRestore())
+  }
+
   it('does not put a term typed just before leaving into the next page', async () => {
     const { root, router } = await mount('/drive/f/folder-1/talks')
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
 
     type(root, 'report')
+    changesAsItLeaves(field(root))
     await router.push('/d/doc-1/notes')
     await vi.advanceTimersByTimeAsync(300)
 
     expect(router.currentRoute.value.fullPath).toBe('/d/doc-1/notes')
+  })
+
+  it('does not carry a searched term to another place', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    type(root, 'report')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(router.currentRoute.value.query.q).toBe('report')
+
+    changesAsItLeaves(field(root))
+    await router.push('/drive/recent')
+    await vi.advanceTimersByTimeAsync(300)
+
+    expect(router.currentRoute.value.fullPath).toBe('/drive/recent')
+    expect(field(root).value).toBe('')
   })
 
   it('goes back to the same term in another view, over a term not yet searched', async () => {

@@ -91,17 +91,16 @@
               @done="clearSelected"
             />
             <template v-else>
-              <!-- Each place gets its own field, so a term typed in one place does not follow
-                   the user to the next. -->
+              <!-- Keys only. The field's change also fires as it leaves the page, with the
+                   term of the place the user left. -->
               <TextInput
                 v-if="signedIn"
-                :key="route.path"
-                v-model="searchText"
+                :model-value="searchText"
                 type="search"
                 placeholder="Search all files"
                 aria-label="Search all files"
                 class="files-search w-full max-w-64"
-                @update:model-value="searchLater.start()"
+                @input="typed"
                 @keydown.escape="clearSearch"
               >
                 <template #prefix
@@ -1350,6 +1349,11 @@ function routeSearch() {
 // The field shows each key at once. The URL, and so the search, follows after a
 // pause. The page leaving, a clear or another URL drops a search still waiting
 const searchLater = useTimeoutFn(routeSearch, 250, { immediate: false })
+function typed(event: Event) {
+  if (!(event.target instanceof HTMLInputElement)) return
+  searchText.value = event.target.value
+  searchLater.start()
+}
 function clearSearch() {
   searchText.value = ''
   routeSearch()
