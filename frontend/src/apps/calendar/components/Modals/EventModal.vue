@@ -39,6 +39,8 @@ import {
   formStart,
   occurrenceStart,
   startPrecedingEnd,
+  type EventForm,
+  type FormMoment,
 } from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
 import {
@@ -217,7 +219,11 @@ const organizerParticipant = (identity: ParticipantIdentity) => ({
   _name: identity._name || user.data.full_name,
   participation_status: 'ACCEPTED',
 })
-const event = reactive({})
+// What the form holds: the fields a write takes, and three only the modal reads. Empty until
+// the modal opens.
+const event = reactive<EventForm & { account?: string; repeat?: boolean; addMeetLink?: boolean }>(
+  {},
+)
 let originalParams: Record<string, unknown> = {}
 
 // A new event cannot be saved, or kept as a draft, without an organizer, and only an
@@ -326,7 +332,7 @@ const meetLinkDisplay = computed(() =>
 
 // Moving the start drags the end along, keeping the gap the user set. A gap that
 // hasn't been set — or one the start has overtaken — falls back to the default.
-let previousStart = null
+let previousStart: FormMoment | null = null
 watch(show, (val) => {
   if (!val) return
   Object.assign(event, getEventData())
