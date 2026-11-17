@@ -491,9 +491,7 @@ class TestLinkCodesStayOnThisOrigin(BoundaryCase):
 
     def test_a_version_asked_for_with_link_codes_comes_from_this_origin(self):
         with self.request(**{"X-Drive-Links": "l" * 22}):
-            with patch.object(
-                routes.versions, "version_content_url", return_value={"url": self.STORAGE_URL}
-            ):
+            with patch.object(routes.versions, "version_content_url", return_value={"url": self.STORAGE_URL}):
                 with patch.object(
                     routes.versions, "stream_version_content", return_value=Response(b"v2")
                 ) as streamed:
