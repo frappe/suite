@@ -12,7 +12,6 @@
   "frontend/src/apps/mail/components/AppSidebar.vue": 3,
   "frontend/src/apps/mail/components/ComposeMailEditor.vue": 4,
   "frontend/src/apps/mail/components/Controls/ContactCombobox.vue": 1,
-  "frontend/src/apps/mail/components/Controls/RecipientInput.vue": 1,
   "frontend/src/apps/mail/components/DmarcBreakdownRows.vue": 1,
   "frontend/src/apps/mail/components/EmailContent.vue": 1,
   "frontend/src/apps/mail/components/EmojiPicker.vue": 6,
