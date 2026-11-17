@@ -1,3 +1,4 @@
+import { JSDOM } from 'jsdom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 
@@ -139,5 +140,50 @@ describe('dates in a message', () => {
     await nextTick()
     const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
     expect(doc.querySelector('[data-mail-date]')).toBeNull()
+  })
+
+  // The frame's own script, run in a document of its own as the frame would: what a press inside
+  // the message does.
+  const inFrame = async (content: string) => {
+    const root = mount(content, { sentAt })
+    await shown(root)
+    const dom = new JSDOM(frame(root)!.getAttribute('srcdoc')!, { runScripts: 'dangerously' })
+    const posted = vi.fn()
+    const opened = vi.fn()
+    // The frame's parent is itself here.
+    dom.window.postMessage = posted
+    dom.window.open = opened
+    const press = (element: Element) =>
+      !element.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true, cancelable: true }),
+      )
+    return { document: dom.window.document, window: dom.window, posted, opened, press }
+  }
+
+  it('asks the app for an event when a date is pressed, and does nothing else with the press', async () => {
+    const { document, posted, press } = await inFrame('<p>Can we meet Thursday at 3pm?</p>')
+    const mark = document.querySelector('[data-mail-date]')!
+    expect(press(mark)).toBe(true)
+    expect(posted).toHaveBeenCalledWith({ type: 'mail-date', index: '0' }, '*')
+  })
+
+  it('does not take a press that ends a selection for a pick', async () => {
+    const { document, window, posted, press } = await inFrame('<p>Can we meet Thursday at 3pm?</p>')
+    window.getSelection()!.selectAllChildren(document.querySelector('p')!)
+    press(document.querySelector('[data-mail-date]')!)
+    expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mail-date' }), '*')
+  })
+
+  it('gives a mail that forges a date around a link no way past the link handling', async () => {
+    const { document, posted, opened, press } = await inFrame(
+      '<p><span data-mail-date="0"><a href="https://evil.example/" target="_top">Invoice</a></span></p>' +
+        '<p>Can we meet Thursday at 3pm?</p>',
+    )
+    const link = document.querySelector('a')!
+    expect(link.closest('[data-mail-date]')).toBeNull()
+    // The frame never follows the link itself; it opens it in a tab of its own.
+    expect(press(link)).toBe(true)
+    expect(opened).toHaveBeenCalledWith('https://evil.example/', '_blank')
+    expect(posted).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'mail-date' }), '*')
   })
 })

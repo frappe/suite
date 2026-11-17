@@ -308,14 +308,14 @@ const rendered = computed(() => {
 
 				/* A date the reader can make an event of: underlined in the text's own colour, faintly,
 				   so it reads on any canvas the mail paints, and drawn without moving a thing. */
-				.mail-date {
+				[data-mail-date] {
 					text-decoration: underline;
-					text-decoration-color: color-mix(in srgb, currentColor 35%, transparent);
+					text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
 					text-underline-offset: 2px;
 					cursor: pointer;
 				}
 
-				.mail-date:hover {
+				[data-mail-date]:hover {
 					text-decoration-color: currentColor;
 				}
 
@@ -469,13 +469,9 @@ const rendered = computed(() => {
 					pickDate(mark);
 				});
 
-				// Forward link clicks to parent
+				// Forward link clicks to parent. A link comes first, whatever is around it: the frame
+				// never follows one itself.
 				document.addEventListener('click', (e) => {
-					const mark = e.target.closest('[data-mail-date]');
-					if (mark) {
-						if (document.getSelection()?.isCollapsed !== false) pickDate(mark);
-						return;
-					}
 					const anchor = e.target.closest('a');
 					if (anchor) {
 						e.preventDefault();
@@ -488,7 +484,12 @@ const rendered = computed(() => {
 							return;
 						}
 						window.open(anchor.href, '_blank');
+						return;
 					}
+					const mark = e.target.closest('[data-mail-date]');
+					if (!mark) return;
+					e.preventDefault();
+					if (document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
 				// Forward horizontal swipes to the parent — touches never leave the iframe, so
@@ -630,6 +631,8 @@ const DOMPURIFY_CONFIG = {
     'http-equiv',
     'charset',
   ],
+  // The mark a date the reader can pick carries (see markMailDates): only ours, never the mail's.
+  FORBID_ATTR: ['data-mail-date'],
   KEEP_CONTENT: true,
   ALLOW_UNKNOWN_PROTOCOLS: false,
   WHOLE_DOCUMENT: true,
