@@ -164,7 +164,7 @@ it('refuses a pasted file while the document opens, and says to add it again', (
 
   expect(info).toHaveBeenCalledOnce()
   expect(info).toHaveBeenCalledWith(
-    'Wait a moment for the document to open, then add the file again',
+    'Wait a moment for the document to open, then try again',
   )
   expect(editor.isEmpty).toBe(true)
 })

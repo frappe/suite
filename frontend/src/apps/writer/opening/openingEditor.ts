@@ -117,14 +117,17 @@ function createOpening(node: string): Opening {
  */
 const NoFilesWhileOpening = Extension.create({
   name: 'noFilesWhileOpening',
-  // Runs before the paste and drop handlers of the kit and the media extensions
-  priority: 1000,
+  // Runs after Writer's own paste handlers (priority 101 and above), so a paste
+  // as plain text still inserts its text. frappe-ui's paste and drop handlers
+  // share the default priority 100; this extension is last in the list, and
+  // TipTap puts the last of equal priorities first, so it runs before them.
+  priority: 100,
 
   addProseMirrorPlugins() {
     const refuse = (event: Event, files: FileList | undefined) => {
       if (!files?.length) return false
       event.preventDefault()
-      toast.info(__('Wait a moment for the document to open, then add the file again'))
+      toast.info(__('Wait a moment for the document to open, then try again'))
       return true
     }
     return [
