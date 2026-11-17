@@ -3439,8 +3439,8 @@
       "path": "/api/method/suite.mail.api.contacts.get_address_books",
       "consumers": [
         "frontend/src/apps/mail/stores/user.ts",
-        "frontend/src/apps/mail/components/Settings/ContactsImportSettings.vue",
-        "frontend/src/apps/mail/components/Settings/ContactsExportSettings.vue"
+        "frontend/src/apps/mail/components/Settings/ContactsImportSection.vue",
+        "frontend/src/apps/mail/components/Settings/ContactsExportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -3859,7 +3859,7 @@
       "method": "POST",
       "path": "/api/method/suite.mail.api.account.create_calendar_import",
       "consumers": [
-        "frontend/src/apps/calendar/components/Settings/ImportSettings.vue"
+        "frontend/src/apps/calendar/components/Settings/ImportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -3883,7 +3883,7 @@
       "method": "POST",
       "path": "/api/method/suite.mail.api.account.create_calendar_export",
       "consumers": [
-        "frontend/src/apps/calendar/components/Settings/ExportSettings.vue"
+        "frontend/src/apps/calendar/components/Settings/ExportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -3907,8 +3907,8 @@
       "method": "POST",
       "path": "/api/method/frappe.client.get_value",
       "consumers": [
-        "frontend/src/apps/calendar/components/Settings/ExportSettings.vue",
-        "frontend/src/apps/calendar/components/Settings/ImportSettings.vue"
+        "frontend/src/apps/calendar/components/Settings/ExportSection.vue",
+        "frontend/src/apps/calendar/components/Settings/ImportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -4692,7 +4692,7 @@
       "method": "POST",
       "path": "/api/method/suite.mail.api.account.create_mail_import",
       "consumers": [
-        "frontend/src/apps/mail/components/Settings/MailImportSettings.vue"
+        "frontend/src/apps/mail/components/Settings/MailImportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -4716,7 +4716,7 @@
       "method": "POST",
       "path": "/api/method/suite.mail.api.account.create_mail_export",
       "consumers": [
-        "frontend/src/apps/mail/components/Settings/MailExportSettings.vue"
+        "frontend/src/apps/mail/components/Settings/MailExportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -4740,7 +4740,7 @@
       "method": "POST",
       "path": "/api/method/suite.mail.api.account.create_contacts_import",
       "consumers": [
-        "frontend/src/apps/mail/components/Settings/ContactsImportSettings.vue"
+        "frontend/src/apps/mail/components/Settings/ContactsImportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -4764,7 +4764,7 @@
       "method": "POST",
       "path": "/api/method/suite.mail.api.account.create_contacts_export",
       "consumers": [
-        "frontend/src/apps/mail/components/Settings/ContactsExportSettings.vue"
+        "frontend/src/apps/mail/components/Settings/ContactsExportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",
@@ -4788,10 +4788,10 @@
       "method": "POST",
       "path": "/api/method/frappe.client.get_value",
       "consumers": [
-        "frontend/src/apps/mail/components/Settings/MailExportSettings.vue",
-        "frontend/src/apps/mail/components/Settings/ContactsImportSettings.vue",
-        "frontend/src/apps/mail/components/Settings/MailImportSettings.vue",
-        "frontend/src/apps/mail/components/Settings/ContactsExportSettings.vue"
+        "frontend/src/apps/mail/components/Settings/MailExportSection.vue",
+        "frontend/src/apps/mail/components/Settings/ContactsImportSection.vue",
+        "frontend/src/apps/mail/components/Settings/MailImportSection.vue",
+        "frontend/src/apps/mail/components/Settings/ContactsExportSection.vue"
       ],
       "effects": "frontend/src/apps/mail/client/policy.ts",
       "scope": "session",

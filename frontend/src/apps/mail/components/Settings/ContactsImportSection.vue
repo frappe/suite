@@ -1,56 +1,61 @@
 <!--
-  The Import side of Mail > Import & export, for contacts: a file of contacts goes into one address
+  The Import section of Mail > Import & export, for contacts: a file of contacts goes into one address
   book. The file uploads first; Start import then queues the job, and the status line tracks it.
 -->
 <template>
-  <SettingsRow :title="__('Format')" :description="__('The kind of file you are importing')">
-    <Select
-      :model-value="contactsImport.format"
-      :options="FORMATS"
-      @update:model-value="selectFormat"
-    />
-  </SettingsRow>
-  <SettingsRow
-    :title="__('Address book')"
-    :description="__('The address book the contacts go into')"
+  <SettingsSection
+    :title="__('Contacts')"
+    :description="__('People from another address book, in .vcf files')"
   >
-    <Select
-      :model-value="contactsImport.address_book ?? ''"
-      :options="addressBookOptions"
-      class="max-w-48 sm:max-w-64"
-      :placeholder="__('Select address book')"
-      @update:model-value="selectAddressBook"
+    <SettingsRow :title="__('Format')" :description="__('The kind of file you are importing')">
+      <Select
+        :model-value="contactsImport.format"
+        :options="FORMATS"
+        @update:model-value="selectFormat"
+      />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Address book')"
+      :description="__('The address book the contacts go into')"
+    >
+      <Select
+        :model-value="contactsImport.address_book ?? ''"
+        :options="addressBookOptions"
+        class="max-w-48 sm:max-w-64"
+        :placeholder="__('Select address book')"
+        @update:model-value="selectAddressBook"
+      />
+    </SettingsRow>
+    <SettingsRow :title="__('File')" :description="fileDescription">
+      <input
+        ref="fileInput"
+        type="file"
+        class="hidden"
+        :accept="acceptTypes"
+        @change="onFileSelected"
+      />
+      <Button
+        icon-left="lucide-upload"
+        :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
+        :loading="uploading"
+        @click="fileInput?.click()"
+      />
+    </SettingsRow>
+    <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
+      <Button
+        variant="solid"
+        :label="__('Start import')"
+        :loading="Boolean(ongoingImport.data?.name) || createContactsImport.isPending"
+        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file"
+        @click="createContactsImportSubmit()"
+      />
+    </SettingsJobStatus>
+    <ErrorMessage
+      v-if="createContactsImport.error"
+      class="py-2"
+      :message="createContactsImport.error?.message"
     />
-  </SettingsRow>
-  <SettingsRow :title="__('File')" :description="fileDescription">
-    <input
-      ref="fileInput"
-      type="file"
-      class="hidden"
-      :accept="acceptTypes"
-      @change="onFileSelected"
-    />
-    <Button
-      icon-left="lucide-upload"
-      :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
-      :loading="uploading"
-      @click="fileInput?.click()"
-    />
-  </SettingsRow>
-  <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
-    <Button
-      variant="solid"
-      :label="__('Start import')"
-      :loading="Boolean(ongoingImport.data?.name) || createContactsImport.isPending"
-      :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file"
-      @click="createContactsImportSubmit()"
-    />
-  </SettingsJobStatus>
-  <ErrorMessage
-    v-if="createContactsImport.error"
-    class="py-2"
-    :message="createContactsImport.error?.message"
-  />
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -61,7 +66,7 @@ import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseError } from '@/apps/mail/utils'
-import { SettingsJobStatus } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
 type ImportInput = InputOf<typeof api.mail.exchanges.importContacts>

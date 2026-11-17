@@ -12,8 +12,8 @@
          the page gap. -->
     <div class="flex flex-col gap-2">
       <TabButtons v-model="direction" class="self-start" :options="DIRECTIONS" />
-      <ImportSettings v-if="direction === 'import'" />
-      <ExportSettings v-else />
+      <ImportSection v-if="direction === 'import'" />
+      <ExportSection v-else />
     </div>
   </SettingsPage>
 </template>
@@ -25,8 +25,8 @@ import { ref } from 'vue'
 import { SettingsPage } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
-import ExportSettings from './ExportSettings.vue'
-import ImportSettings from './ImportSettings.vue'
+import ExportSection from './ExportSection.vue'
+import ImportSection from './ImportSection.vue'
 
 const DIRECTIONS = [
   { label: __('Import'), value: 'import' },

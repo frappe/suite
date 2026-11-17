@@ -1,65 +1,70 @@
 <!--
-  The Import side of Mail > Import & export, for mail: a file of messages goes into one folder.
+  The Import section of Mail > Import & export, for mail: a file of messages goes into one folder.
   The file uploads first; Start import then queues the job, and the status line tracks it.
 -->
 <template>
-  <SettingsRow :title="__('Format')" :description="__('The kind of file you are importing')">
-    <Select
-      :model-value="mailImport.format"
-      :options="FORMATS"
-      @update:model-value="selectFormat"
-    />
-  </SettingsRow>
-  <!-- The folder and read state apply to .eml, mbox and Maildir imports only. -->
-  <template v-if="FOLDER_FORMATS.includes(mailImport.format)">
-    <SettingsRow :title="__('Folder')" :description="__('The folder the messages go into')">
+  <SettingsSection
+    :title="__('Mail')"
+    :description="__('Messages from another mail service, in .eml, mbox or Maildir files')"
+  >
+    <SettingsRow :title="__('Format')" :description="__('The kind of file you are importing')">
       <Select
-        :model-value="mailImport.mailbox ?? ''"
-        :options="mailboxOptions"
-        class="max-w-48 sm:max-w-64"
-        :placeholder="__('Select folder')"
-        @update:model-value="selectMailbox"
+        :model-value="mailImport.format"
+        :options="FORMATS"
+        @update:model-value="selectFormat"
       />
     </SettingsRow>
-    <SettingsRow
-      :title="__('Mark as read')"
-      :description="__('Import the messages as already read')"
-    >
-      <Switch
-        :model-value="mailImport.seen ?? true"
-        @update:model-value="(on: boolean) => (mailImport.seen = on)"
+    <!-- The folder and read state apply to .eml, mbox and Maildir imports only. -->
+    <template v-if="FOLDER_FORMATS.includes(mailImport.format)">
+      <SettingsRow :title="__('Folder')" :description="__('The folder the messages go into')">
+        <Select
+          :model-value="mailImport.mailbox ?? ''"
+          :options="mailboxOptions"
+          class="max-w-48 sm:max-w-64"
+          :placeholder="__('Select folder')"
+          @update:model-value="selectMailbox"
+        />
+      </SettingsRow>
+      <SettingsRow
+        :title="__('Mark as read')"
+        :description="__('Import the messages as already read')"
+      >
+        <Switch
+          :model-value="mailImport.seen ?? true"
+          @update:model-value="(on: boolean) => (mailImport.seen = on)"
+        />
+      </SettingsRow>
+    </template>
+    <SettingsRow :title="__('File')" :description="fileDescription">
+      <input
+        ref="fileInput"
+        type="file"
+        class="hidden"
+        :accept="acceptTypes"
+        @change="onFileSelected"
+      />
+      <Button
+        icon-left="lucide-upload"
+        :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
+        :loading="uploading"
+        @click="fileInput?.click()"
       />
     </SettingsRow>
-  </template>
-  <SettingsRow :title="__('File')" :description="fileDescription">
-    <input
-      ref="fileInput"
-      type="file"
-      class="hidden"
-      :accept="acceptTypes"
-      @change="onFileSelected"
+    <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
+      <Button
+        variant="solid"
+        :label="__('Start import')"
+        :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
+        :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
+        @click="createMailImportSubmit()"
+      />
+    </SettingsJobStatus>
+    <ErrorMessage
+      v-if="createMailImport.error"
+      class="py-2"
+      :message="createMailImport.error?.message"
     />
-    <Button
-      icon-left="lucide-upload"
-      :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Choose file')"
-      :loading="uploading"
-      @click="fileInput?.click()"
-    />
-  </SettingsRow>
-  <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
-    <Button
-      variant="solid"
-      :label="__('Start import')"
-      :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
-      :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
-      @click="createMailImportSubmit()"
-    />
-  </SettingsJobStatus>
-  <ErrorMessage
-    v-if="createMailImport.error"
-    class="py-2"
-    :message="createMailImport.error?.message"
-  />
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -70,7 +75,7 @@ import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseError } from '@/apps/mail/utils'
-import { SettingsJobStatus } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
 type ImportInput = InputOf<typeof api.mail.exchanges.importMail>

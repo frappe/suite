@@ -61,7 +61,10 @@ const credentials = useQuery(api.mail.settings.credentials)
 
 const { draft, dirty: fieldsDirty } = useSettingsDraft(() =>
   credentials.data
-    ? { username: credentials.data.username ?? '', backup_email: credentials.data.backup_email ?? '' }
+    ? {
+        username: credentials.data.username ?? '',
+        backup_email: credentials.data.backup_email ?? '',
+      }
     : null,
 )
 // The password comes back masked, so the field starts blank and is sent only when typed in.

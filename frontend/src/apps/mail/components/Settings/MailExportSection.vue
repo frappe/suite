@@ -1,79 +1,84 @@
 <!--
-  The Export side of Mail > Import & export, for mail: the account's messages as an archive, emailed
+  The Export section of Mail > Import & export, for mail: the account's messages as an archive, emailed
   when ready. "Only some mail" narrows the export by folder, dates and other filters.
 -->
 <template>
-  <SettingsRow :title="__('Format')" :description="__('The kind of file the messages go into')">
-    <Select
-      :model-value="mailExport.format"
-      :options="FORMATS"
-      @update:model-value="selectFormat"
-    />
-  </SettingsRow>
-  <SettingsRow :title="__('Archive type')" :description="__('How the files are packed')">
-    <Select
-      :model-value="mailExport.archive_type"
-      :options="ARCHIVE_TYPES"
-      @update:model-value="selectArchiveType"
-    />
-  </SettingsRow>
-  <SettingsRow
-    :title="__('Only some mail')"
-    :description="__('Choose a folder, dates or other filters')"
+  <SettingsSection
+    :title="__('Mail')"
+    :description="__('An archive of your messages, to keep or to move to another service')"
   >
-    <Switch v-model="customSelection" />
-  </SettingsRow>
-  <div v-if="customSelection" class="grid gap-4 py-3.5 sm:grid-cols-2">
-    <FormControl
-      v-model="filter.inMailbox"
-      :label="__('Folder')"
-      type="select"
-      :options="mailboxOptions"
+    <SettingsRow :title="__('Format')" :description="__('The kind of file the messages go into')">
+      <Select
+        :model-value="mailExport.format"
+        :options="FORMATS"
+        @update:model-value="selectFormat"
+      />
+    </SettingsRow>
+    <SettingsRow :title="__('Archive type')" :description="__('How the files are packed')">
+      <Select
+        :model-value="mailExport.archive_type"
+        :options="ARCHIVE_TYPES"
+        @update:model-value="selectArchiveType"
+      />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Only some mail')"
+      :description="__('Choose a folder, dates or other filters')"
+    >
+      <Switch v-model="customSelection" />
+    </SettingsRow>
+    <div v-if="customSelection" class="grid gap-4 py-3.5 sm:grid-cols-2">
+      <FormControl
+        v-model="filter.inMailbox"
+        :label="__('Folder')"
+        type="select"
+        :options="mailboxOptions"
+      />
+      <FormControl
+        v-model="filter.hasAttachment"
+        type="select"
+        :label="__('Attachments')"
+        :options="getAttachmentOptions()"
+      />
+      <FormControl v-model="filter.after" type="date" :label="__('From')" />
+      <FormControl v-model="filter.before" type="date" :label="__('To')" />
+      <FormControl
+        v-model="filter.isRead"
+        type="select"
+        :label="__('Read status')"
+        :options="getReadStatusOptions()"
+      />
+      <FormControl
+        v-model="mailExport.limit"
+        :label="__('Most messages')"
+        type="number"
+        placeholder="1000"
+      />
+      <FormControl
+        v-if="mailExport.limit && mailExport.limit > 0"
+        v-model="mailExport.sort"
+        :label="__('Start from')"
+        type="select"
+        :options="SORTS"
+      />
+    </div>
+    <SettingsJobStatus :status="exportSubtitle" :href="exportHref" :link-label="exportLinkText">
+      <Button
+        variant="solid"
+        :label="__('Start export')"
+        :loading="Boolean(ongoingExport.data?.name) || createMailExport.isPending"
+        :disabled="
+          ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending
+        "
+        @click="createMailExportSubmit()"
+      />
+    </SettingsJobStatus>
+    <ErrorMessage
+      v-if="createMailExport.error"
+      class="py-2"
+      :message="createMailExport.error?.message"
     />
-    <FormControl
-      v-model="filter.hasAttachment"
-      type="select"
-      :label="__('Attachments')"
-      :options="getAttachmentOptions()"
-    />
-    <FormControl v-model="filter.after" type="date" :label="__('From')" />
-    <FormControl v-model="filter.before" type="date" :label="__('To')" />
-    <FormControl
-      v-model="filter.isRead"
-      type="select"
-      :label="__('Read status')"
-      :options="getReadStatusOptions()"
-    />
-    <FormControl
-      v-model="mailExport.limit"
-      :label="__('Most messages')"
-      type="number"
-      placeholder="1000"
-    />
-    <FormControl
-      v-if="mailExport.limit && mailExport.limit > 0"
-      v-model="mailExport.sort"
-      :label="__('Start from')"
-      type="select"
-      :options="SORTS"
-    />
-  </div>
-  <SettingsJobStatus :status="exportSubtitle" :href="exportHref" :link-label="exportLinkText">
-    <Button
-      variant="solid"
-      :label="__('Start export')"
-      :loading="Boolean(ongoingExport.data?.name) || createMailExport.isPending"
-      :disabled="
-        ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending
-      "
-      @click="createMailExportSubmit()"
-    />
-  </SettingsJobStatus>
-  <ErrorMessage
-    v-if="createMailExport.error"
-    class="py-2"
-    :message="createMailExport.error?.message"
-  />
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
@@ -85,7 +90,7 @@ import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constant
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
-import { SettingsJobStatus } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
 
 type ExportInput = InputOf<typeof api.mail.exchanges.exportMail>
 
