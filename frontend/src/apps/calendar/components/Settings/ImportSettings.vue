@@ -22,11 +22,16 @@
       :accept="acceptTypes"
       @change="onFileSelected"
     />
-    <Button class="w-full" :label="uploadLabel" :loading="uploading" @click="fileInput?.click()" />
+    <Button
+      class="self-start"
+      :label="uploadLabel"
+      :loading="uploading"
+      @click="fileInput?.click()"
+    />
     <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
 
     <Button
-      class="min-h-7"
+      class="min-h-7 self-start"
       :label="__('Start import')"
       variant="solid"
       :loading="isImporting"

@@ -38,7 +38,7 @@
             </div>
             <Button
               :label="__('Add reply-to')"
-              class="min-h-7 w-full"
+              class="min-h-7"
               variant="outline"
               @click="() => showAddEmailAddress(true)"
             />
@@ -53,7 +53,7 @@
             </div>
             <Button
               :label="__('Add Bcc')"
-              class="min-h-7 w-full"
+              class="min-h-7"
               variant="outline"
               @click="() => showAddEmailAddress(false)"
             />
@@ -88,7 +88,7 @@
             <Button
               v-if="draft.may_delete"
               :label="__('Delete')"
-              class="min-h-7 w-full"
+              class="min-h-7"
               variant="outline"
               theme="red"
               @click="showDeleteDialog = true"

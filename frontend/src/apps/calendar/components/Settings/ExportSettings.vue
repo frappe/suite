@@ -50,7 +50,7 @@
     </template>
 
     <Button
-      class="min-h-7"
+      class="min-h-7 self-start"
       :label="__('Start export')"
       :loading="isExporting"
       :disabled="isExportBlocked"

@@ -38,7 +38,7 @@
 
             <Button
               :label="__('Delete')"
-              class="min-h-7 w-full"
+              class="min-h-7"
               variant="outline"
               theme="red"
               @click="showDeleteDialog = true"
