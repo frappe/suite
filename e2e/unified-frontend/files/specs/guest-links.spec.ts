@@ -116,7 +116,7 @@ test.describe("the server resolves a share link", () => {
 		await guest.dispose();
 	});
 
-	test("a dead link shows the 404 or 410 copy, and Go to Home only when signed in", async () => {
+	test("a dead link shows the 404 or 410 copy, Sign in to a guest and Go to Home to a member", async () => {
 		const expired = await shareLink(doc.name, { role: 10 });
 		expireLink(expired);
 		const guest = await server(false);
@@ -135,6 +135,8 @@ test.describe("the server resolves a share link", () => {
 		expect(missing.headers()["cache-control"]).toContain("no-cache");
 		expect(missingPage).toContain(NOT_FOUND_COPY);
 		expect(gonePage).toContain(EXPIRED_COPY);
+		// The two refusals differ only in their line of copy.
+		expect(gonePage.replace(EXPIRED_COPY, NOT_FOUND_COPY)).toBe(missingPage);
 		for (const [label, response, page] of [
 			["missing (404)", missing, missingPage],
 			["gone (410)", gone, gonePage],
@@ -144,10 +146,13 @@ test.describe("the server resolves a share link", () => {
 				page,
 				`${label}: status ${response.status()}, set-cookie ${sent ?? "none"}, guest cookies ${JSON.stringify((await guest.storageState()).cookies.map((c) => c.name))}`,
 			).not.toContain("Go to Home");
-			expect(page).not.toContain("Sign in");
+			// A dead link has nothing to return to, so Sign in lands on Home.
+			expect(page).toContain('href="/login?redirect-to=%2Fhome"');
+			expect(page).toContain("Sign in");
 			expect(page).not.toContain(doc.title);
 		}
 		expect(signedInPage).toContain("Go to Home");
+		expect(signedInPage).not.toContain("Sign in");
 		await Promise.all([guest.dispose(), member.dispose()]);
 	});
 
