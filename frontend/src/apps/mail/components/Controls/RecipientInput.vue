@@ -348,9 +348,10 @@ const inlineSuggestions = computed(() => {
 })
 
 // Typed text that is no address and matches no contact: nothing Enter could add. It stays in the
-// field to be corrected, under a line that says why.
+// field to be corrected, under a line that says why. Not before the address book has had its say:
+// a contact's name is nobody's until then, on every keystroke.
 const invalidTyped = computed(() => {
-  if (!showsInline.value) return ''
+  if (!showsInline.value || !isLookupSettled.value) return ''
   const text = searchText.value.trim()
   return text && !isEmail(text) && !options.value.length ? text : ''
 })
@@ -498,8 +499,8 @@ const handleContainerKeydown = (e: KeyboardEvent) => {
     activeSuggestion.value = from < 0 && step < 0 ? count - 1 : (from + step + count) % count
     return
   }
-  // Esc puts the suggestions away, and goes no further while they are showing.
-  if (e.key === 'Escape' && count) {
+  // Esc puts the suggestions away, or the notice, and goes no further while either is showing.
+  if (e.key === 'Escape' && (count || invalidTyped.value)) {
     e.stopPropagation()
     isDismissed.value = true
     return
@@ -706,6 +707,14 @@ const suggestions = useQuery(api.mail.contacts.suggest, () =>
   accountId.value && debouncedSearch.value && debouncedSearch.value === searchText.value
     ? { account: accountId.value, text: debouncedSearch.value }
     : false,
+)
+// Whether there is nothing more to hear about the text as typed: the address book answered for it,
+// could not (no row is coming, so the notice may as well say why Enter adds nobody), or there is no
+// account to look in. Not while the typing settles or the request is out.
+const isLookupSettled = computed(
+  () =>
+    !accountId.value ||
+    (debouncedSearch.value === searchText.value && suggestions.status !== 'pending'),
 )
 const contacts = computed(() =>
   (suggestions.data ?? []).map((option) => ({

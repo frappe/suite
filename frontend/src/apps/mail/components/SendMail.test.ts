@@ -73,6 +73,8 @@ beforeEach(() => {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
+  // The window's size is remembered in this browser; no test inherits another's.
+  localStorage.clear()
 })
 
 /** The composer window open on a saved draft to Dana. */
@@ -139,6 +141,77 @@ describe('typing a recipient', () => {
 
     expect(toField().value).toBe('jordan@northwind')
     expect(chips()).toEqual(['dana@brightwave.example'])
+  })
+
+  it("never calls a contact's name invalid while the address book is still being asked", async () => {
+    // The address book answers when the test lets it, as a slow server would.
+    let letAnswer = () => {}
+    const asked = new Promise<void>((resolve) => (letAnswer = resolve))
+    const lookups = () => server.asked.filter((method) => method === 'get_email_suggestions')
+    server.answer = async (method) => {
+      if (method !== 'get_email_suggestions') return reply({ message: [] })
+      await asked
+      return reply({ message: [{ email: 'sam@northwind.example', name: 'Sam Rao' }] })
+    }
+    await openComposer()
+    // Whether the page has said so at any point, however briefly.
+    let saidInvalid = false
+    const page = new MutationObserver(() => {
+      saidInvalid ||= document.body.textContent?.includes('Not a valid email address') ?? false
+    })
+    page.observe(document.body, { subtree: true, childList: true, characterData: true })
+
+    try {
+      await type(toField(), 's')
+      await type(toField(), 'sa')
+      await type(toField(), 'sam')
+      await vi.waitFor(() => expect(lookups()).toHaveLength(1))
+      expect(saidInvalid).toBe(false)
+
+      letAnswer()
+      await vi.waitFor(() => expect(document.body.textContent).toContain('sam@northwind.example'))
+      expect(saidInvalid).toBe(false)
+    } finally {
+      page.disconnect()
+    }
+  })
+
+  it('says a typed address is not one when the address book cannot be asked', async () => {
+    server.answer = (method) =>
+      method === 'get_email_suggestions'
+        ? reply({ exc_type: 'PermissionError' }, 403)
+        : reply({ message: [] })
+    await openComposer()
+
+    // Text no earlier test has asked about: an answer already held would stand in for this one.
+    await type(toField(), 'priya@fabrikam')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Not a valid email address'))
+    await pressEnter(toField())
+
+    expect(toField().value).toBe('priya@fabrikam')
+    expect(chips()).toEqual(['dana@brightwave.example'])
+  })
+
+  it('puts the notice away on Esc, which docks an expanded window only once it is gone', async () => {
+    server.answer = () => reply({ message: [] })
+    await openComposer()
+    button('Expand')!.click()
+    await vi.waitFor(() => expect(button('Shrink')).not.toBeNull())
+    const pressEsc = async () => {
+      toField().dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await nextTick()
+    }
+
+    await type(toField(), 'jordan@northwind')
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Not a valid email address'))
+    await pressEsc()
+
+    expect(document.body.textContent).not.toContain('Not a valid email address')
+    expect(toField().value).toBe('jordan@northwind')
+    expect(button('Shrink')).not.toBeNull()
+
+    await pressEsc()
+    expect(button('Expand')).not.toBeNull()
   })
 
   it('adds a full address as a recipient', async () => {
