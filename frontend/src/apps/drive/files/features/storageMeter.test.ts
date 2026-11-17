@@ -8,6 +8,7 @@ describe('storage meter', () => {
   it('reads use against the quota', () => {
     expect(storageMeter({ used_bytes: 2.4 * GB, effective_quota: 10 * GB })).toEqual({
       label: '2.4 GB of 10 GB used',
+      usage: '2.4 GB of 10 GB used',
       percent: 24,
       level: 'ok',
     })
@@ -15,9 +16,15 @@ describe('storage meter', () => {
 
   it('warns from 90% and turns full at the quota, without overfilling the bar', () => {
     expect(storageMeter({ used_bytes: 8.9 * GB, effective_quota: 10 * GB }).level).toBe('ok')
-    expect(storageMeter({ used_bytes: 9 * GB, effective_quota: 10 * GB }).level).toBe('near')
+    expect(storageMeter({ used_bytes: 9 * GB, effective_quota: 10 * GB })).toMatchObject({
+      label: 'Almost full',
+      usage: '9 GB of 10 GB used',
+      level: 'near',
+    })
     expect(storageMeter({ used_bytes: 10 * GB, effective_quota: 10 * GB }).level).toBe('full')
     expect(storageMeter({ used_bytes: 12 * GB, effective_quota: 10 * GB })).toMatchObject({
+      label: 'Storage full',
+      usage: '12 GB of 10 GB used',
       percent: 100,
       level: 'full',
     })
@@ -31,6 +38,7 @@ describe('storage meter', () => {
   it('has no bar when the root has no quota', () => {
     expect(storageMeter({ used_bytes: 2.4 * GB, effective_quota: 0 })).toEqual({
       label: '2.4 GB used',
+      usage: '2.4 GB used',
       percent: null,
       level: 'ok',
     })

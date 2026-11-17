@@ -1,6 +1,6 @@
 <!--
   How much of the personal Drive's quota is used, as a thin bar and one line.
-  Pressing it opens the Storage tab (`drive.statistics`) in Settings. It keeps its space with a
+  Near or over the quota the line says so, and the figures move to a tooltip. Pressing it opens the Storage tab (`drive.statistics`) in Settings. It keeps its space with a
   skeleton while it loads, and shows a retry action when the read fails.
 -->
 <template>
@@ -10,26 +10,31 @@
     :title="__('Could not load storage usage')"
     :retry="retry"
   />
-  <button
-    v-else-if="meter"
-    type="button"
-    class="group flex w-full flex-col gap-2 rounded-4 px-2 py-2 text-start transition-colors hover:bg-surface-gray-3 focus-visible:focus-ring"
-    :aria-label="__('Storage: {0}. Open storage settings.', [meter.label])"
-    @click="openSettings('drive.statistics')"
-  >
-    <!-- The track darkens with the hover background, so it stays visible on it. -->
-    <span
-      v-if="meter.percent !== null"
-      class="h-1 w-full overflow-hidden rounded-full bg-surface-gray-3 transition-colors group-hover:bg-surface-gray-4"
+  <Tooltip v-else-if="meter" :text="meter.usage" :disabled="meter.level === 'ok'">
+    <button
+      type="button"
+      class="group flex w-full flex-col gap-2 rounded-4 px-2 py-2 text-start transition-colors hover:bg-surface-gray-3 focus-visible:focus-ring"
+      :aria-label="
+        meter.level === 'ok'
+          ? __('Storage: {0}. Open storage settings.', [meter.label])
+          : __('Storage: {0}, {1}. Open storage settings.', [meter.label, meter.usage])
+      "
+      @click="openSettings('drive.statistics')"
     >
+      <!-- The track darkens with the hover background, so it stays visible on it. -->
       <span
-        class="block h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none"
-        :class="FILL[meter.level]"
-        :style="{ width: `${meter.percent}%` }"
-      />
-    </span>
-    <span class="text-xs text-ink-gray-5">{{ meter.label }}</span>
-  </button>
+        v-if="meter.percent !== null"
+        class="h-1 w-full overflow-hidden rounded-full bg-surface-gray-3 transition-colors group-hover:bg-surface-gray-4"
+      >
+        <span
+          class="block h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none"
+          :class="FILL[meter.level]"
+          :style="{ width: `${meter.percent}%` }"
+        />
+      </span>
+      <span class="text-xs text-ink-gray-5">{{ meter.label }}</span>
+    </button>
+  </Tooltip>
   <div v-else-if="!failed" class="flex flex-col gap-2 px-2 py-2" aria-hidden="true">
     <Skeleton class="h-1 w-full rounded-full" />
     <Skeleton class="h-3 w-28" />
@@ -37,7 +42,7 @@
 </template>
 
 <script setup lang="ts">
-import { Skeleton } from 'frappe-ui'
+import { Skeleton, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
