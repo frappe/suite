@@ -45,6 +45,8 @@ import type {
   PeopleGetOutput,
   PeopleLookupInput,
   PeopleLookupOutput,
+  SharedDrivesListInput,
+  SharedDrivesListOutput,
   SiteGetInput,
   SiteGetOutput,
   SitePatchCompleteOnboardingInput,
@@ -300,6 +302,38 @@ export const operationOnboardingPost: Validators<OnboardingPostInput, Onboarding
   },
 }
 
+export const operationSharedDrivesList: Validators<SharedDrivesListInput, SharedDrivesListOutput> =
+  {
+    validateInput(value: unknown): asserts value is SharedDrivesListInput {
+      assertSchema(
+        value,
+        { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+        'shared_drives_list input',
+      )
+    },
+    validateOutput(value: unknown): asserts value is SharedDrivesListOutput {
+      assertSchema(
+        value,
+        {
+          $defs: {
+            SharedDrive: {
+              properties: {
+                id: { title: 'Id', type: 'string' },
+                title: { title: 'Title', type: 'string' },
+              },
+              required: ['id', 'title'],
+              title: 'SharedDrive',
+              type: 'object',
+            },
+          },
+          items: { $ref: '#/$defs/SharedDrive' },
+          type: 'array',
+        },
+        'shared_drives_list output',
+      )
+    },
+  }
+
 export const operationUserTransferPreview: Validators<
   UserTransferPreviewInput,
   UserTransferPreviewOutput
@@ -311,9 +345,10 @@ export const operationUserTransferPreview: Validators<
         type: 'object',
         properties: {
           user: { title: 'User', type: 'string' },
-          destination: { title: 'Destination', type: 'string' },
+          to_user: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'To User' },
+          to_drive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'To Drive' },
         },
-        required: ['user', 'destination'],
+        required: ['user', 'to_user', 'to_drive'],
         additionalProperties: false,
         $defs: {},
       },
@@ -386,6 +421,8 @@ export const operationUserTransferPreview: Validators<
             anyOf: [{ type: 'string' }, { type: 'null' }],
             title: 'Destination User',
           },
+          folder_title: { title: 'Folder Title', type: 'string' },
+          destination_title: { title: 'Destination Title', type: 'string' },
           bytes: { title: 'Bytes', type: 'integer' },
           item_count: { title: 'Item Count', type: 'integer' },
           fingerprint: { title: 'Fingerprint', type: 'string' },
@@ -400,6 +437,8 @@ export const operationUserTransferPreview: Validators<
           'source_root',
           'destination',
           'destination_user',
+          'folder_title',
+          'destination_title',
           'bytes',
           'item_count',
           'fingerprint',
@@ -421,11 +460,12 @@ export const operationUserTransfer: Validators<UserTransferInput, UserTransferOu
         type: 'object',
         properties: {
           user: { title: 'User', type: 'string' },
-          destination: { title: 'Destination', type: 'string' },
+          to_user: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'To User' },
+          to_drive: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'To Drive' },
           fingerprint: { title: 'Fingerprint', type: 'string' },
           confirm_access: { title: 'Confirm Access', type: 'boolean' },
         },
-        required: ['user', 'destination', 'fingerprint', 'confirm_access'],
+        required: ['user', 'to_user', 'to_drive', 'fingerprint', 'confirm_access'],
         additionalProperties: false,
         $defs: {},
       },

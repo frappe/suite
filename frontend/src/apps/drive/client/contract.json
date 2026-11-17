@@ -8194,6 +8194,17 @@
               "person": {
                 "$ref": "#/$defs/Person"
               },
+              "deleted_author": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Deleted Author"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -8219,6 +8230,7 @@
               "pinned",
               "actor",
               "person",
+              "deleted_author",
               "size",
               "creation"
             ],
@@ -8369,6 +8381,17 @@
           "person": {
             "$ref": "#/$defs/Person"
           },
+          "deleted_author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted Author"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -8394,6 +8417,7 @@
           "pinned",
           "actor",
           "person",
+          "deleted_author",
           "size",
           "creation"
         ],
@@ -8514,6 +8538,17 @@
           "person": {
             "$ref": "#/$defs/Person"
           },
+          "deleted_author": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted Author"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -8539,6 +8574,7 @@
           "pinned",
           "actor",
           "person",
+          "deleted_author",
           "size",
           "creation"
         ],
@@ -8721,6 +8757,17 @@
               "person": {
                 "$ref": "#/$defs/Person"
               },
+              "deleted_author": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Deleted Author"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -8746,6 +8793,7 @@
               "pinned",
               "actor",
               "person",
+              "deleted_author",
               "size",
               "creation"
             ],
@@ -10319,6 +10367,28 @@
                 "title": "Node Kind",
                 "type": "string"
               },
+              "node_mime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Node Mime"
+              },
+              "node_content_doctype": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Node Content Doctype"
+              },
               "actor": {
                 "$ref": "#/$defs/Person"
               }
@@ -10330,6 +10400,8 @@
               "activity",
               "node_title",
               "node_kind",
+              "node_mime",
+              "node_content_doctype",
               "actor"
             ],
             "title": "NotificationShape",

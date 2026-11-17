@@ -123,7 +123,7 @@ function button(label: string) {
 describe('Storage actions', () => {
   it('refuses invalid defaults visibly and preserves decimal byte conversion', async () => {
     await render()
-    button('Default storage').click()
+    button('Default limit').click()
     await vi.waitFor(() => expect(document.querySelector('input[type="number"]')).not.toBeNull())
     const input = document.querySelector<HTMLInputElement>('input[type="number"]')!
     input.value = '0'
@@ -151,7 +151,7 @@ describe('Storage actions', () => {
       ['2', 2_000_000_000],
     ]) {
       requests.length = 0
-      button('Default storage').click()
+      button('Default limit').click()
       await vi.waitFor(() => expect(document.querySelector('input[type="number"]')).not.toBeNull())
       const nextInput = document.querySelector<HTMLInputElement>('input[type="number"]')!
       nextInput.value = String(value)

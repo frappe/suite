@@ -8,7 +8,7 @@
             class="absolute -right-1 -top-1 min-w-4 rounded-full bg-surface-amber-7 px-1 text-center text-2xs-medium leading-4 text-white"
             data-testid="notification-count"
           >
-            {{ unread > 99 ? '99+' : unread }}
+            {{ unreadLabel(unread) }}
           </span>
         </template>
       </Button>
@@ -24,150 +24,24 @@
         <Button
           :disabled="unread === 0"
           :label="__('Mark all read')"
-          :loading="markRead.isPending"
+          :loading="markingAll"
           variant="ghost"
           @click="markAllRead"
         />
       </div>
-
-      <div
-        v-if="feed.status === 'pending' && !feed.rows.length"
-        class="space-y-3 p-3"
-        aria-label="Loading notifications"
-      >
-        <Skeleton v-for="index in 5" :key="index" class="h-12 w-full" />
-      </div>
-      <LoadFailed
-        v-else-if="feed.status === 'error' && !feed.rows.length"
-        :title="__('Could not load notifications')"
-        :retry="() => feed.refetch()"
-        class="flex-1 px-4"
-      />
-      <p
-        v-else-if="!feed.rows.length"
-        class="flex flex-1 items-center justify-center px-4 text-p-sm text-ink-gray-5"
-      >
-        {{ __('No notifications') }}
-      </p>
-      <ScrollArea v-else class="min-h-0 flex-1" viewport-class="pb-2">
-        <button
-          v-for="notification in feed.rows"
-          :key="notification.name"
-          type="button"
-          class="flex w-full gap-3 border-b border-outline-gray-1 px-3 py-3 text-left hover:bg-surface-gray-2"
-          :class="notification.read ? 'text-ink-gray-7' : 'text-ink-gray-8'"
-          @click="openNotification(notification)"
-        >
-          <span
-            class="mt-1 size-2 shrink-0 rounded-full"
-            :class="notification.read ? 'bg-surface-gray-3' : 'bg-surface-amber-7'"
-            aria-hidden="true"
-          />
-          <span class="min-w-0 flex-1">
-            <span
-              class="line-clamp-2 block break-words"
-              :class="notification.read ? 'text-base' : 'text-base-semibold'"
-            >
-              {{ notificationSentence(notification, session.user.value?.id) }}
-            </span>
-            <span
-              v-if="notificationExcerpt(notification)"
-              class="mt-1 line-clamp-2 block break-words text-sm text-ink-gray-6"
-            >
-              {{ notificationExcerpt(notification) }}
-            </span>
-            <span class="mt-1 block text-xs text-ink-gray-5">
-              {{ notificationTime(notificationAt(notification)) }}
-            </span>
-          </span>
-        </button>
-        <div v-if="feed.hasNext" class="flex justify-center p-2">
-          <Button
-            :label="__('Load more')"
-            :loading="feed.isFetchingNext"
-            variant="ghost"
-            @click="feed.fetchNext()"
-          />
-        </div>
-      </ScrollArea>
+      <NotificationsList :enabled="open" @navigate="open = false" />
     </div>
   </Popover>
 </template>
 
 <script setup lang="ts">
-import { Button, Popover, ScrollArea, Skeleton } from 'frappe-ui'
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { Button, Popover } from 'frappe-ui'
+import { ref } from 'vue'
 
-import { api, useInfiniteQuery, useMutation, useQuery } from '@/api'
-import { driveNodeRoute, loadDriveNodeSummary, type DriveNotification } from '@/apps/drive'
-import {
-  isDownloadExpired,
-  notificationAt,
-  notificationExcerpt,
-  notificationSentence,
-  notificationTime,
-} from '@/composition/notifications/notificationPresentation'
-import { toast } from '@/platform/feedback'
-import { LoadFailed } from '@/platform/load-failed'
-import { mentionedByState } from '@/platform/page-meta'
-import { useSession } from '@/platform/session'
+import NotificationsList from '@/composition/notifications/NotificationsList.vue'
+import { unreadLabel, useUnreadNotifications } from '@/composition/notifications/unread'
 import { translate as __ } from '@/platform/translation'
-import { isRefusal } from '@/platform/transport'
 
-const router = useRouter()
 const open = ref(false)
-const count = useQuery(api.drive.notifications.unreadCount, {})
-const feed = useInfiniteQuery(api.drive.notifications.list, () =>
-  open.value ? { limit: 60 } : false,
-)
-const session = useSession()
-const markRead = useMutation(api.drive.notifications.markRead)
-const markAll = useMutation(api.drive.notifications.markAllRead)
-const unread = computed(() => count.data?.unread ?? 0)
-
-async function openNotification(notification: DriveNotification) {
-  if (!notification.read) {
-    await markRead.run({ notifications: [notification.name] })
-  }
-  if ('download' in notification) {
-    // A failed or expired download has nothing to open; reading it is enough.
-    if (!notification.download.url || isDownloadExpired(notification.download)) return
-    open.value = false
-    window.location.assign(notification.download.url)
-    return
-  }
-  let node: Parameters<typeof driveNodeRoute>[0]
-  let mentionedBy = ''
-  try {
-    node = await loadDriveNodeSummary(notification.activity.node)
-  } catch (error) {
-    if (!isRefusal(error)) {
-      toast.error(__('Could not open this notification'), {
-        action: { label: __('Retry'), onClick: () => void openNotification(notification) },
-      })
-      return
-    }
-
-    // Someone mentioned without access can't load the node. The page they land on says whom to ask.
-    mentionedBy = notification.actor.full_name
-    node = {
-      name: notification.activity.node,
-      title: notification.node_title,
-      kind: notification.node_kind,
-    }
-  }
-
-  open.value = false
-  const destination = driveNodeRoute(node)
-  await router.push({
-    ...destination,
-    state: { ...destination.state, ...mentionedByState(mentionedBy) },
-  })
-}
-
-async function markAllRead() {
-  if (!unread.value) return
-  await markAll.run({ all: true })
-}
+const { unread, markAllRead, markingAll } = useUnreadNotifications()
 </script>

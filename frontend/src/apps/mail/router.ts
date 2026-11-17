@@ -3,6 +3,8 @@ import type { RouteLocationNormalized } from 'vue-router'
 import { userStore } from '@/apps/mail/stores/user'
 import {
   INBOX_FOLDER,
+  isUnifiedRoute,
+  mailboxForUnifiedFolder,
   mailboxIdForParam,
   mailboxParam,
   prefersUnified,
@@ -164,8 +166,26 @@ export const mailGuard = async (to: RouteLocationNormalized) => {
 
   // /mail itself reopens "All accounts" for a reader who last chose it, while they still have
   // more than one account to merge.
-  if (to.name === 'mail-root-shortcut' && prefersUnified() && (user?.accounts?.length ?? 0) > 1)
+  const merges = (user?.accounts?.length ?? 0) > 1
+  if (to.name === 'mail-root-shortcut' && prefersUnified() && merges)
     return { ...unifiedFolderRoute(INBOX_FOLDER), query: to.query }
+
+  // With one account there is nothing to merge, and no merged folder list to show (see the user
+  // store): a link into "All accounts" opens the account's own folder, and its thread there.
+  if (isUnifiedRoute(to.name) && !merges) {
+    const mailboxId = mailboxForUnifiedFolder(to.params.folder, mailboxes.data)
+    if (!mailboxId) return defaultRoute
+    const mailbox = mailboxParam(mailboxId, mailboxes.data)
+    const threadID = to.name === UNIFIED_THREAD_ROUTE ? to.params.threadID : undefined
+    return {
+      ...(typeof threadID === 'string'
+        ? { name: 'mail-mail', params: { accountId, mailbox, threadID } }
+        : { name: 'mail-mailbox', params: { accountId, mailbox } }),
+      query: to.query,
+      hash: to.hash,
+      replace: true,
+    }
+  }
 
   // Expand shortcut routes to their full account-scoped equivalents. The
   // query rides along — it can carry a compose deep link (?compose=1&to=).

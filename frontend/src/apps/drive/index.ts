@@ -120,6 +120,11 @@ export { formatBytes as formatDriveBytes } from '@/apps/drive/files/internal/for
 
 /** A document type's icon and its ink, as Drive's listings draw it. */
 export { documentIcon as driveDocumentIcon } from '@/apps/drive/files/internal/icons'
+/** A node's icon and its ink, from its kind, title, mime and document type. */
+export {
+  nodeIcon as driveNodeIcon,
+  nodeIconTint as driveNodeIconTint,
+} from '@/apps/drive/files/internal/icons'
 
 export type { DriveNotification } from '@/apps/drive/client/notifications'
 export { DRIVE_ROLES } from '@/apps/drive/client/types'
@@ -451,6 +456,7 @@ export { default as DriveDocumentStrip } from '@/apps/drive/files/features/Docum
 export { showError } from '@/apps/drive/files/features/side-panel/versions/useDocumentPanel'
 export { readStoredState } from '@/apps/drive/files/features/side-panel/versions/storedState'
 export { fetchVersion } from '@/apps/drive/files/features/side-panel/versions/fetchVersion'
+export { versionAuthor } from '@/apps/drive/files/features/side-panel/versions/versionAuthor'
 export {
   askUntilConverted,
   type ConvertedState,
