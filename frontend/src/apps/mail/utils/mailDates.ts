@@ -40,12 +40,40 @@ const SHORT_WEEKDAY = /\b(?:Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)\b/
 // "3/4", "1/2", "24/7", "4/5": as often a fraction or a ratio as a day, unless a year or a time
 // says which.
 const SLASH_TAG = 'parser/SlashDateFormatParser'
-// The line a reply's quoted trail starts with, however a client wraps it, and Outlook's header:
-// its date is the quoted mail's, not one the writer proposes.
-const ATTRIBUTIONS = [
-  /(?:^|\n)[ \t]*On\s(?:[^\n]{0,200}\n){0,2}?[^\n]{0,200}?\bwrote\s*:/g,
-  /^[ \t]*(?:Sent|Date):.*$/gim,
-]
+// The line a reply's quoted trail starts with, however a client wraps it: its date is the quoted
+// mail's, not one the writer proposes.
+const ATTRIBUTION = /(?:^|\n)[ \t]*On\s(?:[^\n]{0,200}\n){0,2}?[^\n]{0,200}?\bwrote\s*:/g
+// The header Outlook and forwards put above a quoted mail: lines like these, one after another.
+const HEADER_LINE = /^[ \t]*(?:From|Sent|Date|To|Cc|Subject):/i
+const HEADER_NAMES = /^[ \t]*(?:From|To|Cc|Subject):/i
+
+/**
+ * Which of `lines` belong to a quoted mail's header: two or more header lines in a row, one of
+ * them a From:, To:, Cc: or Subject:. A "Date:" line of the writer's own, on its own, isn't one.
+ */
+const inHeader = (lines: readonly string[]): boolean[] => {
+  const result = lines.map(() => false)
+  let start = 0
+  for (let i = 0; i <= lines.length; i++) {
+    if (i < lines.length && HEADER_LINE.test(lines[i])) continue
+    const run = lines.slice(start, i)
+    if (run.length > 1 && run.some((line) => HEADER_NAMES.test(line))) result.fill(true, start, i)
+    start = i + 1
+  }
+  return result
+}
+
+/** The stretches of `text` that are a quoted mail's header, by line. */
+const headerBlocks = (text: string): [number, number][] => {
+  const lines = text.split('\n')
+  const header = inHeader(lines)
+  let offset = 0
+  return lines.flatMap<[number, number]>((line, i) => {
+    const from = offset
+    offset += line.length + 1
+    return header[i] ? [[from, from + line.length]] : []
+  })
+}
 
 /**
  * The dates and times in `text`, read as the mail's writer meant them: "tomorrow" and "Thursday"
@@ -63,9 +91,10 @@ export function findMailDates(text: string, sentAt: string, timeZone: string): N
   // Read again without looking forward, to tell "20 Oct" in a November mail (last month's) from a
   // date to come: looking forward moves the first to next year.
   const asWritten = new Map(casual.parse(text, reference).map((result) => [result.index, result]))
-  const attributions = ATTRIBUTIONS.flatMap((pattern) =>
-    [...text.matchAll(pattern)].map((match) => [match.index, match.index + match[0].length]),
-  )
+  const attributions = [
+    ...[...text.matchAll(ATTRIBUTION)].map((match) => [match.index, match.index + match[0].length]),
+    ...headerBlocks(text),
+  ]
   const within = (result: ParsedResult) =>
     attributions.some(([from, to]) => result.index < to && result.index + result.text.length > from)
   return casual.parse(text, reference, { forwardDate: true }).flatMap((result) => {
@@ -94,16 +123,26 @@ const namesADate = (result: ParsedResult) => {
   return time && clock && SHORT_WEEKDAY.test(text)
 }
 
+// "at 5", "Friday at 2": an hour on its own, as people write one for a meeting. Not "07:30" or
+// "5:45", which say the hour as a clock does.
+const CLOCK_FORM = /\d[:.]\d|\b0\d/
+
 const toNamedDate = (result: ParsedResult, timeZone: string, sent: Dayjs): NamedDate => {
   const lead = result.text.match(LEAD)?.[0].length ?? 0
-  // A time with no day is the next one after the mail was sent.
-  const from = moment(result.start, timeZone, (time) =>
-    time >= sent.format('HH:mm')
-      ? sent.format('YYYY-MM-DD')
-      : sent.add(1, 'day').format('YYYY-MM-DD'),
-  )
-  // A range's end is on its start's day unless it names its own.
-  const until = result.end && moment(result.end, timeZone, () => from.date)
+  const sentDay = sent.format('YYYY-MM-DD')
+  const workingHours = !CLOCK_FORM.test(result.text)
+  const from = moment(result.start, timeZone, {
+    workingHours,
+    // A time with no day is the next one after the mail was sent.
+    dayFor: (time) =>
+      time >= sent.format('HH:mm') ? sentDay : sent.add(1, 'day').format('YYYY-MM-DD'),
+    // A weekday with an hour is the next time that weekday comes round at that hour: today, when
+    // it is today and the hour is still to come. Except "next Friday", which says otherwise.
+    earliest: /\bnext\b/i.test(result.text) ? undefined : sent.format('YYYY-MM-DDTHH:mm'),
+  })
+  // A range's end is on its start's day unless it names a day of its own.
+  const until =
+    result.end && moment(result.end, timeZone, { workingHours, dayFor: () => from.date })
   return {
     index: result.index + lead,
     length: result.text.length - lead,
@@ -114,21 +153,38 @@ const toNamedDate = (result: ParsedResult, timeZone: string, sent: Dayjs): Named
 
 const pad = (value: number | null) => String(value ?? 0).padStart(2, '0')
 
-// As the text spells it, which chrono reads in the reader's zone; `dayFor` gives the day of a time
-// that names none. Only a time given with a zone of its own goes through its instant, to land on
-// the reader's clock.
+interface MomentRules {
+  /** Whether an hour without am or pm is a working hour (1–7 the afternoon, 8–11 the morning). */
+  workingHours: boolean
+  /** The day of a time that names none. */
+  dayFor: (time: string) => string
+  /** For a weekday at a time: the earliest it can be (`YYYY-MM-DDTHH:mm`), to pick the week by. */
+  earliest?: string
+}
+
+// As the text spells it, which chrono reads in the reader's zone. Only a time given with a zone of
+// its own goes through its instant, to land on the reader's clock.
 const moment = (
   components: ParsedResult['start'],
   timeZone: string,
-  dayFor: (time: string) => string,
+  { workingHours, dayFor, earliest }: MomentRules,
 ): MailMoment => {
   const named = `${pad(components.get('year'))}-${pad(components.get('month'))}-${pad(components.get('day'))}`
   if (!components.isCertain('hour')) return { date: named }
   const written = components.get('hour') ?? 0
-  const hour =
-    !components.isCertain('meridiem') && written >= 1 && written <= 7 ? written + 12 : written
-  const time = `${pad(hour)}:${pad(components.get('minute'))}`
-  const date = components.isCertain('day') || components.isCertain('weekday') ? named : dayFor(time)
+  const afternoon =
+    workingHours && !components.isCertain('meridiem') && written >= 1 && written <= 7
+  const time = `${pad(afternoon ? written + 12 : written)}:${pad(components.get('minute'))}`
+  let date = named
+  if (!components.isCertain('day')) {
+    if (!components.isCertain('weekday') || !earliest) date = dayFor(time)
+    else {
+      // chrono picked the week by the hour as written; with the hour read as meant, the same
+      // weekday a week sooner may still be to come.
+      const sooner = dayjs(named).subtract(7, 'day').format('YYYY-MM-DD')
+      if (`${sooner}T${time}` >= earliest) date = sooner
+    }
+  }
   if (!components.isCertain('timezoneOffset')) return { date, time }
   const at = dayjs
     .utc(`${date}T${time}`)
@@ -149,6 +205,8 @@ const endsAfter = (start: MailMoment, end: MailMoment) => {
 const SKIPPED =
   'a, button, code, pre, blockquote, kbd, samp, script, style, textarea, title, svg, ' +
   '[class~="gmail_attr"], [class~="x_gmail_attr"], [class~="moz-cite-prefix"], [class~="x_moz-cite-prefix"]'
+// Skipped, yet part of the line around them: a link in a header's From: line, say.
+const IN_LINE_SKIPPED = 'a, button, code, kbd, samp, svg'
 // Text either side of these edges does not run on, so a date can't straddle one.
 const BLOCKS =
   'address, article, aside, body, center, dd, div, dl, dt, figure, footer, form, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, section, table, tbody, td, tfoot, th, thead, tr, ul'
@@ -198,38 +256,47 @@ export function markMailDates(
     .forEach((element) => element.removeAttribute(MAIL_DATE_ATTRIBUTE))
   const trail = new Set(findQuoteRoots(doc))
   // Each run is text that reads on: within one block, and unbroken by a line break, an image or
-  // anything skipped. The walker never hands back what it rejects, so it says when it has.
-  const runs: Text[][] = [[]]
+  // anything skipped. The walker never hands back what it rejects, so it says when it has. A run
+  // also knows the line it is on, which a link inside the line doesn't end.
+  const runs: { nodes: Text[]; line: number }[] = []
   let broken = false
+  let newLine = true
   const walker = doc.createTreeWalker(body, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
     acceptNode: (node) => {
       if (node instanceof Element && (trail.has(node) || node.matches(SKIPPED))) {
         broken = true
+        if (!node.matches(IN_LINE_SKIPPED)) newLine = true
         return NodeFilter.FILTER_REJECT
       }
       return NodeFilter.FILTER_ACCEPT
     },
   })
   let block: Element = body
+  let line = -1
   let scanned = 0
   for (let node = walker.nextNode(); node && scanned < SCAN_LIMIT; node = walker.nextNode()) {
     if (!(node instanceof Text)) {
-      if (!(node instanceof Element && INLINE.has(node.tagName))) broken = true
+      if (!(node instanceof Element && INLINE.has(node.tagName))) broken = newLine = true
       continue
     }
-    const text = node
-    const at = text.parentElement?.closest(BLOCKS) ?? body
-    if (broken || at !== block) runs.push([])
-    broken = false
+    const at = node.parentElement?.closest(BLOCKS) ?? body
+    if (newLine || at !== block) line++
+    if (broken || at !== block || !runs.length) runs.push({ nodes: [], line })
+    broken = newLine = false
     block = at
-    runs.at(-1)!.push(text)
-    scanned += text.data.length
+    runs.at(-1)!.nodes.push(node)
+    scanned += node.data.length
   }
 
+  // A quoted mail's header is told apart by its lines.
+  const texts = runs.map((run) => run.nodes.map((node) => node.data).join(''))
+  const lines: string[] = []
+  runs.forEach((run, r) => (lines[run.line] = (lines[run.line] ?? '') + texts[r]))
+  const header = inHeader(lines)
   const dates: NamedDate[] = []
-  for (const run of runs) {
-    if (!run.length) continue
-    const text = run.map((node) => node.data).join('')
+  for (const [r, { nodes: run, line: on }] of runs.entries()) {
+    if (header[on]) continue
+    const text = texts[r]
     const found = findMailDates(text, sentAt, timeZone)
     if (!found.length) continue
     const opened = new Set<number>()

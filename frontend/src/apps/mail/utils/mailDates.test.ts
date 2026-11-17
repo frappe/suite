@@ -93,6 +93,18 @@ describe('dates in a mail', () => {
     expect(dates('Lunch at 12 on Friday')[0].start).toEqual({ date: '2026-11-20', time: '12:00' })
   })
 
+  it('reads a weekday that is the day the mail was sent as that day, while the hour is to come', () => {
+    // Friday 20 November, at 10:00 and at 16:00 in India.
+    const friday = (sentAt: string) => findMailDates('Friday at 2 then', sentAt, ZONE)[0].start
+    expect(friday('2026-11-20T04:30:00Z')).toEqual({ date: '2026-11-20', time: '14:00' })
+    expect(friday('2026-11-20T10:30:00Z')).toEqual({ date: '2026-11-27', time: '14:00' })
+  })
+
+  it('keeps a time written as a clock does', () => {
+    expect(dates('tomorrow 07:30 works')[0].start).toEqual({ date: '2026-11-18', time: '07:30' })
+    expect(dates('the train is at 05:45')[0].start).toEqual({ date: '2026-11-17', time: '05:45' })
+  })
+
   it('offers no date before the day the mail was sent', () => {
     // Sent on the 17th, the reader's day: 20 October is last month's, not next year's.
     expect(dates('The deadline was 20 Oct.')).toEqual([])
@@ -104,8 +116,16 @@ describe('dates in a mail', () => {
     const text =
       'Thursday at 3pm suits me.\n\nOn Tue, Nov 17, 2026 at 10:00 AM Lena Park <lena@example.com>\nwrote:'
     expect(dates(text).map((date) => date.text)).toEqual(['Thursday at 3pm'])
-    const outlook = 'Friday works.\nSent: Tuesday, November 17, 2026 10:00 AM\nSubject: Q4'
+    const outlook =
+      'Friday works.\nFrom: Lena Park\nSent: Tuesday, November 17, 2026 10:00 AM\nTo: Me\nSubject: Q4'
     expect(dates(outlook).map((date) => date.text)).toEqual(['Friday'])
+  })
+
+  it('offers a date on a line of the writer’s own that starts like a header', () => {
+    expect(dates('Date: Thursday 26 Nov, 3pm\nPlace: Room 4')[0].start).toEqual({
+      date: '2026-11-26',
+      time: '15:00',
+    })
   })
 })
 
@@ -157,6 +177,14 @@ describe('dates marked in a mail’s body', () => {
       '<div>Friday works.</div><div class="gmail_quote"><div class="gmail_attr">On Tue, Nov 17, 2026 at 10:00 AM Lena &lt;<a href="mailto:lena@example.com">lena@example.com</a>&gt; wrote:<br></div><blockquote class="gmail_quote">Thursday?</blockquote><div>Yes, Thursday at 3pm.</div><blockquote class="gmail_quote">Room?</blockquote></div>',
     )
     expect(marks).toEqual(['Friday', 'Thursday at 3pm'])
+  })
+
+  it('leaves a quoted mail’s header alone, links in it and all, but not a date line of the writer’s', () => {
+    const { marks } = marked(
+      '<p><b>Date:</b> Thursday 26 Nov, 3pm</p><div>Friday works too.</div>' +
+        '<div><b>From:</b> Lena &lt;<a href="mailto:lena@example.com">lena@example.com</a>&gt;<br><b>Sent:</b> Tuesday, November 17, 2026 10:00 AM<br><b>Subject:</b> Q4</div>',
+    )
+    expect(marks).toEqual(['Thursday 26 Nov, 3pm', 'Friday'])
   })
 
   it('takes no mark a mail brings of its own', () => {
