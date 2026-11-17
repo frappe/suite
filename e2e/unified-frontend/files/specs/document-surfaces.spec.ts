@@ -42,9 +42,15 @@ function watchLegacyDriveCalls(page: Page): string[] {
 }
 
 test("From template copies a template and lands on its /d/ route", async ({ page }) => {
-	const templateTitle = runTag("tpl-sheet");
+	const templateTitle = runTag("tpl-writer");
 	const response = await api.post(`${DRIVE}/nodes`, {
-		data: { parent_node: home.name, title: templateTitle, kind: "document", content_doctype: "Sheet", is_template: true },
+		data: {
+			parent_node: home.name,
+			title: templateTitle,
+			kind: "document",
+			content_doctype: "Writer Document",
+			is_template: true,
+		},
 	});
 	expect(response.ok(), await response.text()).toBe(true);
 
@@ -58,14 +64,18 @@ test("From template copies a template and lands on its /d/ route", async ({ page
 	await fromTemplate.click();
 
 	const dialog = page.getByRole("dialog", { name: "New from template" });
-	await dialog.getByRole("radio", { name: "Spreadsheet" }).click();
+	// One tab per type that has templates: Sheets has none at launch.
+	const documentTab = dialog.getByRole("radio", { name: "Document", exact: true });
+	await expect(documentTab).toBeVisible();
+	await expect(dialog.getByRole("radio", { name: "Spreadsheet" })).toHaveCount(0);
+	await documentTab.click();
 	await dialog.getByRole("option", { name: templateTitle }).click();
 	await dialog.getByRole("textbox").fill("from-template-copy");
 	await dialog.getByRole("button", { name: "Create" }).click();
 
 	await expect(page).toHaveURL(/\/d\/[a-z0-9]+\/from-template-copy/);
 	const copy = (await children(api, home.name)).rows.find((row) => row.title === "from-template-copy");
-	expect(copy?.content_doctype).toBe("Sheet");
+	expect(copy?.content_doctype).toBe("Writer Document");
 	expect(page.url()).toContain(`/d/${copy?.name}`);
 });
 
