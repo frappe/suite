@@ -509,7 +509,8 @@ class TestNodeShape(DriveHTTPCase):
     def test_the_access_expansion_reports_the_role_and_its_source(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/nodes/{self.file}", query={"expand": "access"}))
         self.assertEqual(
-            set(answer["access"]), {"role", "via_link", "own_role", "source_node", "source_principal", "can_manage"}
+            set(answer["access"]),
+            {"role", "via_link", "own_role", "source_node", "source_principal", "can_manage"},
         )
         self.assertGreaterEqual(answer["access"]["role"], READ)
 
