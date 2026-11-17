@@ -1722,6 +1722,8 @@ Each app's later migration owns these. They are named and baselined
   rail, no area sidebar, one slim header [T011].
 - The header holds the Suite mark, the **Uploads** button with its
   progress dot (section 10.6) and Sign in. On `/d/` it holds only the Suite mark and Sign in [T011].
+- While the frame shows its "Sign in to open this" screen, the header leaves
+  out its Sign in, since the screen has its own.
 - The same `FilesPage` and `DocumentHost` render for guests. Actions hide
   by role (section 5.6). There is no second folder list [T011].
 - On folder routes the trail is `FilesPage`'s own breadcrumbs through
