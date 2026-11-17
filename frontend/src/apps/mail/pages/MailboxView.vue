@@ -981,8 +981,9 @@ const refillPending = ref(false)
 // poll to detect count changes and by the tab title's unread badge.
 const mailboxObj = computed(() => mailboxes.data?.find((m) => m.id === mailbox))
 
-// Cross-account search: when the search dialog's "all accounts" toggle was on, the flag rides along in
-// the query (kept out of the filter conditions on the server). The merged results carry their owning
+// Cross-account search: a search started from All Inboxes (see searchesAllAccountsFrom), or widened
+// with "Search all accounts" on an empty result, carries the flag in the query (kept out of the filter
+// conditions on the server). The merged results carry their owning
 // account, so each row opens in — and acts within — its own account (see the row-action wrappers).
 const isAllAccountsSearch = computed(() => mailbox === 'search' && route.query.all_accounts != null)
 
