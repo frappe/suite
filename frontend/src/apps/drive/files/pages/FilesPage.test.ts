@@ -33,6 +33,8 @@ const server = vi.hoisted(() => ({
   gate: fromPartial<Promise<void> | null>(null),
   /** Set, a folder's details wait for it before they answer. */
   detailGate: fromPartial<Promise<void> | null>(null),
+  /** Set, a search waits for it before it answers. */
+  searchGate: fromPartial<Promise<void> | null>(null),
   /** Set, trash and batch writes are refused with it. */
   refusal: fromPartial<Error | null>(null),
   /** The nodes a batch answers as failed, and leaves unchanged. */
@@ -114,6 +116,7 @@ vi.mock('@/platform/transport', async (original) => {
               next_cursor: server.nextCursor,
             }
           case 'view_list':
+            if (input.view === 'search') await server.searchGate
             return { rows: server.recents.map((name) => node(name)), next_cursor: null }
           case 'view_clear_recents': {
             const named = input.nodes
@@ -313,7 +316,8 @@ const quiet = () =>
       () =>
         h('div', slots.default?.()),
   })
-vi.mock('frappe-ui', () => ({
+// The search field is frappe-ui's own, since what it shows while typing is under test
+vi.mock('frappe-ui', async () => ({
   Alert: quiet(),
   Breadcrumbs: quiet(),
   Button: quiet(),
@@ -322,8 +326,8 @@ vi.mock('frappe-ui', () => ({
   PageHeaderBackButton: quiet(),
   PageHeaderMobile: quiet(),
   TabButtons: quiet(),
-  TextInput: quiet(),
   useKeyboardShortcut: (configs: ShortcutConfig[]) => shortcuts.push(...configs),
+  ...(await import('../../../../../../node_modules/frappe-ui/src/components/TextInput')),
 }))
 /** What the page last handed the folder picker. */
 const picker = vi.hoisted(() => ({
@@ -420,6 +424,7 @@ afterEach(() => {
   server.nextCursor = null
   server.gate = null
   server.detailGate = null
+  server.searchGate = null
   server.refusal = null
   server.batchFailures = []
   vi.useRealTimers()
@@ -1289,5 +1294,80 @@ describe('Keys', () => {
 
     await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/drive'))
     expect(router.options.history.state.reveal).toBe('folder-1')
+  })
+})
+
+describe('Search', () => {
+  const field = (root: HTMLElement) =>
+    root.querySelector<HTMLInputElement>('input[aria-label="Search all files"]')!
+  function type(root: HTMLElement, text: string) {
+    field(root).value = text
+    field(root).dispatchEvent(new Event('input'))
+  }
+
+  it('keeps text the user deleted while a slow search answers', async () => {
+    let answer = () => {}
+    server.searchGate = new Promise((resolve) => (answer = resolve))
+    const { root, router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+
+    type(root, 'report')
+    await vi.advanceTimersByTimeAsync(300)
+    expect(router.currentRoute.value.query.q).toBe('report')
+
+    type(root, 'rep')
+    answer()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(field(root).value).toBe('rep')
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(field(root).value).toBe('rep')
+    expect(router.currentRoute.value.query.q).toBe('rep')
+  })
+
+  it('keeps typing that lands while the URL takes the term before it', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+
+    type(root, 'rep')
+    vi.advanceTimersByTime(300)
+    type(root, 'report')
+    await vi.advanceTimersByTimeAsync(0)
+    expect(field(root).value).toBe('report')
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(field(root).value).toBe('report')
+    expect(router.currentRoute.value.query.q).toBe('report')
+  })
+
+  it('clears at once with Escape, and a search the user typed before stays cleared', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks?q=old')
+    await vi.waitFor(() => expect(field(root).value).toBe('old'))
+    vi.useFakeTimers({ toFake: ['setTimeout'] })
+
+    type(root, 'report')
+    field(root).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await vi.advanceTimersByTimeAsync(0)
+    expect(field(root).value).toBe('')
+    expect(router.currentRoute.value.query.q).toBeUndefined()
+
+    await vi.advanceTimersByTimeAsync(300)
+    expect(field(root).value).toBe('')
+    expect(router.currentRoute.value.query.q).toBeUndefined()
+  })
+
+  it('shows the term of a page the user goes back to', async () => {
+    const { root, router } = await mount('/drive/f/folder-1/talks')
+    await vi.waitFor(() => expect(titles()).toHaveLength(3))
+    await router.push('/drive/f/folder-1/talks?q=draft')
+    await vi.waitFor(() => expect(field(root).value).toBe('draft'))
+    await router.push('/drive/f/folder-1/talks?q=report')
+    await vi.waitFor(() => expect(field(root).value).toBe('report'))
+
+    router.back()
+
+    await vi.waitFor(() => expect(field(root).value).toBe('draft'))
   })
 })

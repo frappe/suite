@@ -91,18 +91,17 @@
               @done="clearSelected"
             />
             <template v-else>
-              <!-- Each place gets its own field. Pressing a link elsewhere fires the field's
-                   change event, whose debounced search would otherwise land on the new place. -->
+              <!-- Each place gets its own field, so a term typed in one place does not follow
+                   the user to the next. -->
               <TextInput
                 v-if="signedIn"
                 :key="route.path"
                 v-model="searchText"
                 type="search"
-                :debounce="250"
                 placeholder="Search all files"
                 aria-label="Search all files"
                 class="files-search w-full max-w-64"
-                @update:model-value="updateSearch"
+                @update:model-value="routeSearchLater"
                 @keydown.escape="clearSearch"
               >
                 <template #prefix
@@ -286,7 +285,7 @@
 </template>
 
 <script setup lang="ts">
-import { useMediaQuery } from '@vueuse/core'
+import { useDebounceFn, useMediaQuery } from '@vueuse/core'
 import {
   Alert,
   Breadcrumbs,
@@ -425,6 +424,8 @@ const discovered = useQuery(api.drive.roots.list, () => (signedIn.value ? {} : f
 const presentationVersion = ref(0)
 const picked = useListingSelection(() => listing.rows.map((row) => row.name))
 const searchText = ref(String(route.query.q ?? ''))
+/** The term the field last put in the URL, so the field skips its own echo. */
+let routedSearch = searchText.value.trim()
 const activeNode = ref<DriveNode | null>(null)
 const contextOptions = ref<DropdownItem[]>([])
 const contextOpen = ref(false)
@@ -888,9 +889,14 @@ watch(
   { immediate: true },
 )
 watch(
-  () => route.fullPath,
-  () => {
-    searchText.value = String(route.query.q ?? '')
+  () => [route.path, route.fullPath] as const,
+  ([path], [before]) => {
+    // A term the field put there itself is older than the field by now
+    const q = String(route.query.q ?? '')
+    if (path !== before || q.trim() !== routedSearch) {
+      searchText.value = q
+      routedSearch = q.trim()
+    }
     clearSelected()
   },
 )
@@ -1332,13 +1338,16 @@ function changeSort(column: FilesSort) {
   if (!arrangeable.value) return
   setPresentation(nextSort(settingsPresentation.value, column))
 }
-function updateSearch(value: string | number) {
-  const q = String(value).trim() || undefined
-  void router.replace({ query: { ...route.query, q } })
+/** Searches for the field's term. It reads the field when it runs, so a late call keeps up. */
+function routeSearch() {
+  routedSearch = searchText.value.trim()
+  void router.replace({ query: { ...route.query, q: routedSearch || undefined } })
 }
+// The field shows each key at once. The URL, and so the search, follows after a pause
+const routeSearchLater = useDebounceFn(routeSearch, 250)
 function clearSearch() {
   searchText.value = ''
-  updateSearch('')
+  routeSearch()
 }
 /** The clear button leaves with the term, so focus stays in the field. */
 function clearSearchAndFocus(event: MouseEvent) {
