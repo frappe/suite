@@ -330,8 +330,8 @@ const meetLinkDisplay = computed(() =>
 
 // --- Watchers ---
 
-// Moving the start drags the end along, keeping the gap the user set. A gap that
-// hasn't been set — or one the start has overtaken — falls back to the default.
+// Moving the start drags the end along, keeping the gap the user set; an end picked
+// before any start stays put unless the start overtakes it (see endFollowingStart).
 let previousStart: FormMoment | null = null
 watch(show, (val) => {
   if (!val) return
