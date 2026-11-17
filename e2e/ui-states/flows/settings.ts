@@ -60,11 +60,11 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "Usage rewritten to 2.4 GB of a 10 GB quota: a grey bar and \"2.4 GB of 10 GB used\"." },
 		},
 		meterNear: {
-			meta: { description: "Usage rewritten to 9.3 GB of 10 GB, past the 90% line: the bar turns amber. Nothing else warns." },
+			meta: { description: "Usage rewritten to 9.3 GB of 10 GB, past the 90% line: the bar turns amber and the line reads \"Almost full\", with the figures in a tooltip." },
 			on: { OPEN_STATISTICS: "statisticsNearQuota" },
 		},
 		meterFull: {
-			meta: { description: "Usage rewritten to 10.4 GB of 10 GB: the bar is full and red, and the line still reads \"10.4 GB of 10 GB used\"." },
+			meta: { description: "Usage rewritten to 10.4 GB of 10 GB: the bar is full and red, and the line reads \"Storage full\", with the figures in a tooltip." },
 		},
 		statistics: {
 			meta: { description: "The meter opens Settings on Drive > Storage: the bytes used over an empty bar track (there is no quota, but the bar still shows), totals by type and the largest files. External access is absent from the nav because WebDAV is off and the user is no admin." },

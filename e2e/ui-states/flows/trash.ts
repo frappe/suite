@@ -69,7 +69,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { RETRY: "restoreToast" },
 		},
 		restoreDestinationDialog: {
-			meta: { description: "The item's folder is in Trash too, so Restore asks where to put it, inside the same root. The copy says the folder is gone, though it is only in Trash." },
+			meta: { description: "The item's folder is in Trash too, so Restore asks where to put it, inside the same root. The copy names the item and says its folder is in Trash." },
 			on: { RESTORE_HERE: "restoredElsewhere" },
 		},
 		restoredElsewhere: {
@@ -165,7 +165,7 @@ export const trash = defineFlow<Event>({
 		async RESTORE_ORPHAN(scene) {
 			await scene.rowAction("Kickoff notes.md", "Restore");
 			const picker = scene.dialog("Restore to");
-			await expect(picker.getByText("The folder this item was in is gone.", { exact: false })).toBeVisible();
+			await expect(picker.getByText("“Kickoff notes.md” was in a folder that is in Trash. Choose where to restore it.")).toBeVisible();
 			await expect(picker.getByRole("button", { name: WORKSPACE_FOLDER, exact: true })).toBeVisible();
 		},
 		async RESTORE_HERE(scene) {
