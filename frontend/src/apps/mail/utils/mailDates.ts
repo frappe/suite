@@ -31,8 +31,10 @@ export interface NamedDate {
 const RELATIVE_TAGS = ['casualReference/now', 'casualReference/yesterday', 'result/relativeDate']
 // Read forward, "last Friday" would land on the next one.
 const PAST = /^(?:last|past|previous)\b/i
-// "on 20 Nov", "at 3pm": the word before is the sentence's, not the date's.
+// "on 20 Nov", "at 3pm": the word before is the sentence's, not the date's; and so is a comma or a
+// stop after it ("on Friday, then").
 const LEAD = /^(?:on|at)\s+/i
+const TRAIL = /[\s,.;:!?]+$/
 // A weekday standing for the day must be spelled out: "sat", "the Sun" and "this weekend" aren't.
 const WEEKDAY = /\b(?:mon|tues|wednes|thurs|fri|satur|sun)day\b/i
 // Its short form only with a clock time beside it: "Thu 3pm".
@@ -147,9 +149,10 @@ const toNamedDate = (result: ParsedResult, timeZone: string, sent: Dayjs): Named
   // A range's end is on its start's day unless it names a day of its own.
   const until =
     result.end && moment(result.end, timeZone, { workingHours, dayFor: () => from.date })
+  const trail = result.text.slice(lead).match(TRAIL)?.[0].length ?? 0
   return {
     index: result.index + lead,
-    length: result.text.length - lead,
+    length: result.text.length - lead - trail,
     start: from,
     ...(until && endsAfter(from, until) && { end: until }),
   }

@@ -54,6 +54,12 @@ describe('dates in a mail', () => {
     expect(date.start).toEqual({ date: '2026-11-02', time: '10:00' })
   })
 
+  it('leaves the punctuation after a date out of it', () => {
+    expect(dates('I’m free 3–4pm on Friday, if that works').map((date) => date.text)).toEqual([
+      '3–4pm on Friday',
+    ])
+  })
+
   it('reads a day with no time as the whole day', () => {
     const [friday] = dates('Shall we do Friday instead?')
     expect(friday.text).toBe('Friday')
