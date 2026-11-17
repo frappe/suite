@@ -466,20 +466,6 @@ class TestLinkCodesStayOnThisOrigin(BoundaryCase):
         minted.assert_called_once_with(self.FILE, as_attachment=True)
         self.assertEqual(answer, {"url": self.STORAGE_URL, "expires": 1700000900})
 
-    def test_file_bytes_asked_for_with_link_codes_come_from_this_origin(self):
-        with self.request(**{"X-Drive-Links": "l" * 22}):
-            with patch.object(routes.node_core, "get", return_value=self.FILE):
-                with patch.object(
-                    routes.node_core, "signed_content_url", return_value={"url": self.STORAGE_URL}
-                ):
-                    with patch.object(
-                        routes.node_core, "stream_content", return_value=Response(b"%PDF-1.7")
-                    ) as streamed:
-                        answer = routes.node_get_content(node="n1")
-        streamed.assert_called_once_with(self.FILE, as_attachment=False)
-        self.assertEqual((answer.status_code, answer.get_data()), (200, b"%PDF-1.7"))
-        self.assertNotIn("Location", answer.headers)
-
     def test_without_link_codes_the_file_still_redirects_to_the_storage_host(self):
         with self.request():
             with patch.object(routes.node_core, "get", return_value=self.FILE):

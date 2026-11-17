@@ -501,6 +501,8 @@ async function fetchWith(
     ...init,
     headers,
   })
+  // Another host's refusal says nothing about a link, so only this site's answer is recorded.
+  if (!own) return response
   if (response.ok)
     scope.settled?.({
       ok: true,

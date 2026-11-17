@@ -136,7 +136,17 @@ vi.mock('@/platform/transport', async (original) => ({
       if (operation.id === 'node_content_url') {
         if (input.node === 'refused') throw new Error('Refused')
         const saves = input.download ? '&save' : ''
-        return { url: `https://bucket.storage.example/${input.node}?sig${saves}`, expires: 0 }
+        // Each signing of the same URL gets a new signature, as the server's does.
+        const signed = requests.filter(
+          (request) =>
+            request.id === 'node_content_url' &&
+            JSON.stringify(request.input) === JSON.stringify(input),
+        ).length
+        const signature = signed > 1 ? `sig${signed}` : 'sig'
+        return {
+          url: `https://bucket.storage.example/${input.node}?${signature}${saves}`,
+          expires: 0,
+        }
       }
       if (operation.id === 'node_get') {
         await folderAnswer
@@ -304,6 +314,42 @@ describe('a file this browser reaches only through a share link', () => {
         'https://bucket.storage.example/v?sig',
       ),
     )
+  })
+
+  const viewSignings = (node: string) =>
+    requests.filter(
+      (request) =>
+        request.id === 'node_content_url' &&
+        JSON.stringify(request.input) === JSON.stringify({ node }),
+    ).length
+  const videoSrc = (root: HTMLElement) => root.querySelector('video')?.getAttribute('src')
+
+  it('keeps playing from the URL it was given when coming back to the tab signs a new one', async () => {
+    const { root } = await mount(linked('k', 'talk.mp4', 'video/mp4'), '/d/k/talk-mp4')
+    await vi.waitFor(() => expect(videoSrc(root)).toBe('https://bucket.storage.example/k?sig'))
+
+    // Away from the tab for a minute: every read is fetched again on the way back.
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    document.dispatchEvent(new Event('visibilitychange'))
+    vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 60_000)
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+
+    await vi.waitFor(() => expect(viewSignings('k')).toBe(2))
+    await new Promise((settle) => setTimeout(settle, 20))
+    expect(videoSrc(root)).toBe('https://bucket.storage.example/k?sig')
+  })
+
+  it('signs the URL again once when it fails to load, then says the preview did not load', async () => {
+    const { root } = await mount(linked('e', 'talk.mp4', 'video/mp4'), '/d/e/talk-mp4')
+    await vi.waitFor(() => expect(videoSrc(root)).toBe('https://bucket.storage.example/e?sig'))
+
+    root.querySelector('video')?.dispatchEvent(new Event('error'))
+    await vi.waitFor(() => expect(videoSrc(root)).toBe('https://bucket.storage.example/e?sig2'))
+
+    root.querySelector('video')?.dispatchEvent(new Event('error'))
+    await vi.waitFor(() => expect(root.textContent).toContain('Could not load the preview'))
+    expect(viewSignings('e')).toBe(2)
   })
 
   it('says the preview did not load when the server refuses the signed URL', async () => {

@@ -547,9 +547,10 @@ def node_get_content(node: Given = None, format: Given = None, download: Given =
 
     if row.kind == "file":
         if _carries_links():
-            # A fetch keeps `X-Drive-Links` across a redirect, so a signed URL on
-            # the storage host would carry the link code off this origin.
-            return node_core.stream_content(row, as_attachment=as_attachment)
+            # A fetch keeps `X-Drive-Links` across a redirect, so the redirect would
+            # carry the link code to the storage host. Streaming instead would let
+            # anyone with a public link hold a worker for a whole large file.
+            raise DriveConflict(_("A share link reads this file's signed URL from content-url"))
         # §2.3 budgets this path at one point check. `get` spent it, so the URL
         # is minted from that row rather than reading and checking again.
         minted = node_core.signed_content_url(row, as_attachment=as_attachment)

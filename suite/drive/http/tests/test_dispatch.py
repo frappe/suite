@@ -1404,13 +1404,13 @@ class TestByteEgress(DriveHTTPCase):
         self.refusal(response, 404, "DriveNotFound")
         self.assertNotIn("Location", response.headers)
 
-    def test_a_guest_holding_a_read_link_gets_the_bytes_from_this_origin(self):
-        # A fetch keeps `X-Drive-Links` across a redirect, to the storage host too.
+    def test_a_guest_holding_a_read_link_is_sent_to_content_url(self):
+        # A redirect would carry `X-Drive-Links` to the storage host, and
+        # streaming would hold a worker for the whole file.
         token = self.read_link()
         response = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content", links=token)
-        self.assertEqual(response.status_code, 200)
+        self.refusal(response, 409, "DriveConflict")
         self.assertNotIn("Location", response.headers)
-        self.assertEqual(response.get_data(), b"drive bytes")
 
     def test_a_link_holder_is_given_the_storage_hosts_signed_url_as_json(self):
         # The S3 case: the storage driver signs a URL on another host. The page
@@ -1467,6 +1467,39 @@ class TestByteEgress(DriveHTTPCase):
             self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=f"{token}.{ticket}")
         )
         self.assertTrue(answer["url"])
+
+    def test_a_link_gives_no_signed_url_for_a_file_outside_its_folder(self):
+        token = self.read_link()
+        outside = self.make_file(self.root.name, "outside.bin", b"other bytes")
+        frappe.db.commit()
+        response = self.drive("GET", f"{PREFIX}/nodes/{outside}/content-url", links=token)
+        self.refusal(response, 404, "DriveNotFound")
+
+    def test_an_expired_link_gets_gone_and_no_signed_url(self):
+        token = self.read_link()
+        frappe.db.set_value("Drive Grant", {"principal": f"$LINK:{token}"}, "expires_on", PAST)
+        frappe.db.commit()
+        response = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=token)
+        self.refusal(response, 410, "DriveLinkExpired")
+
+    def test_a_trashed_file_is_signed_for_a_link_holder_as_content_redirects_its_owner(self):
+        token = self.read_link()
+        self.data(self.as_owner("PATCH", f"{PREFIX}/nodes/{self.file}", body={"state": "Trashed"}))
+        self.addCleanup(
+            lambda: self.as_owner("PATCH", f"{PREFIX}/nodes/{self.file}", body={"state": "Active"})
+        )
+        owner = self.as_owner("GET", f"{PREFIX}/nodes/{self.file}/content")
+        holder = self.drive("GET", f"{PREFIX}/nodes/{self.file}/content-url", links=token)
+        self.assertEqual(owner.status_code, 302)
+        # The two URLs are signed for the same blob and name, at moments a second apart at most.
+        self.assertEqual(urlsplit(self.data(holder)["url"]).path, urlsplit(owner.headers["Location"]).path)
+
+    def test_a_folder_or_a_document_has_no_signed_url(self):
+        token = self.read_link()
+        folder = self.drive("GET", f"{PREFIX}/nodes/{self.folder}/content-url", links=token)
+        document = self.as_owner("GET", f"{PREFIX}/nodes/{self.document}/content-url")
+        self.refusal(folder, 409, "DriveConflict")
+        self.refusal(document, 409, "DriveConflict")
 
     def read_link(self) -> str:
         created = grant(self.folder, "$LINK", READ, self.owner)

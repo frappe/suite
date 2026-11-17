@@ -13,6 +13,10 @@ import PreviewFallback from './PreviewFallback.vue'
  * PDF, or none, so a phone draws each page with pdf.js as it scrolls into view.
  */
 const props = defineProps<{ src: string; download: string; title: string }>()
+const emit = defineEmits<{
+  /** The phone's renderer could not load the document. */
+  failed: []
+}>()
 
 const narrow = useMediaQuery('(max-width: 767px)')
 const pageCount = ref(0)
@@ -53,7 +57,10 @@ async function open() {
     await nextTick()
     observePages()
   } catch {
-    if (own === opened) failed.value = true
+    if (own === opened) {
+      failed.value = true
+      emit('failed')
+    }
   }
 }
 
@@ -98,7 +105,10 @@ async function drawPage(box: HTMLElement) {
     canvas.height = Math.floor(viewport.height)
     await page.render({ canvas, viewport }).promise
   } catch {
-    if (own === opened) failed.value = true
+    if (own === opened) {
+      failed.value = true
+      emit('failed')
+    }
   }
 }
 </script>
