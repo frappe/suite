@@ -3,6 +3,7 @@ import { useRoute, type RouteLocationNamedRaw } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 
 export type InboxCategory = 'primary' | 'updates' | 'forums' | 'promotions' | 'social'
 
@@ -28,6 +29,8 @@ const TAB_LOOK: Record<InboxCategory, { label: () => string; icon: string }> = {
  * answer (`inbox_tabs`); none means the Inbox isn't split. The open tab is the route's `category`,
  * Primary when it names none of them, and `undefined` when there are no tabs.
  *
+ * A phone has no tabs: its Inbox is one list of every category, whatever the split.
+ *
  * `listRoute` is the list the tabs belong to: a tab leads there, leaving any open thread behind,
  * since that thread may not be in the tab being opened. `onSwitch` refetches the list when another
  * tab opens, as a filter change does.
@@ -39,10 +42,11 @@ export const useInboxTabs = (
 ) => {
   const route = useRoute()
   const store = userStore()
+  const { isMobile } = useScreenSize()
 
   const tabs = computed<InboxTab[]>(() => {
     const where = scope()
-    if (!where) return []
+    if (!where || isMobile.value) return []
     const counts = (where === 'unified' ? store.unifiedTabCounts.data : store.tabCounts.data) ?? []
     return store.inboxTabs.map((category) => ({
       category,
