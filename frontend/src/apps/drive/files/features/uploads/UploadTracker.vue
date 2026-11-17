@@ -68,7 +68,7 @@
       }"
     />
     <ul class="min-h-0 flex-1 divide-y divide-outline-gray-1 overflow-y-auto">
-      <!-- On a 4 px grid: rows inset to the header's edges, so names, bars and dividers line up.
+      <!-- On a 4 px grid: rows inset to the header's edges, so dividers line up with the header's bar.
            A row is 64 px with its divider, so the divided rows give up 1 px of top padding.
            The height holds room for the bar, so a row keeps its size as the bar comes and goes. -->
       <li
@@ -76,68 +76,75 @@
         :key="entry.id"
         data-slot="upload-entry"
         :data-state="entry.state"
-        class="mx-4 flex min-h-16 flex-col pb-2 pt-[7px] first:pt-2"
+        class="mx-4 flex min-h-16 gap-3 pb-2 pt-[7px] first:pt-2"
       >
-        <div class="flex items-center gap-3">
-          <!-- The icon sits on the name's line, and a finished upload gets a filled check. -->
-          <span class="flex h-5 shrink-0 items-center self-start" aria-hidden="true">
-            <span
-              v-if="entry.state === 'done'"
-              data-slot="upload-done"
-              class="flex size-4 items-center justify-center rounded-full bg-surface-green-7"
-            >
-              <span class="lucide-check size-3 text-white" />
-            </span>
-            <span v-else :class="iconClass(entry)" class="size-4" />
+        <!-- The icon sits on the name's line, and a finished upload gets a filled check. -->
+        <span class="flex h-5 shrink-0 items-center" aria-hidden="true">
+          <span
+            v-if="entry.state === 'done'"
+            data-slot="upload-done"
+            class="flex size-4 items-center justify-center rounded-full bg-surface-green-7"
+          >
+            <span class="lucide-check size-3 text-white" />
           </span>
-          <div class="min-w-0 flex-1">
-            <RouterLink
-              v-if="entry.state === 'done' && entry.node"
-              :to="driveNodeRoute({ name: entry.node, title: entry.title, kind: 'file' })"
-              class="block truncate text-base leading-5 text-ink-gray-8 hover:underline focus-visible:underline focus-visible:outline-none"
-              :title="entry.title"
-            >
-              {{ entry.title }}
-            </RouterLink>
-            <p v-else class="truncate text-base leading-5 text-ink-gray-8" :title="entry.title">
-              {{ entry.title }}
-            </p>
-            <p
-              data-slot="upload-status"
-              class="text-sm leading-4"
-              :class="[
-                entry.state === 'failed' || entry.note ? 'line-clamp-2' : 'truncate',
-                entry.state === 'failed' ? 'text-ink-red-7' : 'text-ink-gray-5',
-              ]"
-              :title="entry.state === 'failed' ? status(entry) : undefined"
-            >
-              {{ status(entry) }}
-            </p>
+          <span v-else :class="iconClass(entry)" class="size-4" />
+        </span>
+        <!-- Everything beside the icon, so the bar starts where the name and status start. -->
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-3">
+            <div class="min-w-0 flex-1">
+              <RouterLink
+                v-if="entry.state === 'done' && entry.node"
+                :to="driveNodeRoute({ name: entry.node, title: entry.title, kind: 'file' })"
+                class="block truncate text-base leading-5 text-ink-gray-8 hover:underline focus-visible:underline focus-visible:outline-none"
+                :title="entry.title"
+              >
+                {{ entry.title }}
+              </RouterLink>
+              <p v-else class="truncate text-base leading-5 text-ink-gray-8" :title="entry.title">
+                {{ entry.title }}
+              </p>
+              <p
+                data-slot="upload-status"
+                class="text-sm leading-4"
+                :class="[
+                  entry.state === 'failed' || entry.note ? 'line-clamp-2' : 'truncate',
+                  entry.state === 'failed' ? 'text-ink-red-7' : 'text-ink-gray-5',
+                ]"
+                :title="entry.state === 'failed' ? status(entry) : undefined"
+              >
+                {{ status(entry) }}
+              </p>
+            </div>
+            <Button
+              v-if="entry.state === 'interrupted'"
+              :label="__('Resume')"
+              @click="queue.resume(entry.id)"
+            />
+            <Button
+              v-else-if="canRetry(entry)"
+              :label="__('Retry')"
+              @click="queue.retry(entry.id)"
+            />
+            <Button
+              v-if="canCancel(entry)"
+              variant="ghost"
+              icon="lucide-x"
+              :aria-label="__('Cancel upload of {0}', [entry.title])"
+              @click="queue.cancel(entry.id)"
+            />
+            <Button
+              v-else-if="dismissible(entry)"
+              variant="ghost"
+              icon="lucide-x"
+              :aria-label="__('Remove {0}', [entry.title])"
+              @click="queue.dismiss(entry.id)"
+            />
           </div>
-          <Button
-            v-if="entry.state === 'interrupted'"
-            :label="__('Resume')"
-            @click="queue.resume(entry.id)"
-          />
-          <Button v-else-if="canRetry(entry)" :label="__('Retry')" @click="queue.retry(entry.id)" />
-          <Button
-            v-if="canCancel(entry)"
-            variant="ghost"
-            icon="lucide-x"
-            :aria-label="__('Cancel upload of {0}', [entry.title])"
-            @click="queue.cancel(entry.id)"
-          />
-          <Button
-            v-else-if="dismissible(entry)"
-            variant="ghost"
-            icon="lucide-x"
-            :aria-label="__('Remove {0}', [entry.title])"
-            @click="queue.dismiss(entry.id)"
-          />
-        </div>
-        <!-- The bar spans the row, as wide as the dividers, centred in a 4 px slot under the status. -->
-        <div v-if="showsProgress(entry)" class="mt-2 flex h-1 items-center">
-          <Progress :value="percent(entry)" size="sm" />
+          <!-- The bar runs from the name's left edge to the row's right edge, centred in a 4 px slot under the status. -->
+          <div v-if="showsProgress(entry)" class="mt-2 flex h-1 items-center">
+            <Progress :value="percent(entry)" size="sm" />
+          </div>
         </div>
       </li>
     </ul>
