@@ -300,7 +300,14 @@ import {
   type DropdownItem,
 } from 'frappe-ui'
 import { computed, h, inject, onBeforeUnmount, onMounted, ref, useTemplateRef, watch } from 'vue'
-import { useRoute, useRouter, type RouteLocationRaw } from 'vue-router'
+import {
+  onBeforeRouteLeave,
+  onBeforeRouteUpdate,
+  useRoute,
+  useRouter,
+  type RouteLocationNormalized,
+  type RouteLocationRaw,
+} from 'vue-router'
 
 import {
   api,
@@ -1349,13 +1356,16 @@ function routeSearch() {
 // The field shows each key at once. The URL, and so the search, follows after a
 // pause. The page leaving, a clear or another URL drops a search still waiting
 const searchLater = useTimeoutFn(routeSearch, 250, { immediate: false })
-// Dropped as soon as another move starts. Its own move would cancel one still loading
-const stopSearchOnMove = router.beforeEach((to) => {
+// Dropped once another move starts. A move away drops it before any app's guard can hold
+// that move, which its own move would cancel
+function stopSearchFor(to: RouteLocationNormalized) {
   if (to.fullPath !== searchingTo) {
     searchLater.stop()
   }
-})
-onBeforeUnmount(stopSearchOnMove)
+}
+
+onBeforeRouteLeave(stopSearchFor)
+onBeforeRouteUpdate(stopSearchFor)
 function typed(event: Event) {
   if (!(event.target instanceof HTMLInputElement)) return
   searchText.value = event.target.value

@@ -426,6 +426,7 @@ afterEach(() => {
   server.detailGate = null
   server.searchGate = null
   notificationsArrive = Promise.resolve()
+  held = null
   server.refusal = null
   server.batchFailures = []
   vi.useRealTimers()
@@ -447,6 +448,11 @@ afterEach(() => {
 
 /** When the Notifications page's code arrives, which is the router's to wait for. */
 let notificationsArrive = Promise.resolve()
+/**
+ * A path the router holds until a promise settles: by a guard registered before
+ * the page's, like Mail's, or by one that runs after them.
+ */
+let held: { path: string; by: 'beforeEach' | 'beforeResolve'; until: Promise<void> } | null = null
 
 async function mount(
   path: string,
@@ -475,6 +481,13 @@ async function mount(
       },
     ],
   })
+  for (const hook of ['beforeEach', 'beforeResolve'] as const) {
+    router[hook](async (to) => {
+      if (held?.by === hook && to.path === held.path) {
+        await held.until
+      }
+    })
+  }
   await router.push(path)
   const root = document.createElement('div')
   document.body.append(root)
@@ -1463,6 +1476,27 @@ describe('Search', () => {
 
     expect(router.currentRoute.value.fullPath).toBe('/notifications')
   })
+
+  for (const [place, path, by] of [
+    ['another page', '/notifications', 'beforeEach'],
+    ['another folder', '/drive/f/folder-9/drafts', 'beforeResolve'],
+  ] as const) {
+    it(`opens ${place} a guard holds, over a term not yet searched`, async () => {
+      const { promise, resolve: allow } = Promise.withResolvers<void>()
+      held = { path, by, until: promise }
+      const { root, router } = await mount('/drive/f/folder-1/talks')
+      await vi.waitFor(() => expect(titles()).toHaveLength(3))
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+
+      type(root, 'report')
+      const opening = router.push(path)
+      await vi.advanceTimersByTimeAsync(300)
+      allow()
+      await opening
+
+      expect(router.currentRoute.value.fullPath).toBe(path)
+    })
+  }
 
   it('goes back to the same term in another view, over a term not yet searched', async () => {
     const { root, router } = await mount('/drive/f/folder-1/talks?q=foo&view=list')
