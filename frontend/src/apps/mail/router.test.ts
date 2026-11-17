@@ -155,30 +155,30 @@ describe('what a navigation waits for', () => {
   })
 })
 
+/**
+ * The route a navigation settles on, with Mail's routes the only area routes registered, as
+ * when Mail is the first area opened. A probe stops it there, so no page loads.
+ */
+async function land(path: string): Promise<RouteLocationNormalized | undefined> {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/mail', component: { render: () => null }, children: routes }],
+  })
+  router.beforeEach(mailGuard)
+  let landed: RouteLocationNormalized | undefined
+  router.beforeEach((to) => {
+    landed = to
+    return false
+  })
+  await router.push(path)
+  return landed
+}
+
 describe('where /mail lands', () => {
   beforeEach(() => {
     vi.unstubAllGlobals()
     state.user = { is_jmap_configured: true }
   })
-
-  /**
-   * The route a navigation settles on, with Mail's routes the only area routes registered, as
-   * when Mail is the first area opened. A probe stops it there, so no page loads.
-   */
-  async function land(path: string): Promise<RouteLocationNormalized | undefined> {
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: '/mail', component: { render: () => null }, children: routes }],
-    })
-    router.beforeEach(mailGuard)
-    let landed: RouteLocationNormalized | undefined
-    router.beforeEach((to) => {
-      landed = to
-      return false
-    })
-    await router.push(path)
-    return landed
-  }
 
   it('the first folder, when the account has one', async () => {
     state.mailboxes = [{ id: 'inbox' }]
@@ -200,5 +200,55 @@ describe('where /mail lands', () => {
   it('the first folder again, once the mailbox is ready', async () => {
     state.mailboxes = [{ id: 'inbox' }]
     expect((await land('/mail/not-ready'))?.name).toBe('mail-mailbox')
+  })
+})
+
+describe('"All accounts" with one account', () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals()
+    state.user = { is_jmap_configured: true, accounts: [{ id: 'acc' }] }
+    state.mailboxes = [
+      { id: 'a', slug: 'inbox' },
+      { id: 'e', slug: 'sent' },
+    ]
+  })
+
+  it("opens the account's own folder of that name", async () => {
+    const landed = await land('/mail/all/sent?filter=unread')
+    expect([landed?.name, landed?.params, landed?.query]).toEqual([
+      'mail-mailbox',
+      { accountId: 'acc', mailbox: 'sent' },
+      { filter: 'unread' },
+    ])
+  })
+
+  it('opens a thread there in that folder', async () => {
+    const landed = await land('/mail/all/inbox/account/acc/t9')
+    expect([landed?.name, landed?.params]).toEqual([
+      'mail-mail',
+      { accountId: 'acc', mailbox: 'inbox', threadID: 't9' },
+    ])
+  })
+
+  it('opens Starred, which is no folder', async () => {
+    const landed = await land('/mail/all/starred')
+    expect([landed?.name, landed?.params]).toEqual([
+      'mail-mailbox',
+      { accountId: 'acc', mailbox: 'starred' },
+    ])
+  })
+
+  it('opens the first folder when the account has none of that name', async () => {
+    const landed = await land('/mail/all/receipts')
+    expect([landed?.name, landed?.params]).toEqual([
+      'mail-mailbox',
+      { accountId: 'acc', mailbox: 'inbox' },
+    ])
+  })
+
+  it('stays merged with a second account to merge', async () => {
+    state.user = { is_jmap_configured: true, accounts: [{ id: 'acc' }, { id: 'other' }] }
+    const landed = await land('/mail/all/sent')
+    expect([landed?.name, landed?.params]).toEqual(['mail-unified', { folder: 'sent' }])
   })
 })

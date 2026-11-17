@@ -90,7 +90,7 @@ test("/ and the PWA start land on Home", async ({ page }) => {
 
 test("the rail lists every area, Drive as the second", async ({ page }) => {
 	await page.goto("/drive");
-	expect(await railLabels(page)).toEqual(["Home", "Drive", "Mail", "Calendar", "Meet", "People"]);
+	expect(await railLabels(page)).toEqual(["Home", "Drive", "Mail", "Calendar", "Meet"]);
 	await expect(rail(page).getByRole("link", { name: "Drive" })).toHaveAttribute("aria-current", "page");
 	await expect(driveArea(page)).toBeVisible();
 });

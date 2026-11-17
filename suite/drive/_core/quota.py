@@ -97,8 +97,8 @@ def preflight(root: Mapping, declared_bytes: int) -> None:
         raise DriveOverQuota(_("This upload exceeds the Drive root quota"))
 
 
-def admit(root: str, delta: int, *, source_root: str | None = None) -> None:
-    """Atomically add bytes to a root if its effective quota permits them."""
+def admit(root: str, delta: int, *, source_root: str | None = None, site_limit_only: bool = False) -> None:
+    """Atomically add bytes to a root if its effective quota, or with `site_limit_only` the site's limit alone, permits them."""
     delta = _nonnegative_bytes(delta, _("Drive quota admission"))
     if delta == 0:
         return
@@ -113,16 +113,20 @@ def admit(root: str, delta: int, *, source_root: str | None = None) -> None:
     from suite.suite_core.utils import is_suite_cloud_configured
 
     if is_suite_cloud_configured():
-        _check_combined(root, delta, lock=True, source_root=source_root)
-    frappe.db.sql(
-        ADMIT_SQL,
-        {"root": root, "delta": delta, "effective_quota": effective_quota(root_row)},
-    )
+        _check_combined(root, delta, lock=True, source_root=source_root, site_limit_only=site_limit_only)
+
+    limit = 0
+    if not site_limit_only:
+        limit = effective_quota(root_row)
+
+    frappe.db.sql(ADMIT_SQL, {"root": root, "delta": delta, "effective_quota": limit})
     if not frappe.db.sql("SELECT ROW_COUNT()")[0][0]:
         raise DriveOverQuota(_("This write exceeds the Drive root quota"))
 
 
-def _check_combined(root: str, delta: int, *, lock: bool, source_root: str | None = None) -> None:
+def _check_combined(
+    root: str, delta: int, *, lock: bool, source_root: str | None = None, site_limit_only: bool = False
+) -> None:
     from suite.suite_core.storage import StorageUnmeasured, check_addition, state
 
     _, policy, measurements = state(lock=lock)
@@ -136,7 +140,11 @@ def _check_combined(root: str, delta: int, *, lock: bool, source_root: str | Non
     target = next((row for row in rows if row.name == root), None)
     if target is None:
         raise DriveNotFound(_("The Drive root was not found"))
-    user = target.user if target.kind == "Personal" else None
+
+    user = None
+    if target.kind == "Personal" and not site_limit_only:
+        user = target.user
+
     source = next((row for row in rows if row.name == source_root), None) if source_root else None
     if source_root and (source is None or int(source.used_bytes or 0) < delta):
         raise DriveConflict(_("The source root cannot supply the transferred bytes"))

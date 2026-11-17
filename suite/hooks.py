@@ -70,6 +70,8 @@ website_route_rules = [
     {"from_route": "/people/<path:app_path>", "to_route": "suite"},
     {"from_route": "/admin", "to_route": "suite"},
     {"from_route": "/admin/<path:app_path>", "to_route": "suite"},
+    # The Notifications page, the phone bottom bar's Notifications tab.
+    {"from_route": "/notifications", "to_route": "suite"},
     # Joining a workspace: an invitation link (`/join/<key>`) and the sign-in for
     # a person an Admin created with a temporary password (`/join`).
     {"from_route": "/join", "to_route": "suite"},

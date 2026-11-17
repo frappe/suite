@@ -48,6 +48,7 @@ from suite.drive._core.roots import lock_trees
 from suite.drive._core.versions import read_version, restore_version
 from suite.drive.framework import begin_drive_write
 from suite.drive.patches.build.content_mapping import derived_name, epoch_millis
+from suite.suite_core import storage
 from suite.tests.utils import session_for
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
@@ -1513,6 +1514,65 @@ class TestConversion(DriveCallbackCase):
         self.assertEqual(conversions.convert_document(writer_content.APP, over), "converted")
         self.assertIsNone(conversions.convert_document(writer_content.APP, refused))
         self.assertEqual(self.records(refused), (("check", "orphan", None),))
+
+    def storage_state(self, policy: dict, measurements: dict) -> None:
+        doc, _policy, _measurements = storage.state()
+        kept = {"policy": doc.policy, "measurements": doc.measurements}
+        self.addCleanup(
+            lambda: (frappe.db.set_value("Suite Storage State", "site", kept), frappe.db.commit())
+        )
+        frappe.db.set_value(
+            "Suite Storage State",
+            "site",
+            {"policy": frappe.as_json(policy), "measurements": frappe.as_json(measurements)},
+        )
+        frappe.db.commit()
+
+    def owner_over_cap(self, *, site_full: bool = False) -> None:
+        measurements = {"site_mail": 0, "allowance": 0, "personal": {WRITER: 0}}
+        if site_full:
+            measurements.update(site_mail=10**12, allowance=1)
+
+        self.storage_state({"users": {WRITER: {"cap": 1}}}, measurements)
+        cloud = patch("suite.suite_core.utils.is_suite_cloud_configured", return_value=True)
+        cloud.start()
+        self.addCleanup(cloud.stop)
+
+    def used_bytes(self, node: str) -> int:
+        root = frappe.db.get_value("Drive Node", node, "root")
+        return frappe.db.get_value("Drive Root", root, "used_bytes")
+
+    def test_converts_a_document_whose_owner_is_over_their_cap_and_counts_its_old_version(self):
+        [node] = self.old_documents(1)
+        self.owner_over_cap()
+        used = self.used_bytes(node)
+
+        self.assertEqual(conversions.convert_document(writer_content.APP, node), "converted")
+
+        self.assertEqual(self.before_collaboration(node)["html"], "<p>Hello world</p>")
+        filters = {"node": node, "label": "Before collaboration"}
+        [size] = frappe.get_all("Drive Node Version", filters, pluck="size")
+        self.assertEqual(self.used_bytes(node), used + size)
+
+    def test_a_full_site_still_refuses_the_old_version(self):
+        [node] = self.old_documents(1)
+        self.owner_over_cap(site_full=True)
+        before = self.as_before(node)
+
+        self.assertEqual(conversions.convert_document(writer_content.APP, node), "over_quota")
+
+        self.assertEqual(self.as_before(node), before)
+        self.assertEqual(self.records(node), (("over_quota", None, None),))
+
+    def test_the_owner_over_their_cap_still_cannot_take_a_version_of_their_own(self):
+        [node] = self.old_documents(1)
+        self.owner_over_cap()
+        used = self.used_bytes(node)
+
+        self.assertRaises(drive.DriveOverQuota, drive.take_version, node, kind="named", label="Mine")
+
+        self.assertEqual(self.used_bytes(node), used)
+        self.assertEqual(frappe.db.count("Drive Node Version", {"node": node}), 0)
 
     def test_leaves_a_document_purged_under_the_converter(self):
         node = self.old_document("<p>Hello world</p>")

@@ -412,6 +412,7 @@ describe('renaming a version in the Versions panel', () => {
     kind: 'auto',
     pinned: 0,
     creation: null,
+    person: { id: 'ana@example.com', full_name: 'Ana Silva', user_image: null },
   })
 
   // The panel viewing a version, recording each version it is told to show

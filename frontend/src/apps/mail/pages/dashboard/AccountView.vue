@@ -563,10 +563,9 @@ async function resetPasswordSubmit() {
   const input: InputOf<typeof api.mail.public.sendResetLink> = {
     user: accountId,
   }
-  const result = await resetPassword.run(input)
-  const email = result
+  await resetPassword.run(input)
   showResetPassword.value = false
-  raiseToast(__('Reset password link sent to {0}', [email]))
+  raiseToast(__('Reset password link sent.'))
 }
 const RESET_PASSWORD_OPTIONS = {
   title: __('Reset password'),

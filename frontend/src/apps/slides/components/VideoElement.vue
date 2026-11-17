@@ -4,7 +4,7 @@
       v-if="thumbnailSrc"
       class="object-cover"
       :style="videoStyles"
-      :src="getAttachmentUrl(thumbnailSrc)"
+      :src="mediaUrl(thumbnailSrc)"
     />
   </div>
   <div
@@ -22,13 +22,13 @@
       :autoplay="inSlideShowMode ? element.autoplay : false"
       :loop="element.loop"
       :playbackRate="element.playbackRate"
+      preload="auto"
+      :poster="getAttachmentUrl(element.poster)"
       @timeupdate="updateProgress"
       @loadedmetadata="updateDuration"
       @play="handlePlay"
       @pause="handlePause"
       @ended="handleEnded"
-      preload="auto"
-      :poster="getAttachmentUrl(element.poster)"
     >
       <source :src="getAttachmentUrl(element.src)" />
     </video>
@@ -41,8 +41,8 @@
       <template v-if="isActive">
         <div :class="toggleButtonClasses">
           <component
-            size="16"
             :is="isPlaying ? Pause : Play"
+            size="16"
             class="stroke-[1.5] ps-[0.5px] text-white"
           />
         </div>
@@ -78,6 +78,7 @@
 import { Pause, Play } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, ref, useTemplateRef } from 'vue'
 
+import { useMediaUrl } from '@/apps/slides/composables/useMediaUrl'
 import { useBoxShadow } from '@/apps/slides/composables/useShadow'
 import { activeElementIds } from '@/apps/slides/stores/element'
 import { defaultBorderColor } from '@/apps/slides/utils/constants'
@@ -101,6 +102,7 @@ const element = defineModel('element', {
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
 const inSlideShowMode = inject('inSlideShowMode', ref(false))
+const mediaUrl = useMediaUrl()
 
 const el = useTemplateRef('videoElement')
 const overlay = useTemplateRef('overlay')

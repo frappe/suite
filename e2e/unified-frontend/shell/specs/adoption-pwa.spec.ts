@@ -116,7 +116,7 @@ test.describe("phone bottom nav in the shell", () => {
 		await patchAccount(page, MAIL_ACCOUNT);
 
 		await page.goto("/home");
-		await expect(bottomNavItems(page).filter({ hasText: "Mail" })).toBeVisible();
+		await expect(bottomNavItems(page).filter({ hasText: "Home" })).toBeVisible();
 
 		await page.goto("/mail");
 		await expect(page).toHaveURL(/\/mail\/account\//);
