@@ -60,8 +60,10 @@
             </template>
           </Button>
         </EmojiPicker>
-        <!-- One Attach button: a file from this device, or one already in Drive. -->
-        <Dropdown :options="attachOptions">
+        <ComposeAttachMenu
+          @select-files="(files: File[]) => emit('selectFiles', files)"
+          @attach-from-drive="emit('attachFromDrive')"
+        >
           <Button
             variant="ghost"
             class="max-h-6 max-w-6"
@@ -72,8 +74,7 @@
               <Paperclip class="text-ink-gray-8 h-4 w-4" />
             </template>
           </Button>
-        </Dropdown>
-        <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+        </ComposeAttachMenu>
       </div>
 
       <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
@@ -102,9 +103,10 @@
 <script setup lang="ts">
 import { Button, Dropdown } from 'frappe-ui'
 import { EditorFixedMenu } from 'frappe-ui/editor'
-import { CalendarClock, ChevronDown, HardDrive, Laugh, MonitorUp, Paperclip } from 'lucide-vue-next'
-import { computed, useTemplateRef } from 'vue'
+import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
+import { computed } from 'vue'
 
+import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
@@ -141,35 +143,8 @@ const sendOptions = [
   },
 ]
 
-const attachOptions = [
-  {
-    label: __('Upload from computer'),
-    icon: MonitorUp,
-    onClick: () => fileInput.value?.click(),
-  },
-  {
-    label: __('Attach from Drive'),
-    icon: HardDrive,
-    onClick: () => emit('attachFromDrive'),
-  },
-]
-
 const { isMobile } = useScreenSize()
 const menu = useEditorMenu(() => true)
-
-const fileInput = useTemplateRef('fileInput')
-
-const onFilesSelected = async (e: Event) => {
-  const checkedEventTarget = e.target
-  if (!(checkedEventTarget instanceof HTMLInputElement)) return
-
-  const input = checkedEventTarget
-  const files = Array.from(input.files ?? [])
-  if (!files.length) return
-
-  emit('selectFiles', files)
-  input.value = ''
-}
 </script>
 
 <!-- todo: file upload -> discard race condition (draft saved) -->
