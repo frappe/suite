@@ -1,13 +1,13 @@
 <template>
   <div class="flex flex-col gap-5">
-    <Button
-      class="self-end"
-      icon-left="lucide-plus"
-      :label="__('New')"
-      :size="buttonSize"
-      variant="outline"
-      @click="showAddIdentity"
-    />
+    <SettingsDialogActions>
+      <Button
+        icon-left="lucide-plus"
+        :label="__('New')"
+        :size="buttonSize"
+        @click="showAddIdentity"
+      />
+    </SettingsDialogActions>
     <template v-if="identities?.data?.length">
       <div class="flex min-h-full flex-col">
         <div class="flex-1 space-y-4">
@@ -209,6 +209,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
 const emit = defineEmits<{ saved: [] }>()

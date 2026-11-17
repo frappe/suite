@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex justify-end gap-2">
+    <SettingsDialogActions>
       <Button
         variant="outline"
         icon="lucide-refresh-cw"
@@ -9,7 +9,7 @@
         @click="pushSubscriptions.refetch().catch(() => {})"
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-    </div>
+    </SettingsDialogActions>
     <template v-if="rows.length">
       <!-- A long list scrolls in its own box, so the dialog stays short. -->
       <div class="flex max-h-80 flex-col">
@@ -60,6 +60,7 @@ import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'
 import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
 const user = inject<import('@/apps/mail/types').UserResource>('$user')

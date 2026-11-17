@@ -1,6 +1,6 @@
 <template>
   <div class="flex flex-col gap-3">
-    <div class="flex justify-end gap-2">
+    <SettingsDialogActions>
       <Button
         icon-left="lucide-refresh-cw"
         :label="__('Rebuild folder rules')"
@@ -9,7 +9,7 @@
         @click="rebuildAutomationSubmit()"
       />
       <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
-    </div>
+    </SettingsDialogActions>
     <div v-if="filteredScripts.length">
       <div
         v-for="script in filteredScripts"
@@ -73,6 +73,7 @@ import SieveScriptModal from '@/apps/mail/components/Modals/SieveScriptModal.vue
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

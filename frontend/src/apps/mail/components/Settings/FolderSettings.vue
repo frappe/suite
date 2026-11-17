@@ -1,12 +1,13 @@
 <template>
   <div class="flex flex-col gap-3">
-    <Button
-      class="self-end"
-      icon-left="lucide-plus"
-      :label="__('New')"
-      :size="buttonSize"
-      @click="editMailbox()"
-    />
+    <SettingsDialogActions>
+      <Button
+        icon-left="lucide-plus"
+        :label="__('New')"
+        :size="buttonSize"
+        @click="editMailbox()"
+      />
+    </SettingsDialogActions>
     <div v-if="managedMailboxes.length">
       <div
         v-for="mailbox in managedMailboxes"
@@ -68,6 +69,7 @@ import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 
 const { mailboxes } = userStore()
 const { isMobile } = useScreenSize()

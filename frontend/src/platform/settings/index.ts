@@ -1,4 +1,4 @@
-import { ref, watch } from 'vue'
+import { ref, watch, type InjectionKey, type Ref } from 'vue'
 
 /**
  * The tab ids of the composition settings list, each with the ids of its
@@ -28,6 +28,10 @@ export const settingsTab = ref<SettingsTabId | undefined>()
  * by this name shows itself and unsets it.
  */
 export const settingsSection = ref<string | undefined>()
+
+/** The element on a row dialog's title line that `<SettingsDialogActions>` teleports into. */
+export const SETTINGS_DIALOG_ACTIONS_KEY: InjectionKey<Readonly<Ref<HTMLElement | null>>> =
+  Symbol('settings-dialog-actions')
 
 /**
  * Runs `show` when Settings asks for this section. Each asking is answered once: the page shown

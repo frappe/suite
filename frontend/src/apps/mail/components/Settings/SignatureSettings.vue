@@ -1,12 +1,8 @@
 <template>
   <div class="flex flex-col gap-3">
-    <Button
-      class="self-end"
-      icon-left="lucide-plus"
-      :label="__('New')"
-      :size="buttonSize"
-      @click="addSignature"
-    />
+    <SettingsDialogActions>
+      <Button icon-left="lucide-plus" :label="__('New')" :size="buttonSize" @click="addSignature" />
+    </SettingsDialogActions>
     <div v-if="signatures?.data?.length">
       <div
         v-for="signature in signatures?.data"
@@ -65,6 +61,7 @@ import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal
 import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 
 const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))

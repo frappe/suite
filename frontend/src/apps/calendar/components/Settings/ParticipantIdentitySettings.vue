@@ -1,12 +1,8 @@
 <template>
   <div class="flex flex-col gap-5">
-    <Button
-      class="self-end"
-      icon-left="lucide-plus"
-      :label="__('New')"
-      variant="outline"
-      @click="showAddDialog"
-    />
+    <SettingsDialogActions>
+      <Button icon-left="lucide-plus" :label="__('New')" @click="showAddDialog" />
+    </SettingsDialogActions>
     <template v-if="participantIdentities?.data?.length">
       <div class="flex min-h-full flex-col">
         <div class="flex-1 space-y-4">
@@ -138,6 +134,7 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
 const emit = defineEmits<{ saved: [] }>()
