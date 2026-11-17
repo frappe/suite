@@ -130,7 +130,7 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
     expect(server.syncs).toBe(1)
   })
 
-  it('asks when the socket comes back, and brings back a socket that gave up', async () => {
+  it('asks when the socket comes back, and brings back a socket the server sent away', async () => {
     const socket = start()
     await vi.advanceTimersByTimeAsync(0)
     server.syncs = 0

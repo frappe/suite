@@ -40,7 +40,8 @@ export function useChangeSync(socket: Socket, serverUnavailable: () => boolean) 
     // A socket put down for good (the server sent it away) stays down, and the changes it would
     // carry need it up. One still on its way back is left to socket.io: asking again while its
     // CONNECT awaits an answer sends a second one, the server drops the connection, and every
-    // reconnect after that drops it again, with a sync each time.
+    // reconnect after that drops it again, with a sync each time. This relies on initSocket's
+    // unlimited reconnects: with a cap, a socket that gave up would stay active and never come back.
     if (!socket.active) socket.connect()
     // The server announces what it finds while the ask is out: only a socket up for all of it hears.
     const heardLive = socket.connected
