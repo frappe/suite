@@ -1,28 +1,21 @@
 <!--
   Gives a Mail settings tab the injections MailLayout gives Mail pages, so the
-  tab also works in the Suite Settings dialog outside Mail. The tab renders
-  once Mail's user info is in.
+  tab also works in the Suite Settings dialog outside Mail. Until the user
+  info is in, it shows the tab's header and the settings loading state, where
+  the tab will put them, or the load failure.
 -->
 <template>
   <slot v-if="userResource.data" />
-  <div
-    v-else
-    class="flex min-h-0 flex-1 items-center justify-center"
-    role="status"
-    :aria-label="__('Loading')"
-  >
-    <LoadingIndicator class="text-ink-gray-5 size-5" />
-  </div>
+  <SettingsPage v-else loading :reads="[userResource]" />
 </template>
 
 <script setup lang="ts">
-import { LoadingIndicator } from 'frappe-ui'
 import { onScopeDispose, provide } from 'vue'
 
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import dayjs from '@/apps/mail/utils/dayjs'
-import { translate as __ } from '@/platform/translation'
+import { SettingsPage } from '@/platform/settings-tab'
 
 const props = defineProps<{ socket?: boolean }>()
 
