@@ -282,7 +282,7 @@ def cancel_scheduled_mail(account: str, id: str) -> dict:
     if undo_status == "pending":
         _cancel_submission(client, id)
     elif undo_status != "canceled":
-        frappe.throw(_("This email has already been delivered and can no longer be changed."))
+        frappe.throw(_("This delivery has already finished and can no longer be changed."))
     # Already canceled (e.g. a retried undo whose move below failed): skip straight to the move.
 
     email_id = _move_email_to_drafts(client, account, submission.get("emailId"))
@@ -851,7 +851,7 @@ def _get_pending_submission(client: SuiteJMAPClient, id: str) -> dict:
     if undo_status == "canceled":
         frappe.throw(_("This scheduled delivery has been cancelled."))
     if undo_status != "pending":
-        frappe.throw(_("This email has already been delivered and can no longer be changed."))
+        frappe.throw(_("This delivery has already finished and can no longer be changed."))
 
     return submission
 

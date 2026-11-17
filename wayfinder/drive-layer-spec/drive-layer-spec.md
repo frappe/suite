@@ -3453,8 +3453,11 @@ one union for the page. There is no per-row access or breadcrumb query. Every no
 | PATCH | `/comments/<id>` | EDIT or author | `{text}` | comment row |
 | DELETE | `/comments/<id>` | EDIT or author | none | `{count}` |
 
-A version row is `{name, node, seq, kind, label, pinned, actor, size,
-creation}`. A thread row is `{name, node, anchor, resolved, resolved_by,
+A version row is `{name, node, seq, kind, label, pinned, actor, person,
+deleted_author, size, creation}`. `person` is the actor's name and avatar.
+`deleted_author` is the email of whoever took a version that the legacy port
+credited to Guest because their account was deleted; it is `null` on every
+other version, and always `null` to a reader who is not signed in. A thread row is `{name, node, anchor, resolved, resolved_by,
 resolved_at, creation, comments: [...]}` and a comment row is `{name, thread,
 node, content, author, author_name, mentions, creation, modified}`.
 
@@ -4630,6 +4633,104 @@ own files and could not restore the ones they had trashed. §14.9 reports
 `creator_grants_minted` (rows written or raised from a lower positive
 role) and `creator_denies_overridden`; the two are disjoint.
 
+Kept rights: legacy decided each flag on its own, from the nearest row
+that set it, and inside one folder it read a person's own row first, then
+their groups' rows, then `$GENERAL`, then the public row. A Sheet
+`DocShare` added its role on top of that. So upload from a far folder
+survived a nearer comment row, a group's edit row survived the person's
+own comment row on the same folder, and an `everyone` edit share survived
+the person's own read share. The engine is nearest-wins (§5), so each of
+these grants would end lower than legacy gave. After the creator grants,
+Build compares, for every person and every node that holds a legacy row
+or Sheet share, the role legacy gave there with the role the engine
+answers. Legacy's role needs read, and takes MANAGE only from `write` with
+`share`. Legacy's rows are read one by one, so a grant row beside a deny
+row for the same principal still gives its flags. A row that grants only
+`share` writes no grant (`no_flags`), but the comparison still reads it,
+because legacy took `share` from it for the nodes below. Where the engine
+answers less, Build writes:
+
+1. **Raises.** A group or `$GENERAL` grant that came from a legacy row is
+   raised to the lowest role legacy gave anyone it decides, on any node,
+   but never above the role legacy gave somebody who holds that principal
+   alone. Without a deny row for a group or a person on the path, legacy
+   gave a member of more groups at least what it gave a member of fewer,
+   so a person who joins the group, or signs up, after Build gets no more
+   from the grant than legacy would have given them. With such a deny row
+   on the path of any node the grant decides, legacy could give a member
+   of two groups less than a member of one, so the grant is not raised
+   (`raises_skipped`). Today's people get person grants (2) instead, and a
+   later member gets only what the unraised grant says.
+2. **Person grants.** Each person still below legacy gets
+   `(node, person, legacy role)`, or their own grant there is raised.
+3. **Pins.** Where a grant from 1 or 2 would carry a person past what they
+   had on a lower node, for example past a public deny there, Build writes
+   `(lower node, person, role)` at the higher of legacy's role and the role
+   Build gave them before this pass. A pin never denies; a pin that would
+   is left out and counted.
+
+The counts below are person-item pairs: one person on one node that holds
+a legacy row or Sheet share. A position inherited from a folder counts
+again on every node below it that holds a row of its own. `exceeded`,
+`exceeded_by_public_deny` and `share_lost` leave out the node's owner and
+the Suite Admins: legacy gave them everything, so no role Build gives them
+is above legacy's, and the creator rule and ADR 0001 already decide what
+they lose. The owner of a folder still counts on the nodes below it.
+`behind_deny`, `upload_added` and `from_groups` count every person.
+
+Build decides all of these once and saves the list beside its record
+(`drive-build-kept-rights.json`, readable by the site's account only)
+before it writes any of them, in one commit. A run killed before that
+commit, or a rerun, writes the saved list again rather than comparing anew
+against grants it already raised. So a kill at any point ends with the
+roles an uninterrupted run gives, and a rerun writes nothing. The list
+carries the database marker of the Build record it was decided under. A
+list whose marker differs is left from another run, and Build refuses it
+(`ForeignRecordError`). A list that exists but cannot be read, or holds a
+malformed row, stops the run; Build does not decide again.
+
+Cases left as they are, on purpose, each counted under §14.9's
+`legacy_rights`:
+
+- A person the engine denies stays denied, because a deny rounds up to a
+  total deny (above): `behind_deny`.
+- Legacy could grant `write` without `upload`. The ladder has no role for
+  that. Owner decision, 2026-11-16: the person keeps EDIT and so gains
+  upload, as the per-row mapping already does, and each case is counted:
+  `upload_added`.
+- Legacy let `share` work without `write`. The ladder gives MANAGE only
+  with EDIT, so the share right is lost: `share_lost`.
+- This rule does not take away what the per-row mapping gave above legacy.
+  The pairs that end above legacy's role are counted, not pinned:
+  `exceeded`, and of those `exceeded_by_public_deny`, where a `$PUBLIC`
+  deny binds only people with no grant of their own (§6.5) while legacy
+  applied it to everyone. When this rule pins a pair that the mapping
+  left above legacy's role under a public deny, it pins it at that higher
+  role, and the pin stays even if the person later joins a group whose
+  row there would have lowered them. Owner decision, 2026-11-16: decide only if a run counts
+  any.
+- A raise left out because a deny row for a group or a person is on its
+  path: `raises_skipped`. A person who joins that group after Build gets
+  the unraised grant, which can be less than legacy gave them.
+- A person grant follows nearest-wins like any other, so it does not
+  follow a group deny the person meets later by joining the group. This
+  needs a deny row for a group on the path, and it is not counted.
+- Public grant rows are not compared and not counted. Legacy gave a
+  signed-in person the flags of a public row, such as comment or upload;
+  §14.5 turns a public grant into `$PUBLIC` READ plus a link, and this rule
+  does not undo that. No `legacy_rights` count covers these losses;
+  `links_minted` (one link per node whose public row gave more than read)
+  is the nearest number. Public deny rows are compared, as above.
+- Media under a presentation takes its rights from the presentation, as in
+  the creator rule, and is not compared.
+
+A person grant written because of a group's row (`from_groups`) stays when
+that person leaves the group. The other counts are `kept` (grants written
+or raised), `group_raises`, `person_grants`, `pins` and `pins_refused` (a
+pin that would have denied a person outright, wherever it would sit). The
+Sheet shares are read back from the `DocShare` journal, because step 6 has
+deleted them by then.
+
 ### 14.6 Side tables and content-app data
 
 | Source | Target | Rule |
@@ -4722,7 +4823,10 @@ From the [012] amendment to [011]:
   Trashed with it. The reference is rewritten to the new node, and the
   other document keeps its own node. Build adds no grant: the copy is read
   through the grants of the document that shows it. Build copies only a
-  stored file below another document whose blob is Ready. Any other
+  stored file below another document whose blob is Ready, and, for a deck,
+  a Drive file that no other deck's media spells: a slide can name a plain
+  upload by its old `/private/files/` address, and Cleanup deletes the
+  `File` row that served it. Any other
   reference stays in the body as it is and is reported as missing. A
   document that already holds a node for the same blob reuses it, so a
   rerun copies nothing and rewrites nothing. Writer bodies are rewritten in
@@ -4794,6 +4898,11 @@ Printed and saved as JSON under the site's private directory [011].
   "grant_rows_dropped": { "dead_principal": 0, "unmigrated_entity": 0,
                           "no_flags": 0, "root_guardrail": 0 },
   "links_minted": 0, "creator_grants_minted": 0, "creator_denies_overridden": 0,
+  "legacy_rights": { "kept": 0, "group_raises": 0, "person_grants": 0,
+                     "pins": 0, "from_groups": 0, "raises_skipped": 0,
+                     "behind_deny": 0,
+                     "exceeded": 0, "exceeded_by_public_deny": 0,
+                     "upload_added": 0, "share_lost": 0, "pins_refused": 0 },
   "docshare_rows_dropped": 0,
   "trash_disagreements": 0, "orphan_content_docs_adopted": 0,
   "activity_rows_dropped": 0, "activity_verbs_derived": 0,

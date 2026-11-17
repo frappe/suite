@@ -37,6 +37,9 @@ export const calendarArea: AreaDefinition = {
   to: '/calendar',
   requires: ['jmap'],
   badgeNoun: () => __('upcoming'),
+  // On a phone, Calendar is a row in the account sheet, not a bottom bar tab.
+  phonePlacement: 'account',
+  menuIcon: 'lucide-calendar',
   installable: true,
   phoneNav: defineAsyncComponent(
     () => import('@/apps/calendar/components/mobile/CalendarTabBar.vue'),

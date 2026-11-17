@@ -3,10 +3,10 @@ import { Button, Dropdown, TextInput, type DropdownOptions } from 'frappe-ui'
 import { computed, nextTick, ref } from 'vue'
 
 import type { DocumentVersion } from '@/apps/drive'
-import { fullName } from '@/platform/collab/names'
 import { versionDays, versionTime } from '@/platform/collab/versionDates'
 
 import { waitForFocusBack } from '../../focusBack'
+import { versionAuthor } from './versionAuthor'
 
 /**
  * The document's versions under the day each was taken, newest first, with
@@ -82,7 +82,7 @@ function title(version: DocumentVersion) {
 }
 
 function byline(version: DocumentVersion) {
-  const person = version.actor && fullName(version.actor)
+  const person = versionAuthor(version)
   const time = version.label && versionTime(version)
   return [person, time].filter(Boolean).join(' · ')
 }
