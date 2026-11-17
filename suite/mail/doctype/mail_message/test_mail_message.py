@@ -1,7 +1,9 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
-# import frappe
+from unittest.mock import patch
+
+import frappe
 from frappe.tests import IntegrationTestCase
 
 # On IntegrationTestCase, the doctype test records and all
@@ -84,3 +86,13 @@ class IntegrationTestMailMessage(IntegrationTestCase):
         # A forwarded/quote-only message must never end up with a blank preview.
         html = '<div class="gmail_quote">On 28 Jul 2026, John wrote: the original</div>'
         self.assertEqual(preview_from_html(html), "On 28 Jul 2026, John wrote: the original")
+
+    def test_a_name_that_is_not_account_and_id_is_not_found(self):
+        from suite.mail.doctype.mail_message import mail_message
+
+        # A MIME link with a mangled name used to fail as a server error (500), not a missing message.
+        with patch.object(mail_message, "get_messages") as get_messages:
+            for name in ("Ma0ca", "|Ma0ca", "acc|", "acc|Ma0ca|extra"):
+                with self.subTest(name=name), self.assertRaises(frappe.DoesNotExistError):
+                    frappe.get_doc("Mail Message", name)
+        get_messages.assert_not_called()

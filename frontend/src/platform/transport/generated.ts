@@ -189,6 +189,33 @@ const operationOnboardingPost: MutationRef<
   loadValidators: async () => (await import('./validators')).operationOnboardingPost,
 }
 
+export type SharedDrivesListOutputSharedDrive = { id: string; title: string }
+
+export type SharedDrivesListInput = Record<string, never>
+
+export type SharedDrivesListOutput = Array<SharedDrivesListOutputSharedDrive>
+
+export type SharedDrivesListError = 'PermissionError'
+
+const operationSharedDrivesList: QueryRef<
+  SharedDrivesListInput,
+  SharedDrivesListOutput,
+  SharedDrivesListError
+> = {
+  id: 'shared_drives_list',
+  owner: 'suite',
+  kind: 'query',
+  publicName: 'admin.sharedDrives.list',
+  method: 'GET',
+  path: 'admin/shared-drives',
+  prefix: '/api/suite/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationSharedDrivesList,
+}
+
 export type UserTransferPreviewOutputDestinationCapacity = {
   stored_bytes: number
   mail_bytes: number | null
@@ -204,13 +231,19 @@ export type UserTransferPreviewOutputDestinationCapacity = {
 
 export type UserTransferPreviewOutputInheritedGrant = { principal: string; role: number }
 
-export type UserTransferPreviewInput = { user: string; destination: string }
+export type UserTransferPreviewInput = {
+  user: string
+  to_user: string | null
+  to_drive: string | null
+}
 
 export type UserTransferPreviewOutput = {
   destination_capacity: UserTransferPreviewOutputDestinationCapacity
   source_root: string
   destination: string
   destination_user: string | null
+  folder_title: string
+  destination_title: string
   bytes: number
   item_count: number
   fingerprint: string
@@ -248,7 +281,8 @@ export type UserTransferOutputTransferItem = {
 
 export type UserTransferInput = {
   user: string
-  destination: string
+  to_user: string | null
+  to_drive: string | null
   fingerprint: string
   confirm_access: boolean
 }
@@ -1216,6 +1250,9 @@ const operationSuiteGenerateUserKeys: MutationRef<
 export const api = {
   admin: {
     health: operationAdminHealthGet,
+    sharedDrives: {
+      list: operationSharedDrivesList,
+    },
   },
   users: {
     replaceTemporaryPassword: operationTemporaryPasswordPost,

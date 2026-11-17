@@ -27,7 +27,7 @@ from pathlib import Path
 
 import frappe
 
-from suite.drive.patches.build.state import DROP_REASONS
+from suite.drive.patches.build.state import DROP_REASONS, LEGACY_RIGHTS_COUNTS
 
 REPORT_FILENAME = "drive-build-report.json"
 REPORT_PREFIX = "drive-build-report"
@@ -46,6 +46,7 @@ REPORT_KEYS = (
     "links_minted",
     "creator_grants_minted",
     "creator_denies_overridden",
+    "legacy_rights",
     "docshare_rows_dropped",
     "trash_disagreements",
     "orphan_content_docs_adopted",
@@ -96,6 +97,9 @@ def build_report(env) -> dict:
         # ends below EDIT on their own node, so Build raises it and tells
         # the operator which decisions it overrode.
         "creator_denies_overridden": grants.creator_denies_overridden,
+        # §14.5 Kept rights: the grants written so nobody ends below what
+        # legacy merged for them, and the pairs the owner should look at.
+        "legacy_rights": {key: grants.legacy_rights.get(key, 0) for key in LEGACY_RIGHTS_COUNTS},
         # `Drive Permission` supplies the Sheet `DocShare` rows and step 10
         # supplies the Writer and Slides ones. One key, both sources.
         "docshare_rows_dropped": grants.docshare_rows_dropped + content.docshare_rows_dropped,

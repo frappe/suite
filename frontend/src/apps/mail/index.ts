@@ -15,6 +15,9 @@ export const mailArea: AreaDefinition = {
   icon: MailIcon,
   to: '/mail',
   requires: ['jmap'],
+  // On a phone, Mail is a row in the account sheet, not a bottom bar tab.
+  phonePlacement: 'account',
+  menuIcon: 'lucide-mail',
   installable: true,
   phoneNav: defineAsyncComponent(() => import('@/apps/mail/components/mobile/MailTabBar.vue')),
   // Ticket 010 owns shell adoption. The existing MailLayout keeps its full frame for now.

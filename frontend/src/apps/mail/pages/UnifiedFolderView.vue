@@ -47,15 +47,9 @@
   </PageHeader>
 
   <div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
-    <!-- Loading -->
-    <div v-if="isLoading" class="flex w-full flex-col items-center justify-center">
-      <div class="text-ink-gray-5 flex items-center space-x-2">
-        <LoaderCircle class="h-5 w-5 animate-spin" />
-        <span>{{ __('Loading...') }}</span>
-      </div>
-    </div>
-
-    <template v-else-if="threadRows.length || inboxTab || filter || filterChanged">
+    <!-- The list in its frame; the frame shows its own empty, loading and refused states (see
+         usePaginatedThreads). Without the frame, they fill the view below. -->
+    <template v-if="listFramed">
       <ThreadPane
         :thread-open="!!threadID"
         @touch-start="onThreadTouchStart"
@@ -132,11 +126,17 @@
           >
             <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.
                  While a new tab or filter loads, the list area spins in its place. -->
-            <div v-if="!threadRows.length && threads.isFetching" class="flex justify-center py-10">
+            <div v-if="listState === 'loading'" class="flex justify-center py-10">
               <LoaderCircle class="text-ink-gray-5 h-5 w-5 animate-spin" />
             </div>
+            <LoadError
+              v-else-if="listState === 'error'"
+              :title="__('Could not load the list.')"
+              :error="threads.error"
+              @retry="retryList"
+            />
             <p
-              v-else-if="!threadRows.length"
+              v-else-if="listState === 'empty'"
               class="text-ink-gray-5 px-3 py-10 text-center text-p-sm sm:px-5"
             >
               {{
@@ -292,6 +292,25 @@
       </ThreadPane>
     </template>
 
+    <!-- Loading -->
+    <div
+      v-else-if="listState === 'loading'"
+      class="flex w-full flex-col items-center justify-center"
+    >
+      <div class="text-ink-gray-5 flex items-center space-x-2">
+        <LoaderCircle class="h-5 w-5 animate-spin" />
+        <span>{{ __('Loading...') }}</span>
+      </div>
+    </div>
+
+    <LoadError
+      v-else-if="listState === 'error'"
+      class="w-full"
+      :title="__('Could not load the list.')"
+      :error="threads.error"
+      @retry="retryList"
+    />
+
     <!-- No mails -->
     <div v-else class="text-ink-gray-5 flex w-full flex-col items-center justify-center">
       <NoMails class="text-ink-gray-2 mb-2 h-16 w-16" />
@@ -337,6 +356,7 @@ import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelec
 import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
+import LoadError from '@/apps/mail/components/LoadError.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
@@ -466,6 +486,8 @@ const rowKeys = (row: NavRow): string[] =>
  */
 const openKey = computed(() => (accountId && threadID ? `${accountId}:${threadID}` : undefined))
 const {
+  listState,
+  listFramed,
   container: mailListRef,
   loadingMore,
   isFetching,
@@ -484,6 +506,9 @@ const {
   threadKey,
   // Deferred read — visibleThreadCount is declared below, with the rows it counts.
   fillProgress: () => visibleThreadCount.value,
+  // Deferred reads too, as in the mailbox list.
+  framed: () => !!inboxTab.value || !!filter.value || filterChanged.value,
+  switching: () => filterChanged.value || (tabSwitched.value && !!inboxTab.value),
 })
 
 // The list's filters, their menu, and its title (see useListFilter) — all shared with the mailbox
@@ -555,10 +580,8 @@ const threadRows = computed(() =>
   ),
 )
 watch(threadRows, keptRead.keep)
-const isLoading = computed(
-  () =>
-    threads.status === 'pending' && !(tabSwitched.value && inboxTab.value) && !filterChanged.value,
-)
+// Ask again for a list that failed to load.
+const retryList = () => void threads.refetch().catch(() => {})
 
 // After an action, and on the poll: every count the sidebar shows, the merged folders' included.
 const refreshCounts = () => void store.refreshCounts()

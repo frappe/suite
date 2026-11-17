@@ -117,6 +117,18 @@
         </LedgerSection>
       </div>
     </div>
+    <div
+      v-else-if="failed"
+      class="flex flex-1 flex-col justify-center overflow-y-auto max-sm:pb-20"
+    >
+      <LoadError
+        :title="__('Could not load this delivery.')"
+        :error="submission.error"
+        @retry="submission.refetch().catch(() => {})"
+      >
+        <Button :label="__('Back to Outbox')" variant="ghost" @click="backToList" />
+      </LoadError>
+    </div>
     <!-- Mirrors the settled layout so list → details (and details → replacement) transitions
 		without a blank frame. -->
     <div
@@ -168,6 +180,7 @@ import { useRouter } from 'vue-router'
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import LedgerRow from '@/apps/mail/components/LedgerRow.vue'
 import LedgerSection from '@/apps/mail/components/LedgerSection.vue'
+import LoadError from '@/apps/mail/components/LoadError.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import SubmissionActivity from '@/apps/mail/components/SubmissionActivity.vue'
@@ -216,6 +229,10 @@ watch(
   () => {
     submission.refetch().catch(() => {})
   },
+)
+// Refused with nothing to show; asking again shows the placeholder until it answers.
+const failed = computed(
+  () => submission.status === 'error' && !submission.data && !submission.isFetching,
 )
 const data = computed<SubmissionDetails | null>(() =>
   refetching.value || !submission.data ? null : submissionDetails(submission.data),

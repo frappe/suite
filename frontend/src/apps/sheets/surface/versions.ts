@@ -7,7 +7,7 @@
 import * as Y from 'yjs'
 
 import { api, client } from '@/api'
-import type { DocumentSession, DocumentVersion } from '@/apps/drive'
+import { versionAuthor, type DocumentSession, type DocumentVersion } from '@/apps/drive'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
@@ -121,8 +121,7 @@ export function versionTitle(version: DocumentVersion): string {
 
 /** When a version was taken, and by whom. */
 export function versionByline(version: DocumentVersion): string {
-  const who = version.person.full_name || version.actor
-  return [stampLabel(version.creation), who].filter(Boolean).join(' · ')
+  return [stampLabel(version.creation), versionAuthor(version)].filter(Boolean).join(' · ')
 }
 
 export function errorText(error: unknown, fallback: string): string {

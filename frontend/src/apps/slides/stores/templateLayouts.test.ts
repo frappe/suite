@@ -1,9 +1,21 @@
 import { fromAny } from '@total-typescript/shoehorn'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { templateList } from '@/apps/slides/stores/presentation'
 
-import { drawTemplateLayouts, firstLayout, setTemplateReader } from './templateLayouts'
+import {
+  drawTemplateLayouts,
+  firstLayout,
+  setTemplateReader,
+  templateMediaUrl,
+} from './templateLayouts'
+
+// what Drive lists as a node's media
+const mediaList = vi.hoisted(() => ({ query: vi.fn() }))
+vi.mock('@/api', () => ({
+  api: { drive: { nodes: { media: 'nodes.media' } } },
+  client: { query: mediaList.query },
+}))
 
 // the real drawing pulls in the editor's upload setup, so a saved presentation here is its slides
 vi.mock('@/apps/slides/collab/drawnDeck', () => ({
@@ -53,5 +65,77 @@ describe("a converted template's layouts", () => {
 
     expect(read).toHaveBeenCalledTimes(2)
     expect(templateList.value[0].layouts).toHaveLength(1)
+  })
+})
+
+describe("a converted template's pictures", () => {
+  function listed(name: string, elements: unknown[]) {
+    templateList.value = fromAny([
+      {
+        name,
+        node: `node-${name}`,
+        title: name,
+        is_converted: true,
+        thumbnails: [],
+        layouts: [],
+      },
+    ])
+    setTemplateReader(async () => fromAny({ slides: [{ clientId: 'cover', elements }] }))
+  }
+
+  const signed = (stamp: string) => ({
+    media: [{ node: 'photo', url: `/private/files/photo.png?signed=${stamp}` }],
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    mediaList.query.mockReset()
+  })
+
+  it("get their urls from the template's own media", async () => {
+    listed('brand', [{ type: 'image', src: 'photo' }])
+    mediaList.query.mockResolvedValue(signed('first'))
+
+    await drawTemplateLayouts(['brand'])
+
+    await vi.waitFor(() =>
+      expect(templateMediaUrl('photo')).toBe('/private/files/photo.png?signed=first'),
+    )
+    expect(mediaList.query).toHaveBeenCalledWith('nodes.media', { node: 'node-brand' })
+  })
+
+  it('have no url when the template does not hold them', async () => {
+    listed('borrowed', [{ type: 'image', src: 'elsewhere' }])
+    mediaList.query.mockResolvedValue({ media: [] })
+
+    await drawTemplateLayouts(['borrowed'])
+    await vi.waitFor(() => expect(mediaList.query).toHaveBeenCalled())
+
+    expect(templateMediaUrl('elsewhere')).toBe('')
+  })
+
+  it('get fresh urls once the signed ones have aged', async () => {
+    vi.useFakeTimers()
+    listed('aged', [{ type: 'image', src: 'photo' }])
+    mediaList.query.mockResolvedValueOnce(signed('old')).mockResolvedValueOnce(signed('new'))
+
+    await drawTemplateLayouts(['aged'])
+    await drawTemplateLayouts(['aged'])
+    expect(mediaList.query).toHaveBeenCalledTimes(1)
+
+    vi.setSystemTime(Date.now() + 11 * 60_000)
+    await drawTemplateLayouts(['aged'])
+
+    await vi.waitFor(() =>
+      expect(templateMediaUrl('photo')).toBe('/private/files/photo.png?signed=new'),
+    )
+  })
+
+  it('are not asked for when no layout names one', async () => {
+    listed('plain', [{ type: 'text', content: '<p>Title</p>' }])
+
+    await drawTemplateLayouts(['plain'])
+
+    expect(mediaList.query).not.toHaveBeenCalled()
   })
 })

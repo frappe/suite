@@ -81,6 +81,13 @@
         </ListView>
         <!-- Outside the ListView: its horizontally scrolling body would center this
 				within the full (off-screen) table width on narrow viewports. -->
+        <LoadError
+          v-else-if="failed"
+          class="h-full"
+          :title="__('Could not load the Outbox.')"
+          :error="submissions.error"
+          @retry="refresh()"
+        />
         <div v-else class="flex h-full flex-col items-center justify-center px-4 text-center">
           <div class="text-2xl-medium text-ink-gray-8">{{ emptyState.title }}</div>
           <div class="text-ink-gray-5 mt-1 text-base">{{ emptyState.description }}</div>
@@ -122,6 +129,7 @@ import { useRouter } from 'vue-router'
 
 import { api, useInfiniteQuery, useMutation, type InputOf } from '@/api'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
+import LoadError from '@/apps/mail/components/LoadError.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import OutboxFilters from '@/apps/mail/components/OutboxFilters.vue'
@@ -182,7 +190,11 @@ const submissions = useInfiniteQuery(api.mail.scheduled.list, input)
 const rows = computed(() => submissions.rows.map(submissionRow))
 computed(() => submissions.total ?? 0)
 const loadingMore = computed(() => submissions.isFetchingNext)
-const refetching = computed(() => submissions.status === 'pending')
+// Refused with nothing to show; asking again shows the placeholder until it answers.
+const failed = computed(() => submissions.status === 'error' && !rows.value.length)
+const refetching = computed(
+  () => submissions.status === 'pending' || (failed.value && submissions.isFetching),
+)
 computed(() => submissions.hasNext)
 const refresh = () => submissions.refetch().catch(() => {})
 const onScroll = useDebounceFn((event: Event) => {
@@ -410,16 +422,17 @@ async function cancelScheduleSubmit() {
     refresh()
     // No message was moved when the email had been deleted — don't point at Drafts.
     if (!data.id) raiseToast(__('Delivery cancelled'), 'success')
-    raiseToast(
-      __('Delivery cancelled. The message is back in your drafts.'),
-      'success',
-      store.mailboxIds.drafts
-        ? {
-            label: __('Open Drafts'),
-            onClick: openDrafts,
-          }
-        : undefined,
-    )
+    else
+      raiseToast(
+        __('Delivery cancelled. The message is back in your drafts.'),
+        'success',
+        store.mailboxIds.drafts
+          ? {
+              label: __('Open Drafts'),
+              onClick: openDrafts,
+            }
+          : undefined,
+      )
   } catch (error) {
     onActionError(error)
   }

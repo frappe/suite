@@ -9,9 +9,12 @@ from suite.drive.framework import principals_for
 UNGRANTED_SQL = """
 SELECT n.name, n.owner, n.parent_node
 FROM `tabDrive Node` n
+LEFT JOIN `tabDrive Node` p ON p.name = n.parent_node
 WHERE n.owner IN %(admins)s
   AND n.kind <> 'root'
   AND n.parent_node IS NOT NULL
+  -- Media under a presentation takes its rights from it: the rule of `build.grants.is_presentation_media`
+  AND COALESCE(p.content_doctype, '') <> 'Presentation'
   AND NOT EXISTS (
     SELECT 1 FROM `tabDrive Grant` g WHERE g.node = n.name AND g.principal = n.owner
   )
