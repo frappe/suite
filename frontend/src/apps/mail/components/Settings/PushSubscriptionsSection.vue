@@ -12,6 +12,13 @@
     "
   >
     <template #actions>
+      <Button
+        icon="lucide-refresh-cw"
+        :tooltip="__('Refresh')"
+        :aria-label="__('Refresh')"
+        :loading="subscriptions.isFetching"
+        @click="refetch"
+      />
       <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
     </template>
     <SettingsLoading v-if="!subscriptions.data" />

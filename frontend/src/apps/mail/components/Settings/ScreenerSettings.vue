@@ -68,6 +68,12 @@
               </template>
             </TextInput>
             <Select v-model="sort" class="w-36 shrink-0" :options="SORT_OPTIONS" />
+            <Button
+              :icon="direction === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
+              :tooltip="direction === 'asc' ? __('Ascending') : __('Descending')"
+              :aria-label="direction === 'asc' ? __('Ascending') : __('Descending')"
+              @click="direction = direction === 'asc' ? 'desc' : 'asc'"
+            />
           </div>
           <SettingsSelectionBar v-if="rows.length" :selection="selection">
             <template #actions>
@@ -118,7 +124,7 @@
 
 <script setup lang="ts">
 import { Badge, Button, Select, SettingsRow, Switch, TextInput } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
 import AddScreenedSenderModal from '@/apps/mail/components/Modals/AddScreenedSenderModal.vue'
@@ -160,8 +166,9 @@ const ACTION_LABELS: Record<ScreeningAction, string> = {
   Spam: __('Blocked'),
 }
 
-// Most recently changed first by default, as the server lists them. Dates are newest first and
-// addresses A to Z; the raw values sort, not the labels shown.
+// Most recently changed first by default, as the server lists them. A new field starts in its
+// natural order (dates newest first, addresses A to Z) and the arrow beside it reverses it; the raw
+// values sort, not the labels shown.
 type SortField = 'modified' | 'creation' | 'email'
 const SORT_OPTIONS: { label: string; value: SortField }[] = [
   { label: __('Last changed'), value: 'modified' },
@@ -169,14 +176,16 @@ const SORT_OPTIONS: { label: string; value: SortField }[] = [
   { label: __('Email'), value: 'email' },
 ]
 const sort = ref<SortField>('modified')
+const direction = ref<'asc' | 'desc'>('desc')
+watch(sort, (field) => (direction.value = field === 'email' ? 'asc' : 'desc'))
 const search = ref('')
 const rows = computed(() => {
   const query = search.value.trim().toLowerCase()
   const field = sort.value
-  const direction = field === 'email' ? 1 : -1
+  const order = direction.value === 'asc' ? 1 : -1
   return (screenedAddresses.data ?? [])
     .filter((address: ScreenedAddress) => !query || address.email.toLowerCase().includes(query))
-    .sort((a, b) => a[field].localeCompare(b[field]) * direction)
+    .sort((a, b) => a[field].localeCompare(b[field]) * order)
     .map((address: ScreenedAddress) => ({
       email: address.email,
       action: address.action,
