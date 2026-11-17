@@ -11,7 +11,12 @@
     <!-- The switch belongs to the form under it, so it sits closer to it than
          the page gap. -->
     <div class="flex flex-col gap-2">
-      <TabButtons v-model="direction" class="self-start" :options="DIRECTIONS" />
+      <TabButtons
+        :model-value="direction"
+        class="self-start"
+        :options="DIRECTIONS"
+        @update:model-value="selectDirection"
+      />
       <ImportSection v-if="direction === 'import'" />
       <ExportSection v-else />
     </div>
@@ -28,10 +33,14 @@ import { translate as __ } from '@/platform/translation'
 import ExportSection from './ExportSection.vue'
 import ImportSection from './ImportSection.vue'
 
-const DIRECTIONS = [
+type Direction = 'import' | 'export'
+const DIRECTIONS: { label: string; value: Direction }[] = [
   { label: __('Import'), value: 'import' },
   { label: __('Export'), value: 'export' },
 ]
 
-const direction = ref<string | number>('import')
+const direction = ref<Direction>('import')
+function selectDirection(value: string | number) {
+  if (value === 'import' || value === 'export') direction.value = value
+}
 </script>
