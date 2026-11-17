@@ -269,6 +269,7 @@ class ComposeInput(AccountInput):
     attachments: NotRequired[list[DraftAttachment] | None]
     send_at: NotRequired[str | None]
     undo_send: NotRequired[bool]
+    draft_key: NotRequired[str | None]
     # Remind me then if nobody has answered: a UTC `...Z` time after the mail goes out.
     remind_at: NotRequired[str | None]
 

@@ -26,6 +26,12 @@ _Avoid_: Thread, Mail
 A message still being written, not yet sent.
 _Avoid_: Unsent mail
 
+**Local copy**:
+What the browser keeps of a draft while saving it to the server fails, and
+removes once a save lands. It holds the text, recipients and already uploaded
+files, never a file still uploading. Normal saving keeps nothing on the device.
+_Avoid_: Backup, Offline draft, Cache
+
 **Stack**:
 A list row folding several conversations in a row from one sender.
 _Avoid_: Group, Bundle

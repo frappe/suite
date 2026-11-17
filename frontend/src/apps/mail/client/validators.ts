@@ -8656,6 +8656,7 @@ export const operationCreateMail: Validators<CreateMailInput, CreateMailOutput> 
           },
           send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
           undo_send: { title: 'Undo Send', type: 'boolean' },
+          draft_key: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Draft Key' },
           remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
           in_reply_to: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'In Reply To' },
           in_reply_to_id: {
@@ -8795,6 +8796,7 @@ export const operationUpdateDraftMail: Validators<UpdateDraftMailInput, UpdateDr
           },
           send_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Send At' },
           undo_send: { title: 'Undo Send', type: 'boolean' },
+          draft_key: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Draft Key' },
           remind_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Remind At' },
           id: { title: 'Id', type: 'string' },
           submit: { title: 'Submit', type: 'boolean' },

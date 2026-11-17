@@ -718,13 +718,19 @@ class MailQueue(OwnerFromUser, Document):
 
         Asked in the same call, the server destroyed it even when it refused the replacement, and
         the user's draft was gone. A copy a failed destroy leaves behind is only logged.
+
+        Out of the cache too, and not only once the server's change notice arrives: a composer still
+        holding this id must hear it is gone, not load the cached copy and make a second draft from it.
         """
+
+        from suite.mail.doctype.mail_message.mail_message import _remove_cached_messages
 
         try:
             with client.batch() as b:
                 destroyed = b.mail.email.set(destroy=[self.id])
             if self.id in destroyed.result.not_destroyed:
                 raise ValueError(destroyed.result.not_destroyed[self.id])
+            _remove_cached_messages(self.account, [self.id])
         except Exception:
             log_mail_error(f"Mail Queue: could not destroy replaced draft {self.id}", frappe.get_traceback())
 

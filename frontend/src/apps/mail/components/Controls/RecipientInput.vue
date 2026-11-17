@@ -410,7 +410,7 @@ const handleClick = () => {
   setFocus()
   nextTick(setFocus)
 }
-defineExpose({ setFocus })
+defineExpose({ setFocus, commitTyped })
 
 const handleContainerKeydown = (e: KeyboardEvent) => {
   const inputEl = containerRef.value?.querySelector('input') ?? null

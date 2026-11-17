@@ -5,7 +5,7 @@ import { createApp, type App as VueApp } from 'vue'
 
 import App from '@/App.vue'
 import { installEventReminders } from '@/apps/calendar'
-import { installMailReminders } from '@/apps/mail'
+import { installDraftSessionEnd, installMailReminders } from '@/apps/mail'
 import { clearSlidesUserData } from '@/apps/slides/utils/serviceWorker'
 import { initSentry } from '@/boot/sentry'
 import { documentTypes } from '@/composition/documentRegistry'
@@ -34,6 +34,7 @@ app.provide(DOCUMENT_TYPES_KEY, documentTypes)
 // The Slides service worker keeps this user's responses. Every logout path ends
 // in the platform session, so the next user never receives them.
 useSession().onLogout(clearSlidesUserData)
+installDraftSessionEnd()
 
 void import('@/shell/ShellLayout.vue')
 // Some pages call `__` as their module evaluates, so their code waits for the catalog.
