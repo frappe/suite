@@ -61,10 +61,14 @@ describe('uploadEmbeddedImages', () => {
     const bytes = Uint8Array.from({ length: 300_000 }, (_, index) => index % 251)
     let binary = ''
     for (const byte of bytes) binary += String.fromCharCode(byte)
-    const spaced = PNG_BASE64.replace(/=+$/, '').replace(/(.{20})/g, '$1 ')
+    // Unpadded, a space every 20 characters, and some characters percent-encoded: `A` and `k`.
+    const loose = PNG_BASE64.replace(/=+$/, '')
+      .replace(/(.{20})/g, '$1 ')
+      .replace(/A/g, '%41')
+      .replace(/k/g, '%6b')
     const html =
       `<img src="data:image/jpeg;base64,${btoa(binary)}">` +
-      `<img src="DATA:IMAGE/PNG; BASE64,${spaced.replace(/\+/g, '%2B')}">`
+      `<img src="DATA:IMAGE/PNG; BASE64,${loose}">`
 
     await uploadEmbeddedImages(html, upload)
 
@@ -73,6 +77,8 @@ describe('uploadEmbeddedImages', () => {
       ['image.png', 'image/png', 68],
     ])
     expect(new Uint8Array(await uploaded[0].arrayBuffer())).toEqual(bytes)
+    const png = Uint8Array.from(atob(PNG_BASE64), (character) => character.charCodeAt(0))
+    expect(new Uint8Array(await uploaded[1].arrayBuffer())).toEqual(png)
   })
 
   it('leaves a body without data URLs exactly as it was', async () => {
