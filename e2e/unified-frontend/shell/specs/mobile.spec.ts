@@ -22,12 +22,25 @@ test("the bottom nav replaces the rail and moves between areas", async ({ page }
 	await expect(nav.filter({ hasText: "Drive" })).toBeVisible();
 	await expect(nav.filter({ hasText: "Account" })).toBeVisible();
 	await expect(nav.filter({ hasText: "More" })).toHaveCount(0);
+	// Mail, Calendar and People open from the account sheet on a phone.
+	await expect(nav.filter({ hasText: "Mail" })).toHaveCount(0);
+	await expect(nav.filter({ hasText: "Calendar" })).toHaveCount(0);
+	await expect(nav.filter({ hasText: "People" })).toHaveCount(0);
 
 	await nav.filter({ hasText: "Drive" }).click();
 	await expect(page).toHaveURL(/\/drive$/);
 
 	await nav.filter({ hasText: "Home" }).click();
 	await expect(page).toHaveURL(/\/home$/);
+});
+
+test("the Notifications tab opens the notifications page", async ({ page }) => {
+	await page.goto("/home");
+	await navItems(page).filter({ hasText: "Notifications" }).click();
+
+	await expect(page).toHaveURL(/\/notifications$/);
+	await expect(page.getByText("Notifications", { exact: true }).first()).toBeVisible();
+	await expect(page.getByRole("button", { name: "Mark all read" })).toBeVisible();
 });
 
 test("a tap on the active area opens its sidebar in a bottom sheet", async ({ page }) => {

@@ -8,7 +8,7 @@
       :active="item.active"
       @click="select(item)"
     >
-      <span class="relative grid size-6 place-items-center">
+      <span class="relative grid size-6 place-items-center" :class="ICON_DOT_HOST">
         <component
           :is="item.icon"
           class="size-6"
@@ -18,6 +18,8 @@
         <AreaProgressDot :progress="progressOf(item.id)" :label="item.label" />
       </span>
     </FrappeMobileNavItem>
+    <!-- The bell's place on a phone, which has no rail; composition draws it. -->
+    <slot name="bell-tab" />
     <FrappeMobileNavItem :label="__('Account')" @click="$emit('open-account')">
       <Avatar :image="session.user.value?.avatar ?? undefined" :label="accountLabel" size="md" />
     </FrappeMobileNavItem>
@@ -39,6 +41,7 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useAreaProgress } from '@/shell/areaProgress'
 import AreaProgressDot from '@/shell/AreaProgressDot.vue'
+import { ICON_DOT_HOST } from '@/shell/iconDot'
 import { deriveMobileNav, type MobileNavItemDefinition } from '@/shell/mobileNav'
 
 const props = defineProps<{
@@ -46,6 +49,7 @@ const props = defineProps<{
   activeArea?: string
 }>()
 defineEmits<{ 'open-account': [] }>()
+defineSlots<{ 'bell-tab'?: () => unknown }>()
 
 const session = useSession()
 const accountLabel = computed(

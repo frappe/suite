@@ -476,6 +476,9 @@ class FakeTree:
         # keeps it.
         self.users = dict(users or {})
         self.groups = set(groups)
+        # `User Group` name to member addresses, for `people`.
+        self.members: dict[str, set[str]] = {}
+        self.admins: set[str] = set()
         self.composite_decks = set()
         self.public_decks: set[str] = set()
         self.sheets = {}
@@ -538,6 +541,16 @@ class FakeTree:
 
     def sheet_entity(self, sheet):
         return self.sheets.get(sheet)
+
+    def people(self):
+        return {
+            user: tuple(sorted(group for group, members in self.members.items() if user in members))
+            for user, enabled in self.users.items()
+            if enabled is not None and user not in ("Administrator", "Guest")
+        }
+
+    def suite_admins(self):
+        return set(self.admins)
 
 
 class FakeDrive:
@@ -631,6 +644,13 @@ class FakeDrive:
             for row in self.grant_rows.values()
             if row["node"] == node and row["principal"] in principals
         }
+
+    def grants_on(self, nodes):
+        found = {}
+        for row in self.grant_rows.values():
+            if row["node"] in nodes and not row["principal"].startswith("$LINK:"):
+                found.setdefault(row["node"], []).append((row["principal"], row["role"]))
+        return found
 
     def has_link_grant(self, node):
         return any(
@@ -853,6 +873,25 @@ class FakeContent:
     def media_files_by_urls(self, urls):
         wanted = set(urls)
         return [row for row in self.media_rows if row.file_url in wanted]
+
+    def drive_files_by_urls(self, urls):
+        wanted = set(urls)
+        return [
+            MediaFileRow(
+                name=row.name,
+                deck="",
+                file_name=row.file_name,
+                file_url=row.file_url,
+                blob=row.blob,
+                owner=row.owner,
+                creation=row.creation,
+                modified=row.modified,
+                modified_by=row.modified_by,
+                file_modified=row.file_modified,
+            )
+            for row in self.file_rows
+            if row.file_url in wanted and not row.is_folder
+        ]
 
     def presentation_media(self, names):
         return {row.name for row in self.media_rows if row.name in names}

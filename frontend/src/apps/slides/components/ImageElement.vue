@@ -1,12 +1,7 @@
 <template>
   <div class="h-full" @dblclick="handleDoubleClick">
     <div :style="maskStyle">
-      <img
-        v-if="imageSrc"
-        :class="imageClasses"
-        :style="imageStyle"
-        :src="getAttachmentUrl(imageSrc)"
-      />
+      <img v-if="imageSrc" :class="imageClasses" :style="imageStyle" :src="mediaUrl(imageSrc)" />
     </div>
     <div
       v-if="showReplaceImageButton"
@@ -14,10 +9,10 @@
       :style="gradientOverlayStyles"
     >
       <FileUploader
-        :fileTypes="allowedImageFileTypes"
+        :file-types="allowedImageFileTypes"
         doctype="Presentation"
         :docname="presentationId"
-        :uploadEndpoint="MEDIA_UPLOAD_ENDPOINT"
+        :upload-endpoint="MEDIA_UPLOAD_ENDPOINT"
         private
         @success="replaceTemplateImage"
       >
@@ -35,13 +30,14 @@
 import { FileUploader } from 'frappe-ui'
 import { computed, inject, ref } from 'vue'
 
+import { useMediaUrl } from '@/apps/slides/composables/useMediaUrl'
 import { useBoxShadow } from '@/apps/slides/composables/useShadow'
 import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
 import { startCrop } from '@/apps/slides/stores/imageCrop'
 import { presentationId } from '@/apps/slides/stores/presentation'
 import { allowedImageFileTypes, defaultBorderColor } from '@/apps/slides/utils/constants'
 import { getCroppedImageBox } from '@/apps/slides/utils/cropGeometry'
-import { getAttachmentUrl, MEDIA_UPLOAD_ENDPOINT } from '@/apps/slides/utils/mediaUploads'
+import { MEDIA_UPLOAD_ENDPOINT } from '@/apps/slides/utils/mediaUploads'
 
 const props = defineProps({
   mode: {
@@ -61,6 +57,7 @@ const element = defineModel('element', {
 
 const inReadonlyMode = inject('inReadonlyMode', ref(false))
 const inSlideShowMode = inject('inSlideShowMode', ref(false))
+const mediaUrl = useMediaUrl()
 
 const handleDoubleClick = (e) => {
   if (props.mode != 'editor' || inReadonlyMode.value || inSlideShowMode.value) return

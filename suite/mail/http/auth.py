@@ -154,7 +154,7 @@ _OPERATIONS: tuple[tuple[str, str, RouteKind, str, object, object], ...] = (
         "mutation",
         "public.sendResetLink",
         ResetLink,
-        str,
+        type(None),
     ),
     (
         "get_user_for_reset_password_key",

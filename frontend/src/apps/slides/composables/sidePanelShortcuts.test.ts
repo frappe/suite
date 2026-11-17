@@ -73,7 +73,12 @@ const historyMeta = {
   },
 }
 
-const VERSION = fromPartial<DocumentVersion>({ seq: 3, label: 'Draft', creation: '2026-11-01' })
+const VERSION = fromPartial<DocumentVersion>({
+  seq: 3,
+  label: 'Draft',
+  creation: '2026-11-01',
+  person: { id: 'ana@example.com', full_name: 'Ana Silva', user_image: null },
+})
 
 let app: App | null = null
 const wentBack: number[] = []
