@@ -1815,8 +1815,10 @@ Each app's later migration owns these. They are named and baselined
 ### 10.11 Dead-link page
 
 The dead-link page is server-rendered. It has the correct HTTP status,
-`no_cache`, the Suite mark, no node details and no Sign in (ask S2)
-[T011].
+`no_cache`, and no node details (ask S2) [T011]. It draws the guest
+frame's dead end with the same measurements: the slim header with the
+Suite mark and, for a guest, Sign in, which lands on Home; a 48px icon
+circle; a text-2xl-semibold title; and a text-p-base line.
 
 | Status | Copy |
 |---|---|
