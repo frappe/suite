@@ -26,12 +26,11 @@
         </div>
 
         <div class="grid gap-6 border-t pt-6 sm:grid-cols-2">
-          <!-- Each list has a fixed box, the height of the largest-files cap,
-               so loading, loaded, empty and failed all take the same space and
-               no heading moves between them. -->
+          <!-- Each list is as tall as its rows, up to the largest-files cap, and
+               scrolls past it: a taller box left a gap above External access. -->
           <section class="flex min-w-0 flex-col gap-2">
             <h3 class="text-base font-semibold text-ink-gray-8">{{ __('By type') }}</h3>
-            <div class="h-80 overflow-y-auto">
+            <div class="max-h-80 overflow-y-auto">
               <ul v-if="byType.length" class="flex flex-col">
                 <li v-for="row in byType" :key="row.type" class="flex h-8 items-center gap-2">
                   <span
@@ -58,7 +57,7 @@
 
           <section class="flex min-w-0 flex-col gap-2">
             <h3 class="text-base font-semibold text-ink-gray-8">{{ __('Largest files') }}</h3>
-            <div class="h-80 overflow-y-auto">
+            <div class="max-h-80 overflow-y-auto">
               <ul v-if="largest.length" class="flex flex-col">
                 <li v-for="file in largest" :key="file.node" class="flex h-8 items-center gap-2">
                   <span
