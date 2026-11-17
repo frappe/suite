@@ -30,7 +30,7 @@ from suite.api.admin_storage import (
     storage_limits,
 )
 from suite.api.admin_transfer import ROUTES as TRANSFER_ROUTES
-from suite.api.admin_transfer import user_transfer, user_transfer_preview
+from suite.api.admin_transfer import shared_drives_list, user_transfer, user_transfer_preview
 from suite.api.errors import ROUTES as ERROR_ROUTES
 from suite.api.errors import errors_post
 from suite.api.preferences import (

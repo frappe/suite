@@ -54,7 +54,14 @@ vi.mock('frappe-ui', async () => {
         ])
     },
   })
+  const Avatar = defineComponent({
+    props: { label: String, image: String },
+    setup(props) {
+      return () => h('span', { 'data-avatar': props.label })
+    },
+  })
   return {
+    Avatar,
     Button,
     Popover,
     ScrollArea: passthrough,
@@ -73,6 +80,9 @@ vi.mock('@/apps/drive', () => ({
     state: { openingTitle: 'Title' },
   }),
   formatDriveBytes: (bytes: number) => `${bytes / 1024} KB`,
+  driveNodeIcon: (node: { kind: string; content_doctype: string | null }) =>
+    `file-icon-${node.content_doctype ?? node.kind}`,
+  driveNodeIconTint: () => 'text-ink-gray-6',
   driveNotifications: () => ({
     test: 'feed',
   }),
@@ -138,22 +148,29 @@ afterEach(() => {
 describe('Notifications bell', () => {
   it('reads each notification as a sentence naming the person and the item', () => {
     const rows = notificationRows(mount())
-    expect(rows[0]?.textContent).toContain(
-      'Theo Williams shared "Beacon deck" with you (can comment)',
-    )
-    expect(rows[1]?.textContent).toContain('Theo Williams mentioned you in "Q4 Roadmap"')
+    expect(rows[0]?.textContent).toContain('Theo Williams shared Beacon deck with you to comment')
+    expect(rows[1]?.textContent).toContain('Theo Williams mentioned you in Q4 Roadmap')
     expect(rows[1]?.textContent).toContain('Can you check the numbers, @Maya Chen?')
-    expect(rows[2]?.textContent).toContain('Theo Williams commented on "Launch plan"')
+    expect(rows[2]?.textContent).toContain('Theo Williams commented on Launch plan')
     expect(rows[2]?.textContent).toContain('The dates moved, @Theo Williams')
     for (const row of rows) {
       expect(row.textContent).not.toMatch(/share_add|share add|theo@northwind\.test/)
     }
   })
-  it('marks an unread row with the dot and a bold sentence, not a coloured fill', () => {
-    const [row] = notificationRows(mount())
-    expect(row?.className).not.toMatch(/bg-surface-amber/)
-    expect(row?.querySelector('.text-base-semibold')?.textContent).toContain('Beacon deck')
-    expect(row?.querySelector('.bg-surface-amber-7')).not.toBeNull()
+  it('marks only unread rows, with a dot, and sets just the person and the item apart', () => {
+    const rows = notificationRows(mount())
+    const [unread, , read] = rows
+    expect(unread?.className).not.toMatch(/bg-surface-amber/)
+    expect(unread?.querySelector('[aria-label="Unread"]')).not.toBeNull()
+    expect(read?.querySelector('[aria-label="Unread"]')).toBeNull()
+    expect(
+      [...(unread?.querySelectorAll('.font-medium') ?? [])].map((part) => part.textContent),
+    ).toEqual(['Theo Williams', 'Beacon deck'])
+  })
+  it('shows who acted and what kind of item it is', () => {
+    const [share] = notificationRows(mount())
+    expect(share?.querySelector('[data-avatar]')?.getAttribute('data-avatar')).toBe('Theo Williams')
+    expect(share?.querySelector('.file-icon-Presentation')).not.toBeNull()
   })
   it('does not mark anything read when opened', async () => {
     const root = mount()
@@ -202,7 +219,7 @@ describe('Notifications bell', () => {
     const assign = vi.fn()
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
     const row = notificationRows(mount()).find((button) =>
-      button.textContent?.includes('"Talks.zip" is ready to download'),
+      button.textContent?.includes('Talks.zip is ready to download'),
     )
 
     row?.click()
@@ -214,13 +231,13 @@ describe('Notifications bell', () => {
   })
   it("shows a ready zip's size and until when it can be downloaded", () => {
     const row = notificationRows(mount()).find((button) =>
-      button.textContent?.includes('"Talks.zip" is ready to download'),
+      button.textContent?.includes('Talks.zip is ready to download'),
     )
     expect(row?.textContent).toMatch(/2 KB · Available until \S/)
   })
   it('says why a download could not be prepared', () => {
     const row = notificationRows(mount()).find((button) =>
-      button.textContent?.includes('Could not prepare "Talks.zip"'),
+      button.textContent?.includes('Could not prepare Talks.zip'),
     )
     expect(row?.textContent).toContain('An item in folder Talks cannot be read')
   })
@@ -229,7 +246,7 @@ describe('Notifications bell', () => {
     const assign = vi.fn()
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
     const row = notificationRows(mount()).find((button) =>
-      button.textContent?.includes('"Talks.zip" has expired'),
+      button.textContent?.includes('Talks.zip has expired'),
     )
 
     row?.click()
@@ -338,14 +355,17 @@ function mount(): HTMLElement {
 function notificationRows(root: HTMLElement): HTMLButtonElement[] {
   return [
     ...root.querySelectorAll<HTMLButtonElement>('[data-testid="notifications-popover"] button'),
-  ].filter((button) => button.textContent?.includes('"'))
+  ].filter((button) => button.querySelector('.text-xs'))
 }
 function shareNotification() {
-  return notification('notice-1', 'share_add', 'Beacon deck', {
-    principal: 'maya@northwind.test',
-    old_role: null,
-    new_role: 20,
-  })
+  return {
+    ...notification('notice-1', 'share_add', 'Beacon deck', {
+      principal: 'maya@northwind.test',
+      old_role: null,
+      new_role: 20,
+    }),
+    node_content_doctype: 'Presentation',
+  }
 }
 function mentionNotification() {
   return notification('notice-2', 'comment', 'Q4 Roadmap', {
@@ -357,13 +377,16 @@ function mentionNotification() {
   })
 }
 function commentNotification() {
-  return notification('notice-3', 'comment', 'Launch plan', {
+  return readNotification('notice-3', 'comment', 'Launch plan', {
     thread: 'thread-2',
     comment: 'comment-2',
     resolved: false,
     excerpt: 'The dates moved, @Theo Williams',
     mentions: ['theo@northwind.test'],
   })
+}
+function readNotification(...args: Parameters<typeof notification>) {
+  return { ...notification(...args), read: 1 }
 }
 function notification(
   name: string,
@@ -377,6 +400,8 @@ function notification(
     creation: new Date().toISOString(),
     node_title: title,
     node_kind: 'document',
+    node_mime: null,
+    node_content_doctype: null,
     actor: {
       id: 'theo@northwind.test',
       full_name: 'Theo Williams',

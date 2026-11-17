@@ -756,6 +756,7 @@ class TestArchitecture(unittest.TestCase):
                 "import_document",
                 "install_threads",
                 "legacy_node",
+                "list_shared_drives",
                 "list_versions",
                 "node_field",
                 "node_owner",

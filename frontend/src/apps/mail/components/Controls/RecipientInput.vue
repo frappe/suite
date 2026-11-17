@@ -92,7 +92,14 @@
       <template #item-label="{ item }">
         <ContactOption :contact="item" :query="searchText" />
       </template>
-      <template #item-create="{ query }"> {{ query }} </template>
+      <template #item-create="{ item, query }">
+        <div class="min-w-0">
+          <div class="text-ink-gray-8 truncate">{{ query }}</div>
+          <div v-if="item.disabled" class="text-p-sm text-ink-gray-5 truncate">
+            {{ __('Not a valid email address') }}
+          </div>
+        </div>
+      </template>
     </Combobox>
 
     <!--
@@ -622,11 +629,15 @@ const options = computed(() => {
   if (!searchText.value) return []
   return [
     ...(contacts.value.filter((option) => !selectedEmails.value.includes(option.email)) || []),
+    // Text that is no address is offered as nothing to add, and says so. Offered as a row like any
+    // other, Enter took it, added nothing, and cleared the field: the address was gone without a word.
+    // Disabled, the row takes no Enter, so the text stays to be corrected.
     {
       type: 'custom' as const,
       key: 'create-recipient',
       label: searchText.value,
       slot: 'create',
+      disabled: !isEmail(searchText.value.trim()),
       condition: () => !contacts.value.length,
       onClick: ({ query }: { query: string }) => addValues(query),
     },

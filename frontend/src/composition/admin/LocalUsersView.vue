@@ -28,16 +28,19 @@
       <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="selectedUsers = []" />
     </div>
     <div v-else class="flex flex-wrap items-center justify-between gap-3">
-      <FormControl
-        v-model="search"
-        :placeholder="__('Search')"
-        :aria-label="__('Search users')"
-        class="w-full sm:w-80"
-      >
-        <template #prefix>
-          <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
-        </template>
-      </FormControl>
+      <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+        <slot name="lead" />
+        <FormControl
+          v-model="search"
+          :placeholder="__('Search')"
+          :aria-label="__('Search users')"
+          class="w-full sm:w-80"
+        >
+          <template #prefix>
+            <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
+          </template>
+        </FormControl>
+      </div>
       <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
         <DashboardSkeletonText v-if="loading" class="flex-none text-sm" width="4rem" />
         <p v-else class="text-sm text-ink-gray-5">{{ __('{0} users', [filtered.length]) }}</p>
@@ -59,7 +62,7 @@
             type="select"
             :aria-label="__('Status')"
             :options="[
-              { label: __('All statuses'), value: 'all' },
+              { label: __('Any status'), value: 'all' },
               { label: __('Active'), value: 'enabled' },
               { label: __('Disabled'), value: 'disabled' },
             ]"
@@ -78,19 +81,22 @@
       v-if="users.status !== 'error'"
       v-model:selection="selectedUsers"
       selectable
-      class="-mx-3 list-row-px-3"
+      class="-mx-3 list-row-px-3 [--_list-row-height:3.5rem] sm:[--_list-row-height:2.75rem]"
       :columns="
         storage.data?.cloud
           ? {
               base: ['minmax(0,1fr)', '4.5rem', '2rem'],
-              sm: ['minmax(0,1fr)', '10rem', '10rem', '3rem'],
+              sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '10rem', '3rem'],
             }
-          : { base: ['minmax(0,1fr)', '4.5rem', '2rem'], sm: ['minmax(0,1fr)', '10rem', '3rem'] }
+          : {
+              base: ['minmax(0,1fr)', '4.5rem', '2rem'],
+              sm: ['minmax(0,1fr)', 'minmax(0,1.2fr)', '10rem', '3rem'],
+            }
       "
-      :row-height="56"
     >
       <ListHeader>
         <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
+        <ListHeaderCell class="max-sm:hidden">{{ __('Email') }}</ListHeaderCell>
         <ListHeaderCell>{{ __('Status') }}</ListHeaderCell>
         <ListHeaderCell v-if="storage.data?.cloud" class="max-sm:hidden">{{
           __('Storage')
@@ -105,8 +111,11 @@
             <Skeleton class="size-6 shrink-0 rounded-full" />
             <div class="ml-3 min-w-0 flex-1">
               <DashboardSkeletonText class="text-base" width="40%" />
-              <DashboardSkeletonText class="text-p-sm" width="55%" />
+              <DashboardSkeletonText class="text-p-sm sm:hidden" width="55%" />
             </div>
+          </ListCell>
+          <ListCell class="max-sm:hidden">
+            <DashboardSkeletonText class="flex-1 text-base" width="60%" />
           </ListCell>
           <ListCell><Skeleton class="h-5 w-14 rounded-4" /></ListCell>
           <ListCell v-if="storage.data?.cloud" class="max-sm:hidden">
@@ -119,7 +128,11 @@
         </ListRow>
       </ListRows>
       <ListRows v-else v-slot="{ item: user }" :items="filtered" row-key="name">
-        <ListRow :value="user.name">
+        <!-- Phones stack the address under the name; a setup note under the status needs room too. -->
+        <ListRow
+          :value="user.name"
+          :class="setupNote(user) ? '[--_list-row-height:auto] py-2' : undefined"
+        >
           <ListCell>
             <Avatar :label="user.full_name" :image="user.user_image ?? undefined" size="sm" />
             <div class="ml-3 min-w-0">
@@ -133,10 +146,14 @@
                   />
                 </Tooltip>
               </div>
-              <p class="truncate text-p-sm text-ink-gray-5">
+              <!-- On a phone the address sits under the name; on desktop it has its own column. -->
+              <p class="truncate text-p-sm text-ink-gray-5 sm:hidden">
                 {{ user.account || user.email }}
               </p>
             </div>
+          </ListCell>
+          <ListCell class="max-sm:hidden">
+            <span class="truncate text-base text-ink-gray-6">{{ user.account || user.email }}</span>
           </ListCell>
           <ListCell>
             <div class="min-w-0">
@@ -419,24 +436,28 @@
     >
       <template #default>
         <div class="space-y-4">
-          <p class="text-p-base text-ink-gray-7">
-            {{
-              __(
-                'Pick a folder in someone else’s Drive or in a shared Drive. Old versions and trashed items move too, and existing links and sharing keep working.',
-              )
-            }}
-          </p>
-          <FormControl
-            v-model="destinationFolder"
-            :disabled="previewPending || transfer.isPending"
-            :label="__('Destination folder')"
-            :placeholder="__('Paste a folder link or paste its ID')"
-          />
+          <template v-if="!transferResults">
+            <Combobox
+              v-model="transferTarget"
+              :label="__('Transfer to')"
+              :options="transferTargetOptions"
+              :placeholder="__('Choose a person or a shared Drive')"
+              :disabled="previewPending || transfer.isPending"
+            />
+            <p class="-mt-2 text-p-sm text-ink-gray-5">
+              {{
+                __(
+                  'Everything goes into a new folder, “{0}”. Old versions and trashed items move too, and existing links and sharing keep working.',
+                  [transferFolderTitle],
+                )
+              }}
+            </p>
+          </template>
           <div v-if="!transferPreview && !transferResults" class="flex justify-end">
             <Button
               :label="__('Preview transfer')"
               :loading="previewPending"
-              :disabled="!destinationFolder.trim() || transfer.isPending"
+              :disabled="!transferTarget || transfer.isPending"
               @click="previewTransfer"
             />
           </div>
@@ -479,7 +500,7 @@
             <p class="text-base text-ink-gray-8">
               {{
                 transferResults.complete
-                  ? __('Transfer complete. Nothing is left to move.')
+                  ? __('Everything has moved to {0}.', [movedTo])
                   : transferResults.remaining === 1
                     ? __('1 item is left. Preview again to move it.')
                     : __('{0} items are left. Preview again to move them.', [
@@ -492,7 +513,7 @@
                 v-for="result in transferResults.results"
                 :key="result.node"
                 class="text-p-sm"
-                :class="result.success ? 'text-ink-green-6' : 'text-ink-red-6'"
+                :class="result.success ? 'text-ink-gray-7' : 'text-ink-red-6'"
               >
                 {{ result.title }}:
                 {{
@@ -513,7 +534,7 @@
             @click="transferOpen = false"
           />
           <Button
-            v-if="transferResults"
+            v-if="transferResults && !transferResults.complete"
             variant="solid"
             :label="__('Preview again')"
             @click="resetTransfer"
@@ -545,6 +566,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Combobox,
   Dialog,
   dialog,
   ErrorMessage,
@@ -563,7 +585,6 @@ import { Dropdown, failureText } from '@/platform/feedback'
 import { LoadFailed } from '@/platform/load-failed'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
-import { TransportError } from '@/platform/transport'
 import InviteStep from '@/shell/InviteStep.vue'
 
 import { formatStorage } from './storageFormat'
@@ -587,6 +608,8 @@ const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton
 const storage = useQuery(api.suite.storage.get)
 // Every user change runs inside a dialog that shows its own error, so none of them also toasts.
 const change = useMutation(api.suite.users.update, { silent: true })
+// `lead` starts the filter row, e.g. the Users / Invitations switch.
+defineSlots<{ lead?: () => unknown }>()
 const search = ref('')
 const roleFilter = ref('all')
 const statusFilter = ref('all')
@@ -752,12 +775,41 @@ async function deleteAccount() {
 
 // — retained Drive transfer —
 const transferUser = ref('')
-const destinationFolder = ref('')
+/** A person's email, or `drive:` and a shared Drive's id. */
+const transferTarget = ref<string | null>(null)
+const sharedDrives = useQuery(api.suite.admin.sharedDrives.list, () =>
+  transferUser.value ? {} : false,
+)
+const transferTargetOptions = computed(() => [
+  {
+    group: __('People'),
+    options: (users.data ?? [])
+      .filter((user) => user.enabled && user.name !== transferUser.value)
+      .map((user) => ({ label: user.full_name, value: user.name, description: user.email })),
+  },
+  {
+    group: __('Shared Drives'),
+    options: (sharedDrives.data ?? []).map((drive) => ({
+      label: drive.title,
+      value: `drive:${drive.id}`,
+      icon: 'lucide-hard-drive',
+    })),
+  },
+])
+const transferFolderTitle = computed(() => __("{0}'s files", [personName(transferUser.value)]))
+function transferTo() {
+  const target = transferTarget.value ?? ''
+  return target.startsWith('drive:')
+    ? { to_user: null, to_drive: target.slice('drive:'.length) }
+    : { to_user: target, to_drive: null }
+}
 const confirmTransferAccess = ref(false)
 const transferPreview = ref<OutputOf<typeof api.suite.users.previewTransfer>>()
 const transferResults = ref<OutputOf<typeof api.suite.users.transferDrive>>()
 const transfer = useMutation(api.suite.users.transferDrive)
 const previewPending = ref(false)
+/** Where the last batch went, kept after the preview clears so the result can name it. */
+const movedTo = ref('')
 const previewError = ref('')
 const transferOpen = computed({
   get: () => !!transferUser.value,
@@ -765,13 +817,13 @@ const transferOpen = computed({
     if (!open) transferUser.value = ''
   },
 })
-watch(destinationFolder, () => {
+watch(transferTarget, () => {
   transferPreview.value = undefined
   confirmTransferAccess.value = false
 })
 function openTransfer(user: string) {
   transferUser.value = user
-  destinationFolder.value = ''
+  transferTarget.value = null
   confirmTransferAccess.value = false
   transferPreview.value = undefined
   transferResults.value = undefined
@@ -810,8 +862,8 @@ const destinationText = computed(() => {
   const preview = transferPreview.value
   if (!preview) return ''
   return preview.destination_user
-    ? __("{0}'s Drive", [personName(preview.destination_user)])
-    : __('A shared Drive')
+    ? __('“{0}” in {1}’s Drive', [preview.folder_title, preview.destination_title])
+    : __('“{0}” in {1}', [preview.folder_title, preview.destination_title])
 })
 const storageText = computed(() => {
   const capacity = transferPreview.value?.destination_capacity
@@ -852,9 +904,6 @@ function grantLabel(role: number) {
 }
 
 async function previewTransfer() {
-  const destination =
-    destinationFolder.value.trim().match(/\/drive\/f\/([^/?#]+)/)?.[1] ??
-    destinationFolder.value.trim()
   confirmTransferAccess.value = false
   transferPreview.value = undefined
   previewError.value = ''
@@ -862,15 +911,11 @@ async function previewTransfer() {
   try {
     transferPreview.value = await client.query(api.suite.users.previewTransfer, {
       user: transferUser.value,
-      destination,
+      ...transferTo(),
     })
   } catch (error) {
     previewError.value =
-      error instanceof TransportError && error.type === 'DriveNotFound'
-        ? __('No folder found at this link or ID.')
-        : error instanceof Error
-          ? error.message
-          : __('Unable to preview this transfer. Try again.')
+      error instanceof Error ? error.message : __('Unable to preview this transfer. Try again.')
   } finally {
     previewPending.value = false
   }
@@ -880,10 +925,11 @@ async function runTransfer() {
   if (!transferPreview.value) return
   transferResults.value = await transfer.run({
     user: transferUser.value,
-    destination: transferPreview.value.destination,
+    ...transferTo(),
     fingerprint: transferPreview.value.fingerprint,
     confirm_access: confirmTransferAccess.value,
   })
+  movedTo.value = destinationText.value
   transferPreview.value = undefined
 }
 

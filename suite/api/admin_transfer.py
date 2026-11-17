@@ -10,7 +10,8 @@ from suite.composition.http import Route
 
 class PreviewInput(TypedDict):
     user: str
-    destination: str
+    to_user: str | None
+    to_drive: str | None
 
 
 class TransferInput(PreviewInput):
@@ -41,6 +42,8 @@ class TransferPreview(TypedDict):
     source_root: str
     destination: str
     destination_user: str | None
+    folder_title: str
+    destination_title: str
     bytes: int
     item_count: int
     fingerprint: str
@@ -60,7 +63,21 @@ class TransferResult(TypedDict):
     complete: bool
 
 
+class SharedDrive(TypedDict):
+    id: str
+    title: str
+
+
 ROUTES = (
+    Route(
+        "GET",
+        "admin/shared-drives",
+        "shared_drives_list",
+        output=list[SharedDrive],
+        kind="query",
+        public_name="admin.sharedDrives.list",
+        errors=(frappe.PermissionError,),
+    ),
     Route(
         "GET",
         "users/{user}/drive-transfer",
@@ -97,11 +114,20 @@ ROUTES = (
 
 
 @frappe.whitelist(methods=["GET"])
-def user_transfer_preview(user: str, destination: str) -> TransferPreview:
-    result = drive.preview_user_transfer(user, destination)
+def user_transfer_preview(
+    user: str, to_user: str | None = None, to_drive: str | None = None
+) -> TransferPreview:
+    result = drive.preview_user_transfer(user, to_user, to_drive)
     return {field: result[field] for field in TransferPreview.__annotations__}
 
 
 @frappe.whitelist(methods=["POST"])
-def user_transfer(user: str, destination: str, fingerprint: str, confirm_access: bool) -> TransferResult:
-    return drive.transfer_user_drive(user, destination, fingerprint, confirm_access=confirm_access)
+def user_transfer(
+    user: str, to_user: str | None, to_drive: str | None, fingerprint: str, confirm_access: bool
+) -> TransferResult:
+    return drive.transfer_user_drive(user, to_user, to_drive, fingerprint, confirm_access=confirm_access)
+
+
+@frappe.whitelist(methods=["GET"])
+def shared_drives_list() -> list[SharedDrive]:
+    return drive.list_shared_drives()

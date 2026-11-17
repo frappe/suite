@@ -36,7 +36,7 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.nodes import create_empty_file, create_folder
 from suite.drive._core.principals import Principals, ticket_ok
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, UPLOAD
+from suite.drive._core.roles import COMMENT, EDIT, MANAGE, NONE, READ, UPLOAD
 from suite.drive._core.roots import create_root, personal_root_for, provision_personal_root
 from suite.drive.framework import principals_for
 from suite.drive.tests.fixtures import drop_personal_root
@@ -296,6 +296,29 @@ class TestGrantWorkflows(_GrantFixture):
                 lambda: grant(self.folder.name, TARGET, READ, self.admin),
                 RuntimeError,
             )
+
+    def test_a_run_of_access_changes_from_one_person_tells_the_target_only_where_it_landed(self):
+        def notices():
+            return frappe.get_all(
+                "Drive Notification",
+                filters={
+                    "to_user": TARGET,
+                    "activity": ["in", [row.name for row in self._activity(self.folder.name)]],
+                },
+                pluck="activity",
+            )
+
+        grant(self.folder.name, TARGET, READ, self.admin)
+        grant(self.folder.name, TARGET, COMMENT, self.admin)
+        grant(self.folder.name, TARGET, EDIT, self.admin)
+        latest = self._activity(self.folder.name)[-1]
+        self.assertEqual(notices(), [latest.name])
+        self.assertEqual(latest.detail["new_role"], EDIT)
+
+        # Someone else's change is their own decision, so it is its own notice.
+        manager_identity = Principals(MANAGER, (MANAGER,), ("$PUBLIC",), is_admin=True)
+        grant(self.folder.name, TARGET, READ, manager_identity)
+        self.assertEqual(len(notices()), 2)
 
     def test_insert_update_and_root_target_each_write_one_exact_activity(self):
         manager_identity = Principals(MANAGER, (MANAGER,), ("$PUBLIC",), is_admin=True)
@@ -1158,16 +1181,18 @@ class TestInheritedGrantsPasswordsAndShareEmail(_GrantFixture):
         self.assertIn("Folder", mail[0])
         self.assertNotIn("notify", written)
         self.assertIsNone(written["sent_to"])
-        # The §9.5 in-app notification is written either way.
+        # The §9.5 in-app notification is written either way; the second change
+        # from the same person replaces the first.
         self.assertEqual(
-            frappe.db.count(
+            frappe.get_all(
                 "Drive Notification",
-                {
+                filters={
                     "to_user": SHARED_WITH,
                     "activity": ["in", [row.name for row in self._activity(self.folder.name)]],
                 },
+                pluck="activity",
             ),
-            2,
+            [self._activity(self.folder.name)[-1].name],
         )
 
     def test_suite_cloud_sends_the_share_mail_by_type(self):

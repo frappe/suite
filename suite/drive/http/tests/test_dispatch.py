@@ -112,6 +112,7 @@ VERSION_SHAPE_FIELDS = {
     "size",
     "creation",
     "person",
+    "deleted_author",
 }
 
 ACTIVITY_SHAPE_FIELDS = {
@@ -143,6 +144,8 @@ NOTIFICATION_SHAPE_FIELDS = {
     "activity",
     "node_title",
     "node_kind",
+    "node_mime",
+    "node_content_doctype",
     "actor",
 }
 
@@ -2580,6 +2583,26 @@ class TestVersionRoutes(DriveHTTPCase):
         self.reread()
         self.assertEqual(frappe.db.count("Drive Node Version", {"node": self.node}), 2)
 
+    def test_a_deleted_author_reaches_a_signed_in_reader_and_never_a_link_guest(self):
+        # The legacy port credits a version to Guest when its author's account
+        # is gone and keeps their email as the row's owner. A Guest editing
+        # through a link may read the history, but not that email.
+        self.take()
+        frappe.db.set_value(
+            "Drive Node Version",
+            {"node": self.node, "seq": 1},
+            {"actor": "Guest", "owner": "deleted-author@example.com"},
+        )
+        token = grant(self.node, "$LINK", EDIT, self.owner)["principal"].split(":", 1)[1]
+        frappe.db.commit()
+        path = f"{PREFIX}/nodes/{self.node}/versions"
+        signed_in = self.data(self.as_owner("GET", path))["rows"][0]
+        self.assertEqual(signed_in["deleted_author"], "deleted-author@example.com")
+        response = self.drive("GET", path, links=token)
+        guest = self.data(response)["rows"][0]
+        self.assertEqual((guest["actor"], guest["deleted_author"]), ("Guest", None))
+        self.assertNotIn("deleted-author@example.com", response.get_data(as_text=True))
+
     def test_a_version_delete_removes_the_row(self):
         self.take()
         self.assertEqual(
@@ -2840,6 +2863,10 @@ class TestNotificationRoutes(DriveHTTPCase):
         self.assertEqual(row["read"], 0)
         self.assertEqual(row["activity"]["name"], self.activity)
         self.assertEqual(row["activity"]["node"], self.node)
+        # A folder is neither a file with a mime type nor a document of a DocType.
+        self.assertEqual(
+            (row["node_title"], row["node_mime"], row["node_content_doctype"]), ("Notified", None, None)
+        )
 
     def test_unread_count_is_the_callers_exact_scalar(self):
         answer = self.data(self.as_owner("GET", f"{PREFIX}/notifications/unread-count"))
