@@ -126,6 +126,11 @@
           </button>
         </li>
       </ul>
+      <!-- Text that is no address and is nobody's contact adds nobody, and says so. -->
+      <div v-else-if="invalidTyped" role="status" class="px-4 py-2.5 text-sm">
+        <div class="text-ink-gray-8 truncate">{{ invalidTyped }}</div>
+        <div class="text-p-sm text-ink-gray-5 truncate">{{ __('Not a valid email address') }}</div>
+      </div>
     </Teleport>
 
     <!-- Trigger-less: the chips are the trigger, and the one that was clicked or tapped is both
@@ -339,6 +344,14 @@ const inlineSuggestions = computed(() => {
   return (typed && !isSuggested ? [typed, ...contacts] : contacts).slice(0, 5)
 })
 
+// Typed text that is no address and matches no contact: nothing Enter could add. It stays in the
+// field to be corrected, under a line that says why.
+const invalidTyped = computed(() => {
+  if (!suggestionsTo || !isFocused.value || isDismissed.value) return ''
+  const text = searchText.value.trim()
+  return text && !isEmail(text) && !options.value.length ? text : ''
+})
+
 // Two suggestions under one name — the same person at work and at home, two people called Sam —
 // differ only in their address, and mostly in its domain, so that is where those rows put the weight.
 const nameOf = (option: DraftRecipient) => (option.display_name ?? '').trim().toLowerCase()
@@ -409,7 +422,14 @@ const handleInlineEnter = (e: KeyboardEvent) => {
   // ⌘Enter sends the mail (the composer has it first, on the window): it adds nobody on the way.
   if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return
   const chosen = inlineSuggestions.value[enterIndex.value]
-  if (!chosen && !isEmail(searchText.value.trim())) return
+  if (!chosen && !isEmail(searchText.value.trim())) {
+    // Nothing to add: the text stays as typed, and the key goes no further.
+    if (invalidTyped.value) {
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    return
+  }
   e.preventDefault()
   e.stopPropagation()
   if (chosen) return pickSuggestion(chosen)
