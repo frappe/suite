@@ -40,7 +40,7 @@
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
       <ComposeAttachMenu @select-files="onFilesSelected" @attach-from-drive="attachFromDrive">
-        <Button variant="ghost" :label="__('Attach files')">
+        <Button variant="ghost" :label="__('Attach')">
           <template #icon>
             <Paperclip class="text-ink-gray-5 size-5" />
           </template>
