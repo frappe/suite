@@ -17,9 +17,7 @@ vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ userResource: { data: { api_key: '' } } }),
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn(), copyToClipBoard: vi.fn() }))
-// The parts this file doesn't open
-vi.mock('./ImportSettings.vue', () => ({ default: { render: () => null } }))
-vi.mock('./ExportSettings.vue', () => ({ default: { render: () => null } }))
+// The part this file doesn't open
 vi.mock('./PushSubscriptionSettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')

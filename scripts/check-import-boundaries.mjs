@@ -105,6 +105,8 @@ const moduleGraphDebtGroups = [
       'mail/components/Settings/MailGeneralSettings.vue|@/components/StorageMeter.vue',
       'mail/components/Settings/MailGeneralSettings.vue|@/components/settings/AppSettingsBody.vue',
       'mail/components/Settings/MailGeneralSettings.vue|@/components/settings/AppSettingsHeader.vue',
+      'mail/components/Settings/MailImportExportSettings.vue|@/components/settings/AppSettingsBody.vue',
+      'mail/components/Settings/MailImportExportSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'mail/components/Settings/MailImportSettings.vue|@/utils/useChunkedUpload',
       'mail/components/Settings/MailInboxSettings.vue|@/components/settings/AppSettingsBody.vue',
       'mail/components/Settings/MailInboxSettings.vue|@/components/settings/AppSettingsHeader.vue',

@@ -137,11 +137,11 @@ it('saves a switch as it is flipped, sending only that preference', async () => 
 it('puts a switch back when its save is refused', async () => {
   state.save.mockRejectedValue(new Error('Server refused the update'))
   const root = mount()
-  const sentMail = control(root, 'Delete mail once it is sent', HTMLButtonElement)
-  sentMail.click()
+  const remoteImages = control(root, 'Block remote images', HTMLButtonElement)
+  remoteImages.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(state.save).toHaveBeenCalledTimes(1)
-  expect(sentMail.getAttribute('aria-checked')).toBe('false')
+  expect(remoteImages.getAttribute('aria-checked')).toBe('false')
 })
 it('neither requests nor shows the provider region on a site without a provider', () => {
   state.provider = false

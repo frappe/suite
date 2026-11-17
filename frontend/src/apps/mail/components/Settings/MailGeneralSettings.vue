@@ -29,31 +29,6 @@
         </div>
       </SettingsSection>
 
-      <!-- Apart from the routine switches: each one costs the copy of what you send, and a copy
-           that was never kept can't be found or answered from later. -->
-      <SettingsSection v-if="preferences" :title="__('Sent copies')">
-        <div class="divide-y divide-outline-gray-1">
-          <SettingsRow
-            :title="__('Delete mail once it is sent')"
-            :description="
-              __('It is not kept in Sent, so you can’t find it, forward it or reply from it later.')
-            "
-          >
-            <Switch v-model="dropSentMail" />
-          </SettingsRow>
-          <SettingsRow
-            :title="__('Delete newsletters once they are sent')"
-            :description="
-              __(
-                'Newsletters are the bulk mail your apps send through this account. They are not kept in Sent.',
-              )
-            "
-          >
-            <Switch v-model="dropSentNewsletters" />
-          </SettingsRow>
-        </div>
-      </SettingsSection>
-
       <SettingsSection v-if="hasProvider" :title="__('Region')">
         <div v-if="region" class="divide-y divide-outline-gray-1">
           <SettingsRow :title="__('Locale')">
@@ -108,8 +83,6 @@ const { isLimited, usedPercentage, label } = useQuota()
 const user = userStore().userResource
 const { preferences, flag } = useAccountPreferences()
 const blockRemoteImages = flag('block_remote_images')
-const dropSentMail = flag('destroy_email_after_submit')
-const dropSentNewsletters = flag('destroy_newsletter_after_submit')
 
 const hasListLayout = computed(() => !!user.data?.is_jmap_configured && !isMobile.value)
 // Saves here are not a component's mutations: those are cancelled when the page goes, and a choice

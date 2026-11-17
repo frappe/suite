@@ -20,9 +20,9 @@ describe('settings tab ids', () => {
   })
   it('a section is opened only on the tab that has it', () => {
     // Runs under the type check, like the test above
-    const own: SectionOf<'mail.advanced'> = 'import'
+    const own: SectionOf<'mail.import-export'> = 'import'
     // @ts-expect-error A misspelled section fails the type check
-    const typo: SectionOf<'mail.advanced'> = 'imprt'
+    const typo: SectionOf<'mail.import-export'> = 'imprt'
     // @ts-expect-error A section of another tab is not this tab's
     const other: SectionOf<'mail.sending'> = 'import'
     expect([own, typo, other]).toHaveLength(3)

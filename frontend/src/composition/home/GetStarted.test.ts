@@ -171,7 +171,7 @@ describe('Get started on Home', () => {
     server.admin = false
     const root = mount()
     task(root, 'Bring your old mail').click()
-    expect(server.settings).toHaveBeenCalledWith('mail.advanced', 'import')
+    expect(server.settings).toHaveBeenCalledWith('mail.import-export', 'import')
   })
 
   it('stays hidden for the person once they hide it', async () => {

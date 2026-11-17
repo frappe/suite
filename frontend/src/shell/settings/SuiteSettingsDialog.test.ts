@@ -107,18 +107,27 @@ vi.mock('frappe-ui', () => {
 
 // Whether the site gives mail servers: Mail client setup shows only then
 const hasServers: Ref<boolean> = ref(true)
-/** Mail's Advanced page, as far as its rows that open dialogs. */
+/** Mail's Import and export page, as far as its Import row. */
+const ImportExportPage = defineComponent({
+  setup() {
+    return () =>
+      h(SettingsDialogRow, {
+        title: 'Import',
+        action: 'Import',
+        section: 'mail.import-export.import',
+      })
+  },
+})
+/** Mail's Advanced page, as far as its Mail client setup row. */
 const AdvancedPage = defineComponent({
   setup() {
-    return () => [
-      h(SettingsDialogRow, { title: 'Import', action: 'Import', section: 'mail.advanced.import' }),
+    return () =>
       hasServers.value &&
-        h(SettingsDialogRow, {
-          title: 'Mail client setup',
-          action: 'Show',
-          section: 'mail.advanced.client-setup',
-        }),
-    ]
+      h(SettingsDialogRow, {
+        title: 'Mail client setup',
+        action: 'Show',
+        section: 'mail.advanced.client-setup',
+      })
   },
 })
 
@@ -141,15 +150,21 @@ const mail: SettingsGroup = {
       sections: [{ id: 'auto-reply', label: () => 'Auto-reply', keywords: () => 'vacation' }],
     },
     {
+      id: 'mail.import-export',
+      label: () => 'Import and export',
+      icon: '',
+      body: () => Promise.resolve(ImportExportPage),
+      sections: [
+        { id: 'import', label: () => 'Import' },
+        { id: 'export', label: () => 'Export' },
+      ],
+    },
+    {
       id: 'mail.advanced',
       label: () => 'Advanced',
       icon: '',
       body: () => Promise.resolve(AdvancedPage),
-      sections: [
-        { id: 'import', label: () => 'Import' },
-        { id: 'export', label: () => 'Export' },
-        { id: 'client-setup', label: () => 'Mail client setup', keywords: () => 'IMAP' },
-      ],
+      sections: [{ id: 'client-setup', label: () => 'Mail client setup', keywords: () => 'IMAP' }],
     },
   ],
 }
@@ -215,7 +230,7 @@ afterEach(() => app.unmount())
 
 it('lists every tab, and no section, until something is searched for', async () => {
   await mount()
-  expect(sidebar()).toEqual(['a Profile', 'a Sending', 'a Advanced'])
+  expect(sidebar()).toEqual(['a Profile', 'a Sending', 'a Import and export', 'a Advanced'])
 })
 it('shows a section found by another word for it, and opens it when picked', async () => {
   await mount()
@@ -228,12 +243,12 @@ it('shows a section found by another word for it, and opens it when picked', asy
 it('opens the first section found when Enter is pressed', async () => {
   await mount()
   await search('port')
-  expect(sidebar()).toEqual(['a Advanced', 'button Import', 'button Export'])
+  expect(sidebar()).toEqual(['a Import and export', 'button Import', 'button Export'])
   expect(openDialogs()).toEqual([])
   searchBox().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
   await nextTick()
   await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(shownTab()).toBe('mail.advanced')
+  expect(shownTab()).toBe('mail.import-export')
   expect(openDialogs()).toEqual(['Import'])
 })
 it('opens the dialog of a found section on its page, from another tab', async () => {
@@ -295,5 +310,5 @@ it('starts the next open with nothing searched for', async () => {
   isOpen.value = true
   await nextTick()
   expect(searchBox().value).toBe('')
-  expect(sidebar()).toEqual(['a Profile', 'a Sending', 'a Advanced'])
+  expect(sidebar()).toEqual(['a Profile', 'a Sending', 'a Import and export', 'a Advanced'])
 })

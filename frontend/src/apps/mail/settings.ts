@@ -33,8 +33,6 @@ export const mailSettings = {
         { id: 'split-view', label: () => __('Split view'), keywords: () => __('reading pane') },
         { id: 'group-by-date', label: () => __('Group by date') },
         { id: 'remote-images', label: () => __('Block remote images') },
-        { id: 'sent-mail', label: () => __('Delete mail once it is sent') },
-        { id: 'sent-newsletters', label: () => __('Delete newsletters once they are sent') },
         { id: 'locale', label: () => __('Locale') },
         { id: 'time-zone', label: () => __('Time zone') },
         { id: 'storage', label: () => __('Storage'), keywords: () => __('quota, space') },
@@ -61,6 +59,8 @@ export const mailSettings = {
           label: () => __('Auto-reply'),
           keywords: () => __('vacation, out of office, away'),
         },
+        { id: 'sent-mail', label: () => __('Delete mail once it is sent') },
+        { id: 'sent-newsletters', label: () => __('Delete newsletters once they are sent') },
       ],
     },
     {
@@ -86,16 +86,24 @@ export const mailSettings = {
       ],
     },
     {
-      id: 'mail.advanced',
-      label: () => __('Advanced'),
-      icon: 'lucide-code',
+      id: 'mail.import-export',
+      label: () => __('Import and export'),
+      icon: 'lucide-arrow-down-up',
       // Import and export report their progress over the socket
-      body: scoped(() => import('@/apps/mail/components/Settings/MailAdvancedSettings.vue'), {
+      body: scoped(() => import('@/apps/mail/components/Settings/MailImportExportSettings.vue'), {
         socket: true,
       }),
       sections: [
         { id: 'import', label: () => __('Import') },
         { id: 'export', label: () => __('Export'), keywords: () => __('download, backup') },
+      ],
+    },
+    {
+      id: 'mail.advanced',
+      label: () => __('Advanced'),
+      icon: 'lucide-code',
+      body: scoped(() => import('@/apps/mail/components/Settings/MailAdvancedSettings.vue')),
+      sections: [
         {
           id: 'login-details',
           label: () => __('Login details'),

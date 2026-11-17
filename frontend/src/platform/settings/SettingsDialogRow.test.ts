@@ -33,13 +33,21 @@ vi.mock('frappe-ui', () => ({
 }))
 
 let app: ReturnType<typeof createApp>
-/** Mail's Advanced page, as far as its Import and Export rows; gives back the open dialogs' titles. */
+/** Mail's Import and export page; gives back the open dialogs' titles. */
 function showPage() {
   const root = document.createElement('div')
   app = createApp({
     render: () => [
-      h(SettingsDialogRow, { title: 'Import', action: 'Import', section: 'mail.advanced.import' }),
-      h(SettingsDialogRow, { title: 'Export', action: 'Export', section: 'mail.advanced.export' }),
+      h(SettingsDialogRow, {
+        title: 'Import',
+        action: 'Import',
+        section: 'mail.import-export.import',
+      }),
+      h(SettingsDialogRow, {
+        title: 'Export',
+        action: 'Export',
+        section: 'mail.import-export.export',
+      }),
     ],
   })
   app.mount(root)
@@ -54,18 +62,18 @@ beforeEach(() => {
 afterEach(() => app.unmount())
 
 it('opens the dialog of the section Settings was opened on, and no other', () => {
-  openSettings('mail.advanced', 'export')
+  openSettings('mail.import-export', 'export')
   expect(showPage()()).toEqual(['Export'])
 })
 it('opens a section asked for while its page is showing', async () => {
   const opened = showPage()
   expect(opened()).toEqual([])
-  openSettings('mail.advanced', 'import')
+  openSettings('mail.import-export', 'import')
   await nextTick()
   expect(opened()).toEqual(['Import'])
 })
 it('opens a section once: its page shown again later stays closed', () => {
-  openSettings('mail.advanced', 'export')
+  openSettings('mail.import-export', 'export')
   showPage()
   app.unmount()
   expect(showPage()()).toEqual([])
@@ -75,7 +83,7 @@ it('leaves closed the section of the same name on another tab', () => {
   expect(showPage()()).toEqual([])
 })
 it('opens no section when Settings is opened on a tab alone', () => {
-  openSettings('mail.advanced', 'import')
-  openSettings('mail.advanced')
+  openSettings('mail.import-export', 'import')
+  openSettings('mail.import-export')
   expect(showPage()()).toEqual([])
 })
