@@ -1,4 +1,4 @@
-import { api, useMutation, useQuery, type InputOf, type OutputOf } from '@/api'
+import { api, client, useQuery, type InputOf, type OutputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { useSavedFields } from '@/platform/settings-tab'
 
@@ -18,10 +18,13 @@ export function useAccountPreferences() {
   const saved = useQuery(api.mail.settings.account, () =>
     store.accountId ? { account: store.accountId } : false,
   )
-  const update = useMutation(api.mail.settings.updateAccount)
+  // A change goes to the account it was made in, even if the account changes before it is sent.
   const { shown: preferences, save } = useSavedFields<AccountPreferences>(
     () => saved.data,
-    (changes) => update.run({ account: store.accountId, changes }),
+    (changes) => {
+      const account = store.accountId
+      return () => client.mutation(api.mail.settings.updateAccount, { account, changes })
+    },
   )
 
   /** A 0/1 preference as a switch: its value, and its save. */

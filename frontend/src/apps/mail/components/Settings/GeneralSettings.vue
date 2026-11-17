@@ -199,7 +199,7 @@
 import { Combobox, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { api, client, useMutation, useQuery } from '@/api'
+import { api, client, useQuery } from '@/api'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { useTabChoice, type InboxCategory } from '@/apps/mail/composables/useInboxTabs'
 import { useQuota } from '@/apps/mail/composables/useQuota'
@@ -276,12 +276,12 @@ const { quota, isLimited, isCritical, usedPercentage, label } = useQuota()
 
 const hasProvider = computed(() => !!user.data?.is_suite_cloud_configured)
 const regional = useQuery(api.mail.settings.regional, () => (hasProvider.value ? {} : false))
-const updateRegional = useMutation(api.mail.settings.updateRegional)
 // The server takes both fields at once; the one not being changed goes as the server has it.
 const { shown: regionalShown, save: saveRegionalField } = useSavedFields(
   () =>
     regional.data ? { locale: regional.data.locale, time_zone: regional.data.time_zone } : null,
-  (change, confirmed) => updateRegional.run({ ...confirmed, ...change }),
+  (change) => (confirmed) =>
+    client.mutation(api.mail.settings.updateRegional, { ...confirmed, ...change }),
 )
 function saveRegional(field: 'locale' | 'time_zone', value?: string | number | null) {
   if (typeof value === 'string' && value) void saveRegionalField(field, value)

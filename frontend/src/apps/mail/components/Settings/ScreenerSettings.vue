@@ -222,7 +222,9 @@ async function changeSelected(action: ScreeningAction) {
 }
 
 const remove = useMutation(api.mail.screening.remove)
+// The account is read before the confirm, so a removal goes to the account it was asked in.
 async function removeSelected() {
+  const account = store.accountId
   const emails = selection.selected
   const [only] = emails
   const confirmed = await confirm({
@@ -235,7 +237,7 @@ async function removeSelected() {
     destructive: true,
   })
   if (!confirmed) return
-  await remove.run({ account: store.accountId, emails })
+  await remove.run({ account, emails })
   selection.clear()
   toast.success(
     emails.length === 1 && only
@@ -245,6 +247,7 @@ async function removeSelected() {
 }
 
 async function removeAddress(email: string) {
+  const account = store.accountId
   const confirmed = await confirm({
     title: __('Remove {0}?', [email]),
     message: __('Their mail is no longer accepted or blocked for you.'),
@@ -252,7 +255,7 @@ async function removeAddress(email: string) {
     destructive: true,
   })
   if (!confirmed) return
-  await remove.run({ account: store.accountId, emails: [email] })
+  await remove.run({ account, emails: [email] })
   toast.success(__('{0} removed', [email]))
 }
 

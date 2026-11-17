@@ -15,7 +15,7 @@ function setup() {
   const fields = effectScope().run(() =>
     useSavedFields(
       () => server.data,
-      (change, confirmed) => {
+      (change) => (confirmed) => {
         sent.push({ ...confirmed, ...change })
         return new Promise<void>((resolve, reject) => answers.push({ resolve, reject }))
       },
