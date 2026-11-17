@@ -66,9 +66,9 @@ export function useTrashActions(root: () => string | null) {
         () => import('./RestoreDestinationDialog.vue'),
         {
           root: rootId,
-          titles: items
-            .filter((item) => homeless.some((failure) => failure.node === item.node))
-            .map((item) => item.title),
+          titles: items.flatMap((item) =>
+            homeless.some((failure) => failure.node === item.node) ? [item.title] : [],
+          ),
         },
         'choose',
       )

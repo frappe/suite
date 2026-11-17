@@ -58,7 +58,7 @@ interface ShownToast {
 }
 const feedback = vi.hoisted(() => ({
   toasts: fromPartial<ShownToast[]>([]),
-  questions: [] as string[],
+  questions: new Array<string>(),
 }))
 vi.mock('@/platform/feedback', () => ({
   confirm: async ({ title }: { title: string }) => {
