@@ -41,7 +41,7 @@
     </SettingsSection>
 
     <Dialog v-model:open="showForm" v-bind="formDialog">
-      <form class="flex flex-col gap-4" @submit.prevent="submit">
+      <form v-if="draft" class="flex flex-col gap-4" @submit.prevent="submit">
         <FormControl
           v-model="draft.name"
           :label="__('Name')"
@@ -65,7 +65,7 @@
 
 <script setup lang="ts">
 import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, type OutputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
@@ -75,6 +75,7 @@ import {
   SettingsListRow,
   SettingsPage,
   SettingsSection,
+  useSettingsDraft,
 } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
@@ -90,12 +91,6 @@ const remove = useMutation(api.mail.participantIdentities.delete)
 // The identity the dialog edits; undefined while it makes a new one.
 const editing = ref<Identity>()
 const showForm = ref(false)
-const draft = reactive({ name: '', email: '', default: false })
-// What the dialog opened with: an edit saves only once a field differs from it.
-const opened = ref('')
-const dirty = computed(
-  () => !!draft.email.trim() && (!editing.value || JSON.stringify(draft) !== opened.value),
-)
 
 // The account's addresses are the ones its mail identities send as.
 const freeAddresses = computed(() => {
@@ -111,13 +106,24 @@ const emailOptions = computed(() =>
   })),
 )
 
+// While the dialog is open: the identity's fields, or a blank one on the first free address. An
+// edit saves only once a field differs from them.
+const { draft, dirty } = useSettingsDraft(() => {
+  if (!showForm.value) return null
+  const identity = editing.value
+  return identity
+    ? { name: identity._name, email: identity.email, default: Boolean(identity.default) }
+    : { name: '', email: freeAddresses.value[0] ?? '', default: false }
+})
+const canSave = computed(() => !!draft.value?.email.trim() && (!editing.value || dirty.value))
+
 const formDialog = computed(() => ({
   title: editing.value ? __('Edit identity') : __('New identity'),
   actions: [
     {
       label: __('Save'),
       variant: 'solid' as const,
-      disabled: !dirty.value,
+      disabled: !canSave.value,
       loading: create.isPending || update.isPending,
       onClick: submit,
     },
@@ -126,24 +132,18 @@ const formDialog = computed(() => ({
 
 function openNew() {
   editing.value = undefined
-  Object.assign(draft, { name: '', email: freeAddresses.value[0] ?? '', default: false })
   showForm.value = true
 }
 
 function openEdit(identity: Identity) {
   editing.value = identity
-  Object.assign(draft, {
-    name: identity._name,
-    email: identity.email,
-    default: Boolean(identity.default),
-  })
-  opened.value = JSON.stringify(draft)
   showForm.value = true
 }
 
 async function submit() {
-  const fields = { name: draft.name.trim(), email: draft.email.trim(), default: draft.default }
-  if (!dirty.value || create.isPending || update.isPending) return
+  const values = draft.value
+  if (!values || !canSave.value || create.isPending || update.isPending) return
+  const fields = { name: values.name.trim(), email: values.email.trim(), default: values.default }
   const identity = editing.value
   if (identity) {
     await update.run({ account: identity.account, id: identity.id, ...fields })
