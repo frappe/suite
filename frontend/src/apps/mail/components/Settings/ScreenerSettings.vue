@@ -66,7 +66,12 @@
                 <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
               </template>
             </TextInput>
-            <Select v-model="sort" class="w-36 shrink-0" :options="SORT_OPTIONS" />
+            <Select
+              v-model="sort"
+              class="w-36 shrink-0"
+              :options="SORT_OPTIONS"
+              :aria-label="__('Sort by')"
+            />
             <Button
               :icon="direction === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
               :tooltip="direction === 'asc' ? __('Ascending') : __('Descending')"

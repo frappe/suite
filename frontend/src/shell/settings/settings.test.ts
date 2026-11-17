@@ -27,7 +27,7 @@ describe('settings groups', () => {
   const groups = visibleSettingsGroups([
     group('Account', [['account.profile'], ['account.preferences']]),
     group('Drive', [['drive.storage'], ['drive.external-access', false]]),
-    group('Mail', [['mail.credentials']], false),
+    group('Mail', [['mail.general']], false),
     group('Chat', [['chat.layout', false]]),
     group('Workspace', [['workspace.general'], ['workspace.users']]),
   ])
@@ -71,7 +71,7 @@ describe('loading the settings groups', () => {
     let mailUp = false
     const mail = async () => {
       if (!mailUp) throw new Error('chunk failed')
-      return group('Mail', [['mail.credentials']])
+      return group('Mail', [['mail.general']])
     }
     const { groups, failed, load } = useSettingsGroups([account, drive, mail])
     const labels = () => groups.value?.map((visible) => visible.label)

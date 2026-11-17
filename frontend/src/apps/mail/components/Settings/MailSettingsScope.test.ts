@@ -59,6 +59,7 @@ vi.mock('@/apps/mail/components/Settings/ScreenerSettings.vue', async () => {
     default: defineComponent({
       setup() {
         const { preferences, save } = useAccountPreferences()
+        // SAFETY: these tests save only real account preference fields, each with a value of its own type
         state.save = (field, value) => save(field as 'on_block_old_mail', value as string)
         return () => h('output', JSON.stringify(preferences.value ?? null))
       },
