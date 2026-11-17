@@ -10,7 +10,7 @@
     "
   >
     <SettingsLoading v-if="!credentials.data" />
-    <SettingsForm v-else :dirty="dirty" :save="save">
+    <SettingsForm v-else-if="draft" :dirty="dirty" :save="save">
       <FormControl
         :model-value="credentials.data.server_url ?? ''"
         :label="__('Server URL')"
@@ -20,7 +20,7 @@
       />
       <div class="grid gap-4 sm:grid-cols-2">
         <FormControl
-          v-model="username"
+          v-model="draft.username"
           :label="__('Username')"
           autocomplete="off"
           :placeholder="__('user@example.com')"
@@ -34,7 +34,7 @@
         />
       </div>
       <FormControl
-        v-model="backupEmail"
+        v-model="draft.backup_email"
         type="email"
         :label="__('Backup email')"
         :description="__('Where we write to you if there is a problem with this account')"
@@ -45,42 +45,36 @@
 
 <script setup lang="ts">
 import { FormControl } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { toast } from '@/platform/feedback'
-import { SettingsForm, SettingsLoading, SettingsSection } from '@/platform/settings-tab'
+import {
+  SettingsForm,
+  SettingsLoading,
+  SettingsSection,
+  useSettingsDraft,
+} from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const credentials = useQuery(api.mail.settings.credentials)
 
-const username = ref('')
+const { draft, dirty: fieldsDirty } = useSettingsDraft(() =>
+  credentials.data
+    ? { username: credentials.data.username ?? '', backup_email: credentials.data.backup_email ?? '' }
+    : null,
+)
 // The password comes back masked, so the field starts blank and is sent only when typed in.
 const appPassword = ref('')
-const backupEmail = ref('')
-watch(
-  () => credentials.data,
-  (data) => {
-    if (!data) return
-    username.value = data.username ?? ''
-    backupEmail.value = data.backup_email ?? ''
-    appPassword.value = ''
-  },
-  { immediate: true },
-)
-
-const dirty = computed(
-  () =>
-    username.value !== (credentials.data?.username ?? '') ||
-    backupEmail.value !== (credentials.data?.backup_email ?? '') ||
-    appPassword.value !== '',
-)
+const dirty = computed(() => fieldsDirty.value || appPassword.value !== '')
 
 const update = useMutation(api.mail.settings.updateCredentials)
 async function save() {
+  const values = draft.value
+  if (!values) return
   const input: InputOf<typeof api.mail.settings.updateCredentials> = {
-    username: username.value || null,
-    backup_email: backupEmail.value || null,
+    username: values.username || null,
+    backup_email: values.backup_email || null,
   }
   if (appPassword.value) input.app_password = appPassword.value
   await update.run(input)

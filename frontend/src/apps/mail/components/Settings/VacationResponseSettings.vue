@@ -9,7 +9,7 @@
     :loading="!vacationResponse.data"
     :reads="[vacationResponse, store.userResource]"
   >
-    <SettingsSection v-if="vacationResponse.data">
+    <SettingsSection v-if="draft">
       <SettingsForm :dirty="dirty" :save="handleSave">
         <!-- -mt-2 takes back the form's top padding: the row has its own. -->
         <SettingsRow
@@ -60,7 +60,7 @@
 
 <script setup lang="ts">
 import { FormControl, SettingsRow, Switch } from 'frappe-ui'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
@@ -69,41 +69,32 @@ import { userStore } from '@/apps/mail/stores/user'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { toast } from '@/platform/feedback'
-import { SettingsForm, SettingsPage, SettingsSection } from '@/platform/settings-tab'
+import {
+  SettingsForm,
+  SettingsPage,
+  SettingsSection,
+  useSettingsDraft,
+} from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
-const draft = reactive({
-  enabled: false,
-  from_date: '',
-  to_date: '',
-  subject: '',
-  html_body: '',
-})
-const original = ref('')
-const dirty = computed(() => JSON.stringify(draft) !== original.value)
-
 const vacationResponse = useQuery(api.mail.vacation.get, () =>
   store.accountId ? { account: store.accountId } : false,
 )
-watch(
-  () => vacationResponse.data,
-  (data) => {
-    if (!data) return
-    // An absence that is off and over is history, not a default: its dates go, so turning the
-    // responder on again starts from nothing rather than last year's trip. Its words stay, to reuse.
-    const over = !data.enabled && !!data.to_date && dayjs.utc(data.to_date).isBefore(dayjs())
-    Object.assign(draft, {
-      enabled: Boolean(data.enabled),
-      from_date: over ? '' : toLocalInput(data.from_date),
-      to_date: over ? '' : toLocalInput(data.to_date),
-      subject: data.subject ?? '',
-      html_body: data.html_body ?? '',
-    })
-    original.value = JSON.stringify(draft)
-  },
-  { immediate: true },
-)
+const { draft, dirty, reset } = useSettingsDraft(() => {
+  const data = vacationResponse.data
+  if (!data) return null
+  // An absence that is off and over is history, not a default: its dates go, so turning the
+  // responder on again starts from nothing rather than last year's trip. Its words stay, to reuse.
+  const over = !data.enabled && !!data.to_date && dayjs.utc(data.to_date).isBefore(dayjs())
+  return {
+    enabled: Boolean(data.enabled),
+    from_date: over ? '' : toLocalInput(data.from_date),
+    to_date: over ? '' : toLocalInput(data.to_date),
+    subject: data.subject ?? '',
+    html_body: data.html_body ?? '',
+  }
+})
 
 // The vacation response is a server-side rule of its own. Turning it on while another rule script
 // is active asks first, since only one can run.
@@ -112,21 +103,24 @@ const otherActiveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )
 async function handleSave() {
-  if (otherActiveScript.value && draft.enabled) showConfirmDialog.value = true
+  if (otherActiveScript.value && draft.value?.enabled) showConfirmDialog.value = true
   else await submit()
 }
 
 const update = useMutation(api.mail.vacation.update)
 async function submit() {
+  const values = draft.value
+  if (!values) return
   await update.run({
     account: store.accountId,
-    enabled: draft.enabled,
-    from_date: fromLocalInput(draft.from_date),
-    to_date: fromLocalInput(draft.to_date),
-    subject: draft.subject,
-    html_body: draft.html_body,
+    enabled: values.enabled,
+    from_date: fromLocalInput(values.from_date),
+    to_date: fromLocalInput(values.to_date),
+    subject: values.subject,
+    html_body: values.html_body,
   })
   await vacationResponse.refetch()
+  reset()
   toast.success(__('Vacation response saved'))
   showConfirmDialog.value = false
 }

@@ -44,34 +44,21 @@
 
 <script setup lang="ts">
 import { Button, Dialog, FormControl } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import AddressList from '@/apps/mail/components/Settings/IdentityAddressList.vue'
 import type { Identity } from '@/apps/mail/types'
 import { Dropdown, toast } from '@/platform/feedback'
+import { useSettingsDraft } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const open = defineModel<boolean>('open', { required: true })
 const { identity } = defineProps<{ identity: Identity | undefined }>()
 
-const draft = ref<Identity>()
-const original = ref('')
-watch(
-  () => [open.value, identity] as const,
-  ([isOpen, value]) => {
-    if (!isOpen || !value) return
-    draft.value = {
-      ...value,
-      reply_to: value.reply_to.map((address) => ({ ...address })),
-      bcc: value.bcc.map((address) => ({ ...address })),
-    }
-    original.value = JSON.stringify(draft.value)
-  },
-  { immediate: true },
-)
-const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== original.value)
+// While the dialog is open, a reload of the identity list leaves a changed draft alone.
+const { draft, dirty } = useSettingsDraft(() => (open.value && identity ? identity : null))
 
 // The editor reads its content once; a new key makes it show a saved signature put in its place.
 const signatureKey = ref(0)

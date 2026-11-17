@@ -56,7 +56,7 @@
           </template>
         </FileUploader>
 
-        <SettingsForm :dirty="nameDirty" :save="saveName">
+        <SettingsForm v-if="nameDraft" :dirty="nameDirty" :save="saveName">
           <div class="grid gap-4 sm:grid-cols-2">
             <FormControl
               v-model="nameDraft.first_name"
@@ -78,12 +78,17 @@
 
 <script setup lang="ts">
 import { Avatar, Button, ErrorMessage, FileUploader, FormControl } from 'frappe-ui'
-import { computed, reactive, watch } from 'vue'
+import { computed } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { Dropdown, toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
-import { SettingsForm, SettingsPage, SettingsSection } from '@/platform/settings-tab'
+import {
+  SettingsForm,
+  SettingsPage,
+  SettingsSection,
+  useSettingsDraft,
+} from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const AUTOSAVE_TOAST_ID = 'suite-profile-autosave'
@@ -93,19 +98,10 @@ const session = useSession()
 const user = useQuery(api.suite.preferences.get)
 const updateUser = useMutation(api.suite.preferences.update, { silent: true })
 
-const nameDraft = reactive({ first_name: '', last_name: '' })
-watch(
-  () => user.data,
-  (doc) => {
-    if (doc)
-      Object.assign(nameDraft, { first_name: doc.first_name || '', last_name: doc.last_name || '' })
-  },
-  { immediate: true },
-)
-const nameDirty = computed(
-  () =>
-    nameDraft.first_name.trim() !== (user.data?.first_name || '') ||
-    nameDraft.last_name.trim() !== (user.data?.last_name || ''),
+const { draft: nameDraft, dirty: nameDirty } = useSettingsDraft(() =>
+  user.data
+    ? { first_name: user.data.first_name || '', last_name: user.data.last_name || '' }
+    : null,
 )
 
 const displayName = computed(() => {
@@ -129,13 +125,17 @@ function validateAvatarFile(file: File) {
 }
 
 async function saveName() {
-  const first_name = nameDraft.first_name.trim()
+  const draft = nameDraft.value
+  if (!draft) return
+  const first_name = draft.first_name.trim()
   if (!first_name) {
     toast.error(__('First name is required'))
     return
   }
+  // Trimmed in the draft too, so it matches the saved name when the profile reloads.
+  Object.assign(draft, { first_name, last_name: draft.last_name.trim() })
   try {
-    await updateUser.run({ first_name, last_name: nameDraft.last_name.trim() })
+    await updateUser.run({ first_name, last_name: draft.last_name })
     await session.refresh()
     toast.success(__('Name saved'))
   } catch {

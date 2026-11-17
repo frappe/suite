@@ -47,7 +47,13 @@ vi.mock('@/platform/settings-tab', async () => {
       () =>
         h('div', slots.default?.()),
   })
-  return { SettingsForm: passthrough, SettingsPage: passthrough, SettingsSection: passthrough }
+  const { useSettingsDraft } = await import('@/platform/settings-tab/useSettingsDraft')
+  return {
+    SettingsForm: passthrough,
+    SettingsPage: passthrough,
+    SettingsSection: passthrough,
+    useSettingsDraft,
+  }
 })
 // The message box shows only whether it can be edited.
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', async () => {
