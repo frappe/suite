@@ -50,7 +50,11 @@
         @click="fileInput?.click()"
       />
     </SettingsRow>
-    <SettingsJobStatus :status="importSubtitle" :href="importHref" :link-label="importLinkText">
+    <SettingsJobStatus
+      operation="Import"
+      :job="ongoingImport.data?.name"
+      route-base="/mail/mail-exchanges"
+    >
       <Button
         variant="solid"
         :label="__('Start import')"
@@ -69,13 +73,13 @@
 
 <script setup lang="ts">
 import { Button, ErrorMessage, Select, SettingsRow, Switch } from 'frappe-ui'
-import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseError } from '@/apps/mail/utils'
-import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection, useJobDoneRefetch } from '@/platform/settings-tab'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
 type ImportInput = InputOf<typeof api.mail.exchanges.importMail>
@@ -178,21 +182,5 @@ const ongoingImport = useQuery(api.mail.exchanges.ongoing, () =>
       }
     : false,
 )
-const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
-  if (payload.action === 'Import') ongoingImport.refetch().catch(() => {})
-}
-socket.on('mail_exchange_completed', onExchangeCompleted)
-onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
-const importSubtitle = computed(() => {
-  if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")
-  return __('No imports in progress.')
-})
-const importHref = computed(() => {
-  if (ongoingImport.data?.name) return `/mail/mail-exchanges/${ongoingImport.data.name}`
-  return '/mail/mail-exchanges?operation=Import'
-})
-const importLinkText = computed(() => {
-  if (ongoingImport.data?.name) return __('Track status')
-  return __('View history')
-})
+useJobDoneRefetch(ongoingImport, { socket, event: 'mail_exchange_completed', operation: 'Import' })
 </script>

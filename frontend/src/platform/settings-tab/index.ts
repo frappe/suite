@@ -14,6 +14,7 @@
  *       SettingsCopyField   a read-only value with a copy button
  *       SettingsJobStatus   the status line and start button of an import or export
  *
+ *   useJobDoneRefetch       reads the running job of a SettingsJobStatus again when it finishes
  *   copyValue               copy a value with the same feedback as SettingsCopyField
  *   useSettingsDraft        the draft of a form or dialog with a Save button, and whether it changed
  *   useSavedFields          the values of switches and selects that save on change, and their saves
@@ -35,6 +36,7 @@ export { default as SettingsLoading } from './SettingsLoading.vue'
 export { default as SettingsPage } from './SettingsPage.vue'
 export { default as SettingsSection } from './SettingsSection.vue'
 export { default as SettingsSelectionBar } from './SettingsSelectionBar.vue'
+export { useJobDoneRefetch, type JobOperation } from './useJobDoneRefetch'
 export { useSavedFields } from './useSavedFields'
 export { useSettingsDraft } from './useSettingsDraft'
 export { useSettingsSelection, type SettingsSelection } from './useSettingsSelection'

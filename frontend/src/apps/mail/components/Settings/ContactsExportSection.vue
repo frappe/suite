@@ -40,7 +40,11 @@
         placeholder="1000"
       />
     </div>
-    <SettingsJobStatus :status="exportSubtitle" :href="exportHref" :link-label="exportLinkText">
+    <SettingsJobStatus
+      operation="Export"
+      :job="ongoingExport.data?.name"
+      route-base="/mail/contacts-exchanges"
+    >
       <Button
         variant="solid"
         :label="__('Start export')"
@@ -61,12 +65,12 @@
 
 <script setup lang="ts">
 import { Button, ErrorMessage, FormControl, Select, SettingsRow, Switch } from 'frappe-ui'
-import { computed, onScopeDispose, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
-import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection, useJobDoneRefetch } from '@/platform/settings-tab'
 
 type ExportInput = InputOf<typeof api.mail.exchanges.exportContacts>
 
@@ -153,21 +157,9 @@ const ongoingExport = useQuery(api.mail.exchanges.ongoing, () =>
       }
     : false,
 )
-const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
-  if (payload.action === 'Export') ongoingExport.refetch().catch(() => {})
-}
-socket.on('contacts_exchange_completed', onExchangeCompleted)
-onScopeDispose(() => socket.off('contacts_exchange_completed', onExchangeCompleted))
-const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
-  return __('No exports in progress.')
-})
-const exportHref = computed(() => {
-  if (ongoingExport.data?.name) return `/mail/contacts-exchanges/${ongoingExport.data.name}`
-  return '/mail/contacts-exchanges?operation=Export'
-})
-const exportLinkText = computed(() => {
-  if (ongoingExport.data?.name) return __('Track status')
-  return __('View history')
+useJobDoneRefetch(ongoingExport, {
+  socket,
+  event: 'contacts_exchange_completed',
+  operation: 'Export',
 })
 </script>

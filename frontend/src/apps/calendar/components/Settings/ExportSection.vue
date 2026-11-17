@@ -45,9 +45,9 @@
       />
     </div>
     <SettingsJobStatus
-      :status="status"
-      :href="statusHref"
-      :link-label="ongoing.data?.name ? __('Track status') : __('View history')"
+      operation="Export"
+      :job="ongoing.data?.name"
+      route-base="/mail/calendar-exchanges"
     >
       <Button
         variant="solid"
@@ -62,13 +62,13 @@
 
 <script setup lang="ts">
 import { Button, FormControl, Select, SettingsRow, Switch } from 'frappe-ui'
-import { computed, onScopeDispose, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
-import { SettingsJobStatus, SettingsSection } from '@/platform/settings-tab'
+import { SettingsJobStatus, SettingsSection, useJobDoneRefetch } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 type ExportInput = InputOf<typeof api.mail.calendar.export>
@@ -154,20 +154,5 @@ const ongoing = useQuery(api.mail.calendar.ongoingExchange, () =>
       }
     : false,
 )
-const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
-  if (payload.action === 'Export') ongoing.refetch().catch(() => {})
-}
-socket.on('calendar_exchange_completed', onExchangeCompleted)
-onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
-
-const status = computed(() =>
-  ongoing.data?.name
-    ? __("Export in progress. We'll email you when it's ready.")
-    : __('No exports in progress.'),
-)
-const statusHref = computed(() =>
-  ongoing.data?.name
-    ? `/mail/calendar-exchanges/${ongoing.data.name}`
-    : '/mail/calendar-exchanges?operation=Export',
-)
+useJobDoneRefetch(ongoing, { socket, event: 'calendar_exchange_completed', operation: 'Export' })
 </script>
