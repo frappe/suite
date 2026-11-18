@@ -8,7 +8,9 @@ import { onMounted, onUnmounted, ref } from 'vue'
  * around underneath it, so `position: fixed; inset: 0` runs on behind the keyboard and has to be
  * held off it by hand: `height` is what is left once the keyboard has taken its share, so a pane
  * ends where the keyboard starts, and `top` is how far iOS has panned to reveal a focused field,
- * so the pane rides that pan instead of being dragged off the top of the screen.
+ * so the pane rides that pan instead of being dragged off the top of the screen. `bottom` is how
+ * much of the screen the keyboard covers below the pane, for anything that pads itself off the
+ * screen's bottom edge and should stop once the keyboard is in the way.
  *
  * `interactive-widget=resizes-content` (index.html) is supposed to make both unnecessary by
  * shrinking the layout viewport itself. It did not, on the iOS this was built against: sizing a
@@ -18,6 +20,7 @@ export const useKeyboardInsets = () => {
   const top = ref(0)
   /** The visible height — what's left of the screen once the keyboard has taken its share. */
   const height = ref(window.innerHeight)
+  const bottom = ref(0)
 
   const update = () => {
     const viewport = window.visualViewport
@@ -25,6 +28,7 @@ export const useKeyboardInsets = () => {
 
     height.value = viewport.height
     top.value = viewport.offsetTop
+    bottom.value = Math.max(0, window.innerHeight - viewport.offsetTop - viewport.height)
   }
 
   onMounted(() => {
@@ -42,5 +46,5 @@ export const useKeyboardInsets = () => {
     window.removeEventListener('resize', update)
   })
 
-  return { top, height }
+  return { top, height, bottom }
 }
