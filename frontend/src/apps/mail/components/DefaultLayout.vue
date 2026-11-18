@@ -66,10 +66,9 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
 import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import { useComposeLinkArrival } from '@/apps/mail/composables/useComposeLinkArrival'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { userStore } from '@/apps/mail/stores/user'
-import type { MailRecipient } from '@/apps/mail/types'
+import type { ComposeMailData, MailRecipient } from '@/apps/mail/types'
 import {
   useComposeMail,
   useDiscardingDrafts,
@@ -146,6 +145,33 @@ const emailEventParticipants = (people: MailRecipient[]) => {
   requestCompose({ to: people })
 }
 
-// How other apps on a phone (calendar's "email participants") open mail's composer.
-useComposeLinkArrival()
+// Compose for the deep link below: the window on a desktop (ComposeHost opens it), the compose page
+// on mobile, navigated to at once.
+const openCompose = (details: ComposeMailData) => {
+  if (isMobile.value) {
+    openComposePage(router, details.account ?? store.accountId, details)
+    return
+  }
+  requestCompose(details)
+}
+
+const emailParticipants = (emails: string[]) =>
+  openCompose({ to: emails.map((email) => ({ email })) })
+
+// Compose deep link (?compose=1&to=a,b): how other apps (calendar's "email
+// participants") open mail's compose window. Consumed on arrival — the query
+// is cleared so reload/back don't reopen the draft.
+watch(
+  () => route.query.compose,
+  (compose) => {
+    if (!compose) return
+    const to = String(route.query.to || '')
+      .split(',')
+      .filter(Boolean)
+    emailParticipants(to)
+    const { compose: _compose, to: _to, ...query } = route.query
+    router.replace({ query })
+  },
+  { immediate: true },
+)
 </script>

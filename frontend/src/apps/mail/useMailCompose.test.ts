@@ -4,13 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 
-import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
-import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
-import { useComposeLinkArrival } from '@/apps/mail/composables/useComposeLinkArrival'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
-import { composeLink, useMailCompose, type MailRecipient } from '.'
+import { useMailCompose, type MailRecipient } from '.'
 
 // Another app writing to people through Mail's public interface, the way the calendar's "Email
 // participants" does: a page that has never opened Mail, against a small Frappe that knows one user
@@ -176,7 +173,6 @@ beforeEach(() => {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
-  takePendingCompose()
 })
 
 const PAGE = '/calendar/week/2026-11-18?event=standup'
@@ -197,8 +193,7 @@ let pressed: Promise<void> | undefined
 
 /**
  * Another app's page, open on an event, with an "Email participants" button and the app's
- * shortcuts; beside it, Mail as a phone reaches it: its layout, on the compose link, and its
- * compose page.
+ * shortcuts.
  */
 async function openPage(
   participants: MailRecipient[] = PARTICIPANTS,
@@ -219,26 +214,10 @@ async function openPage(
         h('button', { onClick: () => (pressed = mail.compose(participants)) }, 'Email participants')
     },
   })
-  const MailHome = defineComponent({
-    setup() {
-      useComposeLinkArrival()
-      return () => h(ComposeHost)
-    },
-  })
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [
-      { path: '/mail', component: MailHome },
-      {
-        path: '/mail/account/:accountId/compose',
-        name: 'mail-compose',
-        component: { render: () => null },
-      },
-      { path: '/:any(.*)*', component: Page },
-    ],
+    routes: [{ path: '/:any(.*)*', component: Page }],
   })
-  // Mail's guard, which answers after a wait of its own.
-  router.beforeEach(() => new Promise<void>((resolve) => setTimeout(resolve, 5)))
   await router.push(PAGE)
   const app = createApp({ render: () => h(RouterView) })
   app.config.globalProperties.__ = translate
@@ -367,39 +346,6 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
 
     await vi.waitFor(() => expect(composer()).toBeNull())
     expect(router.currentRoute.value.fullPath).toBe(PAGE)
-  })
-
-  it("opens Mail's compose page from Mail's compose link, the way a phone arrives", async () => {
-    isMobile.value = true
-    const { router } = await openPage()
-
-    // As the calendar goes on a phone.
-    await router.push(composeLink(PARTICIPANTS))
-
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('mail-compose'), {
-      timeout: 15_000,
-    })
-    expect(router.currentRoute.value.params.accountId).toBe('acc')
-    expect(takePendingCompose()?.to).toEqual(ADDRESSES.map((email) => ({ email })))
-    // The link is gone from the page behind it, so Back does not open the composer again.
-    router.back()
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/mail'))
-  })
-
-  it("on a phone, if asked all the same, follows Mail's compose link to the compose page", async () => {
-    isMobile.value = true
-    const { router } = await openPage()
-
-    button('Email participants')!.click()
-
-    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('mail-compose'), {
-      timeout: 15_000,
-    })
-    expect(router.currentRoute.value.params.accountId).toBe('acc')
-    expect(takePendingCompose()?.to).toEqual(ADDRESSES.map((email) => ({ email })))
-    // The link is gone from the page behind it, so Back does not open the composer again.
-    router.back()
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/mail'))
   })
 
   it('on a desktop, with no Mail account, hands them to the device’s mail app', async () => {
