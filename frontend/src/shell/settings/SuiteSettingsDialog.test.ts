@@ -87,15 +87,19 @@ vi.mock('frappe-ui', () => {
       props: { value: { type: String, required: true } },
       setup(props, { slots }) {
         const pickTab = inject<(tab: string) => void>('pickTab')
-        return () => h('a', { onClick: () => pickTab?.(props.value) }, slots.default?.())
+        return () =>
+          h('button', { role: 'tab', onClick: () => pickTab?.(props.value) }, slots.default?.())
       },
     }),
     TextInput: defineComponent({
       props: { modelValue: { type: String, default: '' } },
       emits: ['update:modelValue'],
-      setup(props, { emit }) {
+      setup(props, { emit, expose }) {
+        const input = ref<HTMLInputElement>()
+        expose({ focus: () => input.value?.focus() })
         return () =>
           h('input', {
+            ref: input,
             value: props.modelValue,
             onInput: (event: Event) =>
               emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
@@ -177,17 +181,21 @@ async function mount() {
   app = createApp({ render: () => h(SuiteSettingsDialog, { open: isOpen.value }) })
   app.config.globalProperties.__ = (text: string) => text
   app.provide(SETTINGS_GROUPS_KEY, [async () => account, async () => mail])
+  // On the page, so its parts can take focus
+  document.body.append(root)
   app.mount(root)
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-/** The sidebar as it reads: tabs as links, the sections found under them as buttons. */
+/** A sidebar row as it reads: a tab, or a section found under one as a button. */
+function row(item: Element) {
+  const kind = item.getAttribute('role') ?? item.tagName.toLowerCase()
+  const text = item.textContent.trim()
+  return `${kind} ${text}`
+}
+
 function sidebar() {
-  return Array.from(root.querySelectorAll('nav a, nav button, nav p')).map((item) => {
-    const tag = item.tagName.toLowerCase()
-    const text = item.textContent.trim()
-    return `${tag} ${text}`
-  })
+  return Array.from(root.querySelectorAll('nav button, nav p')).map(row)
 }
 
 function searchBox() {
@@ -207,7 +215,7 @@ function shownTab() {
 
 /** Picks the tab or found section that reads `text` in the sidebar, and lets its page load. */
 async function pick(text: string) {
-  const item = Array.from(root.querySelectorAll('nav a, nav button')).find(
+  const item = Array.from(root.querySelectorAll('nav button')).find(
     (entry) => entry.textContent.trim() === text,
   )
   requireTestElement(item, HTMLElement).click()
@@ -226,16 +234,24 @@ beforeEach(() => {
   hasServers.value = true
   settingsSection.value = undefined
 })
-afterEach(() => app.unmount())
+afterEach(() => {
+  app.unmount()
+  root.remove()
+})
 
+// Stays first: the groups load once, and the box shows late only on that first open
+it('puts the cursor in the search box when the groups load on the first open', async () => {
+  await mount()
+  expect(document.activeElement).toBe(searchBox())
+})
 it('lists every tab, and no section, until something is searched for', async () => {
   await mount()
-  expect(sidebar()).toEqual(['a Profile', 'a Sending', 'a Import and export', 'a Advanced'])
+  expect(sidebar()).toEqual(['tab Profile', 'tab Sending', 'tab Import and export', 'tab Advanced'])
 })
 it('shows a section found by another word for it, and opens it when picked', async () => {
   await mount()
   await search('vacation')
-  expect(sidebar()).toEqual(['a Sending', 'button Auto-reply'])
+  expect(sidebar()).toEqual(['tab Sending', 'button Auto-reply'])
   await pick('Auto-reply')
   expect(shownTab()).toBe('mail.sending')
   expect(settingsSection.value).toBe('mail.sending.auto-reply')
@@ -243,13 +259,36 @@ it('shows a section found by another word for it, and opens it when picked', asy
 it('opens the first section found when Enter is pressed', async () => {
   await mount()
   await search('port')
-  expect(sidebar()).toEqual(['a Import and export', 'button Import', 'button Export'])
+  expect(sidebar()).toEqual(['tab Import and export', 'button Import', 'button Export'])
   expect(openDialogs()).toEqual([])
   searchBox().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
   await nextTick()
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(shownTab()).toBe('mail.import-export')
   expect(openDialogs()).toEqual(['Import'])
+})
+it('walks from the search box down the tabs and found sections, and back, on the arrow keys', async () => {
+  await mount()
+  await search('port')
+  searchBox().focus()
+  const walked = ['ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowUp'].map((key) => {
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+    return row(requireTestElement(document.activeElement, HTMLElement))
+  })
+  // The fourth press is past the last row
+  expect(walked).toEqual([
+    'tab Import and export',
+    'button Import',
+    'button Export',
+    'button Export',
+    'button Import',
+  ])
+
+  for (const key of ['ArrowUp', 'ArrowUp', 'ArrowUp']) {
+    document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+  }
+
+  expect(document.activeElement).toBe(searchBox())
 })
 it('opens the dialog of a found section on its page, from another tab', async () => {
   await mount()
@@ -310,5 +349,5 @@ it('starts the next open with nothing searched for', async () => {
   isOpen.value = true
   await nextTick()
   expect(searchBox().value).toBe('')
-  expect(sidebar()).toEqual(['a Profile', 'a Sending', 'a Import and export', 'a Advanced'])
+  expect(sidebar()).toEqual(['tab Profile', 'tab Sending', 'tab Import and export', 'tab Advanced'])
 })

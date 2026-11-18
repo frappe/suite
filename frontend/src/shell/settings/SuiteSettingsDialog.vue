@@ -25,10 +25,13 @@
       />
     </Dialog.Close>
     <template v-if="groups">
-      <SettingsSidebar>
+      <SettingsSidebar @keydown.exact.capture="moveFocus">
+        <!-- The dialog puts focus on the box it finds marked autofocus, each time it opens -->
         <TextInput
+          ref="searchBox"
           v-model="query"
           type="text"
+          autofocus
           :placeholder="__('Search settings')"
           :aria-label="__('Search settings')"
           @keydown.enter="showFirstFound"
@@ -105,7 +108,7 @@ import {
   SettingsSidebar,
   TextInput,
 } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSession } from '@/platform/session'
@@ -174,6 +177,40 @@ const isNothingFound = computed(() => !!query.value.trim() && found.value.length
 function showSection(tab: SettingsTab, section: SettingsSection) {
   activeTab.value = tab.id
   settingsSection.value = `${tab.id}.${section.id}`
+}
+
+// The first time Settings opens, the search box shows only once the groups
+// load, after the dialog has looked for it
+const searchBox = useTemplateRef<InstanceType<typeof TextInput>>('searchBox')
+watch(
+  groups,
+  (now, before) => {
+    if (now && !before) {
+      searchBox.value?.focus()
+    }
+  },
+  { flush: 'post' },
+)
+
+const ROW_ABOVE = -1
+const ROW_BELOW = 1
+
+/** Moves focus one row up or down the sidebar: the search box, then each tab and found section. */
+function moveFocus(event: KeyboardEvent) {
+  const isDown = event.key === 'ArrowDown'
+  if (!isDown && event.key !== 'ArrowUp') return
+
+  // The arrows pick a word while one is being composed
+  if (event.isComposing || !(event.currentTarget instanceof HTMLElement)) return
+
+  const rows = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('input, button'))
+  const focused = rows.findIndex((row) => row === document.activeElement)
+  const step = isDown ? ROW_BELOW : ROW_ABOVE
+  const next = rows[focused + step]
+  // The tab list moves between tabs alone on these keys, so they stop here
+  event.preventDefault()
+  event.stopPropagation()
+  next?.focus()
 }
 
 function showFirstFound() {
