@@ -198,3 +198,25 @@ describe('where the sidebar puts Outbox', () => {
     expect(sidebar.row('Outbox')!.textContent).toBe('1')
   })
 })
+
+// jsdom lays nothing out and matches no media query, so it can't measure a row or hit-test a tap.
+// What it can see is that each row asks for the hit area that grows only where no other row is
+// (touch-target-row, in index.css), inside a section isolated so that area can take taps, and
+// never for a taller box on a touch screen.
+describe('sidebar rows on a touch screen', () => {
+  it('keep their height and take the hit area that yields to the rows beside them', async () => {
+    const sidebar = await mount()
+    const labels = sidebar.labels()
+    // The account row and the folders' rows both, with More opening the rest.
+    expect(labels).toEqual(expect.arrayContaining(['Account', 'Starred', 'More']))
+    await sidebar.openMore()
+    const rows = sidebar.labels().map((label) => sidebar.row(label!)!)
+    expect(rows.length).toBeGreaterThan(labels.length)
+
+    for (const row of rows) {
+      expect(row.classList).toContain('touch-target-row')
+      expect(row.className).not.toMatch(/pointer:coarse\)\]:!h-/)
+      expect(row.parentElement!.classList).toContain('isolate')
+    }
+  })
+})

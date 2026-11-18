@@ -87,7 +87,7 @@ beforeEach(() => {
       title: 'Design review',
       start: '2026-09-30T10:00:00',
       duration: 'PT1H',
-      links: [{ href: '/meet/abcd-efgh-ijkl' }],
+      links: [{ href: '/meet/frappe-suite' }],
       participants: [
         { email: 'faris@example.com', _name: 'Faris' },
         { email: 'faris@example.com', _name: 'Faris' },
@@ -345,7 +345,7 @@ describe('Meet upcoming list', () => {
     root.querySelector<HTMLButtonElement>('button[aria-label="Join Design review"]')!.click()
     expect(state.push).toHaveBeenCalledWith({
       name: 'meet-meeting',
-      params: { meetingId: 'abcd-efgh-ijkl' },
+      params: { meetingId: 'frappe-suite' },
     })
   })
 

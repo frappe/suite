@@ -27,7 +27,12 @@
         >
           {{ r }}
         </button>
-        <Button class="rounded-full" icon="lucide-plus" @click.stop="() => (reaction = false)" />
+        <Button
+          class="rounded-full"
+          icon="lucide-plus"
+          :aria-label="__('More reactions')"
+          @click.stop="() => (reaction = false)"
+        />
       </div>
       <div v-else class="bg-surface-base max-w-max transform rounded-6 px-4 sm:px-0">
         <div

@@ -126,12 +126,12 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		scheduleAccountLoading: {
 			meta: {
-				description: "Schedule meet while the Calendar account loads: “Loading Calendar account...” and no form. Home has already loaded the account, so the dialog opens on the form at once.",
+				description: "Schedule meet while the Calendar account loads: Title, Date, Start and End are editable. Participants and Schedule are disabled, and Schedule shows a spinner if the check takes over 300 ms.",
 				transient: true,
 			},
 		},
 		scheduleNoAccount: {
-			meta: { description: "Schedule meet for a person with no Calendar account (Administrator here): no form, only an alert, “You do not have a Calendar account. Open Admin users to…”, cut off at one line, then Retry and Open Admin users. Schedule is disabled." },
+			meta: { description: "Schedule meet for a person with no Calendar account (Administrator here): the account setup message offers Retry and Open Admin users. The form remains visible with Participants and Schedule disabled." },
 		},
 		scheduleFilled: {
 			meta: { description: "A title typed and the date and times filled in. Maya is listed as the only participant, and Schedule is enabled." },

@@ -165,6 +165,17 @@ describe('EmojiPicker opening on hover', () => {
   })
 })
 
+describe("the short palette's way to the full list", () => {
+  it('is named for what it opens', async () => {
+    const { trigger, after } = render(false)
+    trigger.click()
+    await after()
+    document.body.querySelector<HTMLButtonElement>('button[aria-label="More reactions"]')?.click()
+    await after()
+    expect(fullListIsOpen()).toBe(true)
+  })
+})
+
 describe('EmojiPicker without it, as in the composer', () => {
   it('does not open on hover', async () => {
     const { trigger, after } = render(false)

@@ -33,6 +33,10 @@ export interface Recipient {
   display_name: string | null
 }
 
+// How a message's body is shown in the dark theme, when the remap onto the dark canvas applies
+// to it: remapped (`adapted`), or with the sender's own colours on a light canvas (`asSent`).
+export type BodyView = 'adapted' | 'asSent'
+
 // Everyone who has written in a thread, in the order they first wrote. Derived from the thread's own
 // messages rather than served with it (see utils/participants), `is_self` included.
 export interface ThreadParticipant {

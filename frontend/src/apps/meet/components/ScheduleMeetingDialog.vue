@@ -2,23 +2,23 @@
 <template>
   <Dialog v-model:open="open" :title="__('Schedule meet')" dismissible>
     <template #default>
-      <div v-if="readiness !== 'ready'" class="space-y-3">
-        <Alert :title="accountMessage" />
-        <div class="flex gap-2">
-          <Button v-if="readiness !== 'loading'" @click="loadAccount">{{ __('Retry') }}</Button>
-          <Button
-            v-if="
-              readiness === 'missing' &&
-              canManageAccounts &&
-              session.user.value?.is_mail_server_configured
-            "
-            :to="{ name: 'mail-accounts' }"
-          >
-            {{ __('Open Admin users') }}
-          </Button>
+      <div class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
+        <div v-if="readiness !== 'ready' && readiness !== 'loading'" class="space-y-3">
+          <Alert :description="accountMessage" />
+          <div class="flex gap-2">
+            <Button @click="loadAccount">{{ __('Retry') }}</Button>
+            <Button
+              v-if="
+                readiness === 'missing' &&
+                canManageAccounts &&
+                session.user.value?.is_mail_server_configured
+              "
+              :to="{ name: 'mail-accounts' }"
+            >
+              {{ __('Open Admin users') }}
+            </Button>
+          </div>
         </div>
-      </div>
-      <div v-else class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
         <Alert
           v-if="submitError"
           theme="red"
@@ -52,22 +52,29 @@
           />
         </div>
         <ParticipantSelector
+          v-if="readiness === 'ready'"
           v-model="participants"
-          :account="calendarStore.accountId"
+          :account="accountId"
           :display-participants="scheduledParticipants"
           :excluded-emails="currentUserEmail ? [currentUserEmail] : []"
+        />
+        <FormControl
+          v-else
+          :label="__('Participants')"
+          :placeholder="__('Enter participants')"
+          disabled
         />
       </div>
     </template>
     <template #actions>
       <div class="flex justify-end">
         <Button
+          :label="__('Schedule')"
           variant="solid"
-          :loading="scheduleMeeting.isPending"
+          :loading="scheduleMeeting.isPending || showAccountProgress"
           :disabled="readiness !== 'ready' || !isTimeValid"
           @click="submit"
-          >{{ __('Schedule') }}</Button
-        >
+        />
       </div>
     </template>
   </Dialog>
@@ -106,10 +113,15 @@ const open = ref(false)
 const calendarStore = useCalendarUserStore()
 const session = useSession()
 const readiness = ref<'loading' | 'ready' | 'missing' | 'denied' | 'failed'>('loading')
+const ACCOUNT_PROGRESS_DELAY_MS = 300
+const showAccountProgress = ref(false)
+const accountId = computed(() => {
+  const id = calendarStore.accountId
+  return calendarStore.userResource.data?.accounts.some((account) => account.id === id) ? id : ''
+})
 const submitError = ref('')
 const canManageAccounts = computed(() => !!session.capabilities.value.suiteAdmin)
 const accountMessage = computed(() => {
-  if (readiness.value === 'loading') return __('Loading Calendar account...')
   if (readiness.value === 'failed')
     return __('Could not load Calendar account. Retry to check availability.')
   if (readiness.value === 'denied')
@@ -176,9 +188,23 @@ const scheduledParticipants = computed(() => {
 })
 const scheduleMeeting = useMutation(api.meet.meetings.createCalendar, { silent: true })
 
+watch(
+  () => open.value && readiness.value === 'loading',
+  (checking, _, onCleanup) => {
+    showAccountProgress.value = false
+    if (!checking) return
+    const timer = setTimeout(() => (showAccountProgress.value = true), ACCOUNT_PROGRESS_DELAY_MS)
+    onCleanup(() => clearTimeout(timer))
+  },
+)
+
 async function show() {
   open.value = true
   submitError.value = ''
+  if (accountId.value) {
+    readiness.value = 'ready'
+    return
+  }
   await loadAccount()
 }
 
@@ -186,7 +212,7 @@ async function loadAccount() {
   readiness.value = 'loading'
   try {
     await calendarStore.loadUser()
-    readiness.value = calendarStore.accountId ? 'ready' : 'missing'
+    readiness.value = accountId.value ? 'ready' : 'missing'
   } catch (error) {
     readiness.value =
       error instanceof TransportError && error.type === 'AccountSetupRequired'
@@ -199,7 +225,7 @@ async function loadAccount() {
 
 async function submit() {
   if (scheduleMeeting.isPending || readiness.value !== 'ready') return
-  if (!calendarStore.accountId) {
+  if (!accountId.value) {
     readiness.value = 'missing'
     return
   }
@@ -216,7 +242,7 @@ async function submit() {
   // Schedule button's spinner is the progress.
   try {
     await scheduleMeeting.run({
-      account: calendarStore.accountId,
+      account: accountId.value,
       title: title.value,
       start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
       duration: duration.value,

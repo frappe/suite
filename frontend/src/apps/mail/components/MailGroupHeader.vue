@@ -12,9 +12,10 @@
     @click="emit('toggle')"
   >
     <!-- The mailbox list puts its "select the whole day" checkbox here: centred in the row
-         whatever its height, and a click on it selects the day without folding it. -->
+         whatever its height, and a click on it selects the day without folding it. The slot gets
+         the date as the header shows it, for the checkbox's name. -->
     <div v-if="$slots.lead" class="flex items-center self-stretch" @click.stop>
-      <slot name="lead" />
+      <slot name="lead" :label="dateGroupLabel(dateKey)" />
     </div>
 
     <span class="select-none pt-[2px]">

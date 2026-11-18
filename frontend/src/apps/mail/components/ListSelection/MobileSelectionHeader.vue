@@ -4,7 +4,12 @@
 	     title row above, so the ✕ shares the menu button's axis and the count starts where the title
 	     does. -->
   <div class="flex h-12 items-center gap-1 px-1">
-    <Button variant="ghost" class="!h-10 !w-10 !rounded-full" @click="emit('toggleAll', false)">
+    <Button
+      variant="ghost"
+      class="touch-target !h-10 !w-10 !rounded-full"
+      :aria-label="__('Clear selection')"
+      @click="emit('toggleAll', false)"
+    >
       <template #icon><X class="icon !h-5 !w-5" /></template>
     </Button>
     <span class="flex-1 truncate text-base !font-medium">
