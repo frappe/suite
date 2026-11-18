@@ -833,6 +833,34 @@ describe("a thread's reply, once sent", () => {
     expect(reloadMails).not.toHaveBeenCalled()
   })
 
+  // The server holds delivery for the undo window from the send, not from the thread's fetch.
+  it('offers Undo the moment the send is answered, while the thread is still fetching it', async () => {
+    let shown!: () => void
+    const showSent = vi.fn(() => new Promise<void>((resolve) => (shown = resolve)))
+    const composer = compose({ showSent })
+    server.updateDraft.mockResolvedValueOnce({
+      id: 'sent-1',
+      status: 'Submitted',
+      error: null,
+      submission_id: 'submission-1',
+      send_at: '2026-11-18T10:00:10Z',
+      undo_send_period: 10,
+    })
+
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(showSent).toHaveBeenCalledOnce())
+
+    expect(raiseToast).toHaveBeenCalledWith(
+      'Message sent',
+      'success',
+      expect.objectContaining({ label: 'Undo' }),
+      10_000,
+      undefined,
+    )
+    shown()
+    await sending
+  })
+
   it('reloads the list instead when the thread cannot show it', async () => {
     const reloadMails = vi.fn()
     const composer = compose({ showSent: () => Promise.reject(new Error('offline')), reloadMails })

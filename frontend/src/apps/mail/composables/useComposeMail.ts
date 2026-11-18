@@ -675,17 +675,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     )
   }
   const onMailUpdateSuccess = async (
-    {
-      id,
-      status,
-      error,
-      thread_id,
-      submission_id,
-      send_at,
-      undo_send_period,
-    }: OutputOf<typeof api.mail.messages.create>,
+    result: OutputOf<typeof api.mail.messages.create>,
     sent?: string,
   ) => {
+    const { id, status, error, thread_id } = result
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     if (error) {
@@ -700,11 +693,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     updateOriginalMail(sent)
     if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
+    // The toast, with its Undo, goes up as the answer lands: the server holds delivery for the undo
+    // window from the send, so an Undo raised after the thread's own fetch could outlive the hold.
     if (status === 'Submitted' && options.showSent) {
       // What the saves owed the list goes with it: paid on the way out, it rebuilt the thread.
       listOwesReload = false
-      await options.showSent().catch(reloadMails)
-    } else if (!isInThread || status === 'Submitted') reloadMails()
+      confirmResult(result)
+      return await options.showSent().catch(reloadMails)
+    }
+    if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
     // list is holding, not from a fetch of its own. So a draft saved in here goes to the server
     // and the list goes on holding the version from before this sitting: leave the thread, open
@@ -722,6 +719,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         showDraftInList(scopeAccountId.value, thread_id, id, mail.html_body)
       }
     }
+    confirmResult(result)
+  }
+  // Says how the save or send went, once the composer is off screen (a send is always said).
+  const confirmResult = ({
+    status,
+    thread_id,
+    submission_id,
+    send_at,
+    undo_send_period,
+  }: OutputOf<typeof api.mail.messages.create>) => {
     if (isOpen() && status !== 'Submitted') return
     if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved'))
     else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
