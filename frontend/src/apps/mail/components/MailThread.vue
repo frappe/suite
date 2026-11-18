@@ -1140,8 +1140,17 @@ usePageTitle(() =>
     ? appDocumentTitle(thread.value[0].subject || __('[No subject]'), 'Mail')
     : '',
 )
+// Asked only once the list is in and holds no row for the thread: while it loads, the row may be on
+// its way, and a thread fetched and marked read beside it leaves that row unread when it lands. Read
+// once the props have settled, not as each is set: a landing list hands over `threadsLoading` and
+// the thread's `messages` in one update, and between the two the pane would ask all the same.
+const listLanded = ref(!threadsLoading)
+watch(
+  () => threadsLoading,
+  (loading) => (listLanded.value = !loading),
+)
 const threadFallback = useQuery(api.mail.threads.get, () =>
-  !messages?.length && threadID
+  !messages?.length && threadID && listLanded.value
     ? {
         account: scopeAccountId.value,
         thread_id: threadID,

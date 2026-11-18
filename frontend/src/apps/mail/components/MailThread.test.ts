@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, reactive, ref, type App } from 'vue'
+import { createApp, createBlock, h, nextTick, openBlock, reactive, ref, type App } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import MailThread from '@/apps/mail/components/MailThread.vue'
@@ -17,11 +17,28 @@ const query = vi.hoisted(() => ({
     refetch: async () => {},
   },
 }))
-vi.mock('@/api', async (original) => ({
-  ...(await original<typeof import('@/api')>()),
-  useQuery: () => query.current,
-  useMutation: () => ({ run: vi.fn() }),
-}))
+// Every get_thread the pane sends: a read goes out each time its input turns to a new value, as the
+// real observer's does.
+const threadReads = vi.hoisted(() => new Array<unknown>())
+vi.mock('@/api', async (original) => {
+  const actual = await original<typeof import('@/api')>()
+  const { watch } = await import('vue')
+  return {
+    ...actual,
+    useQuery: (reference: unknown, input: () => unknown) => {
+      if (reference === actual.api.mail.threads.get)
+        watch(
+          () => JSON.stringify(input()),
+          (asked) => {
+            if (asked !== 'false') threadReads.push(JSON.parse(asked))
+          },
+          { immediate: true, flush: 'sync' },
+        )
+      return query.current
+    },
+    useMutation: () => ({ run: vi.fn() }),
+  }
+})
 // The print dialog is the browser's; what the thread hands it is what these tests read.
 const printing = vi.hoisted(() => ({
   printMessages: vi.fn<(subject: string, messages: readonly PrintedMessage[]) => void>(),
@@ -76,6 +93,7 @@ afterEach(() => {
   root.remove()
   document.querySelectorAll('[role="dialog"]').forEach((dialog) => dialog.remove())
   printing.printMessages.mockClear()
+  threadReads.length = 0
   platform.mac = false
   own.identities = []
 })
@@ -143,6 +161,82 @@ it('names a directly fetched conversation after async arrival and when the reuse
   await nextTick()
   await nextTick()
   expect(document.title).toBe('Mail')
+})
+
+describe('a thread the list may not hold', () => {
+  // The pane as a list mounts it: the open thread's row, if the list has one, comes with the list.
+  const list = reactive<{ loading: boolean; messages?: Partial<Mail>[] }>({ loading: true })
+  const open = async () => {
+    window.__ = (text: string) => text
+    list.loading = true
+    list.messages = undefined
+    query.current = reactive({ data: undefined, status: 'pending', refetch: async () => {} })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
+    })
+    const Reader = { ...MailThread, render: () => null }
+    // Rendered as a compiled template renders it (MailboxView's): its changed props (patch flag 8)
+    // set one by one, in the order they are written there.
+    app = createApp({
+      setup: () => () => (
+        openBlock(),
+        createBlock(
+          Reader,
+          {
+            mailbox: 'inbox',
+            threadID: 'one',
+            threads: [],
+            threadsLoading: list.loading,
+            messages: list.messages,
+            marksSeen: false,
+          },
+          null,
+          8,
+          ['threadsLoading', 'messages'],
+        )
+      ),
+    })
+    app.use(router)
+    app.provide('$user', { data: {} })
+    app.provide('$dayjs', dayjs)
+    document.body.appendChild(root)
+    app.mount(root)
+    await nextTick()
+  }
+
+  it('waits for the list, then asks for the thread when the list came without it', async () => {
+    await open()
+    expect(threadReads).toEqual([])
+
+    list.loading = false
+    await nextTick()
+    expect(threadReads).toEqual([expect.objectContaining({ thread_id: 'one' })])
+  })
+
+  it('never asks for the thread when the list lands holding it', async () => {
+    await open()
+    list.loading = false
+    list.messages = [
+      {
+        id: 'one',
+        name: 'one',
+        thread_id: 'one',
+        subject: 'Friday planning',
+        seen: 1,
+        draft: 0,
+        from_email: 'bob@example.com',
+        recipients: [],
+        reply_to: [],
+        attachments: [],
+        mailboxes: [],
+        received_at: '2026-10-30T08:00:00Z',
+      },
+    ]
+    await nextTick()
+    await nextTick()
+    expect(threadReads).toEqual([])
+  })
 })
 
 describe('printing the conversation', () => {
