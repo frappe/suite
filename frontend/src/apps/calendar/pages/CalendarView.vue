@@ -909,7 +909,7 @@ watch(selectedCalendarEvent, (open) => {
 
 const emailParticipants = useEmailParticipants({
   closeCard: closeEventDetail,
-  isCard: () => !isMobile.value,
+  isPhone: () => isMobile.value,
 })
 
 // A deep link can only be built from the ids its author has. The grid's own

@@ -17,10 +17,10 @@ import { useRouter } from 'vue-router'
 
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import { composeLink } from '@/apps/mail/composables/composeLink'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData } from '@/apps/mail/types'
 import { useComposeMail, useListReload, useScreenSize } from '@/apps/mail/utils/composables'
+import { composeLink } from '@/apps/mail/utils/composeLink'
 
 /**
  * Mail's composer for whatever page is on screen: a window over the page on a desktop, the compose

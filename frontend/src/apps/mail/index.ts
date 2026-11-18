@@ -68,6 +68,7 @@ export function useInboxSummary(enabled: () => boolean = () => true) {
 }
 
 export type { MailRecipient } from '@/apps/mail/types'
+export { composeLink } from '@/apps/mail/utils/composeLink'
 
 interface MailCompose {
   /**
@@ -78,11 +79,12 @@ interface MailCompose {
 }
 
 /**
- * Writes to people from another app. On a desktop it does so without leaving the page: Mail's
- * compose window opens over it, writing as Mail's active account, to everyone but the reader; with
- * no Mail account, the device's mail app gets the same people. On a phone it goes to Mail's compose
- * page by Mail's compose link. Mail's code loads on the first `compose`, not before. Call it in a
- * component's setup.
+ * Writes to people from another app, on a desktop, without leaving the page: Mail's compose window
+ * opens over it, writing as Mail's active account, to everyone but the reader; with no Mail
+ * account, the device's mail app gets the same people. Mail's code loads on the first `compose`,
+ * not before. A phone has no window: the caller goes by `composeLink` instead, which loads nothing
+ * (should a phone call this all the same, Mail's host follows that link). Call it in a component's
+ * setup.
  */
 export function useMailCompose(): MailCompose {
   const context = getCurrentInstance()?.appContext
