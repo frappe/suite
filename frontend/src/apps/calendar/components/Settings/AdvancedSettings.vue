@@ -1,5 +1,5 @@
 <template>
-  <AppSettingsHeader :title="__('Import and setup')" />
+  <AppSettingsHeader :title="__('Advanced')" />
   <AppSettingsBody>
     <div class="divide-y divide-outline-gray-1">
       <SettingsDialogRow
