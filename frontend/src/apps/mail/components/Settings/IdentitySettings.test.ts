@@ -27,13 +27,16 @@ const state = vi.hoisted(() => {
     change: vi.fn(),
     addresses,
     savedDefault: '',
+    // Whether the account's preferences are read
+    isRead: true,
   }
 })
 vi.mock('@/apps/mail/composables/useAccountPreferences', () => ({
-  useAccountPreferences: () => ({
-    preferences: { value: { default_outgoing_email: state.savedDefault } },
-    change: state.change,
-  }),
+  useAccountPreferences: () => {
+    const read = { default_outgoing_email: state.savedDefault }
+
+    return { preferences: { value: state.isRead ? read : undefined }, change: state.change }
+  },
 }))
 interface Option {
   label: string
@@ -305,6 +308,7 @@ beforeEach(() => {
   state.failureToast.mockReset()
   state.change.mockReset()
   state.savedDefault = ''
+  state.isRead = true
 })
 afterEach(() => app.unmount())
 
@@ -324,6 +328,13 @@ it('makes an address the default from its menu, and offers that only on the othe
 
   await pressOnMenu('sales@example.com', 'Set as default')
   expect(state.change).toHaveBeenCalledWith({ default_outgoing_email: 'sales@example.com' })
+})
+it('offers no default to set, and marks none, until the saved default is read', () => {
+  state.isRead = false
+  mount([me, sales])
+  expect(lines()).toEqual(['Me me@example.com', 'Sales sales@example.com'])
+  expect(menu('me@example.com')).toEqual(['Edit'])
+  expect(menu('sales@example.com')).toEqual(['Edit', 'Delete'])
 })
 it('opens an address from Edit on its menu', async () => {
   mount([me, sales])

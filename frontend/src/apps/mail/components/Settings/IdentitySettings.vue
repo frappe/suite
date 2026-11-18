@@ -418,7 +418,8 @@ function addressOptions(identity: Identity) {
     {
       label: __('Set as default'),
       icon: Pin,
-      condition: () => !isDefault(identity),
+      // Not offered until the default is read: there is none to move, and nothing would be saved
+      condition: () => !!defaultEmail.value && !isDefault(identity),
       onClick: () => change({ default_outgoing_email: identity.email }),
     },
     {
