@@ -140,14 +140,19 @@
           />
         </Tooltip>
         <Popover v-if="attachments.length > 2" side="bottom">
+          <!-- The popover's trigger wiring needs an element: Tooltip passes no attributes on. The chip
+               prevents only, so its click still reaches the popover but not the row's link. -->
           <template #trigger>
-            <Tooltip :text="__('View remaining attachments')">
-              <AttachmentCapsule
-                :file-name="`+${String(attachments.length - 2)}`"
-                compact
-                class="shrink-0"
-              />
-            </Tooltip>
+            <span class="flex shrink-0">
+              <Tooltip :text="__('View remaining attachments')">
+                <AttachmentCapsule
+                  :file-name="`+${String(attachments.length - 2)}`"
+                  compact
+                  class="shrink-0"
+                  @click.prevent
+                />
+              </Tooltip>
+            </span>
           </template>
           <template #default>
             <div class="max-h-80 overflow-y-auto p-1">
