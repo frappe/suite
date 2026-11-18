@@ -42,11 +42,10 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 
-import { useMailDates } from '@/apps/mail/composables/useMailDates'
+import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'
 import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { groupPlainText, withoutQuoteLead } from '@/apps/mail/utils/plainTextBlocks'
 import LinkifiedText from '@/components/LinkifiedText.vue'
-import { userTimeZone } from '@/platform/time-zone'
 
 // `term`: the words a search found the message by, marked in it. `sentAt`: when the mail was
 // sent; given it, the dates in the mail's own words are marked, read from then, and picking one
@@ -67,7 +66,7 @@ const dates = computed(() =>
     if (!sentAt || !mailDates.value || segment.kind !== 'body') return []
     const leadsIntoQuote = segments.value[index + 1]?.kind === 'quote'
     const words = leadsIntoQuote ? withoutQuoteLead(segment.blocks[0].text) : segment.blocks[0].text
-    return mailDates.value.findMailDates(words, sentAt, userTimeZone())
+    return mailDates.value.findMailDates(words, sentAt, mailReader())
   }),
 )
 const expanded = ref(new Set<number>())

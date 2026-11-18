@@ -1,4 +1,4 @@
-import { casual, type ParsedResult } from 'chrono-node/en'
+import { casual, GB, type ParsedResult } from 'chrono-node/en'
 import type { Dayjs } from 'dayjs'
 
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -49,6 +49,26 @@ const ATTRIBUTION = /(?:^|\n)[ \t]*On\s(?:[^\n]{0,200}\n){0,2}?[^\n]{0,200}?\bwr
 const HEADER_LINE = /^[ \t]*(?:From|Sent|Date|To|Cc|Subject):/i
 const HEADER_NAMES = /^[ \t]*(?:From|To|Cc|Subject):/i
 
+/** Who reads the mail: their time zone, and the locale that says how they write a day and month. */
+export interface MailReader {
+  timeZone: string
+  /** A BCP 47 tag, as `navigator.languages` gives it. */
+  locale: string
+}
+
+// "05/06" is 6 May to a reader who writes the month first (en-US, and the year-first locales), and
+// 5 June to everyone else. The locale's own short date says which it writes first.
+const monthFirst = (locale: string) => {
+  let parts: Intl.DateTimeFormatPart[]
+  try {
+    parts = new Intl.DateTimeFormat(locale).formatToParts(new Date(2026, 4, 6))
+  } catch {
+    parts = new Intl.DateTimeFormat().formatToParts(new Date(2026, 4, 6))
+  }
+  const order = parts.map((part) => part.type)
+  return order.indexOf('month') < order.indexOf('day')
+}
+
 /**
  * Which of `lines` belong to a quoted mail's header: two or more header lines in a row, one of
  * them a From:, To:, Cc: or Subject:. A "Date:" line of the writer's own, on its own, isn't one.
@@ -79,27 +99,32 @@ const headerBlocks = (text: string): [number, number][] => {
 
 /**
  * The dates and times in `text`, read as the mail's writer meant them: "tomorrow" and "Thursday"
- * from `sentAt` (a UTC timestamp) on, in `timeZone`, the reader's zone. A date before the day it
- * was sent is the past, and not offered. An hour without am or pm is a working hour (1–7 the
+ * from `sentAt` (a UTC timestamp) on, in the reader's zone, and "05/06" in the order the reader's
+ * locale writes a day and month. A date before the day it was sent is the past, and not offered. An hour without am or pm is a working hour (1–7 the
  * afternoon, 8–11 the morning). A time with a zone of its own ("3pm EST") is moved into the
  * reader's.
  */
-export function findMailDates(text: string, sentAt: string, timeZone: string): NamedDate[] {
+export function findMailDates(
+  text: string,
+  sentAt: string,
+  { timeZone, locale }: MailReader,
+): NamedDate[] {
   const sentUtc = dayjs.utc(sentAt)
   if (!text || !sentUtc.isValid()) return []
   const sent = sentUtc.tz(timeZone)
   const reference = { instant: sentUtc.toDate(), timezone: sent.utcOffset() }
   const sentDay = sent.format('YYYY-MM-DD')
+  const chrono = monthFirst(locale) ? casual : GB
   // Read again without looking forward, to tell "20 Oct" in a November mail (last month's) from a
   // date to come: looking forward moves the first to next year.
-  const asWritten = new Map(casual.parse(text, reference).map((result) => [result.index, result]))
+  const asWritten = new Map(chrono.parse(text, reference).map((result) => [result.index, result]))
   const attributions = [
     ...[...text.matchAll(ATTRIBUTION)].map((match) => [match.index, match.index + match[0].length]),
     ...headerBlocks(text),
   ]
   const within = (result: ParsedResult) =>
     attributions.some(([from, to]) => result.index < to && result.index + result.text.length > from)
-  return casual.parse(text, reference, { forwardDate: true }).flatMap((result) => {
+  return chrono.parse(text, reference, { forwardDate: true }).flatMap((result) => {
     if (!namesADate(result) || within(result)) return []
     const { start } = result
     const written = asWritten.get(result.index)?.start
@@ -143,8 +168,11 @@ const toNamedDate = (result: ParsedResult, timeZone: string, sent: Dayjs): Named
     dayFor: (time) =>
       time >= sent.format('HH:mm') ? sentDay : sent.add(1, 'day').format('YYYY-MM-DD'),
     // A weekday with an hour is the next time that weekday comes round at that hour: today, when
-    // it is today and the hour is still to come. Except "next Friday", which says otherwise.
-    earliest: /\bnext\b/i.test(result.text) ? undefined : sent.format('YYYY-MM-DDTHH:mm'),
+    // it is today and the hour is still to come. Except "next Friday", whose week is chrono's, as
+    // it is without an hour.
+    weekday: /\bnext\b/i.test(result.text)
+      ? 'as named'
+      : { earliest: sent.format('YYYY-MM-DDTHH:mm') },
   })
   // A range's end is on its start's day unless it names a day of its own.
   const until =
@@ -165,8 +193,11 @@ interface MomentRules {
   workingHours: (hour: number) => boolean
   /** The day of a time that names none. */
   dayFor: (time: string) => string
-  /** For a weekday at a time: the earliest it can be (`YYYY-MM-DDTHH:mm`), to pick the week by. */
-  earliest?: string
+  /**
+   * For a weekday at a time, which week: chrono's (`'as named'`), or the soonest at or after
+   * `earliest` (`YYYY-MM-DDTHH:mm`). Without it, the weekday's day is `dayFor`'s.
+   */
+  weekday?: 'as named' | { earliest: string }
 }
 
 // As the text spells it, which chrono reads in the reader's zone. Only a time given with a zone of
@@ -174,7 +205,7 @@ interface MomentRules {
 const moment = (
   components: ParsedResult['start'],
   timeZone: string,
-  { workingHours, dayFor, earliest }: MomentRules,
+  { workingHours, dayFor, weekday }: MomentRules,
 ): MailMoment => {
   const named = `${pad(components.get('year'))}-${pad(components.get('month'))}-${pad(components.get('day'))}`
   if (!components.isCertain('hour')) return { date: named }
@@ -184,12 +215,12 @@ const moment = (
   const time = `${pad(afternoon ? written + 12 : written)}:${pad(components.get('minute'))}`
   let date = named
   if (!components.isCertain('day')) {
-    if (!components.isCertain('weekday') || !earliest) date = dayFor(time)
-    else {
+    if (!components.isCertain('weekday') || !weekday) date = dayFor(time)
+    else if (weekday !== 'as named') {
       // chrono picked the week by the hour as written; with the hour read as meant, the same
       // weekday a week sooner may still be to come.
       const sooner = dayjs(named).subtract(7, 'day').format('YYYY-MM-DD')
-      if (`${sooner}T${time}` >= earliest) date = sooner
+      if (`${sooner}T${time}` >= weekday.earliest) date = sooner
     }
   }
   if (!components.isCertain('timezoneOffset')) return { date, time }
@@ -253,7 +284,7 @@ const MAIL_DATE_ATTRIBUTE = 'data-mail-date'
 export function markMailDates(
   doc: Document,
   sentAt: string,
-  timeZone: string,
+  reader: MailReader,
   label: string,
 ): NamedDate[] {
   const body = doc.body
@@ -304,7 +335,7 @@ export function markMailDates(
   for (const [r, { nodes: run, line: on }] of runs.entries()) {
     if (header[on]) continue
     const text = texts[r]
-    const found = findMailDates(text, sentAt, timeZone)
+    const found = findMailDates(text, sentAt, reader)
     if (!found.length) continue
     const opened = new Set<number>()
     let offset = 0

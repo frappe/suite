@@ -43,7 +43,7 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
 
-import { useMailDates } from '@/apps/mail/composables/useMailDates'
+import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'
 import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
@@ -57,7 +57,6 @@ import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
-import { userTimeZone } from '@/platform/time-zone'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
@@ -185,7 +184,7 @@ const rendered = computed(() => {
   // Before the search highlight, which cuts text into pieces a date could straddle.
   const dates =
     sentAt && mailDates.value
-      ? mailDates.value.markMailDates(doc, sentAt, userTimeZone(), __('Create event'))
+      ? mailDates.value.markMailDates(doc, sentAt, mailReader(), __('Create event'))
       : []
   if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)

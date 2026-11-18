@@ -6,9 +6,11 @@ import { findMailDates, markMailDates } from '@/apps/mail/utils/mailDates'
 // India, so a date read in UTC rather than the reader's zone lands a day early.
 const SENT = '2026-11-16T20:00:00Z'
 const ZONE = 'Asia/Kolkata'
+// A reader who writes the month first, as most of these tests' dates don't care which.
+const READER = { timeZone: ZONE, locale: 'en-US' }
 
-const dates = (text: string) =>
-  findMailDates(text, SENT, ZONE).map((date) => ({
+const dates = (text: string, reader = READER) =>
+  findMailDates(text, SENT, reader).map((date) => ({
     text: text.slice(date.index, date.index + date.length),
     start: date.start,
     end: date.end,
@@ -50,7 +52,10 @@ describe('dates in a mail', () => {
 
   it('keeps the time the mail names across a change of clocks', () => {
     // Sent in London's summer time; the meeting falls after the clocks go back.
-    const [date] = findMailDates('See you 2 Nov at 10:00', '2026-10-20T09:00:00Z', 'Europe/London')
+    const [date] = findMailDates('See you 2 Nov at 10:00', '2026-10-20T09:00:00Z', {
+      timeZone: 'Europe/London',
+      locale: 'en-GB',
+    })
     expect(date.start).toEqual({ date: '2026-11-02', time: '10:00' })
   })
 
@@ -105,9 +110,50 @@ describe('dates in a mail', () => {
 
   it('reads a weekday that is the day the mail was sent as that day, while the hour is to come', () => {
     // Friday 20 November, at 10:00 and at 16:00 in India.
-    const friday = (sentAt: string) => findMailDates('Friday at 2 then', sentAt, ZONE)[0].start
+    const friday = (sentAt: string) => findMailDates('Friday at 2 then', sentAt, READER)[0].start
     expect(friday('2026-11-20T04:30:00Z')).toEqual({ date: '2026-11-20', time: '14:00' })
     expect(friday('2026-11-20T10:30:00Z')).toEqual({ date: '2026-11-27', time: '14:00' })
+  })
+
+  it('reads "next" and a weekday as the same day with a time as without one', () => {
+    // Sent on Wednesday 18 November: "next Saturday" is the 28th, not the 21st this week.
+    const day = (text: string) => findMailDates(text, '2026-11-18T10:00:00Z', READER)[0].start
+    expect(day('next Saturday')).toEqual({ date: '2026-11-28' })
+    expect(day('next Saturday at 10am')).toEqual({ date: '2026-11-28', time: '10:00' })
+    expect(day('next Saturday 10am')).toEqual({ date: '2026-11-28', time: '10:00' })
+    for (const [weekday, time, at] of [
+      ['Friday', '3pm', '15:00'],
+      ['Monday', '9', '09:00'],
+    ]) {
+      const { date } = day(`next ${weekday}`)
+      expect(day(`next ${weekday} at ${time}`)).toEqual({ date, time: at })
+    }
+  })
+
+  it('reads a day and month in slashes in the order the reader’s locale writes them', () => {
+    // Sent in January, so both readings are still to come. Alone, "05/06" could be a score; a time
+    // says it is a day.
+    const at = (text: string, locale: string) =>
+      findMailDates(text, '2027-01-04T10:00:00Z', { timeZone: ZONE, locale })[0].start
+    expect(at('Shall we say 05/06 at 10am?', 'en-GB')).toEqual({
+      date: '2027-06-05',
+      time: '10:00',
+    })
+    expect(at('Shall we say 05/06 at 10am?', 'en-US')).toEqual({
+      date: '2027-05-06',
+      time: '10:00',
+    })
+    expect(at('5/6 at 3pm', 'en-IN')).toEqual({ date: '2027-06-05', time: '15:00' })
+    expect(at('5/6 at 3pm', 'en-US')).toEqual({ date: '2027-05-06', time: '15:00' })
+    // A day that can't be a month is read as one, either way, with the weekday beside it.
+    for (const locale of ['en-GB', 'en-US']) {
+      const found = findMailDates('Saturday, 19/05', '2027-01-04T10:00:00Z', {
+        timeZone: ZONE,
+        locale,
+      })
+      expect(found).toEqual([expect.objectContaining({ index: 0, length: 15 })])
+      expect(found[0].start).toEqual({ date: '2027-05-19' })
+    }
   })
 
   it('reads an hour with minutes, and one beside a day written with a zero, as a working hour', () => {
@@ -146,7 +192,7 @@ describe('dates in a mail', () => {
 
 const marked = (html: string) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
-  const found = markMailDates(doc, SENT, ZONE, 'Create event')
+  const found = markMailDates(doc, SENT, READER, 'Create event')
   const marks = [...doc.querySelectorAll('[data-mail-date]')]
   return { doc, found, marks: marks.map((mark) => mark.textContent) }
 }

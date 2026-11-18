@@ -1,5 +1,8 @@
 import { shallowRef } from 'vue'
 
+import type { MailReader } from '@/apps/mail/utils/mailDates'
+import { userTimeZone } from '@/platform/time-zone'
+
 type MailDates = typeof import('@/apps/mail/utils/mailDates')
 
 // One load for the whole app, started by the first mail opened, so the parser stays out of the
@@ -26,3 +29,9 @@ export function useMailDates() {
 export async function mailDatesLoaded(): Promise<void> {
   await load()
 }
+
+/** Who the mail's dates are read for: the reader's zone, and the locale their browser puts first. */
+export const mailReader = (): MailReader => ({
+  timeZone: userTimeZone(),
+  locale: navigator.languages?.[0] ?? navigator.language,
+})
