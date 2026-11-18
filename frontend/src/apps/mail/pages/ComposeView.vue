@@ -190,9 +190,9 @@
                 </div>
               </template>
 
-              <!-- A placeholder, not a label, as in the desktop composer: once there is a subject
-							     it speaks for itself. -->
-              <div class="flex min-h-13 items-center px-4 py-2">
+              <!-- A placeholder, as in the desktop composer: once there is a subject it speaks for
+							     itself. Still a label around it, so the whole row is the tap target. -->
+              <label class="flex min-h-13 cursor-text items-center px-4 py-2">
                 <input
                   ref="subjectInput"
                   v-model="mail.subject"
@@ -200,7 +200,7 @@
                   :aria-label="__('Subject')"
                   class="text-ink-gray-8 placeholder:text-ink-gray-4 min-w-0 flex-1 border-none bg-inherit p-0 text-base focus-visible:!ring-0"
                 />
-              </div>
+              </label>
             </div>
 
             <!-- flex-1 so the body claims the rest of the scroller: a tap anywhere in the empty
