@@ -59,7 +59,7 @@ import IdentitySettings from '@/apps/mail/components/Settings/IdentitySettings.v
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
 import { userStore } from '@/apps/mail/stores/user'
-import { formatDateTime, inUserTimeZone } from '@/apps/mail/utils/datetime'
+import { formatDateTime, inUserTimeZone, useMinuteClock } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
@@ -73,6 +73,8 @@ const autoReply = useQuery(
   api.mail.vacation.get,
   () => !!store.accountId && { account: store.accountId },
 )
+// The status moves on when a start or an end passes in a page left open
+const clock = useMinuteClock()
 const autoReplyStatus = computed(() => {
   const reply = autoReply.data
   if (!reply) {
@@ -83,7 +85,7 @@ const autoReplyStatus = computed(() => {
     return __('Off')
   }
 
-  const now = dayjs()
+  const now = dayjs(clock.value)
   if (reply.from_date && inUserTimeZone(reply.from_date).isAfter(now)) {
     return __('Starts {0}', [formatDateTime(reply.from_date, 'D MMM')])
   }

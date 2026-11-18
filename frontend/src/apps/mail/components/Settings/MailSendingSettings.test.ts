@@ -141,7 +141,10 @@ beforeEach(() => {
   state.reply = { enabled: 1, from_date: null, to_date: null }
   settingsSection.value = undefined
 })
-afterEach(() => app.unmount())
+afterEach(() => {
+  app.unmount()
+  vi.useRealTimers()
+})
 
 it('closes Auto-reply once the reply is saved', async () => {
   const root = mount()
@@ -178,6 +181,16 @@ it.each([
     section.textContent.startsWith('Auto-reply'),
   )
   expect(row?.querySelector('span')?.textContent).toBe(status)
+})
+it('moves the Auto-reply status on when its end passes in a page left open', async () => {
+  vi.useFakeTimers({ now: new Date('2026-11-20T11:58:00Z') })
+  state.reply = { enabled: 1, from_date: null, to_date: '2026-11-20T12:00:00Z' }
+  const row = Array.from(mount().querySelectorAll('section')).find((section) =>
+    section.textContent.startsWith('Auto-reply'),
+  )
+  expect(row?.querySelector('span')?.textContent).toBe('On until 20 Nov')
+  await vi.advanceTimersByTimeAsync(180_000)
+  expect(row?.querySelector('span')?.textContent).toBe('Ended 20 Nov')
 })
 it.each([
   ['send-as', 'Send-as addresses'],
