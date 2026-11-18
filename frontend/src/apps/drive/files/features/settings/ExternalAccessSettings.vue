@@ -8,7 +8,7 @@
     :description="__('Open your Drive files in Finder, Windows Explorer and other file apps.')"
   >
     <div class="flex flex-col gap-10">
-      <div v-if="connection" class="flex flex-col gap-4">
+      <div v-if="connection">
         <!-- The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`) -->
         <SettingsRow
           :title="__('Connect file apps')"
@@ -23,8 +23,9 @@
             @update:model-value="setUserEnabled"
           />
         </SettingsRow>
-        <!-- No use until the switch is on, so they stay back until then -->
-        <template v-if="userEnabled">
+        <!-- No use until the switch is on, so they stay back until then. The row's own space
+             below is all that parts them from it -->
+        <div v-if="userEnabled" class="flex flex-col gap-4">
           <CopyField :label="__('Server URL')" :value="connection.server_url" />
           <CopyField :label="__('Username')" :value="connection.username" />
           <CopyField v-if="connection.api_key" :label="__('API key')" :value="connection.api_key" />
@@ -40,7 +41,7 @@
               />
             </div>
           </div>
-        </template>
+        </div>
       </div>
 
       <!-- Below a user's own switch: it is set once for the site, and only an admin sees it -->
