@@ -93,6 +93,8 @@ const mailboxOptions = (mailbox: MailboxData) => [
     label: __('Delete'),
     icon: Trash2,
     theme: 'red' as const,
+    // A built-in folder, such as Inbox or Sent, has a role, and the server keeps it
+    condition: () => !mailbox.role,
     onClick: () => {
       selectedMailbox.value = mailbox
       showDeleteFolderModal.value = true
