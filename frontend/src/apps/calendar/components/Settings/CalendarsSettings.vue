@@ -33,26 +33,13 @@
                 class="shrink-0"
               />
             </div>
-            <div class="flex shrink-0 items-center gap-3">
-              <!-- Ahead of Edit, so every Edit button ends on the line New and Manage end on. -->
-              <AdaptiveDropdown
-                v-if="hasMoreOptions(calendar)"
-                :options="moreOptions(calendar)"
-                :title="calendar._name"
-              >
-                <Button variant="ghost" :aria-label="__('Calendar options')">
-                  <template #icon>
-                    <Ellipsis class="size-4 text-ink-gray-5" />
-                  </template>
-                </Button>
-              </AdaptiveDropdown>
-              <Button
-                v-if="canEdit(calendar)"
-                :label="__('Edit')"
-                :size="buttonSize"
-                @click="edit(calendar)"
-              />
-            </div>
+            <Button
+              v-if="canEdit(calendar)"
+              class="shrink-0"
+              :label="__('Edit')"
+              :size="buttonSize"
+              @click="edit(calendar)"
+            />
           </div>
         </div>
       </SettingsSection>
@@ -70,14 +57,13 @@
       </div>
     </div>
 
-    <CalendarModal v-model="showEdit" :calendar="selected" />
+    <CalendarModal v-model="showEdit" :calendar="selected" @delete="deleteSelected" />
     <DeleteCalendarModal v-model="showDelete" :calendar="selected" />
   </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
 import { Badge, Button } from 'frappe-ui'
-import { Ellipsis } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
@@ -87,7 +73,6 @@ import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActio
 import { userStore } from '@/apps/calendar/stores/user'
 import { calendarColor, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
@@ -97,7 +82,7 @@ import SettingsSection from '@/platform/settings/SettingsSection.vue'
 const { calendars } = userStore()
 const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
-const { selected, showEdit, showDelete, create, edit, canEdit, moreOptions, hasMoreOptions } =
+const { selected, showEdit, showDelete, create, edit, canEdit, deleteSelected } =
   useCalendarActions()
 
 // A calendar shared for reading only: it shows, and nothing about it can be changed

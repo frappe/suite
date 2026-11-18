@@ -148,7 +148,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { EDIT_CALENDAR: "calendarEdit", DELETE_CALENDAR: "calendarDeleteConfirm" },
 		},
 		calendarEdit: {
-			meta: { description: "Edit Calendar: the same form, filled. Save is off until something changes." },
+			meta: { description: "Edit Calendar: the same form, filled, with a tick to make it the default and Delete at the start of the buttons. Save is off until something changes." },
 			on: { RENAME_CALENDAR: "calendarEditDirty" },
 		},
 		calendarEditDirty: {

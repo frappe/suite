@@ -50,17 +50,21 @@ vi.mock('@/apps/calendar/utils', async (original) => ({
   raiseToast: vi.fn(),
 }))
 vi.mock('@/apps/calendar/utils/color', () => ({ eventColor: () => 'green' }))
-// Stands in for the edit dialog: says which calendar it is open on
+// Stands in for the edit dialog: says which calendar it is open on, and has its Delete button
 vi.mock('@/apps/calendar/components/Modals/CalendarModal.vue', () => ({
   default: defineComponent({
     props: { modelValue: Boolean, calendar: { type: Object, default: undefined } },
-    setup(props) {
+    emits: ['delete'],
+    setup(props, { emit }) {
       return () => {
         if (!props.modelValue) {
           return null
         }
 
-        return h('dialog', `Edit ${props.calendar?._name}`)
+        return h('dialog', [
+          `Edit ${props.calendar?._name}`,
+          h('button', { onClick: () => emit('delete') }, 'Delete'),
+        ])
       }
     },
   }),
@@ -77,8 +81,20 @@ vi.mock('@/platform/feedback', () => ({
   ),
   failureLine: (error: Error | null) => error?.message,
 }))
+// Stands in for the question asked before a calendar is deleted: says which calendar it asks about
 vi.mock('@/apps/calendar/components/Modals/DeleteCalendarModal.vue', () => ({
-  default: { render: () => null },
+  default: defineComponent({
+    props: { modelValue: Boolean, calendar: { type: Object, default: undefined } },
+    setup(props) {
+      return () => {
+        if (!props.modelValue) {
+          return null
+        }
+
+        return h('dialog', `Delete ${props.calendar?._name}?`)
+      }
+    },
+  }),
 }))
 vi.mock('@/api', async () => {
   const { fakeMutation } = await import('@/platform/testing/mutations')
@@ -236,11 +252,6 @@ function calendarRow(root: HTMLElement, name: string) {
   return requireTestElement(title?.parentElement?.parentElement, HTMLElement)
 }
 
-/** What the menu on the row of the calendar called `name` offers. */
-function offered(root: HTMLElement, name: string) {
-  return Array.from(calendarRow(root, name).querySelectorAll('li')).map((item) => item.textContent)
-}
-
 function buttons(row: HTMLElement) {
   return Array.from(row.querySelectorAll('button')).map(
     (button) => button.getAttribute('aria-label') ?? button.textContent,
@@ -337,23 +348,29 @@ it('says under a new invite address why it was refused, until it is retyped', as
   expect(form.querySelector('[role="alert"]')).toBeNull()
 })
 
-it('gives each calendar you can edit its own Edit button, which opens that calendar', async () => {
+/** Presses the button called `label` in `within`. */
+async function press(within: HTMLElement, label: string) {
+  const button = Array.from(within.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent === label,
+  )
+  requireTestElement(button, HTMLButtonElement).click()
+  await nextTick()
+}
+
+it('gives a calendar you can edit one button, Edit, which opens that calendar', async () => {
   listCalendars()
   const root = mount()
   expect(buttons(calendarRow(root, 'Work'))).toEqual(['Edit'])
+  expect(buttons(calendarRow(root, 'Holidays'))).toEqual(['Edit'])
   expect(buttons(calendarRow(root, 'Company'))).toEqual([])
-  const edit = Array.from(calendarRow(root, 'Holidays').querySelectorAll('button')).find(
-    (button) => button.textContent === 'Edit',
-  )
-  requireTestElement(edit, HTMLButtonElement).click()
-  await nextTick()
-  expect(root.querySelector('dialog')?.textContent).toBe('Edit Holidays')
+  await press(calendarRow(root, 'Holidays'), 'Edit')
+  expect(root.querySelector('dialog')?.textContent).toContain('Edit Holidays')
 })
-it('keeps Edit out of the menu, and the menu off a calendar with nothing else to offer', () => {
+it('asks about deleting the calendar whose edit dialog Delete was pressed in', async () => {
   listCalendars()
   const root = mount()
-  expect(buttons(calendarRow(root, 'Holidays'))).toEqual(['Calendar options', 'Edit'])
-  expect(offered(root, 'Holidays')).toEqual(['Set as Default', 'Delete'])
-  // The default can't be deleted or made default again, so its row has no menu
-  expect(offered(root, 'Work')).toEqual([])
+  await press(calendarRow(root, 'Holidays'), 'Edit')
+  await press(requireTestElement(root.querySelector('dialog'), HTMLElement), 'Delete')
+  const open = Array.from(root.querySelectorAll('dialog')).map((dialog) => dialog.textContent)
+  expect(open).toEqual(['Delete Holidays?'])
 })

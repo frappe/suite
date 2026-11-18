@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import { api, client } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
-import type { CalendarRow } from '@/apps/calendar/utils/calendars'
+import { isDeletableCalendar, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { translate as __ } from '@/platform/translation'
 
 /**
@@ -69,39 +69,33 @@ export const useCalendarActions = () => {
       condition: () => canEdit(calendar),
       onClick: () => edit(calendar),
     },
-    ...moreOptions(calendar),
+    {
+      label: __('Set as Default'),
+      icon: Pin,
+      condition: () => canEdit(calendar) && !calendar.default,
+      onClick: () => makeDefault(calendar),
+    },
+    {
+      label: __('Delete'),
+      icon: Trash2,
+      theme: 'red',
+      condition: () => isDeletableCalendar(calendar),
+      onClick: () => {
+        selected.value = calendar
+        showDelete.value = true
+      },
+    },
   ]
 
-  // What a calendar's menu holds past Edit: all of it where the row has an Edit button of its own
-  function moreOptions(calendar: CalendarRow) {
-    return [
-      {
-        label: __('Set as Default'),
-        icon: Pin,
-        condition: () => canEdit(calendar) && !calendar.default,
-        onClick: () => makeDefault(calendar),
-      },
-      // The default is where new events and invitations land, so it stays until another takes over
-      {
-        label: __('Delete'),
-        icon: Trash2,
-        theme: 'red',
-        condition: () => !calendar.default && !!calendar.may_delete,
-        onClick: () => {
-          selected.value = calendar
-          showDelete.value = true
-        },
-      },
-    ]
+  // Delete pressed in the edit dialog, which gives way to the question
+  function deleteSelected() {
+    showEdit.value = false
+    showDelete.value = true
   }
 
   // With nothing to offer, the options button is left out rather than opening an empty menu.
   const hasMenuOptions = (calendar: CalendarRow) =>
     menuOptions(calendar).some((option) => !option.condition || option.condition())
-
-  function hasMoreOptions(calendar: CalendarRow) {
-    return moreOptions(calendar).some((option) => option.condition())
-  }
 
   return {
     selected,
@@ -113,7 +107,6 @@ export const useCalendarActions = () => {
     toggleVisible,
     menuOptions,
     hasMenuOptions,
-    moreOptions,
-    hasMoreOptions,
+    deleteSelected,
   }
 }

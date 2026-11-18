@@ -64,7 +64,6 @@ const moduleGraphDebtGroups = [
       'calendar/components/Settings/AdvancedSettings.vue|@/components/CopyControl.vue',
       'calendar/components/Settings/AdvancedSettings.vue|@/components/settings/AppSettingsBody.vue',
       'calendar/components/Settings/AdvancedSettings.vue|@/components/settings/AppSettingsHeader.vue',
-      'calendar/components/Settings/CalendarsSettings.vue|@/components/AdaptiveDropdown.vue',
       'calendar/components/Settings/CalendarsSettings.vue|@/components/settings/AppSettingsBody.vue',
       'calendar/components/Settings/CalendarsSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'calendar/components/Settings/CalendarsSettings.vue|@/composables/useScreenSize',
