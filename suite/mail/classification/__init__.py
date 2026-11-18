@@ -2,9 +2,12 @@
 # For license information, please see license.txt
 """Sorting incoming mail into categories: Primary, Promotions, Social, Updates and Forums.
 
-A message is classified when it is first pulled from the JMAP server, and its category is kept
-there as a keyword (see `Category.keyword`). The keyword is the record of the work: a message that
-carries one is not classified again, whichever site or device fetches it next.
+A message's category is kept on the JMAP server as a keyword (see `Category.keyword`). The server
+adds it as it delivers the message, where the account's automation Sieve script is the active one
+and a header rule claims the message (see `sieve`). Any other message is classified when it is
+first pulled from the server: mail no header rule claims, mail delivered while another script was
+active, imported mail and mail moved back from Junk or Trash. The keyword is the record of the
+work: a message that carries one is not classified again, whichever site or device fetches it next.
 
 Classification is layered, cheapest first. Each layer names a category or passes the message on:
 
@@ -25,6 +28,7 @@ from jmap.batch import ReadOnlyAccountError
 
 from suite.mail.classification.category import INBOX_TABS, Category, get_category, tab_filter
 from suite.mail.classification.headers import classify_by_headers
+from suite.mail.classification.sieve import build_classification_block
 from suite.mail.jmap import SetResult, SuiteJMAPClient, chunked_set
 from suite.mail.utils import get_config, log_mail_error
 
@@ -32,6 +36,7 @@ __all__ = [
     "EMAIL_PROPERTIES",
     "INBOX_TABS",
     "Category",
+    "build_classification_block",
     "classify",
     "classify_emails",
     "get_category",

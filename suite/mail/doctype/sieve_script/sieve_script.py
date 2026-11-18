@@ -13,6 +13,7 @@ from frappe.model.document import Document
 from frappe.utils import cint, create_batch, today
 from jmap import CreationRef
 
+from suite.mail import classification
 from suite.mail.doctype.mailbox_settings.mailbox_settings import get_mailbox_settings
 from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_effective_screened_email_addresses,
@@ -548,8 +549,10 @@ SCREENER_MAILBOX_NAME = "Screener"
 # other mail and shown there as from a new sender; allowing or denying the sender takes it off.
 UNSCREENED_KEYWORD = "unscreened"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
+# "regex" is for the Category block (see `classification.sieve`), declared whether or not it is there.
 AUTOMATION_SCRIPT_REQUIRE = (
-    'require ["fileinto", "mailbox", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"];'
+    'require ["fileinto", "mailbox", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric", '
+    '"regex"];'
 )
 
 
@@ -814,6 +817,11 @@ def get_automation_script_name(account: str) -> str:
 
 def _build_automation_content(account: str) -> str:
     content = AUTOMATION_SCRIPT_REQUIRE + "\n"
+
+    # Category section, ahead of every block that files the mail: it only adds a keyword, which the
+    # `fileinto` or `keep` of whichever block claims the mail then carries (RFC 5232).
+    if classification.is_enabled():
+        content += "\n" + classification.build_classification_block()
 
     # Mailbox section: one block per mailbox that has automation rules in Mailbox Settings.
     for mailbox in get_mailboxes(account):
@@ -1134,9 +1142,11 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
       filed into the Inbox. Stalwart before v0.16.22 still moves mail it classifies as spam out of
       the Inbox into Junk, so on those versions accepted mail reaches the Inbox only as ham.
     - Otherwise, mail the server has not classified as spam is kept — delivered where it would have
-      gone anyway, the Inbox — marked with the `unscreened` keyword (`keep :flags`, imap4flags): it
-      waits among the rest of the Inbox, shown as from a new sender, until the sender is allowed or
-      denied. A plain keep, not a `fileinto` the Inbox: this branch only sees ham, which the server
+      gone anyway, the Inbox — marked with the `unscreened` keyword: it waits among the rest of the
+      Inbox, shown as from a new sender, until the sender is allowed or denied. The keyword is added
+      with `addflag` (imap4flags) ahead of a plain `keep`, not passed as `keep :flags`: an explicit
+      `:flags` replaces the flags set so far (RFC 5232 §5), and would drop the category the Category
+      block added. A plain keep, not a `fileinto` the Inbox: this branch only sees ham, which the server
       files into the Inbox itself, so naming it would only add a lookup. The accepted branch above
       does name it, because it is reached by spam too, and an explicit `fileinto` is what keeps a
       trusted sender's mail out of Junk.
@@ -1202,7 +1212,8 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
         "  stop;",
         "}",
         f"elsif {not_spam_test} {{",
-        f'  keep :flags "{UNSCREENED_KEYWORD}";',
+        f'  addflag "{UNSCREENED_KEYWORD}";',
+        "  keep;",
         "  stop;",
         "}",
         "\n",

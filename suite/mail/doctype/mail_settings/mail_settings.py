@@ -78,6 +78,17 @@ class MailSettings(Document):
             from suite.api.account import forget_logged_in_users
 
             forget_logged_in_users()
+        if self.has_value_changed("enable_email_classification"):
+            self.rebuild_automation_sieves()
+
+    def rebuild_automation_sieves(self) -> None:
+        """Rebuild every account's automation Sieve script, which marks mail with its category as it
+        is delivered only while mail is classified. Mail delivered before this is not touched."""
+
+        from suite.mail.doctype.sieve_script.sieve_script import enqueue_automation_sieve_rebuilds
+
+        accounts = frappe.get_all("JMAP Account", pluck="name")
+        enqueue_automation_sieve_rebuilds(accounts, job_id_prefix="rebuild-category-sieves")
 
     def validate_signup(self) -> None:
         """Validates the Signup."""
