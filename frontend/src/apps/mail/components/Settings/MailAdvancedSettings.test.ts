@@ -12,9 +12,10 @@ const state = vi.hoisted(() => ({
   servers: [{ protocol: 'IMAP', hostname: 'mail.example.com', port: 993 }],
   asked: new Set<string>(),
   save: vi.fn(),
+  change: vi.fn(),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({
-  userStore: () => ({ userResource: { data: { api_key: '' } } }),
+  userStore: () => ({ accountId: 'personal', userResource: { data: { api_key: '' } } }),
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn(), copyToClipBoard: vi.fn() }))
 // The part this file doesn't open
@@ -48,6 +49,9 @@ vi.mock('@/api', async () => {
         },
       })
       return result
+    },
+    client: {
+      mutation: (reference: { id: string }, input: unknown) => state.change(reference.id, input),
     },
   }
 })
@@ -95,6 +99,12 @@ vi.mock('frappe-ui', () => ({
           onInput: (event: Event) =>
             emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
         })
+    },
+  }),
+  Switch: defineComponent({
+    emits: ['update:modelValue'],
+    setup(_, { emit }) {
+      return () => h('button', { onClick: () => emit('update:modelValue', true) })
     },
   }),
   SettingsRow: defineComponent({
@@ -149,6 +159,7 @@ beforeEach(() => {
   state.servers = [{ protocol: 'IMAP', hostname: 'mail.example.com', port: 993 }]
   state.asked.clear()
   state.save.mockReset().mockResolvedValue(undefined)
+  state.change.mockReset().mockResolvedValue(undefined)
   settingsSection.value = undefined
 })
 afterEach(() => app.unmount())
@@ -178,6 +189,14 @@ it('keeps Login details open, with the reason, when the save is refused', async 
   const root = mount()
   await saveNewUsername(await openLoginDetails(root))
   expect(root.querySelector('dialog')?.textContent).toContain('Wrong app password')
+})
+it('saves a Sent copies switch as it is flipped, sending only that preference', async () => {
+  rowButton(mount(), 'Delete newsletters once they are sent').click()
+  await nextTick()
+  expect(state.change).toHaveBeenCalledWith('update_account_preferences', {
+    account: 'personal',
+    changes: { destroy_newsletter_after_submit: 1 },
+  })
 })
 it.each([
   ['login-details', 'Login details'],

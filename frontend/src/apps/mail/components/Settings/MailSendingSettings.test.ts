@@ -49,9 +49,6 @@ vi.mock('@/api', async () => {
     },
     useMutation: (reference: { id: string }) =>
       reactive({ isPending: false, run: (input: unknown) => state.save(reference.id, input) }),
-    client: {
-      mutation: (reference: { id: string }, input: unknown) => state.save(reference.id, input),
-    },
   }
 })
 vi.mock('frappe-ui', () => ({
@@ -90,12 +87,6 @@ vi.mock('frappe-ui', () => ({
           onInput: (event: Event) =>
             emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
         })
-    },
-  }),
-  Switch: defineComponent({
-    emits: ['update:modelValue'],
-    setup(_, { emit }) {
-      return () => h('button', { onClick: () => emit('update:modelValue', true) })
     },
   }),
   SettingsRow: defineComponent({
@@ -185,18 +176,6 @@ it.each([
     section.textContent.startsWith('Auto-reply'),
   )
   expect(row?.querySelector('span')?.textContent).toBe(status)
-})
-it('saves a Sent copies switch as it is flipped, sending only that preference', async () => {
-  const root = mount()
-  const row = Array.from(root.querySelectorAll('section')).find((section) =>
-    section.textContent.startsWith('Delete newsletters once they are sent'),
-  )
-  requireTestElement(row?.querySelector('button'), HTMLButtonElement).click()
-  await nextTick()
-  expect(state.save).toHaveBeenCalledWith('update_account_preferences', {
-    account: 'personal',
-    changes: { destroy_newsletter_after_submit: 1 },
-  })
 })
 it.each([
   ['send-as', 'Send-as addresses'],

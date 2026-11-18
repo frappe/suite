@@ -58,8 +58,6 @@ export const mailSettings = {
           label: () => __('Auto-reply'),
           keywords: () => __('vacation, out of office, away'),
         },
-        { id: 'sent-mail', label: () => __('Delete mail once it is sent') },
-        { id: 'sent-newsletters', label: () => __('Delete newsletters once they are sent') },
       ],
     },
     {
@@ -119,6 +117,8 @@ export const mailSettings = {
           label: () => __('Push subscriptions'),
           keywords: () => __('notifications, devices'),
         },
+        { id: 'sent-mail', label: () => __('Delete mail once it is sent') },
+        { id: 'sent-newsletters', label: () => __('Delete newsletters once they are sent') },
       ],
     },
   ],
