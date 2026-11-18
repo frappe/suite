@@ -1,15 +1,7 @@
 <template>
   <!-- One signature, written in place of the list: the arrow goes back to it -->
   <div v-if="draft" class="flex flex-col gap-4">
-    <div class="flex items-center gap-2">
-      <Button
-        variant="ghost"
-        icon="lucide-arrow-left"
-        :aria-label="__('Back to signatures')"
-        @click="showList"
-      />
-      <h3 class="text-base-medium text-ink-gray-8">{{ formTitle }}</h3>
-    </div>
+    <SettingsDialogBack :title="formTitle" :label="__('Back to signatures')" @back="showList" />
     <FormControl
       v-model="draft.signature_name"
       :label="__('Name')"
@@ -88,6 +80,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import { translate as __ } from '@/platform/translation'
 
 type Signature = OutputOf<typeof api.mail.signatures.list>[number]
