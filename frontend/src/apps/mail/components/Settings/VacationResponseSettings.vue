@@ -7,36 +7,35 @@
     >
       <Switch v-model="draft.enabled" />
     </SettingsRow>
-    <FormControl
-      v-model="draft.from_date"
-      type="datetime-local"
-      :label="__('From date')"
-      variant="outline"
-      :disabled="isOff"
-    />
-    <FormControl
-      v-model="draft.to_date"
-      type="datetime-local"
-      :label="__('To date')"
-      variant="outline"
-      :disabled="isOff"
-    />
-    <FormControl
-      v-model="draft.subject"
-      :label="__('Subject')"
-      :placeholder="__('Out of office')"
-      variant="outline"
-      :disabled="isOff"
-    />
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
-      <MailRichTextField
-        v-model="draft.html_body"
-        :placeholder="__('Write your reply…')"
-        :div-paragraphs="false"
-        :editable="draft.enabled"
+    <!-- Off, the reply has nothing to set: the dialog is its one switch. What was typed is kept -->
+    <template v-if="draft.enabled">
+      <FormControl
+        v-model="draft.from_date"
+        type="datetime-local"
+        :label="__('From date')"
+        variant="outline"
       />
-    </div>
+      <FormControl
+        v-model="draft.to_date"
+        type="datetime-local"
+        :label="__('To date')"
+        variant="outline"
+      />
+      <FormControl
+        v-model="draft.subject"
+        :label="__('Subject')"
+        :placeholder="__('Out of office')"
+        variant="outline"
+      />
+      <div class="space-y-1.5">
+        <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
+        <MailRichTextField
+          v-model="draft.html_body"
+          :placeholder="__('Write your reply…')"
+          :div-paragraphs="false"
+        />
+      </div>
+    </template>
     <Button
       class="self-end"
       :label="__('Save')"
@@ -94,7 +93,6 @@ const draft = reactive({
   subject: '',
   html_body: '',
 })
-const isOff = computed(() => !draft.enabled)
 const original = ref('')
 const vacationResponse = useQuery(api.mail.vacation.get, () =>
   store.accountId

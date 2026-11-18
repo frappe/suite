@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { createApp, nextTick } from 'vue'
+import { createApp, h, nextTick } from 'vue'
 
 import VacationResponseSettings from './VacationResponseSettings.vue'
 
@@ -20,8 +20,15 @@ vi.mock('frappe-ui', async () => {
     SettingsBody: passthrough,
     SettingsHeader: passthrough,
     SettingsRow: passthrough,
-    Switch: passthrough,
-    // A field shows what it was handed: its label, its value and whether it can be edited.
+    // Pressed, the switch turns the responder on
+    Switch: defineComponent({
+      emits: ['update:modelValue'],
+      setup:
+        (_props, { emit }) =>
+        () =>
+          h('button', { 'data-switch': '', onClick: () => emit('update:modelValue', true) }),
+    }),
+    // A field shows what it was handed: its label and its value
     FormControl: defineComponent({
       inheritAttrs: false,
       setup(_props, { attrs }) {
@@ -29,7 +36,6 @@ vi.mock('frappe-ui', async () => {
           h('input', {
             'data-label': attrs.label,
             value: attrs.modelValue,
-            disabled: attrs.disabled,
           })
       },
     }),
@@ -47,16 +53,9 @@ vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: { value: false } }),
 }))
-// The message box shows only whether it can be edited.
-vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return {
-    default: defineComponent({
-      props: { editable: { type: Boolean, default: true } },
-      setup: (props) => () => h('div', { 'data-editable': String(props.editable) }),
-    }),
-  }
-})
+vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
+  default: { render: () => h('div', { 'data-message': '' }) },
+}))
 vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({
   default: { render: () => null },
 }))
@@ -78,8 +77,16 @@ const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
   app.config.errorHandler = reported
   app.mount(root)
   await nextTick()
-  const field = (label: string) => root.querySelector<HTMLInputElement>(`[data-label="${label}"]`)!
-  return { root, field, editor: root.querySelector('[data-editable]')! }
+  function field(label: string) {
+    return root.querySelector<HTMLInputElement>(`[data-label="${label}"]`)
+  }
+
+  async function turnOn() {
+    root.querySelector<HTMLElement>('[data-switch]')!.click()
+    await nextTick()
+  }
+
+  return { root, field, turnOn }
 }
 
 beforeEach(() => {
@@ -89,34 +96,35 @@ beforeEach(() => {
 })
 
 it('starts from no dates once an absence is off and over, keeping its words', async () => {
-  const { field } = await mount(0, LONG_AGO)
-  expect(field('From date').value).toBe('')
-  expect(field('To date').value).toBe('')
-  expect(field('Subject').value).toBe('Away on a trip')
+  const { field, turnOn } = await mount(0, LONG_AGO)
+  await turnOn()
+  expect(field('From date')!.value).toBe('')
+  expect(field('To date')!.value).toBe('')
+  expect(field('Subject')!.value).toBe('Away on a trip')
 })
 
 it('keeps the dates of an absence still to come, though the responder is off', async () => {
-  const { field } = await mount(0, AHEAD)
-  expect(field('From date').value).toContain('2099-06')
-  expect(field('To date').value).toContain('2099-06')
+  const { field, turnOn } = await mount(0, AHEAD)
+  await turnOn()
+  expect(field('From date')!.value).toContain('2099-06')
+  expect(field('To date')!.value).toContain('2099-06')
 })
 
 it('keeps the dates while the responder is on, over or not', async () => {
   const { field } = await mount(1, LONG_AGO)
-  expect(field('To date').value).toContain('2020-06')
+  expect(field('To date')!.value).toContain('2020-06')
 })
 
-it('lets nothing be edited while the responder is off', async () => {
+it('shows the dates, subject and message only while the responder is on', async () => {
   const off = await mount(0, AHEAD)
-  expect(off.field('Subject').disabled).toBe(true)
-  expect(off.field('To date').disabled).toBe(true)
-  expect(off.editor.getAttribute('data-editable')).toBe('false')
+  expect(off.field('Subject')).toBeNull()
+  expect(off.field('To date')).toBeNull()
+  expect(off.root.querySelector('[data-message]')).toBeNull()
 
   const on = await mount(1, AHEAD)
-  expect(on.field('Subject').disabled).toBe(false)
-  expect(on.editor.getAttribute('data-editable')).toBe('true')
+  expect(on.field('Subject')).not.toBeNull()
+  expect(on.root.querySelector('[data-message]')).not.toBeNull()
 })
-
 it('hands a refused save to the app, where failed saves are reported', async () => {
   const refusal = new Error('The dates are the wrong way round')
   run.mockRejectedValue(refusal)
