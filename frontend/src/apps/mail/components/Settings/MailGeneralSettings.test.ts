@@ -150,7 +150,7 @@ it('neither requests nor shows the provider region on a site without a provider'
   expect(root.textContent).not.toContain('Locale')
   expect(root.textContent).toContain('Block remote images')
 })
-it('saves a regional choice as it is made, and shows the saved one on reopen', async () => {
+it('saves a regional choice as it is made, and shows what is read when the page opens again', async () => {
   const root = mount()
   expect(state.inputs.get('regional_preferences')?.()).toEqual({})
   await choose(control(root, 'Locale', HTMLInputElement), 'fr-FR')
