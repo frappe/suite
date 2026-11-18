@@ -7,7 +7,8 @@ import CalendarsSettings from './CalendarsSettings.vue'
 
 interface MenuOption {
   label: string
-  condition: () => boolean
+  condition?: () => boolean
+  onClick: () => void
 }
 
 /** What the page's fakes share with the tests. */
@@ -40,6 +41,14 @@ vi.mock('@/apps/calendar/stores/user', () => ({
           email: 'maya@example.com',
           _name: 'Maya',
           default: 1,
+        },
+        {
+          name: 'personal|b',
+          id: 'b',
+          account: 'personal',
+          email: 'billing@example.com',
+          _name: 'Billing',
+          default: 0,
         },
       ],
     }),
@@ -74,8 +83,11 @@ vi.mock('@/platform/feedback', () => ({
   Dropdown: defineComponent(
     (props: { options: MenuOption[] }, { slots }) =>
       () => {
-        const shown = props.options.filter((option) => option.condition())
-        return h('menu', [slots.default?.(), shown.map((option) => h('li', option.label))])
+        const offered = props.options.filter((option) => option.condition?.() ?? true)
+        return h('menu', [
+          slots.default?.(),
+          offered.map((option) => h('li', { onClick: option.onClick }, option.label)),
+        ])
       },
     { props: ['options'] },
   ),
@@ -180,69 +192,96 @@ vi.mock('frappe-ui', () => ({
   }),
 }))
 
+/** The words as they are shown, with what they name filled in. */
+function shown(message: string, named?: unknown) {
+  // What is named comes as a list, or as nothing
+  const values = [named].flat()
+
+  return message.replace(/\{(\d+)\}/g, (_, index) => String(values[Number(index)]))
+}
+
 let app: ReturnType<typeof createApp>
 function mount() {
   const root = document.createElement('div')
   app = createApp(CalendarsSettings)
-  app.config.globalProperties.__ = (text: string) => text
+  app.config.globalProperties.__ = shown
   app.config.errorHandler = vi.fn()
   app.mount(root)
   return root
 }
 
-/** Opens Invite addresses, types a new name, then presses Save. */
-async function saveNewName(root: HTMLElement) {
+/** Presses the button called `label` in `within`. */
+async function press(within: HTMLElement, label: string) {
+  const button = Array.from(within.querySelectorAll('button')).find(
+    (candidate) => candidate.textContent === label,
+  )
+  requireTestElement(button, HTMLButtonElement).click()
+  await nextTick()
+}
+
+/** Opens Invite addresses: the dialog that lists them. */
+async function openAddresses(root: HTMLElement) {
   const row = Array.from(root.querySelectorAll('section')).find((section) =>
     section.textContent.startsWith('Invite addresses'),
   )
   requireTestElement(row?.querySelector('button'), HTMLButtonElement).click()
   await nextTick()
-  const dialog = requireTestElement(root.querySelector('dialog'), HTMLElement)
-  const name = requireTestElement(
-    dialog.querySelector('input[aria-label="Display name"]'),
+  return requireTestElement(root.querySelector('dialog'), HTMLElement)
+}
+
+/** The fields of the page that is open in Invite addresses. */
+function fields(dialog: HTMLElement) {
+  return Array.from(dialog.querySelectorAll('input')).map((input) => input.ariaLabel)
+}
+
+/** Types `value` into the field called `label`. */
+async function type(dialog: HTMLElement, label: string, value: string) {
+  const field = requireTestElement(
+    dialog.querySelector(`input[aria-label="${label}"]`),
     HTMLInputElement,
   )
-  name.value = 'Maya K'
-  name.dispatchEvent(new Event('input'))
+  field.value = value
+  field.dispatchEvent(new Event('input'))
   await nextTick()
-  const save = Array.from(dialog.querySelectorAll('button')).find(
-    (button) => button.textContent === 'Save',
-  )
-  requireTestElement(save, HTMLButtonElement).click()
+  return field
+}
+
+/** Presses Save on the page that is open, and waits for the answer. */
+async function save(dialog: HTMLElement) {
+  await press(dialog, 'Save')
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
-/** Opens Invite addresses, then its form for a new address. */
-async function openNewAddress(root: HTMLElement) {
-  const row = Array.from(root.querySelectorAll('section')).find((section) =>
-    section.textContent.startsWith('Invite addresses'),
+/** Opens Maya's address from the list, types a new name, then presses Save. */
+async function saveNewName(root: HTMLElement) {
+  const dialog = await openAddresses(root)
+  const maya = Array.from(dialog.querySelectorAll('button')).find((button) =>
+    button.textContent.includes('maya@example.com'),
   )
-  requireTestElement(row?.querySelector('button'), HTMLButtonElement).click()
+  requireTestElement(maya, HTMLButtonElement).click()
   await nextTick()
-  const add = Array.from(root.querySelectorAll('dialog button')).find(
-    (button) => button.textContent === 'New',
-  )
-  requireTestElement(add, HTMLButtonElement).click()
-  await nextTick()
-  return requireTestElement(
-    root.querySelector('dialog[aria-label="New invite address"]'),
-    HTMLElement,
-  )
+  await type(dialog, 'Display name', 'Maya K')
+  await save(dialog)
+  return dialog
 }
 
-/** Types an email into the form for a new address, then presses its Save. */
-async function saveNewEmail(form: HTMLElement, email: string) {
-  const field = requireTestElement(
-    form.querySelector('input[aria-label="Email address"]'),
-    HTMLInputElement,
-  )
-  field.value = email
-  field.dispatchEvent(new Event('input'))
-  await nextTick()
-  const save = Array.from(form.querySelectorAll('button')).find(
-    (button) => button.textContent === 'Save',
-  )
-  requireTestElement(save, HTMLButtonElement).click()
+/** Opens Invite addresses, then its page for a new address. */
+async function openNewAddress(root: HTMLElement) {
+  const dialog = await openAddresses(root)
+  await press(dialog, 'New address')
+  return dialog
+}
+
+/** The lines of the “…” menu of the address `email`, as the list shows them. */
+function menuOf(dialog: HTMLElement, email: string) {
+  const more = dialog.querySelector(`button[aria-label="More for ${email}"]`)
+  return Array.from(requireTestElement(more?.closest('menu'), HTMLElement).querySelectorAll('li'))
+}
+
+/** Picks `label` from the “…” menu of the address `email`. */
+async function pick(dialog: HTMLElement, email: string, label: string) {
+  const line = menuOf(dialog, email).find((each) => each.textContent === label)
+  requireTestElement(line, HTMLElement).click()
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
@@ -292,70 +331,97 @@ function listCalendars() {
 }
 
 beforeEach(() => {
-  window.__ = (text: string) => text
+  window.__ = shown
   state.save.mockReset().mockResolvedValue(undefined)
   state.failureToast.mockReset()
   state.calendars = []
 })
 afterEach(() => app.unmount())
 
-it('closes Invite addresses once the address is saved', async () => {
-  const root = mount()
-  await saveNewName(root)
+it('goes back to the list of invite addresses once an address is saved', async () => {
+  const dialog = await saveNewName(mount())
   expect(state.save).toHaveBeenCalledWith('update_participant_identity', {
     account: 'personal',
     id: 'a',
     name: 'Maya K',
     email: 'maya@example.com',
-    default: true,
   })
-  expect(root.querySelector('dialog')).toBeNull()
+  expect(fields(dialog)).toEqual([])
+  expect(menuOf(dialog, 'billing@example.com')).not.toEqual([])
 })
-it('keeps Invite addresses open, with what was typed, when the save is refused', async () => {
+it('keeps an invite address open, with what was typed, when the save is refused', async () => {
   state.save.mockRejectedValue(new Error('Not your address'))
-  const root = mount()
-  await saveNewName(root)
-  const name = root.querySelector('dialog input[aria-label="Display name"]')
+  const dialog = await saveNewName(mount())
+  const name = dialog.querySelector('input[aria-label="Display name"]')
   expect(requireTestElement(name, HTMLInputElement).value).toBe('Maya K')
 })
-it('says on Invite addresses why a save was refused, in place of a toast', async () => {
+it('says on an invite address why its save was refused, in place of a toast', async () => {
   state.save.mockRejectedValue(new Error('Not your address'))
-  const root = mount()
-  await saveNewName(root)
-  expect(root.querySelector('dialog [role="alert"]')?.textContent).toBe('Not your address')
+  const dialog = await saveNewName(mount())
+  expect(dialog.querySelector('[role="alert"]')?.textContent).toBe('Not your address')
   expect(state.failureToast).not.toHaveBeenCalled()
 })
 it('asks for an email address before it sends a new invite address that is not one', async () => {
   const form = await openNewAddress(mount())
-  await saveNewEmail(form, 'billing')
+  await type(form, 'Email address', 'billing')
+  await save(form)
   expect(form.querySelector('[role="alert"]')?.textContent).toBe('Enter a valid email address')
   expect(state.save).not.toHaveBeenCalled()
 })
 it('says under a new invite address why it was refused, until it is retyped', async () => {
   state.save.mockRejectedValue(new Error('That domain is not yours'))
   const form = await openNewAddress(mount())
-  await saveNewEmail(form, 'billing@example.com')
-  const email = requireTestElement(
-    form.querySelector('input[aria-label="Email address"]'),
-    HTMLInputElement,
-  )
+  const email = await type(form, 'Email address', 'billing@example.com')
+  await save(form)
   expect(email.nextElementSibling?.textContent).toBe('That domain is not yours')
   expect(state.failureToast).not.toHaveBeenCalled()
 
-  email.value = 'billing@example.org'
-  email.dispatchEvent(new Event('input'))
-  await nextTick()
+  await type(form, 'Email address', 'billing@example.org')
   expect(form.querySelector('[role="alert"]')).toBeNull()
 })
+it('creates the invite address that was typed, then lists the addresses again', async () => {
+  const form = await openNewAddress(mount())
+  await type(form, 'Email address', 'events@example.com')
+  await type(form, 'Display name', 'Events')
+  await save(form)
+  expect(state.save).toHaveBeenCalledWith('add_participant_identity', {
+    account: 'personal',
+    email: 'events@example.com',
+    name: 'Events',
+  })
+  expect(fields(form)).toEqual([])
+})
+it('offers to make an invite address the default only where it is not, and does so', async () => {
+  const dialog = await openAddresses(mount())
+  function offered(email: string) {
+    return menuOf(dialog, email).map((line) => line.textContent)
+  }
 
-/** Presses the button called `label` in `within`. */
-async function press(within: HTMLElement, label: string) {
-  const button = Array.from(within.querySelectorAll('button')).find(
-    (candidate) => candidate.textContent === label,
-  )
-  requireTestElement(button, HTMLButtonElement).click()
-  await nextTick()
-}
+  expect(offered('maya@example.com')).toEqual(['Edit', 'Delete'])
+  expect(offered('billing@example.com')).toEqual(['Set as default', 'Edit', 'Delete'])
+
+  await pick(dialog, 'billing@example.com', 'Set as default')
+  expect(state.save).toHaveBeenCalledWith('update_participant_identity', {
+    account: 'personal',
+    id: 'b',
+    name: 'Billing',
+    email: 'billing@example.com',
+    default: true,
+  })
+})
+it('asks before it deletes an invite address, then deletes the one that was picked', async () => {
+  const dialog = await openAddresses(mount())
+  await pick(dialog, 'billing@example.com', 'Delete')
+  expect(state.save).not.toHaveBeenCalled()
+
+  const question = dialog.querySelector('dialog[aria-label="Delete this invite address?"]')
+  await press(requireTestElement(question, HTMLElement), 'Delete invite address')
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(state.save).toHaveBeenCalledWith('delete_participant_identity', {
+    names: ['personal|b'],
+  })
+  expect(dialog.querySelector('dialog')).toBeNull()
+})
 
 it('gives a calendar you can edit one button, Edit, which opens that calendar', async () => {
   listCalendars()

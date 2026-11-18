@@ -50,9 +50,7 @@
           :description="__('The addresses you organize and attend events as.')"
           :action="__('Manage')"
         >
-          <template #default="{ close }">
-            <ParticipantIdentitySettings @saved="close" />
-          </template>
+          <ParticipantIdentitySettings />
         </SettingsDialogRow>
       </div>
     </div>

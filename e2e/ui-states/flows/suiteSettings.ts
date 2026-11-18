@@ -22,7 +22,7 @@ const MAIL_TABS = {
 } as const satisfies Record<string, AppTab>;
 
 const CALENDAR_TABS = {
-	calendarCalendars: { nav: "Calendars", last: true, marker: "Your calendars", description: "Calendar > Calendars: Your calendars, with Maya's own marked Default, its Edit button and New; then Invite addresses, a row with a button that opens the addresses in a dialog." },
+	calendarCalendars: { nav: "Calendars", last: true, marker: "Your calendars", description: "Calendar > Calendars: Your calendars, with Maya's own marked Default, its Edit button and New; then Invite addresses, a row with a button that opens the list of addresses in a dialog, each one opening to its own page." },
 	calendarAdvanced: { nav: "Import and setup", marker: "Calendar client setup", description: "Calendar > Import and setup: one short list of Import, Export and Calendar client setup, each with a button that opens it in a dialog." },
 } as const satisfies Record<string, AppTab>;
 
