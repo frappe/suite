@@ -614,6 +614,13 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     winner: false,
   })
 
+  interface SetupOptions {
+    /** Where the caller's role comes from, as the explanation answers it. */
+    source?: string
+    /** The caller's Personal root, when they have one in this test. */
+    personalRoot?: string
+  }
+
   /**
    * A node `doc` under `folder` under `root`, and a caller whose explanation is
    * `rows`. `asked` records the role each confirm says the caller would keep.
@@ -621,14 +628,12 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   function setup(
     local: DriveGrant[],
     rows: ExplainRow[],
-    role = 50,
-    source = 'grant',
-    personalRoot?: string,
+    { source = 'grant', personalRoot }: SetupOptions = {},
   ) {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
       if (call.id === 'node_grants' && call.input.principal)
-        return { explain: { role, source, rows } }
+        return { explain: { role: 50, source, rows } }
       if (call.id === 'node_grants') return { grants: local, inherited: [] }
       if (call.id === 'node_delete_grant') return { count: 3 }
       return { grant: local[0] }
@@ -705,7 +710,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   })
 
   it("does not ask Drive's own account, which holds every right", async () => {
-    const { share, asked } = setup([grant('$GENERAL', 10)], [], 50, 'system')
+    const { share, asked } = setup([grant('$GENERAL', 10)], [], { source: 'system' })
     await share.load()
 
     await share.setGeneral('$GENERAL', 20)
@@ -728,9 +733,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const { share, asked, writes } = setup(
       [],
       [row('root', 0, ME, 50), row('root', 0, '$GROUP:Leads', 10)],
-      50,
-      'grant',
-      'root',
+      { personalRoot: 'root' },
     )
     await share.load()
 
@@ -746,9 +749,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const { share, asked, writes } = setup(
       [grant('$GROUP:Leads', 50), grant('$GENERAL', 10)],
       [row('doc', 2, '$GROUP:Leads', 50), row('doc', 2, '$GENERAL', 10)],
-      50,
-      'grant',
-      'root',
+      { personalRoot: 'root' },
     )
     await share.load()
 
@@ -758,7 +759,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   })
 
   it('still asks when everyone at the org would lower the caller outside their own Drive', async () => {
-    const { share, asked } = setup([], [row('root', 0, ME, 50)], 50, 'grant', 'elsewhere')
+    const { share, asked } = setup([], [row('root', 0, ME, 50)], { personalRoot: 'elsewhere' })
     await share.load()
 
     await share.setGeneral('$GENERAL', 10)
