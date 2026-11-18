@@ -45,6 +45,7 @@
 		</div>
 
 		<CalendarModal v-model="showEdit" :calendar="selected" />
+		<ShareCalendarModal v-model="showShare" :calendar="selected" :sharing="sharing.data" />
 		<DeleteCalendarModal v-model="showDelete" :calendar="selected" />
 	</AppSettingsBody>
 </template>
@@ -60,6 +61,7 @@ import { useScreenSize } from '@/composables/useScreenSize'
 
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
+import ShareCalendarModal from '@/apps/calendar/components/Modals/ShareCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 import { userStore } from '@/apps/calendar/stores/user'
 import { calendarColor } from '@/apps/calendar/utils/calendars'
@@ -67,6 +69,16 @@ import { eventColor } from '@/apps/calendar/utils/color'
 
 const { calendars } = userStore()
 const { isMobile } = useScreenSize()
-const { selected, showEdit, showDelete, create, edit, canEdit, menuOptions, hasMenuOptions } =
-	useCalendarActions()
+const {
+	selected,
+	showEdit,
+	showDelete,
+	showShare,
+	sharing,
+	create,
+	edit,
+	canEdit,
+	menuOptions,
+	hasMenuOptions,
+} = useCalendarActions()
 </script>

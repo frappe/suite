@@ -22,7 +22,7 @@
 <script setup lang="ts">
 import { Dialog, createResource } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/calendar/utils'
+import { raiseToast, toastError } from '@/apps/calendar/utils'
 import { userStore } from '@/apps/calendar/stores/user'
 
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
@@ -41,6 +41,6 @@ const deleteCalendar = createResource({
 		show.value = false
 		store.calendars.reload()
 	},
-	onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
+	onError: toastError,
 })
 </script>

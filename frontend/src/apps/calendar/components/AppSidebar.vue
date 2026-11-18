@@ -27,6 +27,7 @@ import MiniMonth from '@/apps/calendar/components/MiniMonth.vue'
 import UpcomingEvents from '@/apps/calendar/components/UpcomingEvents.vue'
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
+import ShareCalendarModal from '@/apps/calendar/components/Modals/ShareCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 import CommandPaletteSidebarItem from '@/shell/CommandPaletteSidebarItem.vue'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
@@ -142,8 +143,13 @@ const appsMenuOption = useAppSwitcher('calendar')
 const { openShortcuts } = useShortcuts()
 
 const calendarActions = useCalendarActions()
-const { selected: selectedCalendar, showEdit: showCalendarModal, showDelete: showDeleteCalendar } =
-	calendarActions
+const {
+	selected: selectedCalendar,
+	showEdit: showCalendarModal,
+	showDelete: showDeleteCalendar,
+	showShare: showShareCalendar,
+	sharing: calendarSharing,
+} = calendarActions
 
 const openSettings = inject<() => void>('openCalendarSettings')!
 const isSidebarCollapsed = useStorage('isSidebarCollapsed', false)
@@ -313,4 +319,9 @@ const menuItems = computed(() => [
 	</Sidebar>
 	<CalendarModal v-model="showCalendarModal" :calendar="selectedCalendar" />
 	<DeleteCalendarModal v-model="showDeleteCalendar" :calendar="selectedCalendar" />
+	<ShareCalendarModal
+		v-model="showShareCalendar"
+		:calendar="selectedCalendar"
+		:sharing="calendarSharing.data"
+	/>
 </template>

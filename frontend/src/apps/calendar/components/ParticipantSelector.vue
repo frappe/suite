@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { useDebounceFn } from '@vueuse/core'
-import { Avatar, Combobox, FormControl, createResource, toast } from 'frappe-ui'
+import { computed, ref } from 'vue'
+import { Avatar, Combobox, FormControl, toast } from 'frappe-ui'
 
 import { extractNameFromEmail } from '@/apps/calendar/utils/format'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import { usePeopleSearch } from '@/apps/calendar/composables/usePeopleSearch'
 
 interface ContactSuggestion {
 	name?: string | null
@@ -48,45 +48,25 @@ const normalizedExcludedEmails = computed(() =>
 	props.excludedEmails.map((email) => email.toLowerCase()),
 )
 
-// True from the keystroke until the search it starts has answered. `mailContacts.loading`
-// alone is not that: the request is debounced, so between typing and sending there is a
-// window where nothing is in flight and nothing has come back either.
-const searchPending = ref(false)
-
-const mailContacts = createResource({
+const {
+	query: searchText,
+	pending: searchPending,
+	open: showSuggestions,
+	combobox,
+	matches,
+	onQuery,
+	find,
+	clear,
+} = usePeopleSearch<ContactOption>({
 	url: 'suite.mail.api.mail.get_email_suggestions',
-	makeParams: (text: string) => ({
-		account: props.account,
-		text,
-	}),
-	transform: (data: ContactSuggestion[]): ContactOption[] =>
+	makeParams: (text: string) => ({ account: props.account, text }),
+	transform: (data: ContactSuggestion[]) =>
 		data.map((contact) => ({
 			...contact,
 			label: contact.email,
 			value: contact.email,
 			description: contact.name || undefined,
 		})),
-	onSuccess: () => (searchPending.value = false),
-	onError: () => (searchPending.value = false),
-})
-
-const debouncedSearch = useDebounceFn((text: string) => text && mailContacts.reload(text), 300)
-
-const searchText = ref('')
-
-watch(searchText, (text) => {
-	searchPending.value = !!text
-	debouncedSearch(text)
-})
-
-const combobox = ref<{ clear: () => void } | null>(null)
-const showSuggestions = ref(false)
-
-// Suggestions only exist for a typed query — with an empty input the popover
-// would show stale results from the previous query (or a bare "No results"
-// panel), so block reka's focus/arrow-key opens too, not just hide options.
-watch(showSuggestions, (open) => {
-	if (open && !searchText.value) showSuggestions.value = false
 })
 
 // Picking a dropdown option commits it on keydown, so the matching keyup.enter lands here too and
@@ -96,8 +76,7 @@ const justSelectedOption = ref(false)
 
 const handleInput = (text: string) => {
 	justSelectedOption.value = false
-	searchText.value = text
-	if (!text) showSuggestions.value = false
+	onQuery(text)
 }
 
 /** Whether an address is already on the event. */
@@ -116,11 +95,9 @@ const isAdded = (email: string) =>
 // nothing. An excluded address does go: it cannot be added at all, so it is not a
 // result being withheld.
 const options = computed<ContactOption[]>(() =>
-	searchText.value
-		? ((mailContacts?.data as ContactOption[] | undefined) || []).filter(
-				(option) => !normalizedExcludedEmails.value.includes(option.email.toLowerCase()),
-			)
-		: [],
+	matches.value.filter(
+		(option) => !normalizedExcludedEmails.value.includes(option.email.toLowerCase()),
+	),
 )
 
 /** Whether the list below the field is showing matches rather than participants. */
@@ -161,17 +138,11 @@ const selectSuggestion = (option: ContactOption) => {
 
 // Picking a contact commits it as the Combobox's selected value — add it and clear the control so the
 // input clears for the next participant, rather than sitting there showing the one just added.
-// The clear waits a tick: this handler fires mid-commit, and the Combobox writes the option's label
-// into its input right after we return, which would undo a synchronous clear.
 const handleParticipantSelect = async (email: string | null) => {
 	if (!email) return
 	justSelectedOption.value = true
-	const contact = (mailContacts.data as ContactOption[] | undefined)?.find(
-		(option) => option.email.toLowerCase() === email.toLowerCase(),
-	)
-	addParticipant(email, contact)
-	await nextTick()
-	combobox.value?.clear()
+	addParticipant(email, find(email))
+	await clear()
 }
 
 // Enter takes whatever has been typed, so an address with no match is still

@@ -9,7 +9,9 @@ from dateutil.rrule import rrulestr
 from frappe import _
 from frappe.utils import cint
 from icalendar.prop import vRecur
-from jmap import MethodError
+from jmap import Id, MethodError
+from jmap.capabilities.principals import PRINCIPALS_URN
+from jmap.sharing import principal_account
 from pydantic import BaseModel
 
 from suite.calendar import jmap_events
@@ -32,18 +34,31 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 )
 from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields, Lower
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
+from suite.calendar.sharing import holds_any_right, may_share, rights_for_role, role_for_rights
 from suite.mail.jmap import (
+    account_view,
     format_method_error,
+    format_set_error,
     get_account_client,
     get_across_accounts,
+    get_jmap_client,
     get_participant_identities,
 )
 from suite.mail.utils.dt import normalize_utc_z
 from suite.utils.rate_limiter import dynamic_rate_limit
-from suite.utils.validation import parse, without_blanks
+from suite.utils.validation import JSONList, parse, without_blanks
 
 # `fetch_calendars` pages ten at a time for the desk list view; the app wants all of them.
 MAX_CALENDARS = 1000
+
+# The share picker offers a screenful; the directory is not the reader's to list. And a single
+# letter matches most of it, so a query is two before it is asked.
+MAX_PRINCIPAL_MATCHES = 25
+MIN_PRINCIPAL_QUERY = 2
+
+# How many holders of an account are asked for a shared calendar's name before giving up: its
+# owner, or for a team account — which has none — two of its members.
+MAX_NAME_CANDIDATES = 2
 
 
 @frappe.whitelist()
@@ -64,24 +79,103 @@ def _calendar_rows(account: str) -> list[dict]:
     """The account's calendars, in the shape the app reads, without seeding their reminders."""
 
     calendars = fetch_calendars(account, limit=MAX_CALENDARS)
+    names = _owner_side_names(account, calendars)
 
     return [
         {
-            key: cal[key]
-            for key in [
-                "name",
-                "account",
-                "id",
-                "_name",
-                "color",
-                "default",
-                "visible",
-                "may_write_all",
-                "may_delete",
-            ]
+            **{
+                key: cal[key]
+                for key in [
+                    "name",
+                    "account",
+                    "id",
+                    "_name",
+                    "color",
+                    "default",
+                    "visible",
+                    "may_write_all",
+                    "may_delete",
+                    "may_share",
+                ]
+            },
+            "_name": cal["_name"] or names.get(cal["id"]) or _account_label(account) or _("Shared calendar"),
         }
         for cal in calendars
     ]
+
+
+def _owner_side_names(account: str, calendars: list[dict]) -> dict[str, str]:
+    """The names of an account's calendars as their owner has them, for the ones sent without one.
+
+    Stalwart withholds a calendar's name from a reader unless they hold `mayUpdatePrivate`, and
+    that right is not one to grant: the name is one copy shared by everybody, so a reader holding
+    it could rename the calendar for its owner. So it is read as the account's owner, whose view
+    has the name in it — or, for a team account, which has none, as a member. Never as the
+    reader, whose view is the one that just came back without it.
+
+    Only calendars already in `calendars` are named, so this says nothing about a calendar the
+    reader was not given; and the answer is kept a few minutes for whoever asks about the same
+    ones, since it costs a connection as somebody else. Nothing is read where every calendar
+    arrived with a name of its own, which is every account but one shared into this one.
+    """
+
+    unnamed = sorted(cal["id"] for cal in calendars if not cal["_name"])
+    if not unnamed:
+        return {}
+
+    cache_key = f"calendar|owner_side_names|{account}|{','.join(unnamed)}"
+    if (cached := frappe.cache.get_value(cache_key)) is not None:
+        return cached
+
+    from suite.mail.doctype.user_account.user_account import get_enabled_account_user
+
+    # A personal account has one owner, and it is never a reader. A team account has none, and
+    # any member's view carries the name. A reader is never linked, so they are never among these.
+    if frappe.db.get_value("JMAP Account", account, "is_personal"):
+        candidates = [get_enabled_account_user(account)]
+    else:
+        candidates = frappe.get_all("User Account", {"account": account}, pluck="user")
+
+    names: dict[str, str] = {}
+    for user in [user for user in candidates if user and user != frappe.session.user][:MAX_NAME_CANDIDATES]:
+        try:
+            seen = jmap_events.get_calendars(
+                account_view(get_jmap_client(user, ignore_permissions=True), account), unnamed
+            )
+        except Exception:
+            frappe.log_error(title="Calendar could not read a shared calendar's name")
+            continue
+        if names := {cal["id"]: cal["name"] for cal in seen if cal.get("name")}:
+            break
+
+    frappe.cache.set_value(cache_key, names, expires_in_sec=300)
+    return names
+
+
+def _account_label(account: str) -> str | None:
+    """What the mail server calls an account — an address, normally — or None if it can't say."""
+
+    return (_session_accounts().get(account) or {}).get("name")
+
+
+def _session_accounts() -> dict[str, dict]:
+    """The accounts the mail server offers the user, as its session describes them — their own
+    first, because the rest are reached through it: the cross-account read is made as one
+    account and addressed to the others.
+
+    Which accounts to look in is the mail server's answer, not this site's. Sharing a calendar
+    puts its account in the reader's session at once; the User Account rows this site keeps say
+    who is a member of an account, and a reader is not one and is not made into one.
+    """
+
+    from suite.mail.doctype.user_account.user_account import get_session_accounts
+
+    accounts = get_session_accounts(frappe.session.user)
+    return dict(sorted(accounts.items(), key=lambda item: not (item[1] or {}).get("isPersonal")))
+
+
+def _shared_calendars_cache_key(user: str) -> str:
+    return f"calendar|shared_calendars|{user}"
 
 
 def _shared_calendars() -> list[str]:
@@ -93,15 +187,17 @@ def _shared_calendars() -> list[str]:
     can't write to. One they can write to is in an account they work in, like a team's, and is
     reached through the account switcher (see get_account_apps).
 
-    Every account's calendars are listed in one request, and the answer is kept for a few minutes.
+    Every account's calendars are listed in one request, and the answer is kept for a few
+    minutes — or until somebody shares a calendar with the user, or stops (see
+    `_forget_shared_calendars`).
     """
 
-    cache_key = f"calendar|shared_calendars|{frappe.session.user}"
+    cache_key = _shared_calendars_cache_key(frappe.session.user)
     if (cached := frappe.cache.get_value(cache_key)) is not None:
         return cached
 
     shared = []
-    accounts = frappe.get_all("User Account", {"user": frappe.session.user}, pluck="account")
+    accounts = list(_session_accounts())
     if accounts:
         client = get_account_client(accounts[0])
         calendars = {}
@@ -194,18 +290,9 @@ def edit_calendar(
         patch["isVisible"] = visible
 
     kwargs = {"onSuccessSetIsDefault": id} if default else {}
-    client = get_account_client(account)
-    title = _("Calendar Update Error")
-    try:
-        with client.batch() as b:
-            h = b.calendars.calendar.set(update={id: patch}, **kwargs)
-        response = h.result
-    except MethodError as e:
-        frappe.throw(_(format_method_error(e)), title=title)
-
-    if id not in response.updated:
-        error = response.not_updated.get(id) or {}
-        frappe.throw(error.get("description") or _("Could not update the calendar."), title=title)
+    _update_calendar(
+        account, id, patch, _("Calendar Update Error"), _("Could not update the calendar."), **kwargs
+    )
 
 
 @frappe.whitelist()
@@ -214,17 +301,214 @@ def delete_calendar(account: str, id: str) -> None:
     """Deletes a calendar and the events on it. The default calendar stays: it is
     where new events go, invitations included."""
 
-    try:
-        calendars = jmap_events.get_calendars(get_account_client(account), [id])
-    except MethodError as e:
-        frappe.throw(_(format_method_error(e)), title=_("Calendar Deletion Error"))
-
-    if not calendars:
-        frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
-    if calendars[0].get("isDefault"):
+    if _calendar(account, id, _("Calendar Deletion Error")).get("isDefault"):
         frappe.throw(_("The default calendar can't be deleted. Make another calendar the default first."))
 
     delete_calendars(account, [id], remove_events=True)
+
+
+def _calendar(account: str, id: str, title: str | None = None) -> dict:
+    """The calendar as the mail server has it — rights, sharees and all — or Calendar not found.
+    A read the server refuses is reported in its words, under `title`."""
+
+    try:
+        calendars = jmap_events.get_calendars(get_account_client(account), [id])
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title or _("Calendar Error"))
+    if not calendars:
+        frappe.throw(_("Calendar not found."), frappe.DoesNotExistError)
+    return calendars[0]
+
+
+def _update_calendar(account: str, id: str, patch: dict, title: str, fallback: str, **kwargs) -> None:
+    """One `Calendar/set` update, with the server's refusal — in its own words — as the error.
+
+    Its own words because for some limits they are the only account there is: how many a
+    calendar may be shared with, say, which the server caps and does not say in its session.
+    """
+
+    client = get_account_client(account)
+    try:
+        with client.batch() as b:
+            h = b.calendars.calendar.set(update={id: patch}, **kwargs)
+        response = h.result
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=title)
+
+    if id not in response.updated:
+        error = response.not_updated.get(id)
+        frappe.throw(_(format_set_error(error)) if error else fallback, title=title)
+
+
+class Sharee(BaseModel):
+    """One person or group a calendar is shared with, as the app states it."""
+
+    principal_id: str
+    role: Literal["view"]
+
+
+def _principal_account(client) -> str | None:
+    """The account `Principal/*` calls are addressed at for this client's account — the one
+    that holds the principals, which the session names; the account itself where it names
+    none. None on a server without the capability."""
+
+    if PRINCIPALS_URN not in client.session.capabilities:
+        return None
+    account = str(client.default_account)
+    return principal_account(client.session, account) or account
+
+
+def _principals(account: str, ids: list[str]) -> dict[str, dict]:
+    """The people behind principal ids, keyed by id.
+
+    A server without the principals capability leaves this empty rather than failing: a sharee
+    whose name cannot be looked up is still a sharee, and the id is what removing one needs.
+    """
+
+    if not ids:
+        return {}
+    client = get_account_client(account)
+    at = _principal_account(client)
+    if at is None:
+        return {}
+
+    try:
+        with client.batch() as b:
+            h = b.add("Principal/get", {"ids": ids}, account_id=Id(at))
+        found = h.result.items
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Sharing Error"))
+    return {
+        principal.id: {"name": principal.name, "email": principal.email, "type": principal.type}
+        for principal in found
+    }
+
+
+def _forget_shared_calendars(account: str, principal_ids: set[str]) -> None:
+    """Drops the shared-calendar answer kept for each of these principals' users, so a calendar
+    just shared with them — or just taken away — is on their next load rather than in five
+    minutes. A principal is a login on the mail server, and a user's login is in their settings;
+    a group has no user of its own, and its members find out when the answer next expires."""
+
+    # Best effort, after the server has already agreed to the change: a lookup that fails here
+    # must not report a share that happened as one that did not, and put the dialog back to a
+    # list the server no longer holds. Whoever it missed finds out when their answer expires.
+    try:
+        people = _principals(account, list(principal_ids)).values()
+        emails = [person["email"] for person in people if person.get("email")]
+        users = frappe.get_all("User Settings", {"username": ("in", emails)}, pluck="user") if emails else []
+        for user in users:
+            frappe.cache.delete_value(_shared_calendars_cache_key(user))
+    except Exception:
+        frappe.log_error(title="Calendar could not tell the sharees their list changed")
+
+
+@frappe.whitelist()
+def get_calendar_sharing(account: str, id: str) -> dict:
+    """Who a calendar is shared with, and whether this account may change that.
+
+    A sharee whose rights match no role here is reported with `role` null — Custom — and the
+    app shows it without offering to change it. One granted nothing at all is not reported: it
+    is not shared with. The server returns no sharees at all on a calendar shared *into* an
+    account, so a reader sees an empty list rather than the others who hold it.
+    """
+
+    calendar = _calendar(account, id)
+    share_with = {
+        pid: rights for pid, rights in (calendar.get("shareWith") or {}).items() if holds_any_right(rights)
+    }
+    people = _principals(account, list(share_with))
+
+    sharees = [
+        {
+            "principal_id": principal_id,
+            "role": role_for_rights(rights),
+            **people.get(principal_id, {"name": None, "email": None, "type": None}),
+        }
+        for principal_id, rights in share_with.items()
+    ]
+    sharees.sort(key=lambda sharee: (sharee["email"] or sharee["principal_id"]).lower())
+
+    # Named, so a dialog that asked about two calendars in quick succession can tell whose
+    # answer this is, and saves what it shows to the calendar it was loaded for.
+    return {
+        "account": account,
+        "id": id,
+        "may_share": may_share(calendar.get("myRights")),
+        "sharees": sharees,
+    }
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def set_calendar_sharing(account: str, id: str, sharees: JSONList[Sharee]) -> None:
+    """Replaces who a calendar is shared with, keeping the rights this app does not describe.
+
+    The app sends every sharee it manages, so one left out is one being removed. A sharee whose
+    rights match no role — granted by another CalDAV client, or by an administrator — is carried
+    through untouched instead: saving two roles here is no reason to take away a third. One
+    granted nothing is not carried: there is nothing to keep.
+    """
+
+    # The annotation is coerced for a request; a call from the server passes what it was given.
+    sharees = parse(list[Sharee], sharees, "sharees")
+
+    calendar = _calendar(account, id)
+    if not may_share(calendar.get("myRights")):
+        frappe.throw(_("You can't change who this calendar is shared with."), frappe.PermissionError)
+
+    before = calendar.get("shareWith") or {}
+    share_with = {
+        principal_id: rights
+        for principal_id, rights in before.items()
+        if role_for_rights(rights) is None and holds_any_right(rights)
+    }
+    for sharee in sharees:
+        if sharee.principal_id == account:
+            continue
+        share_with[sharee.principal_id] = rights_for_role(sharee.role)
+
+    _update_calendar(
+        account,
+        id,
+        {"shareWith": share_with},
+        _("Calendar Sharing Error"),
+        _("Could not change who this calendar is shared with."),
+    )
+    _forget_shared_calendars(account, set(before) | set(share_with))
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def search_principals(account: str, text: str, limit: int = 10) -> list[dict]:
+    """The people and groups on the mail server matching `text`, for the share picker.
+
+    The mail server's own search, so it offers what this account is already allowed to see —
+    a screenful of it, for a query of at least two characters. The account's own principal is
+    left out: sharing a calendar with yourself is not a thing to do.
+    """
+
+    text = (text or "").strip()
+    if len(text) < MIN_PRINCIPAL_QUERY:
+        return []
+
+    client = get_account_client(account)
+    at = _principal_account(client)
+    if at is None:
+        frappe.throw(_("This mail server can't look up who to share with."))
+
+    limit = min(cint(limit) or 10, MAX_PRINCIPAL_MATCHES)
+    try:
+        with client.batch() as b:
+            h = b.add("Principal/query", {"filter": {"text": text}, "limit": limit}, account_id=Id(at))
+        matches = h.result.ids
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Calendar Sharing Error"))
+    ids = [principal_id for principal_id in matches if principal_id != account]
+    return [
+        {"principal_id": principal_id, **details}
+        for principal_id, details in _principals(account, ids).items()
+    ]
 
 
 def _calendar_name(name: str) -> str:

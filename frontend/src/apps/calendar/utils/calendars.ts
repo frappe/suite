@@ -16,6 +16,8 @@ export type CalendarRow = {
 	 */
 	may_write_all: 0 | 1
 	may_delete: 0 | 1
+	/** Whether this account may change who the calendar is shared with. */
+	may_share: 0 | 1
 }
 
 /**
