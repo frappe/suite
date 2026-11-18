@@ -76,7 +76,7 @@ def replace_events(calendar: str, events: list[dict]) -> dict:
         for uid, event in wanted.items()
         if uid in stored and _differs(stored[uid], event)
     ]
-    removed = [row.name for uid, row in stored.items() if uid not in wanted]
+    removed = [uid for uid in stored if uid not in wanted]
 
     _insert_events(calendar, created)
     if changed:
@@ -86,7 +86,9 @@ def replace_events(calendar: str, events: list[dict]) -> dict:
             update_modified=False,
         )
     if removed:
-        frappe.db.delete("External Calendar Event", {"name": ("in", removed)})
+        # by key rather than by row name; an empty `not in` matches every row: nothing wanted is
+        # nothing kept
+        frappe.db.delete("External Calendar Event", {"calendar": calendar, "uid": ("not in", list(wanted))})
 
     return {"created": len(created), "updated": len(changed), "removed": len(removed)}
 
@@ -97,15 +99,15 @@ def replace_assignments(calendar: str, users: Iterable[str]) -> int:
     for everyone whatever is assigned."""
 
     wanted = {user for user in users if user}
-    stored = {
-        row.user: row.name
-        for row in frappe.get_all("External Calendar Assignment", {"calendar": calendar}, ["name", "user"])
-    }
+    stored = set(frappe.get_all("External Calendar Assignment", {"calendar": calendar}, pluck="user"))
 
-    if gone := [name for user, name in stored.items() if user not in wanted]:
-        frappe.db.delete("External Calendar Assignment", {"name": ("in", gone)})
+    if stored - wanted:
+        # an empty `not in` matches every row: nobody named is nobody assigned
+        frappe.db.delete(
+            "External Calendar Assignment", {"calendar": calendar, "user": ("not in", list(wanted))}
+        )
 
-    if added := sorted(wanted - set(stored)):
+    if added := sorted(wanted - stored):
         _bulk_insert(
             "External Calendar Assignment", ["calendar", "user"], [[calendar, user] for user in added]
         )

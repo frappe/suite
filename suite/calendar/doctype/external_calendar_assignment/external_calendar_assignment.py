@@ -3,6 +3,7 @@
 
 from uuid import uuid7
 
+import frappe
 from frappe.model.document import Document
 
 
@@ -28,3 +29,15 @@ class ExternalCalendarAssignment(Document):
 
     def autoname(self) -> None:
         self.name = str(uuid7())
+
+
+def on_doctype_update():
+    """One row per person a calendar is assigned to. A second would outlive the first when the source
+    stops naming them, and keep drawing the calendar for somebody it is no longer for.
+
+    Called by the framework whenever this doctype is synced, on a fresh install as on a migrate.
+    """
+
+    frappe.db.add_unique(
+        "External Calendar Assignment", ["calendar", "user"], constraint_name="unique_calendar_user"
+    )

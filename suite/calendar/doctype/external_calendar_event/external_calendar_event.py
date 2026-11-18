@@ -5,6 +5,7 @@ from calendar import isleap
 from datetime import datetime
 from uuid import uuid7
 
+import frappe
 from frappe.model.document import Document
 from frappe.utils import get_datetime
 
@@ -47,6 +48,18 @@ class ExternalCalendarEvent(Document):
         # moved in Desk is drawn on the day it now says.
         self.repeats = self.repeats or ""
         self.month_day = month_day_of(get_datetime(self.starts_on), self.repeats, self.month_day)
+
+
+def on_doctype_update():
+    """One row per event the source has on a calendar, by the uid it knows the event as. A second
+    would be drawn twice, and a rewrite would reach only one of them.
+
+    Called by the framework whenever this doctype is synced, on a fresh install as on a migrate.
+    """
+
+    frappe.db.add_unique(
+        "External Calendar Event", ["calendar", "uid"], constraint_name="unique_calendar_uid"
+    )
 
 
 def month_day_of(starts_on: datetime, repeats: str | None, stated: str | None = None) -> str | None:

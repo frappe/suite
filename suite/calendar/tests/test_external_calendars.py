@@ -235,6 +235,57 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(external.calendar_rows(self.stranger), [])
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
 
+    def test_an_empty_list_assigns_the_calendar_to_nobody(self):
+        external_store.replace_assignments(self.calendar, [self.user, self.stranger])
+
+        self.assertEqual(external_store.replace_assignments(self.calendar, []), 0)
+        self.assertEqual(external.calendar_rows(self.user), [])
+        self.assertEqual(external.calendar_rows(self.stranger), [])
+
+    def test_an_empty_list_removes_every_event(self):
+        external_store.replace_events(self.calendar, [HOLIDAY, BIRTHDAY])
+        external_store.replace_assignments(self.calendar, [self.user])
+
+        self.assertEqual(
+            external_store.replace_events(self.calendar, []), {"created": 0, "updated": 0, "removed": 2}
+        )
+        self.assertEqual(external.events_in_window(self.user, "2026-01-01", "2026-12-31"), [])
+
+    def test_somebody_named_twice_is_assigned_once(self):
+        external_store.replace_assignments(self.calendar, [self.user, self.user])
+
+        self.assertEqual(frappe.db.count("External Calendar Assignment", {"calendar": self.calendar}), 1)
+
+    def test_an_event_stated_twice_is_stored_once(self):
+        renamed = {**HOLIDAY, "title": "Gandhi Jayanti (renamed)"}
+        external_store.replace_events(self.calendar, [HOLIDAY, renamed])
+        external_store.replace_assignments(self.calendar, [self.user])
+
+        [event] = external.events_in_window(self.user, "2026-10-01", "2026-10-31")
+        self.assertEqual(event["title"], "Gandhi Jayanti (renamed)")
+
+    def test_the_table_refuses_a_second_assignment_for_one_person(self):
+        external_store.replace_assignments(self.calendar, [self.user])
+
+        twin = frappe.get_doc(
+            {"doctype": "External Calendar Assignment", "calendar": self.calendar, "user": self.user}
+        )
+        self.assertRaises(frappe.UniqueValidationError, twin.insert, ignore_permissions=True)
+
+    def test_the_table_refuses_a_second_event_for_one_uid(self):
+        external_store.replace_events(self.calendar, [HOLIDAY])
+
+        twin = frappe.get_doc(
+            {
+                "doctype": "External Calendar Event",
+                "calendar": self.calendar,
+                "uid": HOLIDAY["uid"],
+                "title": "Twin",
+                "starts_on": "2026-10-02 00:00:00",
+            }
+        )
+        self.assertRaises(frappe.UniqueValidationError, twin.insert, ignore_permissions=True)
+
     def test_a_calendar_the_source_drops_takes_its_events_and_assignments_with_it(self):
         external_store.replace_events(self.calendar, [HOLIDAY])
         external_store.replace_assignments(self.calendar, [self.user])
