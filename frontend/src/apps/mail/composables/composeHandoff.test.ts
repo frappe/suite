@@ -5,8 +5,12 @@ import type { ComposeMailData } from '@/apps/mail/types'
 
 // Whether the move about to be made loads the page afresh, as an iPhone's browser does on going from
 // another app into Mail.
-const pwa = vi.hoisted(() => ({ reloads: false }))
-vi.mock('@/platform/pwa', () => ({ pageLoadNeededFor: () => pwa.reloads }))
+const pwa = vi.hoisted(() => ({ reloads: false, loadPage: vi.fn() }))
+vi.mock('@/platform/pwa', () => ({
+  pageLoadNeededFor: () => pwa.reloads,
+  loadPage: pwa.loadPage,
+}))
+vi.mock('@/api', () => ({ writesSettled: async () => {} }))
 
 const draft: ComposeMailData = {
   to: [{ email: 'dana@brightwave.example' }, { email: 'lee@northwind.example' }],
@@ -30,6 +34,7 @@ const afterPageLoad = async () => {
 
 afterEach(() => {
   pwa.reloads = false
+  pwa.loadPage.mockReset()
   sessionStorage.clear()
   vi.resetModules()
 })
@@ -46,16 +51,18 @@ describe('handing a draft to the compose page', () => {
     expect(takePendingCompose()).toBeUndefined()
   })
 
-  it('still carries the draft when the move loads the page afresh', async () => {
+  it('makes a move that loads the page afresh a page load, which takes the draft once', async () => {
     pwa.reloads = true
-    const { openComposePage, takePendingCompose } = await import('./composeHandoff')
-    await openComposePage(await otherAppsRouter(), 'acc', draft)
-    // The page being left mounts the composer before it reloads.
-    takePendingCompose()
+    const { openComposePage } = await import('./composeHandoff')
+    const router = await otherAppsRouter()
 
-    const next = await afterPageLoad()
+    await openComposePage(router, 'acc', draft)
 
-    expect(next.takePendingCompose()).toEqual(draft)
+    // Nothing of the compose page mounts on the page being left: a composer there saved the draft
+    // before the reload, and the page that loaded saved it again.
+    expect(router.currentRoute.value.path).toBe('/calendar')
+    expect(pwa.loadPage).toHaveBeenCalledExactlyOnceWith('/mail/account/acc/compose')
+    expect((await afterPageLoad()).takePendingCompose()).toEqual(draft)
     // Taken, it is gone: reloading the compose page again opens an empty one.
     expect((await afterPageLoad()).takePendingCompose()).toBeUndefined()
   })
