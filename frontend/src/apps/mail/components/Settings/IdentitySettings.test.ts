@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
+import { createApp, defineComponent, h, nextTick, reactive, ref } from 'vue'
 
 import { requireTestElement } from '@/platform/testing/dom'
 
@@ -20,7 +20,14 @@ interface Address {
 const state = vi.hoisted(() => {
   const addresses: Address[] = []
 
-  return { run: vi.fn(), toast: vi.fn(), change: vi.fn(), addresses, savedDefault: '' }
+  return {
+    run: vi.fn(),
+    toast: vi.fn(),
+    failureToast: vi.fn(),
+    change: vi.fn(),
+    addresses,
+    savedDefault: '',
+  }
 })
 vi.mock('@/apps/mail/composables/useAccountPreferences', () => ({
   useAccountPreferences: () => ({
@@ -36,6 +43,7 @@ interface Option {
 // As the real menu once opened, in what the tests look at: its button, then a line for each option
 // whose condition holds
 vi.mock('@/platform/feedback', () => ({
+  failureText: (error: Error) => error.message,
   Dropdown: defineComponent({
     props: { options: { type: Array<Option>, default: () => [] } },
     setup(props, { slots }) {
@@ -81,8 +89,34 @@ vi.mock('@/api', async () => {
           { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>' },
         ],
       }),
-    useMutation: (reference: { id: string }) =>
-      reactive({ isPending: false, run: (input: unknown) => state.run(reference.id, input) }),
+    // As the real one in what the tests look at: it keeps why the last run was refused, and
+    // toasts it unless told to stay silent
+    useMutation: (reference: { id: string }, options?: { silent?: boolean }) => {
+      const error = ref<Error | null>(null)
+      return reactive({
+        isPending: false,
+        error,
+        reset: () => {
+          error.value = null
+        },
+        run: async (input: unknown) => {
+          error.value = null
+          try {
+            return await state.run(reference.id, input)
+          } catch (cause) {
+            if (cause instanceof Error) {
+              error.value = cause
+            }
+
+            if (!options?.silent) {
+              state.failureToast(error.value?.message)
+            }
+
+            throw cause
+          }
+        },
+      })
+    },
   }
 })
 vi.mock('frappe-ui', () => ({
@@ -99,10 +133,17 @@ vi.mock('frappe-ui', () => ({
       return () => h('button', { disabled: props.disabled }, props.label)
     },
   }),
+  ErrorMessage: defineComponent({
+    props: { message: { type: String, default: '' } },
+    setup(props) {
+      return () => props.message && h('p', { role: 'alert' }, props.message)
+    },
+  }),
   FormControl: defineComponent({
     props: {
       modelValue: { type: String, default: '' },
       label: { type: String, default: '' },
+      error: { type: String, default: '' },
       type: { type: String, default: 'text' },
       options: { type: Array<{ label: string; value: string }>, default: () => [] },
     },
@@ -125,12 +166,15 @@ vi.mock('frappe-ui', () => ({
           )
         }
 
-        return h('input', {
-          'aria-label': props.label,
-          value: props.modelValue,
-          onInput: (event: Event) =>
-            emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
-        })
+        return [
+          h('input', {
+            'aria-label': props.label,
+            value: props.modelValue,
+            onInput: (event: Event) =>
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
+          }),
+          props.error && h('p', { role: 'alert' }, props.error),
+        ]
       }
     },
   }),
@@ -283,6 +327,7 @@ beforeEach(() => {
   window.__ = (text: string) => text
   state.run.mockReset().mockResolvedValue(undefined)
   state.toast.mockReset()
+  state.failureToast.mockReset()
   state.change.mockReset()
   state.savedDefault = ''
 })
@@ -543,4 +588,42 @@ it('keeps the address open when its delete is refused', async () => {
   await press('Delete')
   await press('Delete address')
   expect(field('Display name')?.value).toBe('Sales')
+})
+/** What the page says is wrong, as a reader with the page in front of them sees it. */
+function alertText() {
+  return root.querySelector('[role="alert"]')?.textContent
+}
+
+it('says why a new address was refused under its email, in place of a toast', async () => {
+  state.run.mockRejectedValue(new Error('That domain is not yours'))
+  mount([me])
+  await press('New address')
+  await type('Email address', 'me@elsewhere.com')
+  await press('Save')
+  expect(field('Email address')?.nextElementSibling?.textContent).toBe('That domain is not yours')
+  expect(state.failureToast).not.toHaveBeenCalled()
+
+  await type('Email address', 'me@example.com')
+  expect(alertText()).toBeUndefined()
+})
+it('asks for an email address before it sends one that is not', async () => {
+  mount([me])
+  await press('New address')
+  await type('Email address', 'billing')
+  await press('Save')
+  expect(alertText()).toBe('Enter a valid email address')
+  expect(state.run).not.toHaveBeenCalled()
+})
+it('says why a save was refused on the open address, in place of a toast', async () => {
+  state.run.mockRejectedValue(new Error('Not your address'))
+  mount([me, sales])
+  await openAddress('me@example.com')
+  await type('Display name', 'Maya')
+  await press('Save')
+  expect(alertText()).toBe('Not your address')
+  expect(state.failureToast).not.toHaveBeenCalled()
+
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(alertText()).toBeUndefined()
 })

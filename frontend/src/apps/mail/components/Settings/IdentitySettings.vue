@@ -46,6 +46,7 @@
       class="self-start"
       @click="showReplyAndBcc"
     />
+    <ErrorMessage :message="saveError" />
     <SettingsDialogActions>
       <!-- At the dialog's other end from Save, so neither is pressed for the other -->
       <Button
@@ -79,6 +80,7 @@
       type="email"
       variant="outline"
       :required="true"
+      :error="emailError"
     />
     <FormControl
       v-model="newAddress.name"
@@ -158,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
+import { Badge, Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
 import { computed, reactive, ref } from 'vue'
 
@@ -171,6 +173,7 @@ import type { Identity } from '@/apps/mail/types'
 import { isEmail, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import { failureText } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import { translate as __ } from '@/platform/translation'
@@ -219,11 +222,13 @@ function editAddress(identity: Identity) {
   Object.assign(typed, { replyTo: '', bcc: '' })
   isCustomPicked.value = false
   showsReplyAndBcc.value = draft.value.replyTo.length + draft.value.bcc.length > 0
+  saveIdentity.reset()
 }
 
 const newAddress = ref<{ email: string; name: string }>()
 function addAddress() {
   newAddress.value = { email: '', name: '' }
+  triedEmail.value = undefined
 }
 
 function titleOf(identity: Identity) {
@@ -258,7 +263,18 @@ function withNames(emails: string[], saved?: Address[]) {
   })
 }
 
-const saveIdentity = useMutation(api.mail.identities.save)
+/** Why a save was refused, in words for the page it was pressed on. */
+function refusal(error: Error | null) {
+  if (!error) {
+    return undefined
+  }
+
+  return failureText(error)
+}
+
+// A refused save is said on the page that was saved, where the eyes are, so no toast says it too
+const saveIdentity = useMutation(api.mail.identities.save, { silent: true })
+const saveError = computed(() => refusal(saveIdentity.error))
 async function save() {
   const form = draft.value
   if (!form) {
@@ -331,11 +347,31 @@ function chooseSignature(choice: unknown) {
   draft.value.signature = saved?.html_body ?? ''
 }
 
-const addIdentity = useMutation(api.mail.identities.create)
+const addIdentity = useMutation(api.mail.identities.create, { silent: true })
 const isCreateBlocked = computed(() => !newAddress.value?.email)
+// The email Save was last pressed on. What is wrong with it is said under its field until it is
+// changed: that it is no email address, or the reason the server refused it
+const triedEmail = ref<string>()
+const emailError = computed(() => {
+  const email = newAddress.value?.email
+  if (email === undefined || email !== triedEmail.value) {
+    return undefined
+  }
+
+  if (!isEmail(email)) {
+    return __('Enter a valid email address')
+  }
+
+  return refusal(addIdentity.error)
+})
 async function createAddress() {
   const form = newAddress.value
   if (!form) {
+    return
+  }
+
+  triedEmail.value = form.email
+  if (!isEmail(form.email)) {
     return
   }
 
