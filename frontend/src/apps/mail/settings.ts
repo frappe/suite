@@ -30,12 +30,12 @@ export const mailSettings = {
       icon: 'lucide-mailbox',
       body: scoped(() => import('@/apps/mail/components/Settings/MailGeneralSettings.vue')),
       sections: [
+        { id: 'storage', label: () => __('Storage'), keywords: () => __('quota, space') },
         { id: 'split-view', label: () => __('Split view'), keywords: () => __('reading pane') },
         { id: 'group-by-date', label: () => __('Group by date') },
         { id: 'remote-images', label: () => __('Block remote images') },
         { id: 'locale', label: () => __('Locale') },
         { id: 'time-zone', label: () => __('Time zone') },
-        { id: 'storage', label: () => __('Storage'), keywords: () => __('quota, space') },
       ],
     },
     {

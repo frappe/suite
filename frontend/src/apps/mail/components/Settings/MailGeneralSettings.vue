@@ -2,6 +2,12 @@
   <AppSettingsHeader :title="__('General')" />
   <AppSettingsBody>
     <div class="flex flex-col gap-10">
+      <!-- First, as on Drive's Storage page; the sidebar shows this meter only once the account is
+           nearly full. -->
+      <SettingsSection :title="__('Storage')">
+        <StorageMeter class="mt-3" :used-percentage :label :limited="isLimited" />
+      </SettingsSection>
+
       <SettingsSection :title="__('Reading')">
         <div class="divide-y divide-outline-gray-1">
           <!-- The list's layout is for a desktop; a phone has one layout. -->
@@ -51,12 +57,6 @@
           </SettingsRow>
         </div>
         <ErrorMessage :message="regional.error?.message" />
-      </SettingsSection>
-
-      <!-- Read-only, so it sits after the settings rather than ahead of them; the sidebar shows
-           this meter only once the account is nearly full. -->
-      <SettingsSection :title="__('Storage')">
-        <StorageMeter class="mt-3" :used-percentage :label :limited="isLimited" />
       </SettingsSection>
     </div>
   </AppSettingsBody>
