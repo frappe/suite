@@ -98,27 +98,27 @@ beforeEach(() => {
 it('starts from no dates once an absence is off and over, keeping its words', async () => {
   const { field, turnOn } = await mount(0, LONG_AGO)
   await turnOn()
-  expect(field('From date')!.value).toBe('')
-  expect(field('To date')!.value).toBe('')
+  expect(field('Starts')!.value).toBe('')
+  expect(field('Ends (optional)')!.value).toBe('')
   expect(field('Subject')!.value).toBe('Away on a trip')
 })
 
 it('keeps the dates of an absence still to come, though the responder is off', async () => {
   const { field, turnOn } = await mount(0, AHEAD)
   await turnOn()
-  expect(field('From date')!.value).toContain('2099-06')
-  expect(field('To date')!.value).toContain('2099-06')
+  expect(field('Starts')!.value).toContain('2099-06')
+  expect(field('Ends (optional)')!.value).toContain('2099-06')
 })
 
 it('keeps the dates while the responder is on, over or not', async () => {
   const { field } = await mount(1, LONG_AGO)
-  expect(field('To date')!.value).toContain('2020-06')
+  expect(field('Ends (optional)')!.value).toContain('2020-06')
 })
 
 it('shows the dates, subject and message only while the responder is on', async () => {
   const off = await mount(0, AHEAD)
   expect(off.field('Subject')).toBeNull()
-  expect(off.field('To date')).toBeNull()
+  expect(off.field('Ends (optional)')).toBeNull()
   expect(off.root.querySelector('[data-message]')).toBeNull()
 
   const on = await mount(1, AHEAD)

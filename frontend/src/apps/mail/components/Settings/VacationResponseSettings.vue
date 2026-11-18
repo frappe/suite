@@ -9,18 +9,20 @@
     </SettingsRow>
     <!-- Off, the reply has nothing to set: the dialog is its one switch. What was typed is kept -->
     <template v-if="draft.enabled">
-      <FormControl
-        v-model="draft.from_date"
-        type="datetime-local"
-        :label="__('From date')"
-        variant="outline"
-      />
-      <FormControl
-        v-model="draft.to_date"
-        type="datetime-local"
-        :label="__('To date')"
-        variant="outline"
-      />
+      <div class="grid gap-4 sm:grid-cols-2">
+        <FormControl
+          v-model="draft.from_date"
+          type="datetime-local"
+          :label="__('Starts')"
+          variant="outline"
+        />
+        <FormControl
+          v-model="draft.to_date"
+          type="datetime-local"
+          :label="__('Ends (optional)')"
+          variant="outline"
+        />
+      </div>
       <FormControl
         v-model="draft.subject"
         :label="__('Subject')"
