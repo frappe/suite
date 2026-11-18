@@ -1454,11 +1454,15 @@ def _keep_owner_manage(node: Mapping, principal_kind: str) -> None:
     row on the node below Manage, or one that has expired, that row is raised
     to Manage with no expiry; otherwise a new row is written. Neither writes
     an activity entry: the owner's own access is not news.
+
+    Administrator's root, which holds the shipped templates (§8.10), needs
+    nothing: Administrator holds every right without a grant row, and no row
+    can name it.
     """
     if node.get("kind") == "root" or principal_kind not in ("general", "group"):
         return
     owner = _personal_root_owner(node)
-    if not owner:
+    if not owner or owner == "Administrator":
         return
     from suite.drive.framework import principals_for_principal
 
