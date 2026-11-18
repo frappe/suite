@@ -142,11 +142,15 @@ export function findMailDates(
   })
 }
 
-// "from" before a day and a short month's name: chrono takes "from 20" for 8pm and leaves "Dec"
-// behind, when it means 20 December. Blanked to as many spaces, the day reads as a day ("from 20
-// Dec to 5 Jan" as a range) and every date keeps its place in the text.
-const FROM_DAY =
-  /\bfrom(?=\s+\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)/gi
+// "from" before a day and a short month's name, or a span of days: chrono takes "from 20" for 8pm
+// and "from 20–22" for 8–10pm, and leaves "Dec" behind, when it means 20 December. Blanked to as
+// many spaces, the day reads as a day ("from 20 Dec to 5 Jan" as a range) and every date keeps its
+// place in the text. The month is required, so "from 9 to 5" stays working hours.
+const DAY = String.raw`\d{1,2}(?:st|nd|rd|th)?`
+const FROM_DAY = new RegExp(
+  String.raw`\bfrom(?=\s+${DAY}(?:\s*(?:[-–]|to|until|till)\s*${DAY})?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)`,
+  'gi',
+)
 const withDaysAsDays = (text: string) => text.replace(FROM_DAY, (word) => ' '.repeat(word.length))
 
 // How long a day without a year stays one gone by, before it reads as next year's.

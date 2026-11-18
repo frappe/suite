@@ -162,8 +162,12 @@ describe('dates in a mail', () => {
       findMailDates(text, '2026-11-18T10:00:00Z', READER).map((date) =>
         text.slice(date.index, date.index + date.length),
       )
+    // Sent at 15:30: the morning has gone by, and a greeting names no time.
     for (const text of [
       'Good morning Lena',
+      'Good afternoon Lena',
+      'Good evening Lena',
+      'I spoke to her this morning',
       'Send it by end of day',
       'Send it by EOD',
       'by the end of the week',
@@ -267,9 +271,20 @@ describe('dates in a mail', () => {
       expect(read('Away from 20 Dec to 5 Jan'), locale).toEqual([
         { text: '20 Dec to 5 Jan', start: { date: '2026-12-20' }, end: { date: '2027-01-05' } },
       ])
+      // A span of days in one month, however it is joined.
+      for (const span of ['20–22', '20 - 22', '20 to 22'])
+        expect(read(`The conference runs from ${span} Nov`), `${span} (${locale})`).toEqual([
+          { text: `${span} Nov`, start: { date: '2026-11-20' }, end: { date: '2026-11-22' } },
+        ])
       // Gone by: the past rule drops it whole.
       expect(read('Thanks for the notes from 20 Oct.'), locale).toEqual([])
       expect(read('from 1 Oct to 5 Oct'), locale).toEqual([])
+      expect(read('from 1–5 Oct'), locale).toEqual([])
+      // Without a month, "from" and two numbers are hours.
+      expect(read('I work from 9 to 5')[0]?.start, locale).toEqual({
+        date: '2026-11-19',
+        time: '09:00',
+      })
     }
   })
 
