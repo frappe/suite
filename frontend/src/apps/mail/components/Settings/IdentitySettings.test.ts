@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, reactive, ref } from 'vue'
+import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
 import { requireTestElement } from '@/platform/testing/dom'
 
@@ -43,7 +43,7 @@ interface Option {
 // As the real menu once opened, in what the tests look at: its button, then a line for each option
 // whose condition holds
 vi.mock('@/platform/feedback', () => ({
-  failureText: (error: Error) => error.message,
+  failureLine: (error: Error | null) => error?.message,
   Dropdown: defineComponent({
     props: { options: { type: Array<Option>, default: () => [] } },
     setup(props, { slots }) {
@@ -80,6 +80,7 @@ vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
 }))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
+  const { fakeMutation } = await import('@/platform/testing/mutations')
   return {
     api: { mail: api },
     useQuery: () =>
@@ -89,34 +90,8 @@ vi.mock('@/api', async () => {
           { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>' },
         ],
       }),
-    // As the real one in what the tests look at: it keeps why the last run was refused, and
-    // toasts it unless told to stay silent
-    useMutation: (reference: { id: string }, options?: { silent?: boolean }) => {
-      const error = ref<Error | null>(null)
-      return reactive({
-        isPending: false,
-        error,
-        reset: () => {
-          error.value = null
-        },
-        run: async (input: unknown) => {
-          error.value = null
-          try {
-            return await state.run(reference.id, input)
-          } catch (cause) {
-            if (cause instanceof Error) {
-              error.value = cause
-            }
-
-            if (!options?.silent) {
-              state.failureToast(error.value?.message)
-            }
-
-            throw cause
-          }
-        },
-      })
-    },
+    useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
+      fakeMutation((input) => state.run(reference.id, input), state.failureToast, options),
   }
 })
 vi.mock('frappe-ui', () => ({

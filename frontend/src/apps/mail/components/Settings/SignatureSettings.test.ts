@@ -5,13 +5,16 @@ import { requireTestElement } from '@/platform/testing/dom'
 
 import SignatureSettings from './SignatureSettings.vue'
 
-const state = vi.hoisted(() => ({ run: vi.fn(), toast: vi.fn() }))
+const state = vi.hoisted(() => ({ run: vi.fn(), toast: vi.fn(), failureToast: vi.fn() }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: state.toast }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: { value: false } }),
 }))
 // The menu of a signature's line, which these tests don't open
-vi.mock('@/platform/feedback', () => ({ Dropdown: { render: () => null } }))
+vi.mock('@/platform/feedback', () => ({
+  Dropdown: { render: () => null },
+  failureLine: (error: Error | null) => error?.message,
+}))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   default: defineComponent({
     props: { modelValue: { type: String, default: '' } },
@@ -28,17 +31,24 @@ vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
 }))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
+  const { fakeMutation } = await import('@/platform/testing/mutations')
   return {
     api: { mail: api },
     useQuery: () =>
       reactive({
         data: [{ name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>' }],
       }),
-    useMutation: (reference: { id: string }) =>
-      reactive({ isPending: false, run: (input: unknown) => state.run(reference.id, input) }),
+    useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
+      fakeMutation((input) => state.run(reference.id, input), state.failureToast, options),
   }
 })
 vi.mock('frappe-ui', () => ({
+  ErrorMessage: defineComponent({
+    props: { message: { type: String, default: undefined } },
+    setup(props) {
+      return () => props.message && h('p', { role: 'alert' }, props.message)
+    },
+  }),
   Button: defineComponent({
     props: { label: { type: String, default: '' }, disabled: Boolean },
     setup(props) {
@@ -105,6 +115,7 @@ beforeEach(() => {
   window.__ = (text: string) => text
   state.run.mockReset().mockResolvedValue(undefined)
   state.toast.mockReset()
+  state.failureToast.mockReset()
   mount()
 })
 afterEach(() => app.unmount())
@@ -176,4 +187,16 @@ it('keeps the form, with what was typed, when the save is refused', async () => 
   await press('Save')
   expect(nameField()?.value).toBe('Home')
   expect(state.toast).not.toHaveBeenCalled()
+})
+it('says why a save was refused on the signature, in place of a toast', async () => {
+  state.run.mockRejectedValue(new Error('Name already used'))
+  await openSaved()
+  await type(nameField(), 'Home')
+  await press('Save')
+  expect(root.querySelector('[role="alert"]')?.textContent).toBe('Name already used')
+  expect(state.failureToast).not.toHaveBeenCalled()
+
+  await press('Back to signatures')
+  await press('New signature')
+  expect(root.querySelector('[role="alert"]')).toBeNull()
 })

@@ -173,7 +173,7 @@ import type { Identity } from '@/apps/mail/types'
 import { isEmail, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import { failureText } from '@/platform/feedback'
+import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import { translate as __ } from '@/platform/translation'
@@ -263,18 +263,9 @@ function withNames(emails: string[], saved?: Address[]) {
   })
 }
 
-/** Why a save was refused, in words for the page it was pressed on. */
-function refusal(error: Error | null) {
-  if (!error) {
-    return undefined
-  }
-
-  return failureText(error)
-}
-
 // A refused save is said on the page that was saved, where the eyes are, so no toast says it too
 const saveIdentity = useMutation(api.mail.identities.save, { silent: true })
-const saveError = computed(() => refusal(saveIdentity.error))
+const saveError = computed(() => failureLine(saveIdentity.error))
 async function save() {
   const form = draft.value
   if (!form) {
@@ -362,7 +353,7 @@ const emailError = computed(() => {
     return __('Enter a valid email address')
   }
 
-  return refusal(addIdentity.error)
+  return failureLine(addIdentity.error)
 })
 async function createAddress() {
   const form = newAddress.value

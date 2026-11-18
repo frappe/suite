@@ -135,6 +135,8 @@
           </div>
         </template>
       </Tabs>
+      <!-- Under both tabs, as either one's fields can be what was refused -->
+      <ErrorMessage :message="saveError" class="mt-4" />
     </template>
   </Dialog>
 
@@ -146,7 +148,16 @@
 </template>
 
 <script setup lang="ts">
-import { Alert, Button, Dialog, FormControl, SettingsRow, Switch, Tabs } from 'frappe-ui'
+import {
+  Alert,
+  Button,
+  Dialog,
+  ErrorMessage,
+  FormControl,
+  SettingsRow,
+  Switch,
+  Tabs,
+} from 'frappe-ui'
 import { IconPicker } from 'frappe-ui/experimental'
 import { Settings, Zap } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -157,6 +168,7 @@ import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import { failureLine } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -223,7 +235,8 @@ const isNotDirty = computed(() => {
     automationRules.match_if === originalAutomationRules.match_if
   return folderUnchanged && automationUnchanged
 })
-const createFolder = useMutation(api.mail.mailboxes.create)
+// A refused save is said in the form, where the eyes are, so no toast says it too
+const createFolder = useMutation(api.mail.mailboxes.create, { silent: true })
 async function createFolderSubmit() {
   const input: InputOf<typeof api.mail.mailboxes.create> = {
     account: store.accountId,
@@ -238,7 +251,9 @@ async function createFolderSubmit() {
   raiseToast(__('Folder created'))
   show.value = false
 }
-const updateFolder = useMutation(api.mail.mailboxes.update)
+
+const updateFolder = useMutation(api.mail.mailboxes.update, { silent: true })
+const saveError = computed(() => failureLine(createFolder.error ?? updateFolder.error))
 async function updateFolderSubmit() {
   const input: InputOf<typeof api.mail.mailboxes.update> = {
     account: store.accountId,
@@ -263,6 +278,9 @@ async function createAutomationScriptSubmit() {
 watch(show, (val) => {
   if (!val) return
   tab.value = 'general'
+  // What the last visit was refused is not said on this one
+  createFolder.reset()
+  updateFolder.reset()
   Object.assign(automationRules, DEFAULT_AUTOMATION_RULES)
   Object.assign(originalAutomationRules, DEFAULT_AUTOMATION_RULES)
   if (!mailbox) {

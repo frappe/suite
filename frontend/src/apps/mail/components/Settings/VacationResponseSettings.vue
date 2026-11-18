@@ -38,6 +38,7 @@
         />
       </div>
     </template>
+    <ErrorMessage :message="saveError" />
     <SettingsDialogActions>
       <Button
         :label="__('Save')"
@@ -57,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
@@ -68,6 +69,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
+import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
@@ -80,7 +82,7 @@ const showConfirmDialog = ref(false)
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )
-// Awaited, so a refused save is reported where every failed save is, not as a stray error
+// Awaited, so a refused save is no stray error
 async function handleSave() {
   if (activeSieveScript.value && draft.enabled) {
     showConfirmDialog.value = true
@@ -129,7 +131,9 @@ watch(
 const isSaveBlocked = computed(
   () => vacationResponse.isFetching || JSON.stringify(draft) === original.value,
 )
-const updateVacationResponse = useMutation(api.mail.vacation.update)
+// A refused save is said on the form, where the eyes are, so no toast says it too
+const updateVacationResponse = useMutation(api.mail.vacation.update, { silent: true })
+const saveError = computed(() => failureLine(updateVacationResponse.error))
 async function updateVacationResponseSubmit() {
   const input: InputOf<typeof api.mail.vacation.update> = {
     account: store.accountId,
@@ -139,10 +143,15 @@ async function updateVacationResponseSubmit() {
     subject: draft.subject,
     html_body: draft.html_body,
   }
-  await updateVacationResponse.run(input)
+  try {
+    await updateVacationResponse.run(input)
+  } finally {
+    // The question is answered either way, and a refusal is said on the form it would cover
+    showConfirmDialog.value = false
+  }
+
   await vacationResponse.refetch()
   raiseToast(__('Auto-reply updated'))
-  showConfirmDialog.value = false
   emit('saved')
 }
 </script>

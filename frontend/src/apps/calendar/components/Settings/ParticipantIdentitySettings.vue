@@ -44,6 +44,8 @@
               :label="__('Set as default invite address')"
             />
 
+            <ErrorMessage :message="saveError" />
+
             <div>
               <Button
                 :label="__('Delete')"
@@ -94,6 +96,7 @@
           type="email"
           class="mb-4 w-full"
           :required="true"
+          :error="newEmailError"
         />
         <FormControl
           v-model="newName"
@@ -129,12 +132,13 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
-import { raiseToast } from '@/apps/calendar/utils'
+import { isEmail, raiseToast } from '@/apps/calendar/utils'
+import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
@@ -174,20 +178,39 @@ const changed = computed(() => {
   )
 })
 const isSaveBlocked = computed(() => !changed.value)
-const updateIdentity = useMutation(api.mail.participantIdentities.update)
+// A refused save is said on the form that was saved, where the eyes are, so no toast says it too
+const updateIdentity = useMutation(api.mail.participantIdentities.update, { silent: true })
+const saveError = computed(() => failureLine(updateIdentity.error))
+// What one address was refused is not said on the next one picked
+watch(identityName, () => updateIdentity.reset())
 async function save() {
   if (!form.value) return
   await updateIdentity.run({ ...form.value })
   raiseToast(__('Invite address updated'))
   emit('saved')
 }
-const addIdentity = useMutation(api.mail.participantIdentities.create)
+
+const addIdentity = useMutation(api.mail.participantIdentities.create, { silent: true })
 const deleteIdentity = useMutation(api.mail.participantIdentities.delete)
 const showAddDialogState = ref(false)
 const showDeleteDialog = ref(false)
 const newName = ref('')
 const newEmail = ref('')
 const newDefault = ref(false)
+// The email Save was last pressed on. What is wrong with it is said under its field until it is
+// changed: that it is no email address, or the reason the server refused it
+const triedEmail = ref<string>()
+const newEmailError = computed(() => {
+  if (newEmail.value !== triedEmail.value) {
+    return undefined
+  }
+
+  if (!isEmail(newEmail.value)) {
+    return __('Enter a valid email address')
+  }
+
+  return failureLine(addIdentity.error)
+})
 function openDeleteDialog() {
   showDeleteDialog.value = true
 }
@@ -195,9 +218,15 @@ function showAddDialog() {
   newName.value = ''
   newEmail.value = ''
   newDefault.value = false
+  triedEmail.value = undefined
   showAddDialogState.value = true
 }
 async function createIdentity() {
+  triedEmail.value = newEmail.value
+  if (!isEmail(newEmail.value)) {
+    return
+  }
+
   const account = store.accountId
   const id = await addIdentity.run({
     account,

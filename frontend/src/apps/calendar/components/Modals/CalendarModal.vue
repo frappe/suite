@@ -22,6 +22,7 @@
           :placeholder="__('Personal')"
           autofocus
           required
+          :error="saveError"
           @keydown.enter="form.name.trim() && (isNew || isDirty) && save()"
         />
         <FormControl
@@ -51,6 +52,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { CALENDAR_COLORS, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
+import { failureLine } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -102,6 +104,10 @@ const startingColor = () => {
 
 watch(show, (open) => {
   if (!open) return
+
+  // What the last visit was refused is not said on this one
+  createCalendar.reset()
+  editCalendar.reset()
   form.name = calendar?._name ?? ''
   form.color = startingColor()
 })
@@ -115,8 +121,11 @@ const onSaved = (message: string) => {
   show.value = false
   store.calendars.refetch().catch(() => {})
 }
-const createCalendar = useMutation(api.calendar.calendars.create)
-const editCalendar = useMutation(api.calendar.calendars.update)
+
+// A refused save is said under the name, where the eyes are, so no toast says it too
+const createCalendar = useMutation(api.calendar.calendars.create, { silent: true })
+const editCalendar = useMutation(api.calendar.calendars.update, { silent: true })
+const saveError = computed(() => failureLine(createCalendar.error ?? editCalendar.error))
 const savePending = computed(() => createCalendar.isPending || editCalendar.isPending)
 const save = async () => {
   if (isNew.value) {

@@ -32,8 +32,12 @@ vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
 vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({
   default: { render: () => null },
 }))
+vi.mock('@/platform/feedback', () => ({
+  failureLine: (error: Error | null) => error?.message,
+}))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
+  const { fakeMutation } = await import('@/platform/testing/mutations')
   return {
     api: { mail: api },
     useQuery: (reference: { id: string }) => {
@@ -47,11 +51,12 @@ vi.mock('@/api', async () => {
         refetch: async () => {},
       })
     },
-    useMutation: (reference: { id: string }) =>
-      reactive({ isPending: false, run: (input: unknown) => state.save(reference.id, input) }),
+    useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
+      fakeMutation((input) => state.save(reference.id, input), vi.fn(), options),
   }
 })
 vi.mock('frappe-ui', () => ({
+  ErrorMessage: { render: () => null },
   SettingsHeader: { render: () => null },
   SettingsBody: defineComponent({
     setup(_, { slots }) {

@@ -6,6 +6,7 @@ import VacationResponseSettings from './VacationResponseSettings.vue'
 const saved = vi.hoisted<{ value: Record<string, unknown> | null }>(() => ({ value: null }))
 const run = vi.hoisted(() => vi.fn())
 const reported = vi.hoisted(() => vi.fn())
+const failureToast = vi.hoisted(() => vi.fn())
 
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
@@ -17,6 +18,12 @@ vi.mock('frappe-ui', async () => {
   })
   return {
     Button: passthrough,
+    ErrorMessage: defineComponent({
+      props: { message: { type: String, default: undefined } },
+      setup(props) {
+        return () => props.message && h('p', { role: 'alert' }, props.message)
+      },
+    }),
     SettingsBody: passthrough,
     SettingsHeader: passthrough,
     SettingsRow: passthrough,
@@ -41,10 +48,17 @@ vi.mock('frappe-ui', async () => {
     }),
   }
 })
-vi.mock('@/api', () => ({
-  api: { mail: { vacation: { get: {}, update: {} } } },
-  useQuery: () => ({ data: saved.value }),
-  useMutation: () => ({ run, loading: false }),
+vi.mock('@/api', async () => {
+  const { fakeMutation } = await import('@/platform/testing/mutations')
+  return {
+    api: { mail: { vacation: { get: {}, update: {} } } },
+    useQuery: () => ({ data: saved.value }),
+    useMutation: (_reference: unknown, options?: { silent?: boolean }) =>
+      fakeMutation(run, failureToast, options),
+  }
+})
+vi.mock('@/platform/feedback', () => ({
+  failureLine: (error: Error | null) => error?.message,
 }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ accountId: 'account', sieveScripts: { data: [] } }),
@@ -93,6 +107,7 @@ beforeEach(() => {
   window.__ = (message: string) => message
   run.mockReset()
   reported.mockReset()
+  failureToast.mockReset()
 })
 
 it('starts from no dates once an absence is off and over, keeping its words', async () => {
@@ -132,4 +147,15 @@ it('hands a refused save to the app, where failed saves are reported', async () 
   root.querySelector<HTMLElement>('[label="Save"]')!.click()
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(reported.mock.calls[0]?.[0]).toBe(refusal)
+})
+it('says why a save was refused on the form, in place of a toast', async () => {
+  run.mockRejectedValue(new Error('The dates are the wrong way round'))
+  const { root, turnOn } = await mount(0, AHEAD)
+  await turnOn()
+  root.querySelector<HTMLElement>('[label="Save"]')!.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(root.querySelector('[role="alert"]')?.textContent).toBe(
+    'The dates are the wrong way round',
+  )
+  expect(failureToast).not.toHaveBeenCalled()
 })

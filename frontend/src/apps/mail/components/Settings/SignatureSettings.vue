@@ -12,6 +12,7 @@
       <label class="text-ink-gray-5 block text-xs">{{ __('Signature') }}</label>
       <MailRichTextField v-model="draft.html_body" :placeholder="__('Write your signature here')" />
     </div>
+    <ErrorMessage :message="saveError" />
     <SettingsDialogActions>
       <Button
         variant="solid"
@@ -70,7 +71,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { Edit2, Ellipsis, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
@@ -79,6 +80,7 @@ import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import { translate as __ } from '@/platform/translation'
@@ -89,8 +91,10 @@ const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 
 const signatures = useQuery(api.mail.signatures.list)
-const createSignature = useMutation(api.mail.signatures.create)
-const updateSignature = useMutation(api.mail.signatures.update)
+// A refused save is said on the signature that was saved, where the eyes are, so no toast says it
+const createSignature = useMutation(api.mail.signatures.create, { silent: true })
+const updateSignature = useMutation(api.mail.signatures.update, { silent: true })
+const saveError = computed(() => failureLine(createSignature.error ?? updateSignature.error))
 const deleteSignature = useMutation(api.mail.signatures.delete)
 
 // The signature being written. Without a name it is a new one; unset, the list shows
@@ -119,6 +123,9 @@ function editSignature(signature: Signature) {
 
 function showList() {
   draft.value = undefined
+  // What was refused is left behind with its signature, so the next one opens without it
+  createSignature.reset()
+  updateSignature.reset()
 }
 
 async function save() {
