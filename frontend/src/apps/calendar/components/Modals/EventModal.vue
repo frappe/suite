@@ -375,12 +375,16 @@ watch(formOpen, (val) => {
   }
   originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
-// Filled in under a dialog already open, the title gets the caret its autofocus gave to nothing.
+// Filled in under a dialog already open, the title gets the caret its autofocus gave to nothing,
+// selected as autofocus would have it, so typing replaces a title the event came in with.
 watch(
   () => loading,
   (now, before) => {
     if (before && !now && show.value && isNew.value && !isMobile.value)
-      void nextTick(() => titleInput.value?.focus())
+      void nextTick(() => {
+        titleInput.value?.focus()
+        titleInput.value?.select()
+      })
   },
 )
 // The phone's screen leaves at once; the dialog says so itself, once it has faded.

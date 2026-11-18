@@ -80,6 +80,7 @@
 							     below it reads as the edge of a section rather than the bottom of a field. -->
               <div class="mb-3 mt-1 px-4">
                 <input
+                  ref="titleInput"
                   v-model="event.title"
                   :autofocus="isNew"
                   :placeholder="__('Add title')"
@@ -418,7 +419,7 @@ import {
   Users,
   X,
 } from 'lucide-vue-next'
-import { computed, h, nextTick, ref, watch } from 'vue'
+import { computed, h, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
@@ -437,7 +438,7 @@ import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import { meetLogo } from '@/platform/brand'
 
-const { event, participants, calendarChoices } = defineProps<{
+const { event, isNew, participants, calendarChoices } = defineProps<{
   /** The form state EventModal owns; the rows edit it in place. */
   event: any
   title: string
@@ -463,6 +464,17 @@ const emit = defineEmits<{
 }>()
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
+
+// A new event that arrives named (one made from a mail) opens with its title selected, so
+// typing replaces it.
+// The field sits in the screens' loop, so its ref holds a list of one.
+const titleInput = useTemplateRef<HTMLInputElement[]>('titleInput')
+onMounted(() => {
+  const field = titleInput.value?.[0]
+  if (!isNew || !event.title || !field) return
+  field.focus()
+  field.select()
+})
 
 const SCREENS = ['form', 'participants'] as const
 /** Which of the two screens is up. Participants is pushed from the form and returns to it. */

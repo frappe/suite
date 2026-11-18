@@ -169,7 +169,6 @@ vi.mock('@/api', async (original) => {
 const ME = 'me@example.com'
 const draft: NewEventDraft = {
   title: 'Q4 planning',
-  description: 'Shall we meet Thursday at 3pm?',
   start: { date: '2026-11-19', time: '15:00' },
   participants: [
     { email: 'lena@example.com', name: 'Lena' },
@@ -265,6 +264,12 @@ const click = async (target: Element | null | undefined) => {
   target.click()
   await settle()
 }
+// Typing replaces the whole of it: it has the caret, and all of its text is selected.
+const selectedWhole = (field: HTMLInputElement | null | undefined) =>
+  !!field &&
+  document.activeElement === field &&
+  field.selectionStart === 0 &&
+  field.selectionEnd === field.value.length
 const loadingFrame = () => document.querySelector('[role="dialog"] [role="status"]')
 const created = () => server.writes.filter((write) => write.to === 'calendar.events.create')
 
@@ -297,7 +302,6 @@ describe("Calendar's new-event form opened over another area's page", () => {
       account: 'acc',
       calendar_ids: ['cal-1'],
       title: 'Q4 planning',
-      description: 'Shall we meet Thursday at 3pm?',
       start: '2026-11-19T15:00:00',
       duration: 'PT1H',
       send_scheduling_messages: true,
@@ -375,6 +379,8 @@ describe("Calendar's new-event form opened over another area's page", () => {
     await opened()
     expect(loadingFrame()).toBeNull()
     expect(titleField()?.value).toBe('Q4 planning')
+    await settle()
+    expect(selectedWhole(titleField())).toBe(true)
     await click(button('Save'))
     await click(button('Send Email'))
     expect(created()[0].input).toMatchObject({ account: 'acc', calendar_ids: ['cal-1'] })
@@ -466,10 +472,13 @@ describe("Calendar's new-event form opened over another area's page, on a phone"
 
     arrive()
     await vi.waitFor(() => expect(document.querySelector('[role="status"]')).toBeNull())
-    // The filled-in form in its place.
-    expect(
-      [...document.querySelectorAll('input')].some((field) => field.value === 'Q4 planning'),
-    ).toBe(true)
+    // The filled-in form in its place, its title ready to be typed over.
+    const title = [...document.querySelectorAll('input')].find(
+      (field) => field.value === 'Q4 planning',
+    )
+    expect(title).toBeDefined()
+    await settle()
+    expect(selectedWhole(title)).toBe(true)
     expect(button('Save')).toBeDefined()
     expect(renderErrors).toEqual([])
   })

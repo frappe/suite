@@ -21,64 +21,8 @@ describe('an event from a mail', () => {
     expect(eventFromMail(mail).title).toBe('Q4 planning')
   })
 
-  it("takes the mail's own words as its description, leaving the quoted trail out", () => {
-    expect(eventFromMail(mail).description).toBe('Can we meet Thursday to go over the numbers?')
-  })
-
-  it('keeps the paragraphs and lines the mail shows apart', () => {
-    // As Gmail writes a reply: a div per line, and a div holding only a <br> for the blank one.
-    const gmail = {
-      ...mail,
-      html_body:
-        '<div dir="ltr">Hi,<div><br></div><div>Can we meet Thursday?</div><div>Room 4 is free.</div><div><br></div><div>Priya</div></div>',
-    }
-    expect(eventFromMail(gmail).description).toBe(
-      'Hi,\n\nCan we meet Thursday?\nRoom 4 is free.\n\nPriya',
-    )
-
-    const paragraphs = {
-      ...mail,
-      html_body: '<p>Hi Lena,</p>\n  <p>Can we meet\n  Thursday?<br>Say at ten.</p>',
-    }
-    expect(eventFromMail(paragraphs).description).toBe(
-      'Hi Lena,\n\nCan we meet Thursday?\nSay at ten.',
-    )
-  })
-
-  it('leaves the quoted trail out of a mail sent as text alone', () => {
-    const text = (text_body: string) => eventFromMail({ ...mail, html_body: '', text_body })
-
-    // A reply on top, the trail and the line that introduces it below.
-    expect(
-      text('Thursday works for me.\n\nOn Mon, 10 Nov 2026, Lena wrote:\n> Can we meet?\n> Lena')
-        .description,
-    ).toBe('Thursday works for me.')
-
-    // Answers between the lines they answer: the answers stay, the quoted lines go.
-    expect(
-      text('On Mon, Lena wrote:\n> Room 4?\nYes, room 4.\n\n> At ten?\nTen is fine.').description,
-    ).toBe('Yes, room 4.\n\nTen is fine.')
-
-    // A signature above the trail does not carry the trail in with it.
-    const signed = text('Sure.\n-- \nPriya\n\nOn Mon, Lena wrote:\n> Budget numbers attached')
-    expect(signed.description).toMatch(/^Sure\./)
-    expect(signed.description).not.toContain('Budget numbers')
-  })
-
-  it('keeps a long description to 2,000 characters, its ellipsis among them', () => {
-    const long = eventFromMail({ ...mail, html_body: '', text_body: 'word '.repeat(1000) })
-    expect(long.description!.length).toBeLessThanOrEqual(2000)
-    expect(long.description).toMatch(/word…$/)
-
-    // An emoji is two UTF-16 units; the cut must not land between them.
-    const emoji = eventFromMail({
-      ...mail,
-      html_body: '',
-      text_body: 'a'.repeat(1998) + '😀'.repeat(10),
-    })
-    expect(emoji.description!.length).toBeLessThanOrEqual(2000)
-    expect(emoji.description).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/)
-    expect(emoji.description).toMatch(/…$/)
+  it('leaves the description to the reader, with none of the mail in it', () => {
+    expect(eventFromMail(mail).description ?? '').toBe('')
   })
 
   it('has everyone on the mail as its people, and nobody who was only Bcc’d', () => {
