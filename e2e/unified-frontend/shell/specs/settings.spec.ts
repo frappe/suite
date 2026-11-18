@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell";
 
@@ -11,7 +11,7 @@ import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell"
 const FIRST_TABS = [
 	{ heading: "Account", tab: "Profile" },
 	{ heading: "Drive", tab: "Storage" },
-	{ heading: "Mail", tab: "Credentials" },
+	{ heading: "Mail", tab: "General" },
 	{ heading: "Calendar", tab: "Calendars" },
 ];
 
@@ -78,8 +78,8 @@ test.describe("desktop", () => {
 
 		for (const body of [
 			"PreferencesSettings.vue",
-			"StatisticsSettings.vue",
-			"CredentialsSettings.vue",
+			"StorageSettings.vue",
+			"GeneralSettings.vue",
 			"CalendarsSettings.vue",
 		]) {
 			expect(served.has(body), `${body} before its click`).toBe(false);
@@ -87,7 +87,7 @@ test.describe("desktop", () => {
 
 		await settings.getByRole("tab", { name: "Storage" }).click();
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Storage" })).toBeVisible();
-		expect(served.has("StatisticsSettings.vue")).toBe(true);
+		expect(served.has("StorageSettings.vue")).toBe(true);
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
 
@@ -179,36 +179,29 @@ for (const phone of [false, true]) {
 			return settings.getByRole("region", { name: "Storage", exact: true });
 		}
 
-		async function headingTops(panel: Locator) {
-			const tops = [];
-			for (const name of ["By type", "Largest files"]) {
-				const heading = panel.getByRole("heading", { name, exact: true });
-				await expect(heading).toBeVisible();
-				tops.push((await heading.boundingBox())?.y);
-			}
-			return tops;
-		}
-
-		test("a failed load offers Retry, and loading and loaded share one layout", async ({ page }) => {
+		test("a failed load offers Retry, and a slow load shows the loading state until it answers", async ({ page }) => {
 			await patchAccount(page, FULL_ACCOUNT);
 			await failRequest(page, USAGE);
 			let panel = await openStatistics(page);
 			const failure = panel.getByRole("alert");
-			await expect(failure).toContainText("Could not load storage usage");
+			await expect(failure).toContainText("Could not load these settings");
 			await expect(failure.getByRole("button", { name: "Retry" })).toBeVisible();
 			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toHaveCount(0);
 
 			await page.unroute(USAGE);
 			const release = await holdUsage(page, FILLED);
 			panel = await openStatistics(page);
-			await expect(panel.getByText("Loading…")).toBeVisible();
-			const loading = await headingTops(panel);
+			const loading = panel.getByRole("status", { name: "Loading" }).first();
+			await expect(loading).toBeVisible();
+			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toHaveCount(0);
 
 			release();
 			await expect(panel.getByText("report.pdf")).toBeVisible();
 			await expect(panel.getByRole("listitem").filter({ hasText: "PDF" }).first()).toContainText("900 KB");
 			await expect(panel.getByRole("listitem").filter({ hasText: "photo.png" })).toContainText("500 KB");
-			expect(await headingTops(panel)).toEqual(loading);
+			await expect(panel.getByRole("heading", { name: "By type", exact: true })).toBeVisible();
+			await expect(panel.getByRole("heading", { name: "Largest files", exact: true })).toBeVisible();
+			await expect(loading).toHaveCount(0);
 		});
 
 		test("usage with no active file explains what still counts", async ({ page }) => {
@@ -311,7 +304,7 @@ test.describe("phone", () => {
 		// A settings heading: a named section holding its rows.
 		const profileSections = page.locator(SETTINGS_SECTION);
 		const mail = page.getByRole("region", { name: "Mail", exact: true });
-		for (const tab of ["Credentials", "Automation", "Import", "Export"]) {
+		for (const tab of ["General", "Folders", "Import & export", "Advanced"]) {
 			await expect(mail.getByRole("button", { name: tab, exact: true })).toBeVisible();
 		}
 		const profileHeadings = await profileSections.evaluateAll((sections) =>
@@ -319,10 +312,10 @@ test.describe("phone", () => {
 		);
 
 		// A row opens its tab in Settings.
-		await mail.getByRole("button", { name: "Credentials", exact: true }).click();
+		await mail.getByRole("button", { name: "General", exact: true }).click();
 		const settings = page.getByRole("dialog", { name: "Settings" });
-		const tabPage = settings.getByRole("region", { name: "Credentials", exact: true });
-		await expect(tabPage.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+		const tabPage = settings.getByRole("region", { name: "General", exact: true });
+		await expect(tabPage.getByRole("heading", { name: "General", exact: true })).toBeVisible();
 
 		// Back shows the Settings list: the same headings as the Profile page.
 		await page.goBack();

@@ -82,14 +82,3 @@ export function resolveSettingsTab(
   const tabs = groups.flatMap((group) => group.tabs)
   return tabs.find((tab) => tab.id === requested)?.id ?? tabs[0]?.id
 }
-
-/**
- * Provided as `true` by a phone settings page. Tab bodies then drop the
- * dialog header and padding, because the page bar shows the title.
- *
- * A string, not a symbol: product bodies read it without importing the shell.
- */
-export const SETTINGS_PHONE_PAGE = 'app-settings-mobile-page'
-
-/** The id of the phone page bar's slot for a tab's header actions. */
-export const SETTINGS_PAGE_ACTIONS_ID = 'app-settings-page-actions'

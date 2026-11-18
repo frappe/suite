@@ -36,6 +36,6 @@ describe('a batch that does not fit', () => {
     expect(shown?.message).toBe('Not enough space')
     expect(shown?.action?.label).toBe('Storage')
     shown?.action?.onClick()
-    expect(fake.openSettings).toHaveBeenCalledWith('drive.statistics')
+    expect(fake.openSettings).toHaveBeenCalledWith('drive.storage')
   })
 })

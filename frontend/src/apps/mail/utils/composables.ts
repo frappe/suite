@@ -38,9 +38,9 @@ export const useReadingPane = () => {
 }
 
 /**
- * Flipping Split View from the list toolbar. Mail layout settings writes the same field behind a
- * Save button; this one is a layout switch, so it applies on click — the local value flips first
- * and the whole split re-lays out from it, then rolls back if the write doesn't land.
+ * Flipping Split View, from the list's View menu or Settings > General. A layout switch, so it
+ * applies on click: the local value flips first and the whole split re-lays out from it, then rolls
+ * back if the write doesn't land.
  */
 export const useToggleReadingPane = () => {
   const { userResource } = userStore()
@@ -51,6 +51,19 @@ export const useToggleReadingPane = () => {
       show_reading_pane: user.show_reading_pane ? 0 : 1,
     })
   }
+}
+
+/**
+ * Grouping the message list by date (see dateGroup), set from the list's View menu or Settings >
+ * General. Saved as it is flipped; the switch reads the user info, which the write updates at once
+ * and rolls back if it fails.
+ */
+export const useGroupByDate = () => {
+  const { userResource } = userStore()
+  const groupedByDate = computed(() => !!userResource.data?.group_by_date)
+  const setGroupByDate = (on: boolean) =>
+    client.mutation(api.mail.settings.updatePreferences, { group_by_date: on ? 1 : 0 })
+  return { groupedByDate, setGroupByDate }
 }
 
 /**

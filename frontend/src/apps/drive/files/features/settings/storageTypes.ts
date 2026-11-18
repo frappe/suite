@@ -1,7 +1,7 @@
 import { fileTypeIcon, fileTypeTint, type FileType } from '@/apps/drive/files/internal/icons'
 
 // The route names a file by its mime family from the legacy mime table, and a
-// content document by its content doctype. Both lists on the Statistics tab
+// content document by its content doctype. Both lists on the Storage tab
 // draw an item by its type, so a row and a file of that type look the same.
 // Any other type is a plain file.
 const STORAGE_FILE_TYPES = new Map<string, FileType>(

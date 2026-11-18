@@ -16,9 +16,13 @@ class Preferences(TypedDict):
     first_name: str | None
     last_name: str | None
     user_image: str | None
+    # The language the interface is in: the user's own, or the site's when the user has none.
     language: str | None
     time_zone: str | None
     desk_theme: str | None
+    # Not a preference: read here so Account > Security knows whether a key exists. The secret
+    # is never read back.
+    api_key: str | None
 
 
 class PreferenceChanges(TypedDict, total=False):
@@ -41,7 +45,9 @@ class Language(TypedDict):
 @frappe.whitelist(methods=["GET"])
 def get_preferences() -> Preferences:
     doc = frappe.get_doc("User", frappe.session.user)
-    return cast(Preferences, {field: doc.get(field) for field in Preferences.__annotations__})
+    preferences = cast(Preferences, {field: doc.get(field) for field in Preferences.__annotations__})
+    preferences["language"] = doc.language or frappe.local.lang
+    return preferences
 
 
 @frappe.whitelist(methods=["PATCH"])

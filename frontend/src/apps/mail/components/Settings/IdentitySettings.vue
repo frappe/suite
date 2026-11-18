@@ -1,334 +1,184 @@
+<!--
+  Mail > Identities & signatures. Identities are the addresses this account sends mail as; one
+  opens to edit its name, signature, Reply to and Bcc. The signature on an identity is the one new
+  mail from it starts with, so that is the one place a default signature is set. Saved signatures
+  are reusable text an identity's signature can be filled from.
+-->
 <template>
-  <AppSettingsHeader :title="__('Identity')">
-    <template #actions>
-      <Button
-        v-if="draft"
-        :label="__('Save')"
-        variant="solid"
-        :size="isMobile ? 'md' : 'sm'"
-        :disabled="identities.isFetching || JSON.stringify(draft) === JSON.stringify(selected)"
-        :loading="saveIdentity.isPending"
-        @click="save()"
-      />
-      <Button
-        icon-left="lucide-plus"
-        :label="__('New')"
-        :size="isMobile ? 'md' : 'sm'"
-        variant="outline"
-        @click="showAddIdentity"
-      />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
-    <template v-if="identities?.data?.length">
-      <div class="flex min-h-full flex-col">
-        <div class="flex-1 space-y-4">
-          <FormControl
-            v-model="identityName"
-            type="combobox"
-            :label="__('Identity')"
-            variant="outline"
-            :options="
-              (identities.data ?? []).map((identity: Identity) => ({
-                label: identity._name ? `${identity._name} <${identity.email}>` : identity.email,
-                value: identity.name,
-              }))
-            "
-            :open-on-click="true"
-          />
-
-          <template v-if="draft">
-            <FormControl v-model="draft._name" :label="__('Display Name')" variant="outline" />
-
-            <div class="space-y-1.5">
-              <label class="text-ink-gray-5 block text-xs"> {{ __('Reply To') }} </label>
-              <IdentitySettingsListView
-                :data="draft.reply_to || []"
-                :empty-state-description="__('No Reply To addresses added.')"
-                @delete="(index: number) => draft?.reply_to?.splice(index, 1)"
-              />
-            </div>
-            <Button
-              :label="__('Add Reply To')"
-              class="min-h-7 w-full"
-              variant="outline"
-              @click="() => showAddEmailAddress(true)"
-            />
-
-            <div class="space-y-1.5">
-              <label class="text-ink-gray-5 block text-xs"> {{ __('Bcc') }} </label>
-              <IdentitySettingsListView
-                :data="draft.bcc || []"
-                :empty-state-description="__('No Bcc addresses added.')"
-                @delete="(index: number) => draft?.bcc?.splice(index, 1)"
-              />
-            </div>
-            <Button
-              :label="__('Add Bcc')"
-              class="min-h-7 w-full"
-              variant="outline"
-              @click="() => showAddEmailAddress(false)"
-            />
-
-            <FormControl
-              v-if="signatures.data?.length"
-              v-model="savedSignature"
-              type="combobox"
-              :label="__('Use Saved Signature')"
-              :options="
-                signatures.data?.map((sig) => ({
-                  label: sig.signature_name,
-                  value: sig.html_body,
-                }))
-              "
-              variant="outline"
-              :open-on-click="true"
-              @update:model-value="setSignature"
-            />
-
-            <div class="space-y-1.5">
-              <label class="text-ink-gray-5 block text-xs">
-                {{ __('Default Signature') }}
-              </label>
-              <MailRichTextField
-                :model-value="draft.html_signature"
-                :placeholder="__('Write your signature here')"
-                @update:model-value="setSignature"
-              />
-            </div>
-
-            <Button
-              v-if="draft.may_delete"
-              :label="__('Delete')"
-              class="min-h-7 w-full"
-              variant="outline"
-              theme="red"
-              @click="showDeleteDialog = true"
-            />
-          </template>
-        </div>
-
-        <Dialog
-          v-model:open="showDialog"
-          v-bind="{
-            title: isAddReplyTo ? __('New Reply To') : __('New Bcc'),
-            actions: [
-              {
-                label: __('Save'),
-                variant: 'solid' as const,
-                disabled: !email,
-                onClick: () => addEmailAddress(),
-              },
-            ],
-          }"
-        >
-          <template #default>
-            <FormControl
-              v-model="email"
-              :label="__('Email')"
-              placeholder="johndoe@example.com"
-              type="email"
-              class="mb-4 w-full"
-              :required="true"
-            />
-            <FormControl
-              v-model="displayName"
-              :label="__('Display Name')"
-              placeholder="John Doe"
-              class="w-full"
-            />
-          </template>
-        </Dialog>
-      </div>
-    </template>
-    <div v-else-if="!identities.isFetching" class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base font-medium">{{ __('No identities.') }}</p>
-      <p>
-        {{ __('Identities are the addresses you send mail as. Create one to get started.') }}
-      </p>
-    </div>
-
-    <Dialog
-      v-model:open="showAddIdentityDialog"
-      v-bind="{
-        title: __('New Identity'),
-        actions: [
-          {
-            label: __('Save'),
-            variant: 'solid' as const,
-            disabled: !newEmail,
-            loading: addIdentity.isPending,
-            onClick: () => addIdentitySubmit(),
-          },
-        ],
-      }"
+  <SettingsPage
+    :description="__('The addresses you send mail as, and the signatures you sign it with')"
+    :loading="!identities.data"
+    :reads="[identities, store.userResource]"
+  >
+    <SettingsSection
+      :title="__('Identities')"
+      :description="__('Each one has its own name, signature, and Reply to and Bcc addresses')"
     >
-      <template #default>
-        <FormControl
-          v-model="newEmail"
-          :label="__('Email')"
-          placeholder="johndoe@example.com"
-          type="email"
-          class="mb-4 w-full"
-          :required="true"
-        />
-        <FormControl
-          v-model="newDisplayName"
-          :label="__('Display Name')"
-          placeholder="John Doe"
-          class="w-full"
+      <template #actions>
+        <Button icon-left="lucide-plus" :label="__('New')" @click="newIdentity" />
+      </template>
+      <template v-if="identities.data?.length">
+        <SettingsListRow
+          v-for="identity in identities.data"
+          :key="identity.name"
+          :title="identity._name || identity.email"
+          :subtitle="identity._name ? identity.email : undefined"
+          :menu="identityMenu(identity)"
+          @open="editIdentity(identity)"
         />
       </template>
-    </Dialog>
+      <SettingsEmpty
+        v-else
+        :title="__('No identities yet')"
+        :description="__('Add an address to send mail as.')"
+      />
+    </SettingsSection>
 
-    <Dialog
-      v-model:open="showDeleteDialog"
-      v-bind="{
-        title: __('Delete Identity'),
-        message: __('Are you sure you want to delete this identity?'),
-        actions: [
-          {
-            label: __('Confirm'),
-            variant: 'solid' as const,
-            theme: 'red' as const,
-            loading: deleteIdentity.isPending,
-            onClick: () => deleteIdentitySubmit(),
-          },
-        ],
-      }"
-    />
-  </AppSettingsBody>
+    <SettingsSection
+      :title="__('Signatures')"
+      :description="__('Saved signatures you can put on any identity')"
+    >
+      <template #actions>
+        <Button icon-left="lucide-plus" :label="__('New')" @click="showAddSignature = true" />
+      </template>
+      <SettingsLoading v-if="!signatures.data" />
+      <template v-else-if="signatures.data.length">
+        <SettingsListRow
+          v-for="signature in signatures.data"
+          :key="signature.name"
+          :title="signature.signature_name"
+          :menu="signatureMenu(signature)"
+          @open="editSignature(signature.name)"
+        />
+      </template>
+      <SettingsEmpty
+        v-else
+        :title="__('No saved signatures yet')"
+        :description="__('Save a signature once, then use it on any identity.')"
+      />
+    </SettingsSection>
+
+    <IdentityDialog v-model:open="showIdentity" :identity="selectedIdentity" />
+    <AddSignatureModal v-model="showAddSignature" />
+    <EditSignatureModal v-model="showEditSignature" :signature-i-d="selectedSignature" />
+  </SettingsPage>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { Button } from 'frappe-ui'
+import { computed, ref } from 'vue'
 
-import { api, useMutation, useQuery, type InputOf } from '@/api'
-import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
-import IdentitySettingsListView from '@/apps/mail/components/IdentitySettingsListView.vue'
+import { api, useMutation, useQuery, type OutputOf } from '@/api'
+import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
+import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal.vue'
+import IdentityDialog from '@/apps/mail/components/Settings/IdentityDialog.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
-import { raiseToast } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { confirm, prompt, toast } from '@/platform/feedback'
+import {
+  SettingsEmpty,
+  SettingsListRow,
+  SettingsLoading,
+  SettingsPage,
+  SettingsSection,
+} from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { identities } = store
-const { isMobile } = useScreenSize()
-const signatures = useQuery(api.mail.signatures.list)
-const identityName = ref(identities.data?.[0]?.name ?? '')
-const selected = computed(() =>
-  identities.data?.find((identity) => identity.name === identityName.value),
+
+// Identities
+
+const showIdentity = ref(false)
+const selectedIdentityName = ref('')
+// Read from the list, so a reload after a save shows in the open dialog.
+const selectedIdentity = computed(() =>
+  identities.data?.find((identity) => identity.name === selectedIdentityName.value),
 )
-const draft = ref<Identity>()
-watch(
-  selected,
-  (identity) => {
-    draft.value = identity
-      ? {
-          ...identity,
-          reply_to:
-            identity.reply_to?.map((address) => ({
-              ...address,
-            })) ?? [],
-          bcc:
-            identity.bcc?.map((address) => ({
-              ...address,
-            })) ?? [],
-        }
-      : undefined
-  },
-  {
-    immediate: true,
-  },
-)
-const saveIdentity = useMutation(api.mail.identities.save)
-async function save() {
-  const identity = draft.value
-  if (!identity) return
-  await saveIdentity.run({
-    account: identity.account,
-    id: identity.id,
-    name: identity._name,
-    reply_to: identity.reply_to ?? [],
-    bcc: identity.bcc ?? [],
-    html_signature: identity.html_signature,
-  })
-  raiseToast(__('Identity updated'))
-}
-function setSignature(value: string) {
-  if (draft.value) draft.value.html_signature = value
-}
-const savedSignature = ref('')
-const showDialog = ref(false)
-const isAddReplyTo = ref(true)
-const email = ref('')
-const displayName = ref('')
-const showAddEmailAddress = (isReplyTo: boolean) => {
-  email.value = ''
-  displayName.value = ''
-  isAddReplyTo.value = isReplyTo
-  showDialog.value = true
-}
-const addEmailAddress = () => {
-  if (isAddReplyTo.value)
-    draft.value!.reply_to!.push({
-      email: email.value,
-      display_name: displayName.value,
-    })
-  else
-    draft.value!.bcc!.push({
-      email: email.value,
-      display_name: displayName.value,
-    })
-  showDialog.value = false
-}
-const showAddIdentityDialog = ref(false)
-const newEmail = ref('')
-const newDisplayName = ref('')
-const showAddIdentity = () => {
-  newEmail.value = ''
-  newDisplayName.value = ''
-  showAddIdentityDialog.value = true
-}
-const addIdentity = useMutation(api.mail.identities.create)
-async function addIdentitySubmit() {
-  const input: InputOf<typeof api.mail.identities.create> = {
-    account: store.accountId,
-    email: newEmail.value,
-    name: newDisplayName.value,
-  }
-  const result = await addIdentity.run(input)
-  const id = result
-  raiseToast(__('Identity created'))
-  showAddIdentityDialog.value = false
-  identityName.value = `${store.accountId}|${id}`
-}
-const showDeleteDialog = ref(false)
-const deleteIdentity = useMutation(api.mail.identities.delete)
-async function deleteIdentitySubmit() {
-  const input: InputOf<typeof api.mail.identities.delete> = {
-    names: [identityName.value],
-  }
-  await deleteIdentity.run(input)
-  raiseToast(__('Identity deleted'))
-  showDeleteDialog.value = false
-  identityName.value = ''
+function editIdentity(identity: Identity) {
+  selectedIdentityName.value = identity.name
+  showIdentity.value = true
 }
 
-// Keep the selection valid as the list loads or changes (e.g. after create/delete
-// or an account switch): fall back to the first identity when the current one is gone.
-watch(
-  () => identities.data,
-  (data) => {
-    if (!data?.length) {
-      identityName.value = ''
-    } else if (!data.some((i: Identity) => i.name === identityName.value)) {
-      identityName.value = data[0].name
-    }
+const createIdentity = useMutation(api.mail.identities.create)
+async function newIdentity() {
+  const values = await prompt({
+    title: __('New identity'),
+    confirmLabel: __('Create'),
+    fields: [
+      { name: 'email', label: __('Email'), placeholder: 'name@example.com', required: true },
+      { name: 'name', label: __('Display name') },
+    ],
+  })
+  if (!values || typeof values.email !== 'string') return
+  await createIdentity.run({
+    account: store.accountId,
+    email: values.email.trim(),
+    name: typeof values.name === 'string' ? values.name.trim() : undefined,
+  })
+  toast.success(__('Identity created'))
+}
+
+const deleteIdentities = useMutation(api.mail.identities.delete)
+async function deleteIdentity(identity: Identity) {
+  const confirmed = await confirm({
+    title: __('Delete {0}?', [identity._name || identity.email]),
+    message: __('You can no longer send mail as this identity.'),
+    confirmLabel: __('Delete'),
+    destructive: true,
+  })
+  if (!confirmed) return
+  await deleteIdentities.run({ names: [identity.name] })
+  toast.success(__('Identity deleted'))
+}
+
+const identityMenu = (identity: Identity) => [
+  { label: __('Edit'), icon: 'lucide-pencil', onClick: () => editIdentity(identity) },
+  // The server says which identities may go; the account's own address may not.
+  ...(identity.may_delete
+    ? [
+        {
+          label: __('Delete'),
+          icon: 'lucide-trash-2',
+          theme: 'red' as const,
+          onClick: () => void deleteIdentity(identity).catch(() => {}),
+        },
+      ]
+    : []),
+]
+
+// Signatures
+
+type Signature = OutputOf<typeof api.mail.signatures.list>[number]
+const signatures = useQuery(api.mail.signatures.list)
+const showAddSignature = ref(false)
+const showEditSignature = ref(false)
+const selectedSignature = ref('')
+function editSignature(name: string) {
+  selectedSignature.value = name
+  showEditSignature.value = true
+}
+
+const removeSignature = useMutation(api.mail.signatures.delete)
+async function deleteSignature(signature: Signature) {
+  const confirmed = await confirm({
+    title: __('Delete {0}?', [signature.signature_name]),
+    message: __('Identities that use this signature keep their copy of it.'),
+    confirmLabel: __('Delete'),
+    destructive: true,
+  })
+  if (!confirmed) return
+  await removeSignature.run({ name: signature.name })
+  toast.success(__('Signature deleted'))
+}
+
+const signatureMenu = (signature: Signature) => [
+  { label: __('Edit'), icon: 'lucide-pencil', onClick: () => editSignature(signature.name) },
+  {
+    label: __('Delete'),
+    icon: 'lucide-trash-2',
+    theme: 'red' as const,
+    onClick: () => void deleteSignature(signature).catch(() => {}),
   },
-)
+]
 </script>

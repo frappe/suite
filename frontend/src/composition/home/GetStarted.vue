@@ -159,7 +159,7 @@ const dialogOpen = computed({
 
 function openTask(task: Task): void {
   // These live in Settings already; the list only points there.
-  if (task.id === 'import') return openSettings('mail.import')
+  if (task.id === 'import') return openSettings('mail.transfer')
   if (task.id === 'photo') return openSettings('account.profile')
   active.value = task.id
 }

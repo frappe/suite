@@ -1,5 +1,6 @@
 import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { watch } from 'vue'
 
 import type { Transport } from '@/platform/transport'
 
@@ -173,6 +174,30 @@ describe('session', () => {
     await Promise.all([first, second])
     expect(session.status.value).toBe('authenticated')
     expect(request).toHaveBeenCalledOnce()
+  })
+
+  it('stays signed in while it reads the account again, and shows the new name', async () => {
+    document.cookie = 'user_id=user%40example.com; path=/'
+    let fullName = 'Old Name'
+    let release: () => void = () => {}
+    const request = vi.fn(async () => {
+      await new Promise<void>((resolve) => (release = resolve))
+      return { name: 'user@example.com', full_name: fullName }
+    })
+    const session = createSession(fromPartial<Transport>({ request }))
+    release()
+    await session.refresh()
+    const statuses: string[] = []
+    watch(session.status, (status) => statuses.push(status), { flush: 'sync' })
+
+    fullName = 'New Name'
+    const reading = session.refresh()
+    release()
+    await reading
+
+    expect(statuses).toEqual([])
+    expect(session.status.value).toBe('authenticated')
+    expect(session.user.value?.fullName).toBe('New Name')
   })
 
   it('clears stale identity and capabilities when the account becomes Guest', async () => {

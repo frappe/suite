@@ -70,7 +70,7 @@ export const useCalendarActions = () => {
       onClick: () => edit(calendar),
     },
     {
-      label: __('Set as Default'),
+      label: __('Set as default'),
       icon: Pin,
       condition: () => canEdit(calendar) && !calendar.default,
       onClick: () => makeDefault(calendar),
@@ -79,7 +79,7 @@ export const useCalendarActions = () => {
     {
       label: __('Delete'),
       icon: Trash2,
-      theme: 'red',
+      theme: 'red' as const,
       condition: () => !calendar.default && !!calendar.may_delete,
       onClick: () => {
         selected.value = calendar

@@ -11,8 +11,18 @@
     :failed="failed"
     :retry="load"
     :tab="requestedTab"
+    @update:tab="selectTab"
   />
-  <SettingsDialog v-else v-model:open="open" v-model:tab="activeTab" size="5xl">
+  <!-- The command palette binds the Settings key (`useSettingsShortcut`),
+       so frappe-ui's own binding, which only toggles the dialog, is off. -->
+  <SettingsDialog
+    v-else
+    v-model:open="open"
+    :tab="activeTab"
+    size="5xl"
+    :keyboard-shortcut="false"
+    @update:tab="selectTab"
+  >
     <template #title>{{ __('Settings') }}</template>
     <!-- SettingsDialog draws no close button. This one sits where Dialog
          puts its own. -->
@@ -49,7 +59,7 @@
         <SettingsLoadFailed v-if="failed" class="px-2 py-1.5" :retry="load" />
       </SettingsSidebar>
       <SettingsContent>
-        <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
+        <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id" tabindex="-1">
           <SettingsTabBody :tab="tab" />
         </SettingsPanel>
       </SettingsContent>
@@ -78,7 +88,7 @@ import {
   SettingsPanel,
   SettingsSidebar,
 } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -102,18 +112,20 @@ const avatar = computed(() => session.user.value?.avatar ?? null)
 const { groups, failed, load } = useSettingsGroups()
 const tabs = computed(() => groups.value?.flatMap((group) => group.tabs) ?? [])
 
-// The dialog's own selection. It follows the requested tab, falls back to the
-// first visible tab, and stays local so a sidebar click does not rewrite the
-// caller's request.
-const activeTab = ref<string | undefined>()
-
-watch(
-  [groups, requestedTab],
-  ([visible, requested]) => {
-    if (visible) activeTab.value = resolveSettingsTab(visible, requested)
-  },
-  { immediate: true },
+// The tab on screen: the requested one, or the first visible tab.
+const activeTab = computed(() =>
+  groups.value ? resolveSettingsTab(groups.value, requestedTab.value) : undefined,
 )
+
+function isTabId(id: string | number | undefined): id is SettingsTabId {
+  return tabs.value.some((tab) => tab.id === id)
+}
+
+// A tab the user picks becomes the request, so a later `openSettings(tab)`
+// from inside a tab always differs from it and switches.
+function selectTab(id: string | number | undefined) {
+  requestedTab.value = isTabId(id) ? id : undefined
+}
 
 watch(
   open,

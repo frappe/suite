@@ -15,10 +15,8 @@
 import { Button, Dropdown } from 'frappe-ui'
 import { computed } from 'vue'
 
-import { api, client } from '@/api'
 import { useTabChoiceMenu } from '@/apps/mail/composables/useInboxTabs'
-import { userStore } from '@/apps/mail/stores/user'
-import { useReadingPane, useToggleReadingPane } from '@/apps/mail/utils/composables'
+import { useGroupByDate, useReadingPane, useToggleReadingPane } from '@/apps/mail/utils/composables'
 
 /** Whether the view is an Inbox, whose categories the menu then offers (where the site sorts mail). */
 const { inbox = false } = defineProps<{ inbox?: boolean }>()
@@ -27,14 +25,7 @@ const showReadingPane = useReadingPane()
 const toggleReadingPane = useToggleReadingPane()
 const { categoriesSwitch, tabGroups } = useTabChoiceMenu()
 
-// Grouping the list by date (see dateGroup): the same switch as Settings → Layout, saved as it is
-// flipped.
-const { userResource } = userStore()
-const groupedByDate = computed(() => !!userResource.data?.group_by_date)
-const groupByDate = (on: boolean) =>
-  void client.mutation(api.mail.settings.updatePreferences, {
-    group_by_date: on ? 1 : 0,
-  })
+const { groupedByDate, setGroupByDate } = useGroupByDate()
 
 const menu = computed(() => [
   {
@@ -52,7 +43,7 @@ const menu = computed(() => [
         icon: 'lucide-calendar-days',
         switch: true as const,
         switchValue: groupedByDate.value,
-        onClick: (on: boolean) => groupByDate(on),
+        onClick: (on: boolean) => void setGroupByDate(on).catch(() => {}),
       },
       ...(inbox && categoriesSwitch.value ? [categoriesSwitch.value] : []),
     ],

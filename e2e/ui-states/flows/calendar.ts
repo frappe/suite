@@ -343,7 +343,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "“No results for …”." },
 		},
 		phoneProfile: {
-			meta: { description: "The Profile tab: Maya's name and address, then Preferences, Calendars, Participant Identity, Import, Export, Advanced and Log Out." },
+			meta: { description: "The Profile tab: Maya's name and address, then the Suite settings list, whose Calendar group holds Calendars, Identity, Import & export and Advanced, and Log Out." },
 		},
 	},
 });
@@ -822,7 +822,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async PROFILE_TAB(scene) {
 			await phoneTabs(scene).getByRole("button", { name: "Profile" }).click();
-			await expect(scene.page.getByRole("button", { name: "Participant Identity" })).toBeVisible();
+			await expect(scene.page.getByRole("button", { name: "Calendars", exact: true })).toBeVisible();
 		},
 	},
 });

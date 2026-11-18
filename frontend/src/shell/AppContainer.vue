@@ -8,6 +8,7 @@ import { computed, onScopeDispose } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSessionStore } from '@/boot/session'
+import { SETTINGS_SHORTCUT } from '@/platform/settings'
 import type { SettingsTabId } from '@/shell/settings/settings'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
@@ -33,7 +34,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups(
               {
                 id: `${String(route.meta.area)}-settings`,
                 label: 'Settings',
-                shortcut: 'Mod+Shift+Comma',
+                shortcut: SETTINGS_SHORTCUT,
                 enterHint: 'open settings',
                 icon: 'lucide-settings',
                 keywords: ['profile', 'preferences', 'workspace'],

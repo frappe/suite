@@ -877,6 +877,7 @@ export const operationGetPreferences: Validators<GetPreferencesInput, GetPrefere
           language: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Language' },
           time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
           desk_theme: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Desk Theme' },
+          api_key: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Api Key' },
         },
         required: [
           'name',
@@ -887,6 +888,7 @@ export const operationGetPreferences: Validators<GetPreferencesInput, GetPrefere
           'language',
           'time_zone',
           'desk_theme',
+          'api_key',
         ],
         title: 'Preferences',
         type: 'object',
@@ -932,6 +934,7 @@ export const operationUpdatePreferences: Validators<
           language: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Language' },
           time_zone: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Time Zone' },
           desk_theme: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Desk Theme' },
+          api_key: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Api Key' },
         },
         required: [
           'name',
@@ -942,6 +945,7 @@ export const operationUpdatePreferences: Validators<
           'language',
           'time_zone',
           'desk_theme',
+          'api_key',
         ],
         title: 'Preferences',
         type: 'object',

@@ -4,6 +4,7 @@
 from unittest.mock import patch
 
 import frappe
+from frappe.app import handle_exception
 from frappe.auth import CookieManager, LoginManager
 from frappe.utils import set_request
 from frappe.utils.password import check_password, update_password
@@ -82,6 +83,39 @@ class TestResetPassword(SuiteCloudTestCase):
             events.update_password(NEW_PASSWORD, key=key), "The reset password link has been expired"
         )
         self.assertEqual(self.fake.passwords[self.email], self.mail_password)
+
+    def test_a_wrong_current_password_is_refused_and_keeps_the_session(self) -> None:
+        frappe.set_user(self.email)
+        set_request(path="/api/method/frappe.core.doctype.user.user.update_password")
+        logged_before = self.failed_logins()
+
+        try:
+            events.update_password(NEW_PASSWORD, old_password="not-my-password-9")
+        except frappe.ValidationError as refused:
+            # Frappe's request handler answers the error as it would for a real request.
+            handle_exception(refused)
+        else:
+            self.fail("A wrong current password was accepted")
+
+        self.assertEqual(frappe.local.cookie_manager.to_delete, [])
+        self.assertEqual(frappe.session.user, self.email)
+        self.assertEqual(check_password(self.email, OLD_PASSWORD), self.email)
+        self.assertEqual(self.fake.passwords[self.email], self.mail_password)
+        self.assertEqual(
+            self.failed_logins(),
+            logged_before + 1,
+            "The wrong current password is missing from the Authentication Log",
+        )
+
+    def failed_logins(self) -> int:
+        """The failed sign-ins the Authentication Log holds for the member."""
+        return len(
+            frappe.get_all(
+                "Activity Log",
+                filters={"user": self.email, "operation": "Login", "status": "Failed"},
+                pluck="name",
+            )
+        )
 
     def test_a_reset_request_answers_the_same_for_an_unknown_address(self) -> None:
         # Only the answer is under test here, not the hourly limit on the endpoint.

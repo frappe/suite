@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Screen a Sender'),
+      title: __('Screen a sender'),
       actions: [
         {
           label: __('Add'),
@@ -46,7 +46,8 @@ import { computed, ref, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
-import { isEmailOrDomain, raiseToast } from '@/apps/mail/utils'
+import { isEmailOrDomain } from '@/apps/mail/utils'
+import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -87,7 +88,7 @@ async function screenEmailAddressSubmit() {
     action: action.value,
   }
   await screenEmailAddress.run(input)
-  raiseToast(__('Sender screened'))
+  toast.success(__('Sender screened'))
   show.value = false
 }
 

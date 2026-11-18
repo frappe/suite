@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('New Push Subscription'),
+      title: __('New push subscription'),
       actions: [
         {
           label: __('Create'),
@@ -58,7 +58,7 @@ import { Dialog, FormControl } from 'frappe-ui'
 import { computed, inject, ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
-import { raiseToast } from '@/apps/mail/utils'
+import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -90,7 +90,7 @@ async function addPushSubscriptionSubmit() {
     types: chosenTypes.value.length ? chosenTypes.value : undefined,
   }
   await addPushSubscription.run(input)
-  raiseToast(__('Push subscription created'))
+  toast.success(__('Push subscription created'))
   show.value = false
   emit('created')
 }

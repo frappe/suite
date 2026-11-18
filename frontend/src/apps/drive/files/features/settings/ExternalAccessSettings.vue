@@ -1,13 +1,16 @@
 <!--
-  WebDAV access to Drive. A Drive admin turns it on for the site. Each user
-  then turns it on for their own files and reads the connection details.
+  Drive > External access: WebDAV access to Drive. A Drive admin turns it on
+  for the site. Each user then turns it on for their own files and reads the
+  connection details. The API key a client can sign in with is made in
+  Account > Security, so this tab links there.
 -->
 <template>
   <SettingsPage
-    :title="__('External access')"
     :description="__('Connect Drive to desktop, mobile, and other file apps')"
+    :loading="!webdavAnswer.data"
+    :reads="[webdavAnswer]"
   >
-    <div class="flex flex-col gap-6">
+    <SettingsSection v-if="answer.is_admin || connection">
       <SettingsRow
         v-if="answer.is_admin"
         :title="__('Enable WebDAV')"
@@ -18,97 +21,52 @@
         <Switch
           :model-value="siteEnabled"
           :disabled="saveSite.isPending"
-          :aria-label="__('Enable WebDAV')"
           @update:model-value="setSiteEnabled"
         />
       </SettingsRow>
+      <SettingsRow
+        v-if="connection"
+        :title="__('Allow WebDAV access to my files')"
+        :description="__('Turn this on before you connect a client')"
+      >
+        <Switch
+          :model-value="userEnabled"
+          :disabled="saveUser.isPending"
+          @update:model-value="setUserEnabled"
+        />
+      </SettingsRow>
+    </SettingsSection>
 
-      <template v-if="connection">
-        <SettingsRow
-          :title="__('Allow WebDAV access to my files')"
-          :description="__('Turn this on before you connect a client')"
-        >
-          <Switch
-            :model-value="userEnabled"
-            :disabled="saveUser.isPending"
-            :aria-label="__('Allow WebDAV access to my files')"
-            @update:model-value="setUserEnabled"
-          />
-        </SettingsRow>
-
-        <section class="flex flex-col gap-4">
-          <div class="space-y-1">
-            <h3 class="text-base font-semibold text-ink-gray-8">
-              {{ __('Client configuration') }}
-            </h3>
-            <!-- The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`). -->
-            <p class="text-base text-ink-gray-6">
-              {{
-                __('Connect a WebDAV client with these details. It shows My files, not {0}.', [
-                  locationLabel('organization'),
-                ])
-              }}
-            </p>
-          </div>
-          <CopyField :label="__('Server URL')" :value="connection.server_url" />
-          <CopyField :label="__('Username')" :value="connection.username" />
-          <p class="text-sm text-ink-gray-5">
-            {{
-              __(
-                'Sign in with your password, or use the API key and secret in place of the username and password.',
-              )
-            }}
-          </p>
-          <p v-if="connection.two_factor_blocked" class="text-sm text-ink-amber-3">
-            {{
-              __(
-                'Your account uses two-factor authentication. A WebDAV client cannot sign in with your password, so use an API key and secret.',
-              )
-            }}
-          </p>
-        </section>
-
-        <section class="flex flex-col gap-4 border-t pt-6">
-          <h3 class="text-base font-semibold text-ink-gray-8">{{ __('API access') }}</h3>
-          <CopyField v-if="connection.api_key" :label="__('API key')" :value="connection.api_key" />
-          <p v-else class="text-base text-ink-gray-6">
-            {{
-              __('You do not have an API key yet. Generate one to sign in without your password.')
-            }}
-          </p>
-          <Button
-            class="self-start"
-            :label="connection.api_key ? __('Regenerate secret') : __('Generate keys')"
-            :loading="generate.isPending"
-            @click="generateKeys"
-          />
-        </section>
-      </template>
-    </div>
-
-    <Dialog v-model:open="showSecret" :title="__('API access')">
-      <div class="flex flex-col gap-4">
-        <p class="text-base text-ink-gray-7">
-          {{ __('Copy the API secret now. You cannot see it again.') }}
-        </p>
-        <CopyField v-if="keys" :label="__('API key')" :value="keys.api_key" />
-        <CopyField v-if="keys" :label="__('API secret')" :value="keys.api_secret" />
-      </div>
-    </Dialog>
+    <!-- The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`). -->
+    <SettingsSection
+      v-if="connection"
+      :title="__('Client configuration')"
+      :description="
+        __('Connect a WebDAV client with these details. It shows My files, not {0}.', [
+          locationLabel('organization'),
+        ])
+      "
+    >
+      <SettingsCopyField :label="__('Server URL')" :value="connection.server_url" />
+      <SettingsCopyField :label="__('Username')" :value="connection.username" />
+      <SettingsRow :title="__('API key')" :description="signInText">
+        <Button :label="__('Open Security')" @click="openSettings('account.security')" />
+      </SettingsRow>
+    </SettingsSection>
   </SettingsPage>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, SettingsRow, Switch } from 'frappe-ui'
-import { computed, ref, watch } from 'vue'
+import { Button, SettingsRow, Switch } from 'frappe-ui'
+import { computed } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
+import { openSettings } from '@/platform/settings'
+import { SettingsCopyField, SettingsPage, SettingsSection } from '@/platform/settings-tab'
 import { translate as __ } from '@/platform/translation'
 
 import { locationLabel } from '../../internal/locations'
-import CopyField from './CopyField.vue'
-import SettingsPage from './SettingsPage.vue'
 
 type Connection = Extract<WebdavGetOutput, { server_url: string }>
 
@@ -126,7 +84,6 @@ function isConnection(answer: WebdavGetOutput): answer is Connection {
 // A failed write reports itself through the platform error toast.
 const saveSite = useMutation(api.drive.siteSettings.update)
 const saveUser = useMutation(api.drive.settings.update)
-const generate = useMutation(api.suite.account.generateKeys)
 
 // The owner policy updates these reads immediately and rolls back refused writes.
 const siteEnabled = computed(() => answer.value.globally_enabled === true)
@@ -140,19 +97,14 @@ async function setUserEnabled(value: boolean) {
   await saveUser.run({ webdav_enabled: value })
 }
 
-const keys = ref<{ api_key: string; api_secret: string } | null>(null)
-const showSecret = ref(false)
-
-async function generateKeys() {
-  if (!connection.value) return
-  const result = await generate.run({ user: connection.value.username })
-
-  keys.value = result
-  showSecret.value = true
-}
-
-// The secret shows once. Drop it when the dialog closes.
-watch(showSecret, (open) => {
-  if (!open) keys.value = null
-})
+// With two-factor sign-in a client cannot send a password and a code, so the key is the only way in.
+const signInText = computed(() =>
+  connection.value?.two_factor_blocked
+    ? __(
+        'Your account uses two-factor authentication, so WebDAV clients sign in with your API key and secret. Make them in Account > Security.',
+      )
+    : __(
+        'WebDAV clients sign in with your password, or with your API key and secret. Make the key in Account > Security.',
+      ),
+)
 </script>

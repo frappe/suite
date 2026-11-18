@@ -6,7 +6,12 @@ import { translate as __ } from '@/platform/translation'
 
 type BodyModule = { default: Component }
 
-/** Wraps a Calendar tab body in the Calendar injections, loaded with the body. */
+/**
+ * Wraps a Calendar tab body in the Calendar injections, loaded with the body.
+ * The scope shows the tab's header and the loading state until the account is
+ * in. The body is keyed by the active account, so an account switch replaces
+ * it and its state never carries over to another account.
+ */
 function scoped(load: () => Promise<BodyModule>) {
   return async (): Promise<Component> => {
     const [{ default: Body }, { default: Scope }] = await Promise.all([
@@ -15,7 +20,10 @@ function scoped(load: () => Promise<BodyModule>) {
     ])
     return defineComponent({
       name: 'CalendarSettingsTab',
-      setup: () => () => h(Scope, null, { default: () => h(Body) }),
+      setup: () => () =>
+        h(Scope, null, {
+          default: ({ account }: { account: string }) => h(Body, { key: account }),
+        }),
     })
   }
 }
@@ -31,24 +39,16 @@ const calendar = {
       body: scoped(() => import('@/apps/calendar/components/Settings/CalendarsSettings.vue')),
     },
     {
-      id: 'calendar.participant-identity',
-      label: () => __('Participant Identity'),
+      id: 'calendar.identity',
+      label: () => __('Identity'),
       icon: 'lucide-contact',
-      body: scoped(
-        () => import('@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'),
-      ),
+      body: scoped(() => import('@/apps/calendar/components/Settings/IdentitySettings.vue')),
     },
     {
-      id: 'calendar.import',
-      label: () => __('Import'),
-      icon: 'lucide-hard-drive-download',
-      body: scoped(() => import('@/apps/calendar/components/Settings/ImportSettings.vue')),
-    },
-    {
-      id: 'calendar.export',
-      label: () => __('Export'),
-      icon: 'lucide-hard-drive-upload',
-      body: scoped(() => import('@/apps/calendar/components/Settings/ExportSettings.vue')),
+      id: 'calendar.transfer',
+      label: () => __('Import & export'),
+      icon: 'lucide-arrow-down-up',
+      body: scoped(() => import('@/apps/calendar/components/Settings/TransferSettings.vue')),
     },
     {
       id: 'calendar.advanced',

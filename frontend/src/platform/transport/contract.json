@@ -1831,6 +1831,17 @@
               }
             ],
             "title": "Desk Theme"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
           }
         },
         "required": [
@@ -1841,7 +1852,8 @@
           "user_image",
           "language",
           "time_zone",
-          "desk_theme"
+          "desk_theme",
+          "api_key"
         ],
         "title": "Preferences",
         "type": "object"
@@ -1970,6 +1982,17 @@
               }
             ],
             "title": "Desk Theme"
+          },
+          "api_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
           }
         },
         "required": [
@@ -1980,7 +2003,8 @@
           "user_image",
           "language",
           "time_zone",
-          "desk_theme"
+          "desk_theme",
+          "api_key"
         ],
         "title": "Preferences",
         "type": "object"

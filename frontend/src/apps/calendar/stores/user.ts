@@ -57,6 +57,9 @@ export const userStore = defineStore('calendar-user', () => {
     get data() {
       return userData.value
     },
+    get error() {
+      return userQuery.error
+    },
     refetch: userQuery.refetch,
   })
   const loadUser = () => userQuery.refetch()

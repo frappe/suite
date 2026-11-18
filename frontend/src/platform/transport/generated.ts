@@ -521,6 +521,7 @@ export type GetPreferencesOutput = {
   language: string | null
   time_zone: string | null
   desk_theme: string | null
+  api_key: string | null
 }
 
 export type GetPreferencesError = never
@@ -561,6 +562,7 @@ export type UpdatePreferencesOutput = {
   language: string | null
   time_zone: string | null
   desk_theme: string | null
+  api_key: string | null
 }
 
 export type UpdatePreferencesError = never

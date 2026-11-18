@@ -1,3 +1,5 @@
+<!-- Behind AppSettingsHeader/AppSettingsBody only, for tabs not yet built on
+     SettingsPage (@/platform/settings-tab). Delete with them. -->
 <template>
   <!-- On a phone settings page the page bar already shows the tab title and
        hosts the actions, which teleport into its actions slot. Only an
@@ -28,7 +30,7 @@
 import { SettingsHeader } from 'frappe-ui'
 import { inject } from 'vue'
 
-import { SETTINGS_PAGE_ACTIONS_ID, SETTINGS_PHONE_PAGE } from '@/shell/settings/settings'
+import { SETTINGS_PAGE_ACTIONS_ID, SETTINGS_PHONE_PAGE } from '@/platform/settings'
 
 defineOptions({ inheritAttrs: false })
 defineProps<{ title?: string; description?: string }>()

@@ -1,3 +1,5 @@
+<!-- Deprecated: build a tab with SettingsPage from @/platform/settings-tab. This
+     stays until the last tab that uses it moves over. -->
 <template>
   <!-- Product tab bodies import this path; the shell header does the work. -->
   <SettingsTabHeader v-bind="$attrs">

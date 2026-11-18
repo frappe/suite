@@ -396,9 +396,15 @@ import {
   type AreaDefinition,
   type PaletteSearchResult,
 } from '@/platform/contracts'
+import { SETTINGS_SHORTCUT } from '@/platform/settings'
 import { openAreaShortcuts } from '@/platform/shortcuts'
 import { cycleThemeAndAnnounce, nextThemeMode, useTheme, type ThemeMode } from '@/platform/theme'
 import { userTimeZone } from '@/platform/time-zone'
+import {
+  isAppSettingsCommand,
+  SHELL_SETTINGS_COMMAND_ID,
+  useSettingsShortcut,
+} from '@/shell/settings/settingsShortcut'
 import { openSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore, type PaletteCommand } from '@/stores/root'
 
@@ -665,7 +671,6 @@ useKeyboardShortcut([
 // The suite's own commands, offered in every area. The theme stays fixed during a
 // meeting, which sets its own. Settings is the fallback for pages that offer none of their
 // own: an area's Settings command opens on its tab, so where one exists it replaces this one.
-const shellSettingsCommandId = 'shell-settings'
 const theme = useTheme()
 const canChangeTheme = computed(() => route.name !== 'meet-meeting')
 const nextTheme = computed(() => {
@@ -692,10 +697,10 @@ const unregisterSuiteCommands = root.registerPaletteGroups(
             ]
           : []),
         {
-          // The key belongs to the Settings dialog; the hint only names it.
-          id: shellSettingsCommandId,
+          // `useSettingsShortcut` binds the key; the hint only names it.
+          id: SHELL_SETTINGS_COMMAND_ID,
           label: 'Settings',
-          shortcut: 'Mod+Shift+Comma',
+          shortcut: SETTINGS_SHORTCUT,
           enterHint: 'open settings',
           icon: 'lucide-settings',
           keywords: ['account', 'personal', 'preferences', 'workspace'],
@@ -715,6 +720,7 @@ const unregisterSuiteCommands = root.registerPaletteGroups(
   ]),
 )
 onScopeDispose(unregisterSuiteCommands)
+useSettingsShortcut(() => root.paletteGroups.flatMap((group) => group.commands))
 
 useKeyboardShortcut({
   combo: 'Mod+Shift+K',
@@ -836,11 +842,9 @@ const filteredCommands = computed(() => {
   )
     return []
   const registered = root.paletteGroups.flatMap((group) => group.commands)
-  const pageOffersSettings = registered.some(
-    (command) => command.id !== shellSettingsCommandId && command.label === 'Settings',
-  )
+  const pageOffersSettings = registered.some(isAppSettingsCommand)
   const commands = pageOffersSettings
-    ? registered.filter((command) => command.id !== shellSettingsCommandId)
+    ? registered.filter((command) => command.id !== SHELL_SETTINGS_COMMAND_ID)
     : registered
   return commands
     .filter(

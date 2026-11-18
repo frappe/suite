@@ -5,7 +5,11 @@ import { translate as __ } from '@/platform/translation'
 
 type BodyModule = { default: Component }
 
-/** Wraps a Mail tab body in the Mail injections, loaded with the body. */
+/**
+ * Wraps a Mail tab body in the Mail injections, loaded with the body. The body is keyed by the
+ * active account: an account switch replaces it, so its state never carries over to another
+ * account, while saves it already queued finish against its own.
+ */
 function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } = {}) {
   return async (): Promise<Component> => {
     const [{ default: Body }, { default: Scope }] = await Promise.all([
@@ -14,7 +18,14 @@ function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } =
     ])
     return defineComponent({
       name: 'MailSettingsTab',
-      setup: () => () => h(Scope, { socket: options.socket }, { default: () => h(Body) }),
+      setup: () => () =>
+        h(
+          Scope,
+          { socket: options.socket },
+          {
+            default: ({ account }: { account: string }) => h(Body, { key: account }),
+          },
+        ),
     })
   }
 }
@@ -24,29 +35,16 @@ export const mailSettings = {
   condition: () => useSession().capabilities.value.jmap,
   tabs: [
     {
-      id: 'mail.credentials',
-      label: () => __('Credentials'),
-      icon: 'lucide-key-round',
-      body: scoped(() => import('@/apps/mail/components/Settings/CredentialsSettings.vue')),
-    },
-    {
-      id: 'mail.account',
-      label: () => __('Account'),
+      id: 'mail.general',
+      label: () => __('General'),
       icon: 'lucide-mailbox',
-      body: scoped(() => import('@/apps/mail/components/Settings/Account.vue')),
+      body: scoped(() => import('@/apps/mail/components/Settings/GeneralSettings.vue')),
     },
     {
-      id: 'mail.identity',
-      label: () => __('Identity'),
+      id: 'mail.identities',
+      label: () => __('Identities & signatures'),
       icon: 'lucide-fingerprint',
       body: scoped(() => import('@/apps/mail/components/Settings/IdentitySettings.vue')),
-    },
-    {
-      id: 'mail.layout',
-      label: () => __('Layout'),
-      icon: 'lucide-columns-2',
-      // A phone gets it too, for the Inbox's tabs; the rest of the page is for a desktop.
-      body: scoped(() => import('@/apps/mail/components/Settings/MailLayoutSettings.vue')),
     },
     {
       id: 'mail.folders',
@@ -55,56 +53,22 @@ export const mailSettings = {
       body: scoped(() => import('@/apps/mail/components/Settings/FolderSettings.vue')),
     },
     {
-      id: 'mail.signatures',
-      label: () => __('Signatures'),
-      icon: 'lucide-feather',
-      body: scoped(() => import('@/apps/mail/components/Settings/SignatureSettings.vue')),
+      id: 'mail.screener',
+      label: () => __('Screener'),
+      icon: 'lucide-eye',
+      body: scoped(() => import('@/apps/mail/components/Settings/ScreenerSettings.vue')),
     },
     {
-      id: 'mail.compose',
-      label: () => __('Compose'),
-      icon: 'lucide-pen-line',
-      body: scoped(() => import('@/apps/mail/components/Settings/ComposeSettings.vue')),
-    },
-    {
-      id: 'mail.vacation-response',
-      label: () => __('Vacation Response'),
+      id: 'mail.vacation',
+      label: () => __('Vacation response'),
       icon: 'lucide-tree-palm',
       body: scoped(() => import('@/apps/mail/components/Settings/VacationResponseSettings.vue')),
     },
     {
-      id: 'mail.automation',
-      label: () => __('Automation'),
-      icon: 'lucide-zap',
-      body: scoped(() => import('@/apps/mail/components/Settings/AutomationSettings.vue')),
-    },
-    {
-      id: 'mail.push-subscriptions',
-      label: () => __('Push Subscriptions'),
-      icon: 'lucide-bell-ring',
-      body: scoped(() => import('@/apps/mail/components/Settings/PushSubscriptionSettings.vue')),
-    },
-    {
-      id: 'mail.screener',
-      label: () => __('Screener'),
-      icon: 'lucide-eye',
-      body: scoped(
-        () => import('@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'),
-      ),
-    },
-    {
-      id: 'mail.import',
-      label: () => __('Import'),
-      icon: 'lucide-hard-drive-download',
-      body: scoped(() => import('@/apps/mail/components/Settings/ImportSettings.vue'), {
-        socket: true,
-      }),
-    },
-    {
-      id: 'mail.export',
-      label: () => __('Export'),
-      icon: 'lucide-hard-drive-upload',
-      body: scoped(() => import('@/apps/mail/components/Settings/ExportSettings.vue'), {
+      id: 'mail.transfer',
+      label: () => __('Import & export'),
+      icon: 'lucide-arrow-down-up',
+      body: scoped(() => import('@/apps/mail/components/Settings/TransferSettings.vue'), {
         socket: true,
       }),
     },

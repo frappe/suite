@@ -9,13 +9,13 @@ type Event =
 	| { type: "QUOTA_SET" }
 	| { type: "NEAR_QUOTA" }
 	| { type: "OVER_QUOTA" }
-	| { type: "OPEN_STATISTICS" }
-	| { type: "OPEN_STATISTICS_SLOWLY" }
-	| { type: "OPEN_STATISTICS_FAILS" }
+	| { type: "OPEN_STORAGE" }
+	| { type: "OPEN_STORAGE_SLOWLY" }
+	| { type: "OPEN_STORAGE_FAILS" }
 	| { type: "ONLY_TRASH_LEFT" }
 	| { type: "OPEN_EXTERNAL_ACCESS_AS_ADMIN" }
 	| { type: "OPEN_EXTERNAL_ACCESS" }
-	| { type: "GENERATE_KEYS" };
+	| { type: "OPEN_SECURITY" };
 
 /** Usage answers are whole bytes; the UI counts in base 1024. */
 const gigabytes = (count: number) => Math.round(count * 1024 ** 3);
@@ -23,7 +23,7 @@ const gigabytes = (count: number) => Math.round(count * 1024 ** 3);
 /**
  * The sidebar storage meter and Drive's two Settings tabs. In the code the
  * meter is `StorageMeter.vue` (`usage.data`, `failed`) and `storageMeter()`'s
- * `ok`/`near`/`full` levels; Statistics is `StatisticsSettings.vue`'s
+ * `ok`/`near`/`full` levels; Storage is `StorageSettings.vue`'s
  * `data`/`failed` pair; External access is `ExternalAccessSettings.vue`, whose
  * layout follows which of three shapes `webdav.get` answers, and whose tab
  * `settingsGroup.ts` hides when the answer is `{}`. This site sets no quota
@@ -42,10 +42,10 @@ const machine = setupFlow<Event>().createMachine({
 				QUOTA_SET: "meterOk",
 				NEAR_QUOTA: "meterNear",
 				OVER_QUOTA: "meterFull",
-				OPEN_STATISTICS: "statistics",
-				OPEN_STATISTICS_SLOWLY: "statisticsLoading",
-				OPEN_STATISTICS_FAILS: "statisticsFailed",
-				ONLY_TRASH_LEFT: "statisticsTrashOnly",
+				OPEN_STORAGE: "storage",
+				OPEN_STORAGE_SLOWLY: "storageLoading",
+				OPEN_STORAGE_FAILS: "storageFailed",
+				ONLY_TRASH_LEFT: "storageTrashOnly",
 				OPEN_EXTERNAL_ACCESS_AS_ADMIN: "externalAccessOff",
 				OPEN_EXTERNAL_ACCESS: "externalAccessConnected",
 			},
@@ -61,35 +61,35 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		meterNear: {
 			meta: { description: "Usage rewritten to 9.3 GB of 10 GB, past the 90% line: the bar turns amber. Nothing else warns." },
-			on: { OPEN_STATISTICS: "statisticsNearQuota" },
+			on: { OPEN_STORAGE: "storageNearQuota" },
 		},
 		meterFull: {
 			meta: { description: "Usage rewritten to 10.4 GB of 10 GB: the bar is full and red, and the line still reads \"10.4 GB of 10 GB used\"." },
 		},
-		statistics: {
+		storage: {
 			meta: { description: "The meter opens Settings on Drive > Storage: the bytes used over an empty bar track (there is no quota, but the bar still shows), totals by type and the largest files. External access is absent from the nav because WebDAV is off and the user is no admin." },
 		},
-		statisticsNearQuota: {
-			meta: { description: "Statistics with the rewritten 9.3 GB of 10 GB: the progress bar stays neutral, unlike the amber sidebar meter." },
+		storageNearQuota: {
+			meta: { description: "Storage with the rewritten 9.3 GB of 10 GB: the progress bar stays neutral, unlike the amber sidebar meter." },
 		},
-		statisticsLoading: {
-			meta: { description: "Statistics while its usage request is out: \"Loading…\" and three skeleton rows in each list, in the loaded layout." },
+		storageLoading: {
+			meta: { description: "Storage while its usage request is out: the tab title and description over the settings spinner, and no lists yet." },
 		},
-		statisticsFailed: {
-			meta: { description: "The usage request fails as Statistics opens: a compact “Could not load storage usage” row offers Retry. The sidebar meter, a separate request, still shows." },
+		storageFailed: {
+			meta: { description: "The usage request fails as Storage opens: “Could not load these settings” with Retry where the body goes, as on every settings tab. The sidebar meter, a separate request, still shows." },
 		},
-		statisticsTrashOnly: {
+		storageTrashOnly: {
 			meta: { description: "Usage rewritten to bytes with no active files behind them: By type explains that Trash and versions still count; Largest files says only \"No files\"." },
 		},
 		externalAccessOff: {
 			meta: { description: "A Drive admin while WebDAV is off for the site (answer rewritten): one switch to enable it, nothing else." },
 		},
 		externalAccessConnected: {
-			meta: { description: "WebDAV on and allowed for this user (answer rewritten): the admin switch, the user's own switch, server URL and username to copy, and Generate keys." },
-			on: { GENERATE_KEYS: "apiSecretDialog" },
+			meta: { description: "WebDAV on and allowed for this user (answer rewritten): the admin switch, the user's own switch, server URL and username to copy, and an API key row whose Open Security button leads to Account > Security, where the key is made." },
+			on: { OPEN_SECURITY: "accountSecurity" },
 		},
-		apiSecretDialog: {
-			meta: { description: "Generate keys: a dialog shows the API key and secret once, each with Copy." },
+		accountSecurity: {
+			meta: { description: "Open Security switches Settings to Account > Security: the password row and the API key section." },
 		},
 	},
 });
@@ -128,7 +128,7 @@ export const settings = defineFlow<Event>({
 	id: "settings",
 	title: "Drive settings",
 	folderTitle: "Annual report",
-	source: "frontend/src/apps/drive/files/features/settings/StatisticsSettings.vue",
+	source: "frontend/src/apps/drive/files/features/settings/StorageSettings.vue",
 	machine,
 	async enter(scene) {
 		await fillFolder(scene.api, scene.folder.name);
@@ -161,22 +161,22 @@ export const settings = defineFlow<Event>({
 			await rewriteUsage(scene, { used_bytes: gigabytes(10.4), effective_quota: gigabytes(10) });
 			await expect(meter(scene)).toHaveAccessibleName(/10\.4 GB of 10 GB used/);
 		},
-		async OPEN_STATISTICS(scene) {
+		async OPEN_STORAGE(scene) {
 			await meter(scene).click();
 			const dialog = scene.dialog("Settings");
 			await expect(dialog.getByText("Largest files")).toBeVisible();
 			await expect(dialog.getByText(/ used$/).first()).toBeVisible();
 		},
-		async OPEN_STATISTICS_SLOWLY(scene) {
+		async OPEN_STORAGE_SLOWLY(scene) {
 			await scene.hold(BREAKDOWN);
 			await meter(scene).click();
-			await expect(scene.dialog("Settings").getByText("Loading…")).toBeVisible();
+			await expect(scene.dialog("Settings").getByRole("status", { name: "Loading" }).first()).toBeVisible();
 		},
-		async OPEN_STATISTICS_FAILS(scene) {
+		async OPEN_STORAGE_FAILS(scene) {
 			const hold = await scene.hold(BREAKDOWN);
 			await hold.abort(500);
 			await meter(scene).click();
-			await expect(scene.dialog("Settings").getByText("Could not load storage usage")).toBeVisible();
+			await expect(scene.dialog("Settings").getByText("Could not load these settings")).toBeVisible();
 		},
 		async ONLY_TRASH_LEFT(scene) {
 			await rewriteUsage(scene, { by_type: [], largest: [] });
@@ -203,12 +203,12 @@ export const settings = defineFlow<Event>({
 			await meter(scene).click();
 			const dialog = scene.dialog("Settings");
 			await dialog.getByText("External access", { exact: true }).first().click();
-			await expect(dialog.getByRole("button", { name: "Generate keys" })).toBeVisible();
+			await expect(dialog.getByRole("button", { name: "Open Security" })).toBeVisible();
 		},
-		async GENERATE_KEYS(scene) {
-			await scene.dialog("Settings").getByRole("button", { name: "Generate keys" }).click();
-			const secret = scene.dialog("API access");
-			await expect(secret.getByText("API secret", { exact: true })).toBeVisible();
+		async OPEN_SECURITY(scene) {
+			const dialog = scene.dialog("Settings");
+			await dialog.getByRole("button", { name: "Open Security" }).click();
+			await expect(dialog.getByRole("button", { name: "Change password" })).toBeVisible();
 		},
 	},
 });

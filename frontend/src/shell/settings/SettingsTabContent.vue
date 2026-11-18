@@ -1,3 +1,5 @@
+<!-- Behind AppSettingsHeader/AppSettingsBody only, for tabs not yet built on
+     SettingsPage (@/platform/settings-tab). Delete with them. -->
 <template>
   <!-- A phone settings page scrolls as a whole, so the body is plain padded
        flow. The dialog keeps frappe-ui's scrolling body. -->
@@ -15,7 +17,7 @@
 import { SettingsBody } from 'frappe-ui'
 import { inject } from 'vue'
 
-import { SETTINGS_PHONE_PAGE } from '@/shell/settings/settings'
+import { SETTINGS_PHONE_PAGE } from '@/platform/settings'
 
 defineOptions({ inheritAttrs: false })
 defineSlots<{ default?: () => unknown }>()
