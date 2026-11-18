@@ -56,6 +56,16 @@ describe('build watcher', () => {
     expect(toastInfo.mock.calls.at(-1)![1].description).toBe('Reload to keep editing in Slides')
   })
 
+  // Vite resolves a prevented import with undefined, which the router and the root app cannot use.
+  it('offers a reload when a chunk fails to load, and leaves the failure to its importer', async () => {
+    await tabOnBuild('100', {})
+    const failed = new Event('vite:preloadError', { cancelable: true })
+    window.dispatchEvent(failed)
+
+    expect(failed.defaultPrevented).toBe(false)
+    expect(toastInfo.mock.calls.at(-1)![1].action.label).toBe('Reload')
+  })
+
   it('ignores the build headers of another origin', async () => {
     const tab = await tabOnBuild('100', {})
     const crossOriginHeaders = {

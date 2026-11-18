@@ -32,3 +32,10 @@ it('reads past an entry with no address, as an empty url("") in a style gives', 
 
   expect(loadedAssets()).toContain(chunk)
 })
+
+it('reads entries in a browser without URL.canParse, as Safari before 17', () => {
+  vi.stubGlobal('URL', Object.assign(class extends URL {}, { canParse: undefined }))
+
+  expect(() => observeEntries(['', `${location.origin}${chunk}`])).not.toThrow()
+  expect(loadedAssets()).toContain(chunk)
+})

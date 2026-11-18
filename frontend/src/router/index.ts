@@ -206,22 +206,27 @@ router.afterEach(async (to, from, failure) => {
  * navigation does not wait for them before it asks for its area's routes and page.
  */
 export function preloadPage(path: string): void {
-  void import('@/shell/AppContainer.vue')
+  // A prefetch that fails is left to the navigation, which loads the same code and handles it.
+  import('@/shell/AppContainer.vue').catch(() => {})
   const area = findArea(areaPlaceholderId(router.resolve(path)) ?? '')
   if (!area) return
-  void area.loadRoutes().then(({ routes: children }) => {
-    const matcher = createRouter({
-      history: createMemoryHistory(),
-      routes: [{ path: area.to, children }],
-    })
-    for (const record of matcher.resolve(path).matched) {
-      const component = record.components?.default
-      if (typeof component === 'function') {
-        // SAFETY: area route tables give a page as an object or a `() => import()` loader, never a functional component or class, so a function here is a loader.
-        void (component as () => Promise<unknown>)()
+  void area.loadRoutes().then(
+    ({ routes: children }) => {
+      const matcher = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: area.to, children }],
+      })
+      for (const record of matcher.resolve(path).matched) {
+        const component = record.components?.default
+        if (typeof component === 'function') {
+          // SAFETY: area route tables give a page as an object or a `() => import()` loader, never a functional component or class, so a function here is a loader.
+          const load = component as () => Promise<unknown>
+          load().catch(() => {})
+        }
       }
-    }
-  })
+    },
+    () => {},
+  )
 }
 
 function areaPlaceholderId(to: Pick<RouteLocationNormalizedLoaded, 'matched'>): string | null {

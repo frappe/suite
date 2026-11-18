@@ -193,6 +193,27 @@ class ReplacedDraft(_Processing):
         self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
         self.assertEqual(self.destroyed(), ["e0"])
 
+    def process_with_destroy_refused(self, refusal: dict) -> tuple[mail_queue.MailQueue, mock.Mock]:
+        self.server.handlers["Email/set"] = lambda arguments, _server: (
+            {"notDestroyed": {"e0": refusal}} if arguments.get("destroy") else DRAFTED
+        )
+        with mock.patch.object(mail_queue, "log_mail_error") as logged:
+            doc = self.process(id="e0", save_as_draft=1)
+        return doc, logged
+
+    def test_a_replaced_draft_already_gone_is_not_an_error(self):
+        doc, logged = self.process_with_destroy_refused({"type": "notFound"})
+
+        self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
+        logged.assert_not_called()
+
+    def test_a_replaced_draft_the_server_keeps_is_logged(self):
+        doc, logged = self.process_with_destroy_refused({"type": "forbidden"})
+
+        self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
+        logged.assert_called_once()
+        self.assertIn("could not destroy replaced draft e0", logged.call_args.args[0])
+
 
 class MaybeAppliedMail(_Processing):
     """An error after which the submission may have happened all the same: sending it again

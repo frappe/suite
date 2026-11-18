@@ -1897,6 +1897,8 @@ const handleKeydown = (e: KeyboardEvent) => {
   // Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
   // The listener sits on window, so it only acts while a Mail route is active.
   if (readonly || !isMailRoute(route)) return
+  // Chrome fires a keydown with no key when it autofills a field.
+  if (!e.key) return
   const key = e.key.toLowerCase()
   // ⌘P / Ctrl+P prints the conversation rather than the app around it — from a field too, which
   // shouldIgnoreKeypress would rule out. Over a dialog or the attachment viewer it is the browser's.

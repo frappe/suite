@@ -1,7 +1,9 @@
 import frappe
+from frappe import _
 from werkzeug.wrappers import Response
 
 from suite import drive
+from suite.composition.http import BadRequest
 from suite.writer.drive import DOCTYPE
 
 
@@ -24,7 +26,7 @@ def add(file_id: str):
 
 
 @frappe.whitelist(allow_guest=True)
-def get(id: str):
+def get(id: str | None = None):
     """Serve one embedded picture's bytes.
 
     The READ check is Drive's, on the media node, with the request's link
@@ -32,7 +34,10 @@ def get(id: str):
     of the document reads its pictures because they hang under it. A node that
     is not below a Writer document is not an embed, and this guest-reachable
     endpoint must not become a byte reader for any node id a caller can name.
+    A request without an id is refused as a bad request.
     """
+    if not id:
+        frappe.throw(_("Writer argument id is required"), BadRequest)
     drive.check(id, drive.READ)
     parent = frappe.db.get_value("Drive Node", id, "parent_node")
     if frappe.db.get_value("Drive Node", parent, "content_doctype") != DOCTYPE:

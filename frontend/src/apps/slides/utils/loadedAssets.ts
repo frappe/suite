@@ -8,15 +8,22 @@ export function trackLoadedAssets() {
 
   new PerformanceObserver((list) => {
     for (const entry of list.getEntries()) {
-      // a style's empty url("") is timed under no address
-      if (!URL.canParse(entry.name)) continue
-
-      const url = new URL(entry.name)
-      if (url.origin === location.origin && isBundleAsset(url)) {
+      const url = parsedUrl(entry.name)
+      if (url && url.origin === location.origin && isBundleAsset(url)) {
         loaded.add(url.pathname)
       }
     }
   }).observe({ type: 'resource', buffered: true })
+}
+
+// a style's empty url("") is timed under no address. URL.canParse would say so, but Safari has it
+// only from 17.
+function parsedUrl(name: string): URL | undefined {
+  try {
+    return new URL(name)
+  } catch {
+    return undefined
+  }
 }
 
 export function loadedAssets(): string[] {

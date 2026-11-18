@@ -95,7 +95,7 @@ describe('useRecording', () => {
   })
 
   it('reuses the request id while a start remains pending', async () => {
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
 
     await recording.start()
     expect(recording.state.value?.status).toBe('Pending')
@@ -111,7 +111,7 @@ describe('useRecording', () => {
   })
 
   it('moves the local state to stopping', async () => {
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
     await recording.start()
     await recording.start()
     await recording.stop()
@@ -129,7 +129,7 @@ describe('useRecording', () => {
       status: 'Stopping',
       state_revision: 3,
     })
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
     await recording.start()
 
     const starting = recording.start()
@@ -156,7 +156,7 @@ describe('useRecording', () => {
     let recording!: ReturnType<typeof useRecording>
     const app = createApp({
       setup() {
-        recording = useRecording('room')
+        recording = useRecording('room', { signedIn: () => true })
         return () => null
       },
     })
@@ -175,8 +175,27 @@ describe('useRecording', () => {
     app.unmount()
   })
 
+  it('leaves a guest without a session to its join answer and realtime, never asking the server', async () => {
+    let recording!: ReturnType<typeof useRecording>
+    const app = createApp({
+      setup() {
+        recording = useRecording('room', { signedIn: () => false })
+        return () => null
+      },
+    })
+    app.mount(document.createElement('div'))
+    mocks.socketHandler?.({
+      meeting_id: 'room',
+      recording: { name: 'recording', status: 'Recording', state_revision: 1 },
+    })
+
+    expect(mocks.getStateCount).toBe(0)
+    expect(recording.isLive.value).toBe(true)
+    app.unmount()
+  })
+
   it('syncs active recording state supplied by a guest join', () => {
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
 
     recording.syncState({
       name: 'recording',
@@ -190,7 +209,7 @@ describe('useRecording', () => {
   })
 
   it('accepts a new recording session with a lower revision', () => {
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
     recording.syncState({
       name: 'old-recording',
       status: 'Processing',
@@ -208,7 +227,7 @@ describe('useRecording', () => {
   })
 
   it('tracks global recording availability', () => {
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
 
     expect(recording.globalEnabled.value).toBe(false)
     recording.setGlobalEnabled(true)
@@ -217,7 +236,7 @@ describe('useRecording', () => {
 
   it('does not store or announce an explicit capacity rejection as started', async () => {
     mocks.startResults.push({ status: 'Rejected' })
-    const recording = useRecording('room')
+    const recording = useRecording('room', { signedIn: () => true })
 
     await recording.start()
 

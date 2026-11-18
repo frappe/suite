@@ -35,13 +35,20 @@ app.provide(DOCUMENT_TYPES_KEY, documentTypes)
 // in the platform session, so the next user never receives them.
 useSession().onLogout(clearSlidesUserData)
 
-void import('@/shell/ShellLayout.vue')
+// A prefetch: App loads the shell again, and shows the page without it if that fails too.
+import('@/shell/ShellLayout.vue').catch(() => {})
 // Some pages call `__` as their module evaluates, so their code waits for the catalog.
 void translationsReady.then(() => preloadPage(window.location.pathname))
 
 // The page arrives in the user's saved theme, so the preference read need not hold the mount.
 void initializeTheme()
-await Promise.all([initSentry(app, router), translationsReady, import('@/boot/config')])
+// A chunk that fails to load must not hold the mount: the router sends the first navigation on to
+// the page that says so.
+await Promise.all([
+  initSentry(app, router),
+  translationsReady,
+  import('@/boot/config').catch((error: unknown) => console.error(error)),
+])
 
 installErrorLog(app)
 installApiErrorHandler(app)
@@ -51,7 +58,10 @@ app.use(router)
 
 // A first navigation that fails still mounts the app: the router has sent it
 // on to the page that says so (`@/platform/load-failure`).
-Promise.all([router.isReady().catch(() => {}), installLegacySprite(app)]).then(() => {
+Promise.all([
+  router.isReady().catch(() => {}),
+  installLegacySprite(app).catch((error: unknown) => console.error(error)),
+]).then(() => {
   app.mount('#app')
 })
 

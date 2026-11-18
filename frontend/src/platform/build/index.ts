@@ -122,11 +122,8 @@ export function watchBuild() {
 
   window.fetch = fetchReadingBuild
 
-  // A chunk of an older build is gone from the server
-  function offerReload(event: Event) {
-    event.preventDefault()
-    showBanner()
-  }
-
-  window.addEventListener('vite:preloadError', offerReload)
+  // A chunk of an older build is gone from the server. The failure is left to the code that
+  // imported it: prevented, Vite resolves the import with undefined, and the router, which reloads
+  // the page once for a missing chunk, would see a page with no component instead.
+  window.addEventListener('vite:preloadError', () => showBanner())
 }
