@@ -21,6 +21,7 @@ from suite.suite_core.utils import (
     SUITE_CLOUD_CONFIG_KEYS,
     get_suite_cloud_config,
     is_suite_cloud_configured,
+    uses_suite_cloud_fake,
 )
 
 API_PREFIX = "/api/v2/method/suite_cloud.api."
@@ -203,9 +204,11 @@ def _error_payload(response: requests.Response) -> tuple[str | None, str | None]
 
 @request_cache
 def get_client() -> SuiteCloudClient:
-    from suite.mail import dev_suite_cloud
+    if uses_suite_cloud_fake():
+        # Imported only here: the fake is the test one, and it brings unittest.mock with it, which a
+        # production request must not load (Frappe reads that module from threads without importing it).
+        from suite.mail import dev_suite_cloud
 
-    if dev_suite_cloud.is_enabled():
         return dev_suite_cloud.DevSuiteCloud()  # type: ignore[return-value]
     is_suite_cloud_configured(raise_exception=True)
     url, tenant, secret = get_suite_cloud_config(SUITE_CLOUD_CONFIG_KEYS)

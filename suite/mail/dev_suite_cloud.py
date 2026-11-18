@@ -23,10 +23,6 @@ STATE_FILE = "suite_cloud_fake.pickle"
 SEED_DOMAIN = "example.com"
 
 
-def is_enabled() -> bool:
-    return bool(frappe.conf.get("suite_cloud_fake")) and bool(frappe.conf.get("developer_mode"))
-
-
 class DevSuiteCloud:
     """Same ``call`` as the real client; loads the fake, runs the call, saves the fake."""
 

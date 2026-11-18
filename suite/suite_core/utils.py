@@ -58,11 +58,16 @@ def read_stored_secret(settings: Document) -> str | None:
         frappe.flags.mute_messages = muted
 
 
+def uses_suite_cloud_fake() -> bool:
+    """Whether a developer-mode site stands in a local fake for Suite Cloud (suite.mail.dev_suite_cloud)."""
+
+    return bool(frappe.conf.get("suite_cloud_fake")) and bool(frappe.conf.get("developer_mode"))
+
+
 def is_suite_cloud_configured(raise_exception: bool = False) -> bool:
     """Whether the site has a Suite Cloud: every value is set, whether or not the secret can be read."""
 
-    # A developer-mode site can stand in a local fake for Suite Cloud (suite.mail.dev_suite_cloud).
-    if frappe.conf.get("suite_cloud_fake") and frappe.conf.get("developer_mode"):
+    if uses_suite_cloud_fake():
         return True
 
     settings = frappe.get_cached_doc("Suite Settings")
