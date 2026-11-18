@@ -5,6 +5,7 @@ import MailIcon from '@/apps/mail/AreaIcon.vue'
 import type { MountedComposeHost } from '@/apps/mail/composables/mountComposeHost'
 import { showMailReminder } from '@/apps/mail/reminders'
 import type { AreaDefinition } from '@/platform/contracts'
+import { toast } from '@/platform/feedback'
 import { realtime } from '@/platform/realtime'
 import type { Reminder } from '@/platform/reminders'
 import { hasCapabilities, useSession } from '@/platform/session'
@@ -66,15 +67,19 @@ export function useInboxSummary(enabled: () => boolean = () => true) {
 }
 
 export interface MailCompose {
-  /** Opens Mail's composer addressed to `to`. Resolves once it has been asked to open. */
+  /**
+   * Opens Mail's composer addressed to `to`, less the reader's own addresses. Resolves once it has
+   * been asked to open, or once the failure to load Mail's code has been said.
+   */
   compose(to: readonly string[]): Promise<void>
 }
 
 /**
  * Writes to people from another app without leaving it: Mail's compose window opens over the page
  * on a desktop, and on a phone Mail's compose page opens, which Back leaves for the page it came
- * from. Either way it is Mail's composer, addressed to `to`, writing as Mail's active account.
- * Mail's code loads on the first `compose`, not before. Call it in a component's setup.
+ * from. Either way it is Mail's composer, writing as Mail's active account; with no Mail account,
+ * the device's mail app gets the same people. Mail's code loads on the first `compose`, not
+ * before. Call it in a component's setup.
  */
 export function useMailCompose(): MailCompose {
   const context = getCurrentInstance()?.appContext
@@ -87,13 +92,27 @@ export function useMailCompose(): MailCompose {
     disposed = true
     void host?.then((mounted) => mounted.unmount())
   })
+  const mount = () =>
+    import('@/apps/mail/composables/mountComposeHost').then((module) =>
+      module.mountComposeHost(context),
+    )
   return {
     compose: async (to) => {
-      if (disposed) return
-      host ??= import('@/apps/mail/composables/mountComposeHost').then((module) =>
-        module.mountComposeHost(context),
-      )
-      ;(await host).compose(to)
+      // A load that failed (a dropped connection, or a deploy since the page loaded) is not kept:
+      // the next press tries again.
+      host ??= mount().catch((error: unknown) => {
+        host = undefined
+        throw error
+      })
+      let mounted: MountedComposeHost
+      try {
+        mounted = await host
+      } catch (error) {
+        console.error('Could not load Mail’s composer', error)
+        toast.error(__('Mail could not open. Check your connection and try again.'))
+        return
+      }
+      if (!disposed) await mounted.compose(to)
     },
   }
 }
