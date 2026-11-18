@@ -1374,6 +1374,22 @@ const recurringScopeModalProps = computed(() => ({
       </div>
     </template>
   </Dialog>
+  <!-- The phone's screen, up at once: its header, and the form under it once what it reads has
+	     loaded. Not the form itself while loading: its rows and its participants screen read the
+	     event, which is empty until then. -->
+  <div v-else-if="show && loading" class="fixed inset-0 z-30 flex flex-col bg-surface-base">
+    <header
+      class="flex shrink-0 items-center gap-1 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
+    >
+      <Button variant="ghost" class="-ml-1.5" :aria-label="__('Close')" @click="cancel">
+        <template #icon><X class="size-5 text-ink-gray-7" /></template>
+      </Button>
+      <h2 class="truncate text-xl font-medium text-ink-gray-9">{{ dialogTitle }}</h2>
+    </header>
+    <div class="flex flex-1 items-center justify-center" role="status" :aria-label="__('Loading')">
+      <LoadingIndicator class="size-5 text-ink-gray-5" />
+    </div>
+  </div>
   <MobileEventForm
     v-else-if="show"
     v-model:calendar="eventCalendar"
@@ -1385,7 +1401,6 @@ const recurringScopeModalProps = computed(() => ({
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"
-    :loading="loading"
     @cancel="cancel"
     @save="handleSaveClick"
     @toggle-repeat="toggleRepeat"

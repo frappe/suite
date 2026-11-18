@@ -1,5 +1,5 @@
 import { createPinia } from 'pinia'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, type App } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
@@ -90,6 +90,11 @@ vi.mock('frappe-ui', async () => {
     },
   }
 })
+// The test adapter's stub carries no palette; the phone's calendar picker draws from it.
+vi.mock('frappe-ui/experimental', async (original) => ({
+  ...(await original<object>()),
+  CalendarColorMap: { green: { color: 'green' } },
+}))
 vi.mock('reka-ui', async (original) => {
   const { defineComponent, h } = await import('vue')
   const passthrough = defineComponent({
@@ -178,6 +183,10 @@ const draft: NewEventDraft = {
 }
 
 let app: App | undefined
+// The window's width as the page loads: Calendar picks its phone or desktop form from it, once.
+let screenWidth = 1024
+// What went wrong while the form rendered.
+const renderErrors = new Array<unknown>()
 let router: Router
 let open: (draft: NewEventDraft) => Promise<CreatedEvent | undefined>
 const page = document.createElement('div')
@@ -208,6 +217,8 @@ beforeEach(async () => {
   vi.spyOn(router, 'replace')
   // Fresh each time: the dialog host is the page's, and holds the app that first used it.
   vi.resetModules()
+  window.innerWidth = screenWidth
+  renderErrors.length = 0
   const { useNewEventDialog } = await import('@/apps/calendar')
   // A page in another area, which never visited Calendar, asking for the form.
   app = createApp({
@@ -217,6 +228,7 @@ beforeEach(async () => {
     },
   })
   app.config.globalProperties.__ = format
+  app.config.errorHandler = (error) => renderErrors.push(error)
   app.use(createPinia())
   app.use(router)
   document.body.append(page)
@@ -438,5 +450,27 @@ describe("Calendar's new-event form opened over another area's page", () => {
     fading.finish()
     await settle()
     expect(document.body.classList).not.toContain('calendar-app')
+  })
+})
+
+describe("Calendar's new-event form opened over another area's page, on a phone", () => {
+  beforeAll(() => (screenWidth = 390))
+  afterAll(() => (screenWidth = 1024))
+
+  it('shows its screen at once, loading, while the account and its calendars come', async () => {
+    let arrive = () => {}
+    const arrived = new Promise<void>((resolve) => (arrive = resolve))
+    server.arrival = () => arrived
+
+    void open(draft)
+    await vi.waitFor(() => expect(document.querySelector('[role="status"]')).not.toBeNull(), {
+      timeout: 5000,
+    })
+    expect(document.body.textContent).toContain('New Event')
+    expect(renderErrors).toEqual([])
+
+    arrive()
+    await vi.waitFor(() => expect(document.querySelector('[role="status"]')).toBeNull())
+    expect(renderErrors).toEqual([])
   })
 })
