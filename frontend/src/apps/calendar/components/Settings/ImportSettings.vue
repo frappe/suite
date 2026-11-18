@@ -62,7 +62,7 @@ const calendarImport = reactive<Omit<InputOf<typeof api.mail.calendar.import>, '
   file: '',
   calendar: '',
 })
-const { progress, upload } = useChunkedUpload()
+const { progress, upload, uploading } = useChunkedUpload()
 const acceptTypes = computed(() => (calendarImport.format === 'ics' ? '.ics' : '.zip,.tgz,.tar.gz'))
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
@@ -112,8 +112,13 @@ const ongoingImport = useQuery(api.mail.calendar.ongoingExchange, () =>
 const isImportRunning = computed(() => Boolean(ongoingImport.data?.name))
 const isImporting = computed(() => isImportRunning.value || createCalendarImport.isPending)
 const importError = computed(() => createCalendarImport.error?.message)
+// While a file uploads, the form still holds the one picked before it
 const isImportBlocked = computed(
-  () => ongoingImport.isFetching || Boolean(ongoingImport.error) || !calendarImport.file,
+  () =>
+    ongoingImport.isFetching ||
+    Boolean(ongoingImport.error) ||
+    uploading.value ||
+    !calendarImport.file,
 )
 const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
   if (payload.action === 'Import') ongoingImport.refetch().catch(() => {})

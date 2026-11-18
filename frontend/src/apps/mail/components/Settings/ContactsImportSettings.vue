@@ -65,7 +65,7 @@ const contactsImport = reactive<Omit<InputOf<typeof api.mail.exchanges.importCon
     address_book: '',
   },
 )
-const { progress, upload } = useChunkedUpload()
+const { progress, upload, uploading } = useChunkedUpload()
 const acceptTypes = computed(() => (contactsImport.format === 'vcf' ? '.vcf' : '.zip,.tgz,.tar.gz'))
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
@@ -130,8 +130,13 @@ socket.on('contacts_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('contacts_exchange_completed', onExchangeCompleted))
 const isImportRunning = computed(() => Boolean(ongoingImport.data?.name))
 const isImporting = computed(() => isImportRunning.value || createContactsImport.isPending)
+// While a file uploads, the form still holds the one picked before it
 const isImportBlocked = computed(
-  () => ongoingImport.isFetching || Boolean(ongoingImport.error) || !contactsImport.file,
+  () =>
+    ongoingImport.isFetching ||
+    Boolean(ongoingImport.error) ||
+    uploading.value ||
+    !contactsImport.file,
 )
 const importError = computed(() => createContactsImport.error?.message)
 const importHref = computed(() => {

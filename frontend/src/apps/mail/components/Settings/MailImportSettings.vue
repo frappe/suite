@@ -74,7 +74,7 @@ const mailImport = reactive<Omit<InputOf<typeof api.mail.exchanges.importMail>, 
   mailbox: '',
   seen: true,
 })
-const { progress, upload } = useChunkedUpload()
+const { progress, upload, uploading } = useChunkedUpload()
 const acceptTypes = computed(() => (mailImport.format === 'eml' ? '.eml' : '.zip,.tgz,.tar.gz'))
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
@@ -143,8 +143,10 @@ socket.on('mail_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
 const isImportRunning = computed(() => Boolean(ongoingImport.data?.name))
 const isImporting = computed(() => isImportRunning.value || createMailImport.isPending)
+// While a file uploads, the form still holds the one picked before it
 const isImportBlocked = computed(
-  () => ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file,
+  () =>
+    ongoingImport.isFetching || Boolean(ongoingImport.error) || uploading.value || !mailImport.file,
 )
 const importError = computed(() => createMailImport.error?.message)
 const importHref = computed(() => {
