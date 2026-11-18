@@ -777,6 +777,22 @@ describe('a send the mail server refuses', () => {
     expect(toastError).toHaveBeenCalledWith('Mail not sent', { description: reason })
     expect(open).toBe(true)
   })
+
+  // The schedule dialog shows a refusal itself, so it is not said twice.
+  it('gives a scheduled send its reason, and raises no toast of its own', async () => {
+    const composer = compose()
+    const reason = 'invalidProperties: Invalid e-mail address "lena@harbor.example". (envelope)'
+    server.updateDraft.mockResolvedValueOnce({
+      id: 'draft-2',
+      status: 'Failed to Submit',
+      error: reason,
+    })
+
+    await expect(composer.sendMail('2026-11-19T09:00:00Z')).rejects.toThrow(reason)
+
+    expect(toastError).not.toHaveBeenCalled()
+    expect(open).toBe(true)
+  })
 })
 
 describe('a send that is out', () => {
