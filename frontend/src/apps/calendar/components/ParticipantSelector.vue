@@ -5,6 +5,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import EventParticipantList from '@/apps/calendar/components/EventParticipantList.vue'
+import { newGuest } from '@/apps/calendar/utils'
 import { extractNameFromEmail } from '@/apps/calendar/utils/format'
 
 interface ContactSuggestion {
@@ -135,14 +136,7 @@ const addParticipant = (email: string, contact?: ContactSuggestion) => {
 
   participants.value = [
     ...participants.value,
-    {
-      email: value,
-      _name: contact?.name,
-      user_image: contact?.user_image,
-      participation_status: 'NEEDS-ACTION',
-      expect_reply: true,
-      isNew: true,
-    },
+    { ...newGuest(value, contact?.name), user_image: contact?.user_image },
   ]
 }
 

@@ -7,9 +7,12 @@
 	     stops reporting size at all. The message is blank from then on however tall its content is,
 	     and nothing recovers it — not a resize, not content changing inside the frame, not even
 	     being handed a real height. Only reloading the frame does, which is why re-selecting the
-	     mail was the one thing that worked. -->
+	     mail was the one thing that worked. The frame also waits for the date reader, so the dates
+	     are in the first document it loads rather than reloading it under the reader; the skeleton
+	     holds the space until then. -->
   <div class="relative w-full">
     <IframeResizer
+      v-if="srcdoc"
       ref="frame"
       class="w-full"
       :class="{ invisible: !isIframeReady }"
@@ -18,7 +21,11 @@
       :srcdoc
       @on-ready="isIframeReady = true"
     />
-    <div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
+    <div
+      v-if="!isIframeReady"
+      class="animate-pulse space-y-2 py-4"
+      :class="{ 'absolute inset-0': srcdoc }"
+    >
       <div
         v-for="i in 5"
         :key="i"
@@ -36,6 +43,7 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
+import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'
 import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
@@ -45,13 +53,16 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
+import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
-// `highlight`: the words a search found the message by, marked in its body.
+// `highlight`: the words a search found the message by, marked in its body. `sentAt`: when the mail
+// was sent; given it, the dates in the mail's own words are marked, read from then, and picking one
+// asks for an event at it (`pickDate`).
 // `asSent`: the reader asked to see the message as its sender designed it, on a light canvas,
 // because the dark-theme remap spoiled it. Only the thread knows that, and it learns whether
 // the remap applies at all from `adaptable`, which says so for the theme the app is in, shown
@@ -60,9 +71,17 @@ const {
   content,
   blockImages = false,
   highlight = '',
+  sentAt,
   asSent = false,
-} = defineProps<{ content: string; blockImages?: boolean; highlight?: string; asSent?: boolean }>()
-const emit = defineEmits<{ adaptable: [adaptable: boolean] }>()
+} = defineProps<{
+  content: string
+  blockImages?: boolean
+  highlight?: string
+  sentAt?: string
+  asSent?: boolean
+}>()
+const emit = defineEmits<{ pickDate: [date: NamedDate]; adaptable: [adaptable: boolean] }>()
+const mailDates = useMailDates()
 
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
@@ -77,6 +96,13 @@ const handleMessage = (event: MessageEvent) => {
   // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
   if (event.data?.type === 'swipe') {
     window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+    return
+  }
+  // A date in the message the reader picked (see markMailDates), by its place in this render's list.
+  if (event.data?.type === 'mail-date') {
+    if (event.source !== frame.value?.$el?.contentWindow) return
+    const date = body.value.dates[Number(event.data.index)]
+    if (date) emit('pickDate', date)
     return
   }
   // A `mailto:` the reader clicked inside the message — open our own composer on it.
@@ -149,6 +175,9 @@ const collapseQuotes = (doc: Document) => {
 }
 
 const body = computed(() => {
+  // Until the date reader has loaded, or failed to, the frame waits (see the template); the rest,
+  // whether the theme adapts the message among it, is known already.
+  const waiting = !!sentAt && mailDates.value === undefined
   const doc = new DOMParser().parseFromString(sanitizeEmailHtml(content, blockImages), 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
   // declaring a fixed palette (suite's own templates), and art-directed ones
@@ -165,9 +194,14 @@ const body = computed(() => {
   const adapts = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
   const remapped = adapts && !asSent
   if (remapped) remapEmailForDarkMode(doc)
+  // Before the search highlight, which cuts text into pieces a date could straddle.
+  const dates =
+    sentAt && mailDates.value
+      ? mailDates.value.markMailDates(doc, sentAt, mailReader(), __('Create event'))
+      : []
   if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)
-  return { html: doc.documentElement.outerHTML, adapts, remapped }
+  return { html: doc.documentElement.outerHTML, adapts, remapped, dates, waiting }
 })
 
 watch(
@@ -182,6 +216,7 @@ const frameTheme = computed(() => (asSent ? 'light' : dataTheme.value))
 const colors = computed(() => THEME_CONFIG[frameTheme.value])
 
 const srcdoc = computed(() => {
+  if (body.value.waiting) return null
   const { html: transformedContent, remapped } = body.value
 
   return `
@@ -296,6 +331,19 @@ const srcdoc = computed(() => {
 
 				img[data-blocked-image] {
 					display: none !important;
+				}
+
+				/* A date the reader can make an event of: underlined in the text's own colour, faintly,
+				   so it reads on any canvas the mail paints, and drawn without moving a thing. */
+				[data-mail-date] {
+					text-decoration: underline;
+					text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+					text-underline-offset: 2px;
+					cursor: pointer;
+				}
+
+				[data-mail-date]:hover {
+					text-decoration-color: currentColor;
 				}
 
 				/* Code keeps its line breaks and indentation but wraps a line too long for the
@@ -497,7 +545,56 @@ const srcdoc = computed(() => {
 					window.parent.postMessage({ type: 'pointerdown' }, '*');
 				});
 
-				// Forward link clicks to parent
+				// A date picked in the message goes to the app to make an event of: a press and release
+				// in place that selected nothing. A drag, or a press that ends a selection, is the reader
+				// selecting text.
+				const pickDate = (mark) =>
+					window.parent.postMessage({ type: 'mail-date', index: mark.dataset.mailDate }, '*');
+				document.addEventListener('keydown', (e) => {
+					const mark = e.target.closest?.('[data-mail-date]');
+					if (!mark || (e.key !== 'Enter' && e.key !== ' ')) return;
+					e.preventDefault();
+					pickDate(mark);
+				});
+				// A date is focusable so Tab reaches it, but a browser starts no selection at the edge of
+				// a focusable element: while a press on it lasts it isn't one. It is again once the press
+				// ends, wherever it ends, and before any key can move focus. Where the press began tells
+				// a tap from a drag; a click with no press of its own (a screen reader's) is a pick.
+				let press = null;
+				let unfocused = null;
+				const refocusable = () => {
+					unfocused?.setAttribute('tabindex', '0');
+					unfocused = null;
+				};
+				document.addEventListener('pointerdown', (e) => {
+					refocusable();
+					const mark = e.target.closest?.('[data-mail-date]');
+					press = mark ? { x: e.clientX, y: e.clientY, date: mark.dataset.mailDate } : null;
+					if (!mark?.hasAttribute('tabindex')) return;
+					mark.removeAttribute('tabindex');
+					unfocused = mark;
+				}, true);
+				['pointerup', 'lostpointercapture', 'keydown'].forEach((type) =>
+					document.addEventListener(type, refocusable, true),
+				);
+				document.addEventListener('pointercancel', () => {
+					refocusable();
+					press = null;
+				}, true);
+				// A drag let go outside the frame sends no pointerup here: the pointer back without a
+				// button down says it is over.
+				document.addEventListener('pointermove', (e) => {
+					if (!e.buttons) refocusable();
+				}, true);
+				const moved = (e, mark) => {
+					const pressed = press;
+					press = null;
+					if (!pressed || pressed.date !== mark.dataset.mailDate) return false;
+					return Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > 4;
+				};
+
+				// Forward link clicks to parent. A link comes first, whatever is around it: the frame
+				// never follows one itself.
 				document.addEventListener('click', (e) => {
 					const anchor = e.target.closest('a');
 					if (anchor) {
@@ -511,7 +608,12 @@ const srcdoc = computed(() => {
 							return;
 						}
 						window.open(anchor.href, '_blank');
+						return;
 					}
+					const mark = e.target.closest('[data-mail-date]');
+					if (!mark) return;
+					e.preventDefault();
+					if (!moved(e, mark) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
 				// Forward horizontal swipes to the parent — touches never leave the iframe, so

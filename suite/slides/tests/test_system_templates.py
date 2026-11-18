@@ -20,15 +20,15 @@ from suite.content import checker
 from suite.slides.content import CHECKER_BUILD
 from suite.slides.content.conversion import check_state
 from suite.slides.content.tests.support import (
+    OWNER,
     LoggedDeckCase,
     delete_log,
     opened,
-    owner_folder,
     trash_template,
 )
 from suite.slides.doctype.presentation.presentation import get_templates
-from suite.slides.install import _seed, seed_system_templates
-from suite.slides.tests.utils import make_presentation
+from suite.slides.install import _seed, _templates_folder, seed_system_templates
+from suite.slides.tests.utils import make_presentation, trash_node
 from suite.tests.utils import ensure_user
 
 READER = "slides-template-reader@example.com"
@@ -172,6 +172,11 @@ def title_markup(deck: list[dict]) -> str:
     return str(title["text"])
 
 
+def trash_folder(folder: str) -> None:
+    trash_node(folder)
+    frappe.db.commit()
+
+
 class TestShippedTemplates(UnitTestCase):
     def test_light_and_dark_ship_as_ready_made_presentations(self):
         self.assertEqual(sorted(shipped()), ["Dark", "Light"])
@@ -206,13 +211,18 @@ class TestShippedTemplates(UnitTestCase):
 
 class TestSeedingWhileCollaborationIsOn(LoggedDeckCase):
     def test_a_seeded_template_starts_from_its_shipped_presentation(self):
+        # Seeding runs as Administrator, into its Personal root (§8.10), and
+        # shares each deck with everyone at the organization.
+        frappe.set_user("Administrator")
         suffix = frappe.generate_hash(6)
-        folder = drive.ensure_folder(owner_folder(), f"Seeded {suffix}")
+        folder = drive.ensure_folder(_templates_folder(), f"Seeded {suffix}")
+        self.addCleanup(trash_folder, folder)
 
         node = _seed(folder, "Dark")
         frappe.db.commit()
         self.addCleanup(trash_template, node)
         self.addCleanup(delete_log, node)
+        frappe.set_user(OWNER)
         _header, state = opened(node)
 
         self.assertEqual(layouts_of(state), LAYOUTS)

@@ -33,6 +33,7 @@ from suite.drive.webdav.tests.utils import (
     personal_dav_root,
     raw_document_node,
     reset_dav_request,
+    restrict_owner,
 )
 
 OWNER = "webdav-movecopy-owner@example.com"
@@ -271,7 +272,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         them, one Destination header at a time.
         """
         sealed = folder_node(OWNER, self.base, "Sealed")
-        grant(sealed, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(sealed, NONE)
 
         for verb in (self._move, self._copy):
             unreadable = self.assert_refused(409, verb, self._path("b.txt"), self._path("Sealed", "x.txt"))
@@ -287,32 +288,32 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         refuses a row naming the Personal Root's own user inside it, and
         §5.1's nearest-wins makes the deeper row the answer.
         """
-        grant(self.file.name, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self.file.name, READ)
         self.assert_refused(403, self._move, self._path("b.txt"), self._path("sub", "b.txt"))
         self.assertEqual(node_core.stored(self.file.name).parent_node, self.base)
 
     def test_move_needs_upload_on_the_destination_parent(self):
         """§12.1: the destination's parent gains a member, which is UPLOAD."""
-        grant(self.sub, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self.sub, READ)
         self.assert_refused(403, self._move, self._path("b.txt"), self._path("sub", "b.txt"))
         self.assertEqual(node_core.stored(self.file.name).parent_node, self.base)
 
     def test_copy_needs_read_on_the_source(self):
         """§12.1: COPY reads the source, and below READ is 404, never 403."""
-        grant(self.file.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(self.file.name, NONE)
         self.assert_refused(404, self._copy, self._path("b.txt"), self._path("sub", "copy.txt"))
         self.assertFalse(self._resolve(f"{self.base_name}/sub/copy.txt").exists)
 
     def test_copy_needs_upload_on_the_destination_parent(self):
         """§12.1: COPY asks nothing of the destination beyond UPLOAD on its
         parent, and asks that much."""
-        grant(self.sub, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self.sub, READ)
         self.assert_refused(403, self._copy, self._path("b.txt"), self._path("sub", "copy.txt"))
 
     def test_an_unreadable_destination_is_404_not_403(self):
         """§12.1: an overwrite must not confirm a name the caller cannot see."""
         target = file_node(OWNER, self.base, "spot.txt", b"old")
-        grant(target.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(target.name, NONE)
 
         self.assert_refused(404, self._move, self._path("b.txt"), self._path("spot.txt"))
         self.assertEqual(node_core.stored(target.name).state, "Active")
@@ -325,7 +326,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         Below READ both verbs have to answer 404 instead.
         """
         target = file_node(OWNER, self.base, "spot.txt", b"old")
-        grant(target.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(target.name, NONE)
 
         self.assert_refused(404, self._move, self._path("b.txt"), self._path("spot.txt"), overwrite=False)
         self.assert_refused(404, self._copy, self._path("b.txt"), self._path("spot.txt"), Overwrite="F")
@@ -543,7 +544,7 @@ class TestWebDAVMoveCopy(IntegrationTestCase):
         """§8.9 drops an unreadable child rather than refusing the copy,
         exactly as PROPFIND drops it from a listing (§12.1)."""
         hidden = file_node(OWNER, self.base, "hidden.txt", b"no")
-        grant(hidden.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(hidden.name, NONE)
 
         response = self._copy(f"/dav/{self.base_name}", f"/dav/{self.base_name}-copy")
         self.assertEqual(response.status_code, 201)

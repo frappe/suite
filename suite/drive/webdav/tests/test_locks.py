@@ -45,6 +45,7 @@ from suite.drive.webdav.tests.utils import (
     personal_dav_root,
     raw_document_node,
     reset_dav_request,
+    restrict_owner,
 )
 from suite.drive.webdav.xmlutil import dav, parse_xml
 from suite.tests.utils import ensure_user
@@ -159,7 +160,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         Nearest depth beats identity tier (§5.1), so the node answers NONE
         while the folder above it stays readable.
         """
-        grant(node, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(node, NONE)
 
     def _node_at(self, path: str):
         pathmap.reset_memo()
@@ -264,7 +265,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         """
         collection = self._node_at(self.base).name
         member = folder_node(OWNER, collection, "ReadOnly")
-        grant(member, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(member, READ)
 
         response = self._lock(self.base, Depth="infinity")
         self.assertEqual(response.status_code, 207)
@@ -313,7 +314,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         because a caller who is no longer MANAGE on a node cannot grant on it
         a second time.
         """
-        grant(self.other, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self.other, READ)
         with self.assertRaises(DriveForbidden):
             self._lock(self.other_path)
 
@@ -365,7 +366,7 @@ class TestWebDAVLocks(IntegrationTestCase):
 
     def test_lock_unmapped_url_requires_upload_on_the_parent(self):
         """§12.1: the role for a create is UPLOAD on the collection."""
-        grant(self.folder, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self.folder, READ)
         with self.assertRaises(DriveForbidden):
             self._lock(f"{self.base}/fresh.docx")
         self.assertIsNone(self._node_at(f"{self.base}/fresh.docx"))
@@ -723,7 +724,7 @@ class TestWebDAVLocks(IntegrationTestCase):
         out of their own file by a role that cannot write it.
         """
         token = self._token(self._lock(self.doc_path))
-        grant(self._node_at(self.doc_path).name, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self._node_at(self.doc_path).name, READ)
 
         with self.assertRaises(DriveForbidden):
             self._refresh(self.doc_path, token)

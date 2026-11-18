@@ -55,6 +55,7 @@ from suite.drive.webdav.tests.utils import (
     raw_child_node,
     raw_document_node,
     reset_dav_request,
+    restrict_owner,
 )
 
 OWNER = "webdav-content-owner@example.com"
@@ -264,7 +265,7 @@ class TestWebDAVContent(IntegrationTestCase):
         """
         hidden = file_node(OWNER, self.folder, "hidden.bin", b"secret")
         try:
-            grant(hidden.name, "$GENERAL", NONE, node_principals(OWNER))
+            restrict_owner(hidden.name, NONE)
             # `require` refuses below READ with the engine's own not-found,
             # which `errors.map_exception` turns into 404 (§12.1)
             with self.assertRaises(DriveNotFound):
@@ -717,14 +718,14 @@ class TestWebDAVPut(IntegrationTestCase):
         # §11.2 refuses a deny naming the root's own user inside it, so the
         # grant names `$GENERAL`, which the caller carries too. Nearest depth
         # beats identity tier (§5.1), so this folder answers READ.
-        grant(folder, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(folder, READ)
         with self.assertRaises(DriveForbidden):
             self._put(f"/dav/{self.base_name}/read-only/x.txt", b"x")
 
     def test_put_needs_edit_to_replace(self):
         self._put(self._url("held.txt"), b"one")
         row = self._row("held.txt")
-        grant(row.name, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(row.name, READ)
         with self.assertRaises(DriveForbidden):
             self._put(self._url("held.txt"), b"two")
 
@@ -732,7 +733,7 @@ class TestWebDAVPut(IntegrationTestCase):
         """§12.1: below READ the answer is 404, ahead of 412, 423 and 405."""
         self._put(self._url("secret.txt"), b"nope")
         row = self._row("secret.txt")
-        grant(row.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(row.name, NONE)
 
         # `If-None-Match: *` would be a 412 on an existing resource, which is
         # exactly the oracle the read gate has to close
@@ -750,7 +751,7 @@ class TestWebDAVPut(IntegrationTestCase):
         tells a stranger which of their own folders were taken away from them.
         """
         folder = node_core.create_folder(node_principals(OWNER), self.base, "Vault")
-        grant(folder, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(folder, NONE)
 
         with self.assertRaises(DriveNotFound):
             self._put(f"/dav/{self.base_name}/Vault", b"x")
@@ -769,7 +770,7 @@ class TestWebDAVPut(IntegrationTestCase):
         it: a parent the caller cannot see is a parent that is not there.
         """
         folder = node_core.create_folder(node_principals(OWNER), self.base, "Sealed")
-        grant(folder, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(folder, NONE)
 
         with self.assertRaises(Conflict) as unreadable:
             self._put(f"/dav/{self.base_name}/Sealed/x.txt", b"x")
@@ -779,7 +780,7 @@ class TestWebDAVPut(IntegrationTestCase):
 
         # a parent the caller can see but not write still says so
         readable = node_core.create_folder(node_principals(OWNER), self.base, "Shown")
-        grant(readable, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(readable, READ)
         with self.assertRaises(DriveForbidden):
             self._put(f"/dav/{self.base_name}/Shown/x.txt", b"x")
 

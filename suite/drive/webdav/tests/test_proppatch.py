@@ -34,6 +34,7 @@ from suite.drive.webdav.tests.utils import (
     personal_dav_root,
     raw_document_node,
     reset_dav_request,
+    restrict_owner,
 )
 from suite.drive.webdav.xmlutil import dav
 
@@ -205,7 +206,7 @@ class TestWebDAVProppatch(IntegrationTestCase):
         identity tier (§5.1), so the node answers READ while the folder above
         it stays MANAGE.
         """
-        grant(self.file.name, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(self.file.name, READ)
         with self.assertRaises(DriveForbidden) as caught:
             self._proppatch(SET_CUSTOM)
         self.assertEqual(map_exception(caught.exception).status, 403)
@@ -218,7 +219,7 @@ class TestWebDAVProppatch(IntegrationTestCase):
         answer covers a path that is not in the caller's mount at all, which is
         every path in another user's root.
         """
-        grant(self.file.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(self.file.name, NONE)
         with self.assertRaises(DriveNotFound) as caught:
             self._proppatch(SET_CUSTOM)
         self.assertEqual(map_exception(caught.exception).status, 404)

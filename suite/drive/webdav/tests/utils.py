@@ -7,9 +7,10 @@ for the bytes, `_core.roots.create_root` and `_core.nodes.create_folder` /
 `create_file` for the tree — so no suite asserts against a shape only a test
 can make. Cleanup goes through `suite/drive/tests/fixtures.py`.
 
-`raw_child_node` is the one exception, for the two shapes `_core` will not
-build: a content document, and a sibling whose title collides with a live one.
-Both are shapes `pathmap` still has to answer for.
+`raw_child_node` and `restrict_owner` are the exceptions, for shapes `_core`
+will not build: a content document, a sibling whose title collides with a
+live one, and a node its own Personal Root's user cannot read or change.
+Each is a shape `pathmap` still has to answer for.
 """
 
 import base64
@@ -205,6 +206,21 @@ def node_principals(user: str) -> Principals:
     from suite.drive import framework
 
     return framework.principals_for(user)
+
+
+def restrict_owner(node: str, role: int) -> None:
+    """Hold the mount's own user to `role` on `node` with a `$GENERAL` row beside it.
+
+    Nearest depth beats identity tier (§5.1), so the node answers `role` to
+    the caller while the folder above it keeps its access. `access.grant`
+    keeps a Personal Root's user at Manage on a node inside it, and refuses a
+    deny that names them, so the row is written directly. A node can still
+    arrive in this state: a migrated row, or a node moved in from the Shared
+    Root with its own grants.
+    """
+    frappe.get_doc({"doctype": "Drive Grant", "node": node, "principal": "$GENERAL", "role": role}).insert(
+        ignore_permissions=True
+    )
 
 
 def personal_dav_root(user: str, *, title: str = "My Drive", quota_bytes: int = 0) -> str:

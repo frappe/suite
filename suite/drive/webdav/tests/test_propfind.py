@@ -27,6 +27,7 @@ from suite.drive.webdav.tests.utils import (
     node_principals,
     personal_dav_root,
     raw_document_node,
+    restrict_owner,
 )
 from suite.drive.webdav.xmlutil import dav
 
@@ -161,7 +162,7 @@ class TestWebDAVPropfind(IntegrationTestCase):
         """
         hidden = file_node(OWNER, self.docs, "hidden.txt", b"no")
         try:
-            grant(hidden.name, "$GENERAL", NONE, node_principals(OWNER))
+            restrict_owner(hidden.name, NONE)
             listed = hrefs(multistatus(propfind_response(OWNER, "/dav/PropDocs")))
             self.assertIn("/dav/PropDocs/report.txt", listed)
             self.assertNotIn("/dav/PropDocs/hidden.txt", listed)

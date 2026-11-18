@@ -5,6 +5,9 @@ import { createApp, h, ref, type App } from 'vue'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import type { BodyView, Mail } from '@/apps/mail/types'
 
+// Every label the menu is handed, whether or not it would show for this message.
+const handed = vi.hoisted(() => new Array<string>())
+
 // The menu, drawn as one button per item it would show: a Dropdown leaves out an item whose
 // condition says no.
 vi.mock('@/platform/feedback', async () => {
@@ -20,7 +23,10 @@ vi.mock('@/platform/feedback', async () => {
         'menu',
         options
           .flatMap((group) => group.options)
-          .filter((option) => option.condition?.() !== false)
+          .filter((option) => {
+            handed.push(option.label)
+            return option.condition?.() !== false
+          })
           .map((option) => h('button', { onClick: option.onClick }, option.label)),
       ),
   }
@@ -60,7 +66,10 @@ const mail = fromPartial<Mail>({
 })
 
 let app: App | undefined
-afterEach(() => app?.unmount())
+afterEach(() => {
+  app?.unmount()
+  handed.length = 0
+})
 
 const menuFor = (bodyView?: BodyView) => {
   const onToggleAsSent = vi.fn()
@@ -109,5 +118,13 @@ describe("a message's More menu in the dark theme", () => {
     expect(item('Show as Sent')).toBeUndefined()
     item('Show in Dark Theme')!.click()
     expect(onToggleAsSent).toHaveBeenCalledOnce()
+  })
+})
+
+describe("a message's menu", () => {
+  it('offers no event: an event is made from a date in the message instead', () => {
+    const { item } = menuFor(undefined)
+    expect(item('Download Email')).toBeDefined()
+    expect(handed.filter((label) => /event/i.test(label))).toEqual([])
   })
 })

@@ -59,7 +59,7 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useWorkspace } from '@/platform/workspace'
 
-import { useLocationTitle } from '../../internal/locations'
+import { useLocationTitle, useRoots } from '../../internal/locations'
 import type { ShareReads } from './opening'
 import ShareBody from './ShareBody.vue'
 import ShareDialogFooter from './ShareDialogFooter.vue'
@@ -96,6 +96,7 @@ const state = useShare(props.node, {
       destructive: true,
     })
   },
+  roots: useRoots(),
   workspace: workspaceName,
   placeTitle: useLocationTitle(),
   known: props.known,
