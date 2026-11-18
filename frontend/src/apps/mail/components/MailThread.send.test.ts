@@ -9,8 +9,10 @@ import type { Mail, MailCopy } from '@/apps/mail/types'
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 // The thread pane with its real template, as the reader sees it after the server answers: every
-// message's chrome left out but its actions, which are handed the mail they act on.
+// message's chrome left out but its actions, which are handed the mail they act on, and a reply's
+// composer, which is handed how to show its mail as sent.
 const actedOn = vi.hoisted(() => new Map<string, Mail>())
+const composers = vi.hoisted(() => new Map<string, () => Promise<void>>())
 
 const empty = vi.hoisted(() => async () => {
   const { defineComponent } = await import('vue')
@@ -30,7 +32,24 @@ vi.mock('@/apps/mail/components/MailActions.vue', async () => {
 })
 vi.mock('@/apps/mail/components/ThreadHeader.vue', empty)
 vi.mock('@/apps/mail/components/SendMail.vue', empty)
-vi.mock('@/apps/mail/components/ComposeMailEditor.vue', empty)
+vi.mock('@/apps/mail/components/ComposeMailEditor.vue', async () => {
+  const { defineComponent, h, watchEffect } = await import('vue')
+  return {
+    default: defineComponent({
+      props: {
+        mailDetails: { type: Object, default: undefined },
+        showSent: { type: Function, default: undefined },
+      },
+      setup(props) {
+        watchEffect(() => {
+          if (props.mailDetails && props.showSent)
+            composers.set(props.mailDetails.name, props.showSent as () => Promise<void>)
+        })
+        return () => h('div', { 'data-composer': '' })
+      },
+    }),
+  }
+})
 vi.mock('@/apps/mail/components/MailDetails.vue', empty)
 vi.mock('@/apps/mail/components/MailDetailsPopover.vue', empty)
 vi.mock('@/apps/mail/components/SenderCard.vue', empty)
@@ -46,11 +65,17 @@ const query = vi.hoisted(() => ({
     refetch: async () => {},
   },
 }))
-vi.mock('@/api', async (original) => ({
-  ...(await original<typeof import('@/api')>()),
-  useQuery: () => query.current,
-  useMutation: () => ({ run: vi.fn() }),
-}))
+// The thread asked for on its own once a reply is sent, answered as the test says.
+const threadAsked = vi.hoisted(() => ({ answer: async (): Promise<unknown[]> => [] }))
+vi.mock('@/api', async (original) => {
+  const actual = await original<typeof import('@/api')>()
+  return {
+    ...actual,
+    client: { ...actual.client, query: () => threadAsked.answer() },
+    useQuery: () => query.current,
+    useMutation: () => ({ run: vi.fn() }),
+  }
+})
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ globalScreenedAddresses: { data: [] } }),
 }))
@@ -100,7 +125,11 @@ vi.mock('@/apps/mail/composables/useMessageReactions', () => ({
 
 let app: App | undefined
 const root = document.createElement('div')
-beforeEach(() => actedOn.clear())
+beforeEach(() => {
+  actedOn.clear()
+  composers.clear()
+  threadAsked.answer = async () => []
+})
 afterEach(() => {
   app?.unmount()
   root.remove()
@@ -124,8 +153,11 @@ const message = (name: string, fields: Partial<Mail> = {}) => ({
   ...fields,
 })
 
+// What the pane is opened on; the reader moves to another thread by changing it.
+const pane = reactive({ threadID: 'one' })
 /** Thread `one` open in `mailbox`, its messages whatever `query` holds. */
 const openThread = async (mailbox = 'inbox'): Promise<Router> => {
+  pane.threadID = 'one'
   window.__ = (text: string) => text
   const router = createRouter({
     history: createMemoryHistory(),
@@ -136,7 +168,8 @@ const openThread = async (mailbox = 'inbox'): Promise<Router> => {
   })
   await router.push(`/mail/${mailbox}/one`)
   app = createApp({
-    setup: () => () => h(MailThread, { mailbox, threadID: 'one', threads: [], marksSeen: false }),
+    setup: () => () =>
+      h(MailThread, { mailbox, threadID: pane.threadID, threads: [], marksSeen: false }),
   })
   app.config.globalProperties.__ = window.__
   app.use(router)
@@ -148,9 +181,8 @@ const openThread = async (mailbox = 'inbox'): Promise<Router> => {
   await nextTick()
   return router
 }
-const settle = async () => {
-  for (let i = 0; i < 4; i++) await nextTick()
-}
+// A navigation, too, lands in a few turns.
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
 // The folders each copy of a shown message is in, by copy: what an Undo puts each one back into.
 const foldersOf = (mail: Mail) =>
@@ -189,4 +221,23 @@ it('keeps each copy of a reply to yourself in its own folders once its delivered
   await settle()
 
   expect(foldersOf(actedOn.get('sent')!)).toEqual({ sent: ['sent'], delivered: ['inbox'] })
+})
+
+it('leaves the thread the reader moved to while the reply was being sent as it is', async () => {
+  // A draft opened from Drafts, the whole of its pane.
+  query.current = reactive({
+    data: [message('draft', { draft: 1, mailboxes: [{ mailbox_id: 'drafts', mailbox_name: '' }] })],
+    status: 'success',
+    refetch: async () => {},
+  })
+  const router = await openThread('drafts')
+  const showSent = composers.get('draft')!
+
+  // On to another thread before the send's answer is back; its messages are on their way.
+  pane.threadID = 'two'
+  await settle()
+  await showSent()
+  await settle()
+
+  expect(router.currentRoute.value.name).not.toBe('mail-mailbox')
 })

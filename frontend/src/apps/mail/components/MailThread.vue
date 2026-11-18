@@ -1433,8 +1433,9 @@ const showSent = async (draft: string) => {
   // The list catches up behind, and is synced in place when it lands.
   if (messages?.length || !threadID) emit('reloadMails')
   else void threadFallback.refetch().catch(() => {})
-  // The reader has moved on: the pane is another thread's now.
-  if (threadID !== opened) return
+  // The reader has moved on, while the send was out or since: the pane is another thread's now,
+  // and the reply's card went with the thread it was written in.
+  if (!thread.value.some((mail: Mail) => mail.name === draft)) return
   delete draftMails[draft]
   thread.value = thread.value.filter((mail: Mail) => mail.name !== draft)
   if (rows?.length) syncWithSource(rows.map(mailRow))
