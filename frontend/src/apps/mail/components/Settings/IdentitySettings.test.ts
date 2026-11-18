@@ -33,22 +33,19 @@ interface Option {
   condition?: () => boolean
   onClick: () => void
 }
-// As the real one in what the tests look at: a button for each option whose condition holds
-vi.mock('@/components/AdaptiveDropdown.vue', () => ({
-  default: defineComponent({
-    props: {
-      options: { type: Array<Option>, default: () => [] },
-      title: { type: String, default: '' },
-    },
-    setup(props) {
+// As the real menu once opened, in what the tests look at: its button, then a line for each option
+// whose condition holds
+vi.mock('@/platform/feedback', () => ({
+  Dropdown: defineComponent({
+    props: { options: { type: Array<Option>, default: () => [] } },
+    setup(props, { slots }) {
       return () =>
-        h(
-          'menu',
-          { 'aria-label': props.title },
+        h('menu', [
+          slots.default?.(),
           props.options
             .filter((option) => option.condition?.() ?? true)
-            .map((option) => h('button', { onClick: option.onClick }, option.label)),
-        )
+            .map((option) => h('li', { onClick: option.onClick }, option.label)),
+        ])
     },
   }),
 }))
@@ -255,19 +252,21 @@ function lines() {
   )
 }
 
-/** The words on an address's menu, the menu going by the address's name. */
-function menu(title: string) {
-  return Array.from(
-    root.querySelectorAll(`menu[aria-label="${title}"] button`),
-    (option) => option.textContent,
-  )
+/** The lines of an address's menu, the menu found by the button that opens it. */
+function menuLines(email: string) {
+  const opener = root.querySelector(`button[aria-label="More for ${email}"]`)
+
+  return Array.from(opener?.closest('menu')?.querySelectorAll('li') ?? [])
 }
 
-async function pressOnMenu(title: string, name: string) {
-  const option = Array.from(root.querySelectorAll(`menu[aria-label="${title}"] button`)).find(
-    (candidate) => candidate.textContent === name,
-  )
-  requireTestElement(option, HTMLButtonElement).click()
+/** The words on an address's menu. */
+function menu(email: string) {
+  return menuLines(email).map((line) => line.textContent)
+}
+
+async function pressOnMenu(email: string, name: string) {
+  const line = menuLines(email).find((candidate) => candidate.textContent === name)
+  requireTestElement(line, HTMLLIElement).click()
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
 
@@ -301,14 +300,14 @@ it('marks the saved default address, whatever its letter case', () => {
 })
 it('makes an address the default from its menu, and offers that only on the others', async () => {
   mount([me, sales])
-  expect(menu('Me')).not.toContain('Set as default')
+  expect(menu('me@example.com')).not.toContain('Set as default')
 
-  await pressOnMenu('Sales', 'Set as default')
+  await pressOnMenu('sales@example.com', 'Set as default')
   expect(state.change).toHaveBeenCalledWith({ default_outgoing_email: 'sales@example.com' })
 })
 it('opens an address from Edit on its menu', async () => {
   mount([me, sales])
-  await pressOnMenu('Sales', 'Edit')
+  await pressOnMenu('sales@example.com', 'Edit')
   expect(field('Display name')?.value).toBe('Sales')
 })
 it('opens an address in place of the list, and the arrow goes back to the list', async () => {
@@ -464,12 +463,12 @@ it('says there are no addresses yet, and still offers New address', () => {
 })
 it('offers Delete only for an address the server lets go', () => {
   mount([me, sales])
-  expect(menu('Me')).not.toContain('Delete')
-  expect(menu('Sales')).toContain('Delete')
+  expect(menu('me@example.com')).not.toContain('Delete')
+  expect(menu('sales@example.com')).toContain('Delete')
 })
 it('asks first, then deletes the address by its name', async () => {
   mount([me, sales])
-  await pressOnMenu('Sales', 'Delete')
+  await pressOnMenu('sales@example.com', 'Delete')
   expect(root.querySelector('dialog')?.textContent).toContain('This cannot be undone.')
   expect(state.run).not.toHaveBeenCalled()
 
@@ -481,7 +480,7 @@ it('asks first, then deletes the address by its name', async () => {
 it('keeps the question open when the delete is refused', async () => {
   state.run.mockRejectedValue(new Error('In use'))
   mount([me, sales])
-  await pressOnMenu('Sales', 'Delete')
+  await pressOnMenu('sales@example.com', 'Delete')
   await press('Delete address')
   expect(root.querySelector('dialog')?.getAttribute('aria-label')).toBe('Delete this address?')
   expect(state.toast).not.toHaveBeenCalled()

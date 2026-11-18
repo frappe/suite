@@ -10,7 +10,8 @@ vi.mock('@/apps/mail/utils', () => ({ raiseToast: state.toast }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: { value: false } }),
 }))
-vi.mock('@/components/AdaptiveDropdown.vue', () => ({ default: { render: () => null } }))
+// The menu of a signature's line, which these tests don't open
+vi.mock('@/platform/feedback', () => ({ Dropdown: { render: () => null } }))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   default: defineComponent({
     props: { modelValue: { type: String, default: '' } },
