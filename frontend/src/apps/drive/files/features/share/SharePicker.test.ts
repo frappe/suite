@@ -7,6 +7,7 @@ import type { PickedPerson } from './shareModel'
 import SharePicker from './SharePicker.vue'
 
 vi.mock('frappe-ui', async () => ({
+  ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Avatar')),
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Button')),
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Checkbox')),
   ...(await import('../../../../../../../node_modules/frappe-ui/src/components/Combobox')),
@@ -118,14 +119,14 @@ function clickRow(options: HTMLElement[], label: string) {
 }
 
 const staged = () =>
-  [...document.querySelectorAll('[aria-label="People to add"] li')].map((item) =>
-    item.querySelector('p')?.textContent?.trim(),
+  [...document.querySelectorAll('[aria-label="People to add"] li button')].map((chip) =>
+    chip.getAttribute('aria-label')?.replace(/^Remove /, ''),
   )
 
 describe('Share picker', () => {
   it('says the same on screen and to a screen reader: emails too, except on a root, which holds no links', async () => {
     const offersLink = (options: HTMLElement[]) =>
-      options.some((option) => option.textContent?.includes('Send a link to new@example.com'))
+      options.some((option) => option.textContent?.includes('Gets a link by email when you share'))
 
     const field = mountPicker()
     expect(field.placeholder).toBe('Add people, groups or emails')
@@ -248,5 +249,34 @@ describe('Share picker', () => {
       expect(options).toHaveLength(1)
       expect(options[0]?.textContent).toContain('Leah Thomas')
     })
+  })
+
+  it('holds an outside address until Share, then sends it with the access chosen for everyone', async () => {
+    const share = vi.fn(async () => [])
+    const input = mountPicker(share)
+    clickRow(await type(input, 'ma'), 'Maya Fernandes')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes']))
+    clickRow(await type(input, 'guest@acme.com'), 'guest@acme.com')
+    await vi.waitFor(() => expect(staged()).toEqual(['Maya Fernandes', 'guest@acme.com']))
+    expect(share).not.toHaveBeenCalled()
+
+    // A link gives at most Edit, so Manage is not offered while an address waits.
+    const menu = [...document.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')]
+    expect(menu.map((item) => item.textContent)).toEqual(['View', 'Comment', 'Edit'])
+    menu.find((item) => item.textContent === 'Comment')!.click()
+    ;[...document.querySelectorAll<HTMLButtonElement>('button')]
+      .find((button) => button.textContent?.trim() === 'Share')!
+      .click()
+
+    await vi.waitFor(() =>
+      expect(share).toHaveBeenCalledWith(
+        [
+          expect.objectContaining({ principal: 'maya@example.com', kind: 'user' }),
+          { principal: 'guest@acme.com', kind: 'email', label: 'guest@acme.com', name: null },
+        ],
+        20,
+        true,
+      ),
+    )
   })
 })

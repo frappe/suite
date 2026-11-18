@@ -4,15 +4,18 @@
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 group relative flex cursor-default select-none space-x-2.5 border-b outline-none focus-visible:outline-none px-3.5 py-2.5 sm:py-2 [-webkit-touch-callout:none] sm:space-x-5 sm:px-5"
-    :class="{
-      '!bg-surface-gray-1': isSelected || isTouching,
-      '!py-1': isFullWidth,
-      // Under the pills, the room the eye sees above the first line's letters: the row's pt-1, half
-      // of what its 19px line (text-base, 14px at 1.35) leaves of the h-8 it is centred in, and the
-      // font's room above its capitals in that line, about 15px in all.
-      '!pb-3.5': pillsBelow,
-    }"
+    class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
+    :class="[
+      ROW_BOX_CLASS,
+      {
+        '!bg-surface-gray-1': isSelected || isTouching,
+        '!py-1': isFullWidth,
+        // Under the pills, the room the eye sees above the first line's letters: the row's pt-1, half
+        // of what its 19px line (text-base, 14px at 1.35) leaves of the h-8 it is centred in, and the
+        // font's room above its capitals in that line, about 15px in all.
+        '!pb-3.5': pillsBelow,
+      },
+    ]"
     :draggable="draggable || undefined"
     @mouseenter="isHovered = true"
     @mouseleave="isHovered = false"
@@ -36,12 +39,17 @@
       <!-- Wide: a flex box, as the day headers' is, so the checkbox (an inline-flex) centres on the
            row's line rather than sitting on a text line's baseline, a few pixels above it. -->
       <div
-        v-if="!isMobile && selectable"
+        v-if="showCheckbox"
         class="checkbox-hitbox -m-3 cursor-pointer p-3"
         :class="{ flex: isFullWidth }"
         @click.stop.prevent="emit('setSelected', !isSelected)"
       >
-        <Checkbox :model-value="isSelected" size="md" class="pointer-events-none" />
+        <Checkbox
+          :model-value="isSelected"
+          size="md"
+          class="pointer-events-none"
+          :aria-label="selectLabel"
+        />
       </div>
       <div
         v-else-if="isSelected"
@@ -63,8 +71,12 @@
     <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
 		     rows shrank to their text and no longer lined up with the day headers. Hold that
 		     height here so the rhythm survives the column going away. -->
+    <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, the
+         chips clip themselves (below), and clipping these too would cut the star's hit area down to
+         the glyph. That area runs past the row's right edge, which the row itself clips, so the
+         list can't scroll sideways. -->
     <div
-      class="grow truncate"
+      class="min-w-0 grow"
       :class="[
         pillsBelow
           ? // The first line exactly as a plain row's: sender, subject, preview, held to the leading
@@ -107,7 +119,11 @@
 
       <h4
         class="truncate text-sm !leading-[1.5]"
-        :class="{ italic: subjectItalic, '!text-base': isFullWidth, '!font-semibold': unread }"
+        :class="{
+          'text-ink-gray-5': subjectPlaceholder,
+          '!text-base': isFullWidth,
+          '!font-semibold': unread,
+        }"
       >
         <!-- Wherever the sender line is dropped, the dot it normally sits on comes down here. -->
         <span
@@ -118,12 +134,15 @@
       </h4>
 
       <div
-        class="flex items-center justify-between truncate"
-        :class="{ 'min-w-0 flex-1 !text-base': isFullWidth }"
+        class="flex min-w-0 items-center justify-between"
+        :class="{ 'flex-1 !text-base': isFullWidth }"
       >
         <h5
-          class="text-ink-gray-5 truncate text-sm !leading-[1.5]"
-          :class="{ italic: previewItalic, '!text-base': isFullWidth }"
+          class="truncate text-sm !leading-[1.5]"
+          :class="[
+            previewPlaceholder ? 'text-ink-gray-4' : 'text-ink-gray-5',
+            { '!text-base': isFullWidth },
+          ]"
         >
           <slot name="preview" />
         </h5>
@@ -133,11 +152,21 @@
         </div>
       </div>
 
-      <!-- Its own line under the subject, so the first line stays a plain row's. -->
-      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex">
+      <!-- Its own line under the subject, so the first line stays a plain row's. Here and in the
+           stacked layout, chips that don't fit are cut off at the column's edge, short of the date
+           and the star, and only sideways, so a chip's focus ring still shows. -->
+      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex min-w-0 overflow-x-clip">
         <slot name="extra" :is-full-width="isFullWidth" />
       </div>
-      <slot v-else name="extra" :is-full-width="isFullWidth" />
+      <!-- The wide line without pills has none to show (see hasExtra). Stacked, they get a block
+           spaced inside as the column is, so its lines sit as they would without it, and hidden
+           when there is nothing in it, so it adds no gap. -->
+      <div
+        v-else-if="!isFullWidth"
+        class="min-w-0 space-y-1 overflow-x-clip empty:hidden sm:space-y-0.5"
+      >
+        <slot name="extra" :is-full-width="isFullWidth" />
+      </div>
     </div>
 
     <div
@@ -160,12 +189,12 @@
 <script setup lang="ts">
 import { Avatar, Checkbox } from 'frappe-ui'
 import { Check } from 'lucide-vue-next'
-import { computed, inject, ref } from 'vue'
+import { computed, ref } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 import MailDate from '@/apps/mail/components/MailDate.vue'
-import type { UserResource } from '@/apps/mail/types'
-import { useScreenSize } from '@/apps/mail/utils/composables'
+import { useRowLayout } from '@/apps/mail/composables/useRowLayout'
+import { ROW_BOX_CLASS } from '@/apps/mail/constants'
 
 // The shared skeleton of a row in the mail list: selection column, sender line with its date, subject,
 // preview, and the trailing slot the star or chevron sits in. It owns the layout and nothing else —
@@ -181,10 +210,11 @@ const {
   unread = false,
   hideSender = false,
   avatarLabel,
+  selectLabel,
   avatarImage,
   datetime,
-  subjectItalic = false,
-  previewItalic = false,
+  subjectPlaceholder = false,
+  previewPlaceholder = false,
   selectionMode = false,
   hideAvatar = false,
   accountLabel,
@@ -201,10 +231,15 @@ const {
   // repeating it on every row is noise.
   hideSender?: boolean
   avatarLabel: string
+  // The name of the row's checkbox: what ticking it selects, said in full, where the avatar has
+  // only an initial.
+  selectLabel: string
   avatarImage?: string
   datetime: string
-  subjectItalic?: boolean
-  previewItalic?: boolean
+  // The row stands in for a missing subject or preview: the placeholder is muted, as a hint
+  // rather than words of the mail's own.
+  subjectPlaceholder?: boolean
+  previewPlaceholder?: boolean
   // Drops the sender avatar, and with it the whole leading column — the merged list is narrow
   // beside the pane, and the reclaimed width goes to sender and subject. Mobile keeps it.
   hideAvatar?: boolean
@@ -226,18 +261,14 @@ const emit = defineEmits<{
   dragEnd: []
 }>()
 
-const user = inject<UserResource>('$user')
-if (!user) throw new Error('Missing required user provider')
-const { isMobile } = useScreenSize()
+const { isFullWidth, showCheckbox, showAvatar, showLeading } = useRowLayout(() => ({
+  selectable,
+  hideAvatar,
+  isSelected,
+}))
 
 // Only a row with pills to move takes a second line; any other keeps the single wide line.
 const pillsBelow = computed(() => isFullWidth.value && hasExtra)
-
-const showAvatar = computed(() => !isSelected && (isMobile.value || !selectable) && !hideAvatar)
-// With no checkbox, no check circle and no avatar there is nothing left to reserve space for.
-const showLeading = computed(
-  () => (!isMobile.value && selectable) || isSelected || showAvatar.value,
-)
 
 const isHovered = ref(false)
 
@@ -266,10 +297,6 @@ const onRowClick = (e: MouseEvent) => {
   e.stopPropagation()
   emit('setSelected', !isSelected)
 }
-
-// With the reading pane hidden the list has the window to itself, so a row lays out as one wide line
-// instead of a stacked block.
-const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value))
 
 // A stack member's sender is worth dropping only in the stacked layout, where the sender owns a whole
 // line and repeating the same name down a run costs a third of every row's height. Full-width keeps it:

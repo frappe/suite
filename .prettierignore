@@ -18,3 +18,6 @@ frontend/packages/collab-prosemirror/dist/
 
 # Prose keeps its own line breaks.
 *.md
+
+# Mail bodies kept as senders wrote them: the rendering regression set.
+frontend/src/apps/mail/components/fixtures/

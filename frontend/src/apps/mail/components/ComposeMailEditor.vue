@@ -65,6 +65,7 @@
                 variant="ghost"
                 class="ml-auto shrink-0"
                 :tooltip="__('Open in a window')"
+                :aria-label="__('Open in a window')"
                 :disabled="isLoading"
                 @click="popOut()"
               >
@@ -78,7 +79,12 @@
               :class="{ 'border-transparent': isDragging }"
             >
               <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
-                <Button variant="ghost" class="-ml-1.5" :icon="TYPE_ICON_MAP[mailDetails.type]" />
+                <Button
+                  variant="ghost"
+                  class="-ml-1.5"
+                  :icon="TYPE_ICON_MAP[mailDetails.type]"
+                  :aria-label="__('Reply type')"
+                />
               </Dropdown>
               <Tooltip :text="__('Select from contacts')">
                 <button
@@ -178,7 +184,13 @@
             <!-- Unsaved text is no reason to withhold this: the draft is handed to the window as
 					     it stands, in memory, rather than fetched back from the server. Only a save
 					     actually in flight holds it up — see popOut. -->
-            <Button v-if="isInThread" variant="ghost" :disabled="isLoading" @click="popOut()">
+            <Button
+              v-if="isInThread"
+              variant="ghost"
+              :aria-label="__('Open in a window')"
+              :disabled="isLoading"
+              @click="popOut()"
+            >
               <template #icon>
                 <component :is="ExternalLink" class="text-ink-gray-5 h-4 w-4" />
               </template>
@@ -186,7 +198,11 @@
           </div>
           <div class="flex items-start gap-2">
             <Dropdown v-if="isInThread && mailDetails?.type" :options="localDraftActions">
-              <Button variant="ghost" :icon="TYPE_ICON_MAP[mailDetails.type]"> </Button>
+              <Button
+                variant="ghost"
+                :icon="TYPE_ICON_MAP[mailDetails.type]"
+                :aria-label="__('Reply type')"
+              />
             </Dropdown>
             <div class="flex flex-1 flex-col gap-2.5">
               <div class="flex gap-2">
@@ -355,6 +371,7 @@
           :class="{ 'border-transparent': isDragging }"
           :remind-at="remindAt"
           @select-files="(files: File[]) => uploadFiles(files)"
+          @attach-from-drive="attachFromDrive"
           @append-emoji="(emoji: string) => appendEmoji(emoji)"
           @discard-mail="discardMail"
           @send-mail="sendMail"
@@ -378,7 +395,17 @@
 import { Button, Combobox, Dropdown, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
 import { Editor, EditorContent } from 'frappe-ui/editor'
 import { ExternalLink, Forward, Reply, ReplyAll, UploadCloud } from 'lucide-vue-next'
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  onUnmounted,
+  ref,
+  useTemplateRef,
+  watch,
+} from 'vue'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
@@ -406,6 +433,7 @@ const {
   isInThread = false,
   expanded = false,
   fillsHost = false,
+  closesWithPage = false,
 } = defineProps<{
   reloadMails: () => void
   mailDetails?: ComposeMailData
@@ -416,6 +444,9 @@ const {
   // The host is a flex column of a definite height, and the composer is to take all of it —
   // a draft that is the whole thread, given the reading pane to itself.
   fillsHost?: boolean
+  // The window over another app's page, which goes with that page while still open (see
+  // `leaving`).
+  closesWithPage?: boolean
 }>()
 const emit = defineEmits([
   'discardMail',
@@ -439,9 +470,6 @@ const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: number }
 const fileUploads = ref<FileUpload[]>([])
 const pendingInlineUploads = ref(0)
-const isUploading = computed(
-  () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
-)
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 
@@ -479,6 +507,14 @@ const uploadInlineImage = async (file: File) => {
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
 // to this dialog stays here: the contact picker, drag-and-drop, and the in-thread draft actions.
+// The window over another app's page goes with that page, unmounted while still open: leaving the
+// page is how it closes there. It is closed all the same, so a save still out when it goes catches
+// up on what was typed meanwhile, and one refused is kept for Reopen, as after a Close. Only there:
+// Mail's own window and a thread's reply go on unmounting as they always have.
+let leaving = false
+onBeforeUnmount(() => {
+  if (closesWithPage) leaving = true
+})
 const {
   mail,
   identities,
@@ -500,6 +536,9 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFile,
+  attachFromDrive,
+  isUploading,
   editorExtensions,
   appendEmoji,
   editorContent,
@@ -509,11 +548,12 @@ const {
   isInThread,
   reloadMails,
   close: () => (show.value = false),
-  isOpen: () => !!show.value,
+  isOpen: () => !!show.value && !leaving,
   onDiscardUnsaved: () => emit('discardMail'),
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  isUploading: () =>
+    pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
   uploadInlineImage,
 })
 
@@ -723,21 +763,12 @@ const uploadFile = async (file: File) => {
     size: file.size,
     ...fileUpload,
   })
-  // SAFETY: this Suite upload endpoint returns a Frappe File document; attachDoc reads its file_name/file_url fields.
+  // SAFETY: this Suite upload endpoint returns a Frappe File document; attachFile reads its file_name/file_url/file_size fields.
   const doc = (await fileUpload.upload(file, {
     private: true,
     folder: 'Home/Frappe Mail',
     upload_endpoint: '/api/method/suite.mail.api.mail.upload_file',
   })) as FileDoc
-  attachDoc(doc, file.type)
+  attachFile(doc, file.type)
 }
-const attachDoc = (doc: FileDoc, type?: string) =>
-  mail.attachments.push({
-    file_name: doc.file_name,
-    // Kept for the pill's icon; the server reads the type from the file itself.
-    type: type ?? '',
-    file_url: doc.file_url,
-    file_size: doc.file_size,
-    disposition: 'attachment',
-  })
 </script>

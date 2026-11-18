@@ -39,6 +39,7 @@
       <!-- The sources worth a look are the big senders that fail: sorted by volume, rate beside. -->
       <DashboardCard :title="__('Top sending sources')">
         <BreakdownRows
+          :loading="summary.status === 'pending'"
           :rows="summary.data?.sources || []"
           label-key="source_ip"
           :empty="__('No mail was reported for this period.')"
@@ -46,6 +47,7 @@
       </DashboardCard>
       <DashboardCard :title="__('Reporters')">
         <BreakdownRows
+          :loading="summary.status === 'pending'"
           :rows="summary.data?.reporters || []"
           label-key="reporter"
           :empty="__('No receiver has sent a report for this period yet.')"

@@ -29,6 +29,12 @@ type FormAlert =
       relative_to?: string
     }
 
+/** Someone on the event, as the form holds them: the server's row, or a guest just added. */
+export interface FormParticipant {
+  email: string
+  [key: string]: unknown
+}
+
 /** What the event form holds. */
 export interface EventForm {
   title?: string
@@ -45,7 +51,7 @@ export interface EventForm {
   description?: string
   locations?: string[]
   links?: Record<string, unknown>[]
-  participants?: Record<string, unknown>[]
+  participants?: FormParticipant[]
   alerts?: FormAlert[]
   followsDefaults?: boolean
 }

@@ -13,6 +13,9 @@ vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ userResource: { data: state.user } }),
 }))
+vi.mock('@/apps/mail/utils/composables', () => ({
+  useScreenSize: () => ({ isMobile: { value: false } }),
+}))
 vi.mock('@/api', () => ({
   api: { mail: { settings: { updatePreferences: 'update_preferences' } } },
   client: { mutation: (reference: string, input: unknown) => state.save(reference, input) },

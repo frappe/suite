@@ -29,7 +29,7 @@
           <Badge v-if="isHidden(mailbox)" :label="__('Hidden')" size="sm" />
         </button>
         <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-          <Button variant="ghost" :aria-label="__('Folder options')">
+          <Button variant="ghost" :aria-label="__('{0} options', [mailbox._name])">
             <template #icon>
               <Ellipsis class="text-ink-gray-5 h-4 w-4" />
             </template>

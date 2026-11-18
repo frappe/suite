@@ -8,10 +8,11 @@
     :unread="!mail.seen"
     :hide-sender
     :avatar-label="avatarLabel"
+    :select-label="selectLabel"
     :avatar-image="mail.user_image"
     :datetime="mail.received_at"
-    :subject-italic="!mail.subject"
-    :preview-italic="!mail.preview"
+    :subject-placeholder="!mail.subject"
+    :preview-placeholder="!preview"
     :account-label="accountLabel"
     :draggable
     :has-extra="hasExtra(true)"
@@ -38,7 +39,14 @@
           <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
         </span>
       </Tooltip>
-      <Badge v-if="mail.draft" size="sm" :label="__('Draft')" theme="red" />
+      <!-- In Drafts every row is one, so it goes without saying. Gray, not red: a draft is not an
+           error. -->
+      <Badge
+        v-if="(mail.draft || liveDraft) && !drafts"
+        size="sm"
+        :label="__('Draft')"
+        theme="gray"
+      />
       <Badge
         v-if="mail.snoozed_until"
         size="sm"
@@ -88,7 +96,7 @@
       <HighlightedText :text="mail.subject || __('[No subject]')" :term="searchTerm" />
     </template>
     <template #preview>
-      <HighlightedText :text="mail.preview || __('— No message body —')" :term="searchTerm" />
+      <HighlightedText :text="preview || __('— No message body —')" :term="searchTerm" />
     </template>
 
     <template #trailing="{ isHovered }">
@@ -112,7 +120,7 @@
       <!-- One family of chips, an even gap apart: files outlined, folders on the muted surface. -->
       <div
         v-if="hasExtra(isFullWidth)"
-        class="flex items-center gap-1.5"
+        class="flex min-w-0 items-center gap-1.5"
         :class="{ 'min-w-fit': isFullWidth }"
       >
         <Tooltip
@@ -126,15 +134,25 @@
             :type="attachment.type"
             :account="accountId"
             compact
-            :class="isFullWidth ? 'max-w-36' : 'max-w-44 sm:max-w-20'"
+            class="min-w-0 shrink"
+            :class="isFullWidth ? 'max-w-36' : 'max-w-44'"
             @click.stop.prevent="openAttachment(idx)"
           />
         </Tooltip>
         <Popover v-if="attachments.length > 2" side="bottom">
+          <!-- The popover's trigger wiring needs an element: Tooltip passes no attributes on. The chip
+               prevents only, so its click still reaches the popover but not the row's link. -->
           <template #trigger>
-            <Tooltip :text="__('View remaining attachments')">
-              <AttachmentCapsule :file-name="`+${String(attachments.length - 2)}`" compact />
-            </Tooltip>
+            <span class="flex shrink-0">
+              <Tooltip :text="__('View remaining attachments')">
+                <AttachmentCapsule
+                  :file-name="`+${String(attachments.length - 2)}`"
+                  compact
+                  class="shrink-0"
+                  @click.prevent
+                />
+              </Tooltip>
+            </span>
           </template>
           <template #default>
             <div class="max-h-80 overflow-y-auto p-1">
@@ -159,6 +177,7 @@
                       />
                       <button
                         class="hidden sm:group-hover/capsule:block"
+                        :aria-label="__('Download {0}', [attachment.filename])"
                         @click.stop.prevent="downloadAttachment(attachment)"
                       >
                         <Download class="hover:text-ink-gray-8 h-4 w-4 shrink-0" />
@@ -189,23 +208,25 @@
           />
         </template>
       </div>
-      <template v-if="!isFullWidth && mailboxesToShow.length">
+      <!-- Their own line, as the files have: one line however long the names, cut off where the
+           row ends (see MailRow). -->
+      <div v-if="!isFullWidth && mailboxesToShow.length" class="flex items-center gap-1.5">
         <Badge
           v-for="m in mailboxesToShow"
           :key="m.mailbox_id"
           size="lg"
           variant="subtle"
-          :class="['mr-1.5', CHIP_CLASS]"
+          :class="CHIP_CLASS"
           :label="m.mailbox_name"
         />
         <Badge
           v-if="moreMailboxes"
           size="lg"
           variant="subtle"
-          :class="['mr-1.5', CHIP_CLASS]"
+          :class="CHIP_CLASS"
           :label="`+${moreMailboxes}`"
         />
-      </template>
+      </div>
     </template>
 
     <AttachmentViewer
@@ -235,6 +256,7 @@ import type { Attachment, Thread } from '@/apps/mail/types'
 import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
 import { useOwnEmails } from '@/apps/mail/utils/composables'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
+import { draftInList } from '@/apps/mail/utils/draftsInList'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
 import {
   threadAvatarLabel,
@@ -322,6 +344,9 @@ const unknownSendersLabel = computed(() =>
 )
 const ownEmails = useOwnEmails()
 
+// A reply being written inline in this conversation, saved since the list last read it.
+const liveDraft = computed(() => draftInList(String(accountId || route.params.accountId), mail))
+const preview = computed(() => liveDraft.value?.preview ?? mail.preview)
 // Why it is back near the top: your own mail nobody answered, or a snooze come due.
 const returnedLabel = computed(() => returnedReason(!!mail.no_reply))
 const { clearReturned } = useClearReturned()
@@ -406,6 +431,14 @@ const participants = computed(() =>
 const header = computed(() => {
   if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
   return threadDisplayName(participants.value, mail)
+})
+
+// What the checkbox ticks, by the names the row shows: who it is from, or who it is going to.
+const selectLabel = computed(() => {
+  if (!isOutgoing.value)
+    return header.value ? __('Select mail from {0}', [header.value]) : __('Select mail')
+  const recipients = (mail.recipients ?? []).map((r) => r.display_name || r.email).join(', ')
+  return recipients ? __('Select mail to {0}', [recipients]) : __('Select mail with no recipients')
 })
 
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.

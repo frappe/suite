@@ -24,29 +24,32 @@
     <header
       class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
     >
-      <Button variant="ghost" :label="__('Close')" @click="closeCompose">
+      <Button variant="ghost" class="touch-target" :label="__('Close')" @click="closeCompose">
         <template #icon>
           <X class="text-ink-gray-5 size-5" />
         </template>
       </Button>
       <h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
+      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. -->
       <Button
         v-if="isSaveFailed"
         variant="ghost"
         theme="red"
+        class="touch-target"
         :label="__('Not saved · Retry')"
         @click="saveDraft()"
       />
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
-      <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
-        <template #icon>
-          <Paperclip class="text-ink-gray-5 size-5" />
-        </template>
-      </Button>
-      <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+      <ComposeAttachMenu @select-files="onFilesSelected" @attach-from-drive="attachFromDrive">
+        <Button variant="ghost" class="touch-target" :label="__('Attach')">
+          <template #icon>
+            <Paperclip class="text-ink-gray-5 size-5" />
+          </template>
+        </Button>
+      </ComposeAttachMenu>
       <AdaptiveDropdown :options="ACTIONS">
-        <Button variant="ghost" :label="__('More actions')">
+        <Button variant="ghost" class="touch-target" :label="__('More actions')">
           <template #icon>
             <EllipsisVertical class="text-ink-gray-5 size-5" />
           </template>
@@ -54,7 +57,7 @@
       </AdaptiveDropdown>
       <Button
         variant="ghost"
-        class="ml-2"
+        class="touch-target ml-2"
         :label="__('Send')"
         :disabled="isRecipientsEmpty || isUploading"
         @click="sendMail()"
@@ -187,12 +190,15 @@
                 </div>
               </template>
 
-              <label class="flex min-h-13 cursor-text items-center gap-2 px-4 py-2">
-                <span class="text-ink-gray-4 shrink-0 text-sm">{{ __('Subject') }}</span>
+              <!-- A placeholder, as in the desktop composer: once there is a subject it speaks for
+							     itself. Still a label around it, so the whole row is the tap target. -->
+              <label class="flex min-h-13 cursor-text items-center px-4 py-2">
                 <input
                   ref="subjectInput"
                   v-model="mail.subject"
-                  class="text-ink-gray-8 min-w-0 flex-1 border-none bg-inherit p-0 text-base focus-visible:!ring-0"
+                  :placeholder="__('Subject')"
+                  :aria-label="__('Subject')"
+                  class="text-ink-gray-8 placeholder:text-ink-gray-4 min-w-0 flex-1 border-none bg-inherit p-0 text-base focus-visible:!ring-0"
                 />
               </label>
             </div>
@@ -250,10 +256,17 @@
 
 			  It sits outside the scroller above so the scrollbar stops at it rather than running on
 			  underneath.
+
+			  The safe-area padding is for the home indicator, at the screen's bottom edge. The
+			  installed app keeps reporting that inset with the keyboard up, when the bar is nowhere
+			  near the edge, so what the keyboard covers comes off it.
 			-->
           <div
             v-if="isBodyFocused"
-            class="bg-surface-base z-20 shrink-0 border-t pb-[env(safe-area-inset-bottom)]"
+            class="bg-surface-base z-20 shrink-0 border-t"
+            :style="{
+              paddingBottom: `max(0px, calc(env(safe-area-inset-bottom) - ${keyboardBottom}px))`,
+            }"
           >
             <!-- The formatting buttons come from frappe-ui's menu at desktop scale, a 24px target for
 					     a thumb. Sized up from here with arbitrary variants, the markup being the menu's
@@ -292,6 +305,7 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
+import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
@@ -313,10 +327,8 @@ const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef<{ setFocus: () => void }>('toInput')
 const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
-const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const pendingUploads = ref(0)
-const isUploading = computed(() => pendingUploads.value > 0)
 
 const uploadInlineImage = async (file: File) => {
   pendingUploads.value++
@@ -360,6 +372,9 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFile,
+  attachFromDrive,
+  isUploading,
   editorExtensions,
   editorContent,
   onEditorChange,
@@ -371,11 +386,11 @@ const {
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  isUploading: () => pendingUploads.value > 0,
   uploadInlineImage,
 })
 
-const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()
+const { height: viewportHeight, top: keyboardTop, bottom: keyboardBottom } = useKeyboardInsets()
 
 // Hold the document still for as long as this page is open.
 //
@@ -480,7 +495,7 @@ const onFocusIn = (event: FocusEvent) => {
   if (body && node && body.contains(node)) isBodyFocused.value = true
   else if (node?.closest?.('input, textarea')) isBodyFocused.value = false
 
-  revealFocused(event)
+  reveal(node)
 }
 
 // Pre-empt iOS's focus reveal.
@@ -492,10 +507,9 @@ const onFocusIn = (event: FocusEvent) => {
 //
 // Bringing the focused field comfortably into view ourselves, in our own scroller and synchronously
 // as focus arrives, leaves iOS with nothing to reveal and so no reason to pan.
-const revealFocused = (event: FocusEvent) => {
+const reveal = (node: Element | null) => {
   const box = scroller.value
-  const node = event.target instanceof Element ? event.target : null
-  if (!box || !node) return
+  if (!box || !node || !box.contains(node)) return
 
   // The body's element spans the whole composition, so its box says nothing about where the caret
   // is; ask ProseMirror. Every other field is small enough to use its own.
@@ -511,6 +525,11 @@ const revealFocused = (event: FocusEvent) => {
   if (rect.bottom > view.bottom - margin) box.scrollTop += rect.bottom - view.bottom + margin
   else if (rect.top < view.top + margin) box.scrollTop -= view.top + margin - rect.top
 }
+
+// Focus arrives before the keyboard does. The reveal above ran against the full-height page, and
+// the keyboard then took the lower half of it: on a reply with Cc and Bcc open the fields fill
+// what is left and the caret is behind the toolbar. Reveal again once the page has its new height.
+watch(viewportHeight, () => reveal(document.activeElement), { flush: 'post' })
 const menu = useEditorMenu()
 
 const identityOptions = computed(
@@ -533,19 +552,12 @@ const removeAttachment = (index: number) => {
   mail.attachments.splice(mail.attachments.indexOf(file), 1)
 }
 
-const onFilesSelected = async (e: Event) => {
-  const checkedEventTarget = e.target
-  if (!(checkedEventTarget instanceof HTMLInputElement)) return
-
-  const input = checkedEventTarget
-  const files = Array.from(input.files ?? [])
-  input.value = ''
-
+const onFilesSelected = async (files: File[]) => {
   for (const file of files) {
     pendingUploads.value++
     try {
       const doc = await uploadFunction(file)
-      mail.attachments.push({ ...doc, disposition: 'attachment' })
+      attachFile(doc, file.type)
     } catch (error) {
       raiseToast(
         (error instanceof TransportError &&

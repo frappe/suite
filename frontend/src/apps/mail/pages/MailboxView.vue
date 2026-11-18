@@ -16,7 +16,9 @@
         :items="[
           {
             label: mailboxName,
-            route: { name: 'mail-mailbox', params: { accountId, mailbox } },
+            // By the folder's slug, as every link to it is: its id makes a URL that only works
+            // while the app intercepts the click, not opened in a new tab.
+            route: { name: 'mail-mailbox', params: { accountId, mailbox: mailboxInUrl() } },
           },
         ]"
       />
@@ -55,8 +57,8 @@
     class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
     :class="showDeleteBanner ? 'h-[calc(100dvh-6.125rem)]' : 'h-[calc(100dvh-3.0625rem)]'"
   >
-    <!-- The list in its frame; the frame shows its own empty, loading and refused states (see
-         usePaginatedThreads). Without the frame, they fill the view below. -->
+    <!-- The list in its frame, which is up while the list loads too. It shows its own empty and
+         refused states (see usePaginatedThreads); without the frame, those fill the view below. -->
     <template v-if="listFramed">
       <ThreadPane
         :thread-open="!!threadID"
@@ -177,26 +179,34 @@
             </template>
           </MailListToolbar>
 
+          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. -->
+          <MailListSkeleton
+            v-if="listState === 'loading'"
+            class="min-h-0 flex-1 overflow-hidden"
+            :selectable="!isAllAccountsSearch"
+            :date-headers="headersVisible"
+          />
+
           <!-- Mail list -->
           <div
-            v-if="threadRows.length"
+            v-else-if="threadRows.length"
             ref="mailList"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
             @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
-                v-if="groupedByDate && !isMobile"
+                v-if="headersVisible"
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
-                :focused="focusedRowKey === `group:${key}`"
+                :focused="cursorRowKey === `group:${key}`"
                 :selected="isGroupSelected(key)"
                 @toggle="toggleGroupCollapse(key)"
                 @clear="clearAllReturned"
               >
                 <!-- Mobile: group select ("all of Today") appears only in selection mode. -->
-                <template #lead>
+                <template #lead="{ label }">
                   <div
                     v-if="!isAllAccountsSearch && (!isMobile || mobileSelectionMode)"
                     class="checkbox-hitbox -mx-3 -my-2.5 flex cursor-pointer items-center py-2.5 pl-3 pr-8"
@@ -206,6 +216,7 @@
                       :model-value="isGroupSelected(key)"
                       size="md"
                       class="pointer-events-none [&_input]:mt-0"
+                      :aria-label="__('Select all of {0}', [label])"
                     />
                   </div>
                 </template>
@@ -284,14 +295,8 @@
             </div>
           </div>
           <div v-else class="flex h-full items-center justify-center">
-            <!-- While the (still-mounted) search header's new query loads, this area is the
-						     loading surface — the empty message must not flash first. -->
-            <LoaderCircle
-              v-if="listState === 'loading'"
-              class="text-ink-gray-5 h-5 w-5 animate-spin"
-            />
             <LoadError
-              v-else-if="listState === 'error'"
+              v-if="listState === 'error'"
               :title="__('Could not load the list.')"
               :error="activeThreads.error"
               @retry="retryList"
@@ -316,6 +321,7 @@
           :mailbox
           :thread-i-d
           :threads="threadIDs"
+          :threads-loading="listState === 'loading'"
           :messages="currentThread?.messages"
           :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
           :can-go-next="canGoNext"
@@ -365,17 +371,6 @@
       </ThreadPane>
     </template>
 
-    <!-- Loading -->
-    <div
-      v-else-if="listState === 'loading'"
-      class="flex w-full flex-col items-center justify-center"
-    >
-      <div class="text-ink-gray-5 flex items-center space-x-2">
-        <LoaderCircle class="h-5 w-5 animate-spin" />
-        <span>{{ __('Loading...') }}</span>
-      </div>
-    </div>
-
     <!-- Refused, or no mails. A phone keeps the title row above either: where you are, and the way
          to the folders. -->
     <div v-else class="flex w-full flex-col">
@@ -412,7 +407,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -429,6 +424,7 @@ import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllChe
 import LoadError from '@/apps/mail/components/LoadError.vue'
 import MailGroupHeader from '@/apps/mail/components/MailGroupHeader.vue'
 import MailListItem from '@/apps/mail/components/MailListItem.vue'
+import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
@@ -446,6 +442,7 @@ import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePag
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { useMailSocket } from '@/apps/mail/socket'
 import { takesPins, userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import {
@@ -499,7 +496,7 @@ const router = useRouter()
 const { isMobile } = useScreenSize()
 const { listReloadRequest } = useListReload()
 const { dropViewUndo } = useUndo()
-const socket = inject('$socket')
+const socket = useMailSocket()
 // MailLayout's overlay layer; see the selection bar's Teleport.
 const store = userStore()
 const { mailboxes, mailboxIds } = store
@@ -518,6 +515,8 @@ const {
   listState,
   listFramed,
   container: mailListRef,
+  refetch: refetchThreads,
+  refresh: refreshList,
   loadingMore,
   isFetching,
   canGoNext,
@@ -535,8 +534,6 @@ const {
   // Deferred reads too. The search view's header is its frame: it mounts at once and stays put
   // across query changes, loading inline in the list area below it.
   framed: () => mailbox === 'search' || !!inboxTab.value || !!filter.value || filterChanged.value,
-  switching: () =>
-    mailbox === 'search' || filterChanged.value || (tabSwitched.value && !!inboxTab.value),
   busy: () => emptyMailbox.isPending || refillPending.value,
   asked: () => mailbox !== 'search' || hasSearchQuery.value,
 })
@@ -564,7 +561,7 @@ const pinnable = computed(() => takesPins(mailboxes.data?.find((m) => m.id === m
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
-  groupedByDate,
+  headersVisible,
   groupedThreads,
   getGroupThreads,
   isLastGroup,
@@ -574,6 +571,7 @@ const {
   visibleThreadCount,
   navigableRows,
   focusedRowKey,
+  cursorRowKey,
   onListFocusIn,
   focusedRow,
   focusRow,
@@ -624,7 +622,7 @@ const {
   isAllSelected,
   mobileSelectionMode,
   toggleSelect,
-  extendRange,
+  moveCursor,
   toggleSelectAll,
   resetSelections,
   isGroupSelected,
@@ -775,10 +773,10 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
     } else if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
   }
 
-  // Shift+arrow ticks the run from where it began (see extendRange). A row carries every thread it
-  // stands for, so shifting onto a stack takes its whole run and onto a header takes the day — the
-  // same sets their checkboxes select.
-  if (e.shiftKey && newIDs.length) extendRange(prevIDs.length ? prevIDs : newIDs, newIDs)
+  // Shift+arrow ticks from where the run began to the cursor (see moveCursor). A row carries every
+  // thread it stands for, so shifting onto a stack takes its whole run and onto a header takes the
+  // day — the same sets their checkboxes select.
+  moveCursor(prevIDs, newIDs, e.shiftKey)
 }
 // The actions on the ticked threads, the same set the All accounts list offers (see selectActions).
 const selectActions = buildSelectActions(
@@ -956,7 +954,6 @@ const {
   tabs: inboxTabs,
   active: inboxTab,
   routeFor: routeForTab,
-  switched: tabSwitched,
 } = useInboxTabs(
   () => mailbox === mailboxIds.inbox && 'account',
   () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
@@ -1044,7 +1041,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
       return
     }
   }
-  void activeThreads.value.refetch().catch(() => {})
+  void refetchThreads()
   if (reloadMailboxes) void store.refreshCounts()
 }
 
@@ -1059,13 +1056,12 @@ watch(screener.version, () => refreshThreads(false))
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
 const refreshThreads = (reloadMailboxes = true) => {
-  if (isFetching.value) return
-  void activeThreads.value.refetch().catch(() => {})
+  refreshList()
   if (reloadMailboxes) void store.refreshCounts()
 }
 
-// Ask again for a list that failed to load.
-const retryList = () => void activeThreads.value.refetch().catch(() => {})
+// Ask again for a list that failed to load, settling its drafts like any other read.
+const retryList = () => void refetchThreads()
 
 // After an optimistic action whose threads stay in the list (add-to-mailbox, or a move that leaves
 // copies in the current mailbox): refresh selections + sidebar counts only, never refetch the list.
@@ -1096,7 +1092,7 @@ const restoreThreadsToList = (rows: Thread[]) => {
     const at = removedFrom.get(row)
     if (at !== undefined) keptRead.restore([row], at)
   }
-  void activeThreads.value.refetch().catch(() => {})
+  void refetchThreads()
 }
 watch(
   () => [mailbox, accountId],
@@ -1105,7 +1101,6 @@ watch(
     // loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
     // every account, so a mere account switch mustn't reset it — keep the results and scroll position.
     if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
-    tabSwitched.value = false
     reloadFilter()
     focusedRowKey.value = undefined
     collapsedGroups.value = []
@@ -1135,12 +1130,18 @@ const pollForChanges = async () => {
 // Mail was read, moved or deleted somewhere else (another device, another tab). Which mailboxes it
 // touched isn't known — a deleted mail can no longer be asked — so every list refreshes.
 const onMailChanged = () => refreshThreads()
+// New mail in this folder, or in Sent or Drafts: a reply written in another client lands there and
+// in a conversation this list holds, whose open thread would otherwise go on without it.
+const onNewMail = (updatedMailboxes: string[]) => {
+  if (
+    [mailbox, mailboxIds.sent, mailboxIds.drafts].some((id) => id && updatedMailboxes.includes(id))
+  )
+    refreshThreads()
+}
 onMounted(() => {
   window.addEventListener('keydown', handleKeyDown)
   reloadInterval.value = setInterval(pollForChanges, 30000)
-  socket.on('new_mail_created', (updatedMailboxes: string[]) => {
-    if (updatedMailboxes.includes(mailbox)) refreshThreads()
-  })
+  socket.on('new_mail_created', onNewMail)
   socket.on('mail_changed', onMailChanged)
   socket.on('mail_exchange_completed', (payload: { success: boolean; message: string }) =>
     raiseToast(payload.message, payload.success ? 'success' : 'error'),
@@ -1152,6 +1153,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', handleKeyDown)
   if (reloadInterval.value) clearInterval(reloadInterval.value)
+  socket.off('new_mail_created', onNewMail)
   socket.off('mail_changed', onMailChanged)
   // Leaving the mailbox drops any pending undo so a lingering toast can't undo into another view.
   dropViewUndo()

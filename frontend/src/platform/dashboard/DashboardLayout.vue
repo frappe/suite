@@ -29,6 +29,7 @@
 		     sticky list footer relies on; without it the body grows and the outer page scrolls. -->
     <div
       class="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      :aria-busy="loading"
       :class="{ 'space-y-5 px-3 py-5 sm:px-5': !removeSpacing }"
     >
       <!-- While the page resource loads, keep the chrome (header, breadcrumbs)

@@ -26,7 +26,7 @@
     :columns="['minmax(0,1fr)', 'minmax(0,1fr)', 'minmax(0,1fr)', '8rem', '10rem']"
     :row-height="56"
   >
-    <ListHeader>
+    <ListHeader :inert="list.status !== 'success'">
       <ListHeaderCell>{{ __('Assigned email address') }}</ListHeaderCell>
       <ListHeaderCell>{{ __('Backup email address') }}</ListHeaderCell>
       <ListHeaderCell>{{ __('Invited by') }}</ListHeaderCell>
@@ -36,7 +36,7 @@
       >
     </ListHeader>
     <ListRows v-if="list.status !== 'success'" v-slot="{ item }" :items="SKELETON_ROWS">
-      <ListRow :value="item.name" class="pointer-events-none" aria-hidden="true">
+      <ListRow :value="item.name" class="pointer-events-none" aria-hidden="true" inert>
         <ListCell><DashboardSkeletonText width="70%" /></ListCell>
         <ListCell><DashboardSkeletonText width="60%" /></ListCell>
         <ListCell><DashboardSkeletonText width="55%" /></ListCell>

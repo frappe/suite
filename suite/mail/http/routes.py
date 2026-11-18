@@ -91,8 +91,10 @@ from suite.mail.api.contacts import (
     get_contacts,
 )
 from suite.mail.api.mail import (
+    SyncedChanges,
     add_mails_to_mailbox,
     allow_screening_senders,
+    attach_drive_files,
     block_senders,
     cancel_reply_reminder,
     clear_list,
@@ -138,6 +140,7 @@ from suite.mail.api.mail import (
     set_mails_seen,
     set_mails_spam_status,
     snooze_mails,
+    sync_changes,
     undo_screening_verdict,
     unscreen_email_addresses,
     unsnooze_mails,
@@ -245,6 +248,8 @@ from suite.mail.http.settings import CONTRACT_ROUTES as SETTINGS_CONTRACT_ROUTES
 from suite.mail.http.shapes import (
     AccountInput,
     AddressBook,
+    AttachDriveFiles,
+    AttachedFile,
     AttachmentBytesInput,
     AttachmentsZipInput,
     CalendarClientConfig,
@@ -454,6 +459,33 @@ CONTRACT_ROUTES += (
         errors=(
             frappe.PermissionError,
             frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.mail.api.mail.attach_drive_files",
+        "attach_drive_files",
+        kind="mutation",
+        public_name="attachments.fromDrive",
+        body=AttachDriveFiles,
+        output=list[AttachedFile],
+        envelope="message",
+        errors=(
+            frappe.PermissionError,
+            frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.mail.api.mail.sync_changes",
+        "sync_changes",
+        kind="mutation",
+        public_name="changes.sync",
+        output=SyncedChanges,
+        envelope="message",
+        errors=(
+            frappe.PermissionError,
+            frappe.AuthenticationError,
         ),
     ),
     Route(

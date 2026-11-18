@@ -32,6 +32,9 @@ _PASSWORD_METHODS = frozenset(
 # Products that run on the user's business Mail account. Drive, Writer and the
 # rest of Suite work without it.
 _MAIL_ACCOUNT_METHODS = ("suite.mail.", "mail.", "suite.calendar.")
+# Spam scanning scores a raw message and never reads the caller's mailbox. Its
+# callers are service users with an API key and no business Mail account.
+_SPAM_SCAN_METHODS = ("suite.mail.api.spamd.", "mail.api.spamd.")
 
 
 def _mail_admin_method(method: str) -> bool:
@@ -62,7 +65,7 @@ def require_access(user: str, *, method: str = "", page: bool = False) -> None:
         if method in _PASSWORD_METHODS or page:
             return
         frappe.throw(_("Change your temporary password before using Suite"), PasswordChangeRequired)
-    if not method.startswith(_MAIL_ACCOUNT_METHODS):
+    if not method.startswith(_MAIL_ACCOUNT_METHODS) or method.startswith(_SPAM_SCAN_METHODS):
         return
     failed = current.get("status") in ("Setup failed", "Deleted", "Deletion failed")
     account = frappe.db.get_value("User Settings", {"user": user}, "username")

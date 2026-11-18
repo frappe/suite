@@ -15,7 +15,6 @@
       <ShareDialogHeader :node="state.node.value" :placeholders="placeholders" />
       <ShareBody v-model:picked="picked" :state="state" />
       <ShareDialogFooter
-        v-if="!picked"
         class="mt-5 border-t border-outline-gray-1 pt-4"
         :address="address"
         :caption="caption"
@@ -32,16 +31,12 @@
     @update:open="setOpen"
     @after-leave="emit('after-leave')"
   >
-    <div
-      ref="body"
-      class="-mx-1 -mt-5 flex flex-col px-1"
-      :class="{ 'max-h-[min(36rem,calc(100dvh_-_16rem))] overflow-y-auto': !picked }"
-      :style="picked ? { minHeight: `${pickingHeight}px` } : undefined"
-    >
+    <!-- The dialog grows with the list and scrolls as a whole, so no row hides in a box of its own. -->
+    <div class="-mx-1 -mt-2 px-1">
       <ShareDialogHeader :node="state.node.value" :placeholders="placeholders" />
-      <ShareBody v-model:picked="picked" class="flex-1" :state="state" autofocus-picker />
+      <ShareBody v-model:picked="picked" :state="state" autofocus-picker />
     </div>
-    <template v-if="!picked" #actions>
+    <template #actions>
       <ShareDialogFooter
         :address="address"
         :caption="caption"
@@ -55,7 +50,7 @@
 <script setup lang="ts">
 import { useMediaQuery } from '@vueuse/core'
 import { BottomSheet, Dialog } from 'frappe-ui'
-import { computed, onMounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 
 import { driveNodeRoute } from '@/apps/drive'
 import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
@@ -64,7 +59,7 @@ import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useWorkspace } from '@/platform/workspace'
 
-import { useLocationTitle } from '../../internal/locations'
+import { useLocationTitle, useRoots } from '../../internal/locations'
 import type { ShareReads } from './opening'
 import ShareBody from './ShareBody.vue'
 import ShareDialogFooter from './ShareDialogFooter.vue'
@@ -86,21 +81,6 @@ const emit = defineEmits<{ 'after-leave': []; changed: [value: boolean] }>()
 const isPhone = useMediaQuery('(max-width: 767px)')
 // While people wait to be added, Share is the one solid action.
 const picked = ref(0)
-const body = useTemplateRef<HTMLElement>('body')
-const pickingHeight = ref(0)
-// The picker takes the place of the access list and the actions, so the dialog
-// keeps the height it had. Measured before the DOM swaps the two views.
-watch(
-  () => picked.value > 0,
-  (picking) => {
-    if (!picking || !body.value) return
-    const actions = body.value
-      .closest('[data-slot="content"]')
-      ?.querySelector<HTMLElement>(':scope > [data-slot="actions"]')
-    pickingHeight.value = body.value.offsetHeight + (actions?.offsetHeight ?? 0)
-  },
-  { flush: 'pre' },
-)
 const session = useSession()
 const { workspaceName } = useWorkspace()
 const state = useShare(props.node, {
@@ -116,6 +96,7 @@ const state = useShare(props.node, {
       destructive: true,
     })
   },
+  roots: useRoots(),
   workspace: workspaceName,
   placeTitle: useLocationTitle(),
   known: props.known,
@@ -152,8 +133,8 @@ const address = computed(() => {
 /** Who the item's own address opens for. Public viewers open it too, so it is the public link. */
 const caption = computed(() =>
   isOpen(state.sections.value?.public ?? null)
-    ? __('Anyone with the link can view')
-    : __('For people with access'),
+    ? __('Opens for anyone on the web')
+    : __('Opens for people with access'),
 )
 
 onMounted(() => void state.load())

@@ -115,6 +115,7 @@ vi.hoisted(() => {
   }
 })
 vi.mock('@/apps/mail/pages/dashboard/InvitesView.vue', () => ({
+  __esModule: true,
   default: defineComponent({
     setup(_, { expose }) {
       expose({ reloadInvites: vi.fn() })
@@ -123,6 +124,7 @@ vi.mock('@/apps/mail/pages/dashboard/InvitesView.vue', () => ({
   }),
 }))
 vi.mock('@/apps/mail/components/Modals/AddAccountModal.vue', () => ({
+  __esModule: true,
   default: defineComponent({
     props: ['modelValue'],
     emits: ['reload'],

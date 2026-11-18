@@ -111,6 +111,7 @@
             v-model="show"
             :mail-details
             :expanded
+            :closes-with-page
             :reload-mails="() => emit('reloadMails')"
             @discard-mail="emit('discardMail')"
             @discard-started="emit('discardStarted')"
@@ -139,12 +140,15 @@ const {
   mailDetails,
   startExpanded = false,
   account,
+  closesWithPage = false,
 } = defineProps<{
   mailDetails?: ComposeMailData
   startExpanded?: boolean
   // The account to write in, when not the one around the window: the layout's window otherwise
   // writes in the active account, and a draft from another one would save against the wrong one.
   account?: string
+  // Over another app's page, which it goes with (see ComposeMailEditor).
+  closesWithPage?: boolean
 }>()
 if (account) provideAccountScope(() => account)
 

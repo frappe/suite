@@ -13,7 +13,7 @@ const props = defineProps<{
 
 const geometry = computed(() => arrowGeometry(props.shape, props.scale))
 const shaftColor = computed(() =>
-  props.shape.stroke === null ? 'transparent' : (props.shape.stroke ?? '#171717'),
+  props.shape.stroke === null ? 'transparent' : (props.shape.stroke ?? 'var(--draw-ink)'),
 )
 const headColor = computed(() => props.shape.arrowHeadFill ?? shaftColor.value)
 </script>

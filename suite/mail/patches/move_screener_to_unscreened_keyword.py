@@ -13,6 +13,7 @@ from suite.mail.doctype.sieve_script.sieve_script import (
     build_automation_sieve,
     is_screening_enabled,
 )
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
 from suite.mail.jmap import (
     get_account_client,
     get_mailbox_id_by_name,
@@ -43,6 +44,9 @@ def execute() -> None:
     Every account is looked at, not only those screening now: one that turned screening off without
     letting its waiting mail in still has the folder. Its mail is marked too, so turning screening on
     again offers the same decisions it left behind.
+
+    An account whose user is disabled or gone is left alone: the mail server lets nobody in as that
+    user, so no retry could move it.
 
     Deferred to a background job: it needs a live JMAP session per account, which is not reliably
     reachable during ``bench migrate``. A re-run rebuilds the screening accounts again, which is
@@ -85,6 +89,10 @@ def move_screeners(accounts: list[str] | None = None, attempt: int = 0, not_befo
 
 
 def move_screener(account: str) -> None:
+    user = get_user_for_jmap_account(account)
+    if not user or not frappe.get_cached_value("User", user, "enabled"):
+        return
+
     # Every screening account gets the new gate, folder or not: one whose Screener had gone, or had
     # never been made, still carries the old gate, whose `fileinto :create` would make it again for
     # the next new sender. The rebuild comes first, so a folder that does exist stops filling up

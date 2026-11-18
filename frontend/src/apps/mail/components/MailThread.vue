@@ -3,6 +3,7 @@
     <ThreadHeader
       v-if="!readonly"
       :threads
+      :threads-loading="threadsLoading"
       :thread
       :can-go-next="canGoNext"
       :remindable="replyReminder.remindable.value"
@@ -20,6 +21,7 @@
       @delete-thread="emit('deleteThread')"
       @prev-thread="emit('prevThread')"
       @next-thread="emit('nextThread')"
+      @print="printThread"
     />
     <!-- The swipe slide (`slide` prop) pages only the thread-specific part — subject,
 		     messages, reply bar — while the toolbar above stays put. Keyed per thread on
@@ -29,6 +31,9 @@
       <Transition :name="slide || ''" @after-enter="emit('slideDone')">
         <div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
           <div ref="threadContainer" class="flex-1 overflow-y-auto">
+            <!-- Until the thread's messages are in, from the list or fetched on their own (see
+			     loadThread), the thread stands in outline: the pane is never a blank half. -->
+            <MailThreadSkeleton v-if="!thread.length" />
             <!-- The composer window floats over the app, so while one is up the thread keeps a
 			     little room under its last message — enough to scroll clear of a minimised bar
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
@@ -39,6 +44,7 @@
 			     blank. The body scrolls inside the card past that. A reply draft under other mail
 			     keeps its cap — there the thread is what scrolls. -->
             <div
+              v-else
               class="sm:space-y-2 sm:px-5 sm:pt-5"
               :class="{
                 'pb-16': isMobile && !thread?.at(-1)?.draft,
@@ -206,7 +212,12 @@
                         @click.stop="mail.collapsed = !mail.collapsed"
                       >
                         <div class="flex items-center space-x-2">
-                          <Badge v-if="mail.draft" :label="__('Draft')" theme="red" class="w-fit" />
+                          <Badge
+                            v-if="mail.draft"
+                            :label="__('Draft')"
+                            theme="gray"
+                            class="w-fit"
+                          />
                           <MailDate :datetime="mail.received_at" />
                         </div>
                         <MailActions
@@ -223,13 +234,16 @@
                           :reload-mails="handleReload"
                           :drop-mail
                           :thread="thread"
+                          :body-view="bodyViews[mail.name]"
                           @set-flagged="onSetFlagged"
+                          @toggle-as-sent="toggleAsSent(mail)"
                           @sync-unseen="handleSyncUnseen"
                           @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
                           @mark-mail-spam="
                             (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                           "
                           @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                          @print="printMail"
                         />
                       </div>
                       <!-- An expanded mail always needs the gap between header and body —
@@ -488,7 +502,9 @@
                                   :drop-mail
                                   :thread="thread"
                                   :hide-star="isCollapsed(mail)"
+                                  :body-view="bodyViews[mail.name]"
                                   @set-flagged="onSetFlagged"
+                                  @toggle-as-sent="toggleAsSent(mail)"
                                   @sync-unseen="handleSyncUnseen"
                                   @move-mail="
                                     (m: Mail, target: string) => emit('moveMail', m, target)
@@ -497,6 +513,7 @@
                                     (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
                                   "
                                   @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                                  @print="printMail"
                                 />
                               </div>
                             </div>
@@ -512,6 +529,7 @@
                               <Button
                                 variant="ghost"
                                 :tooltip="mail.flagged ? __('Unstar') : __('Star')"
+                                :aria-label="mail.flagged ? __('Unstar') : __('Star')"
                                 @click.stop="onSetFlagged(mailCopyIds(mail), !mail.flagged)"
                               >
                                 <template #icon>
@@ -615,6 +633,10 @@
                             :content="mail.html_body"
                             :block-images="isBlocked(mail)"
                             :highlight="isMatch(mail) ? searchTerm : ''"
+                            :sent-at="offersEvents(mail) ? mail.received_at : undefined"
+                            :as-sent="bodyViews[mail.name] === 'asSent'"
+                            @pick-date="createEventAt(mail, $event)"
+                            @adaptable="(adaptable: boolean) => onBodyAdaptable(mail, adaptable)"
                           />
 
                           <!-- font-sans is the system stack, not Inter: the preset leaves
@@ -627,7 +649,9 @@
                             v-else
                             :text="getPlainTextBody(mail)"
                             :term="isMatch(mail) ? searchTerm : ''"
+                            :sent-at="offersEvents(mail) ? mail.received_at : undefined"
                             class="font-sans !font-normal text-base !leading-5 sm:text-sm"
+                            @pick-date="createEventAt(mail, $event)"
                           />
                         </template>
 
@@ -646,6 +670,7 @@
                               class="hover:text-ink-gray-8 disabled:opacity-70"
                               :disabled="downloadingZipMail === mail.name"
                               :title="__('Download all')"
+                              :aria-label="__('Download all')"
                               @click.stop.prevent="downloadAttachmentsAsZip(mail)"
                             >
                               <LoaderCircle
@@ -786,12 +811,14 @@ import {
   onUnmounted,
   reactive,
   ref,
+  shallowRef,
   useTemplateRef,
   watch,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { useNewEventDialog } from '@/apps/calendar'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
@@ -804,6 +831,7 @@ import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
@@ -830,6 +858,7 @@ import { isMailRoute } from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import type {
   Attachment,
+  BodyView,
   ComposeMailData,
   Identity,
   Mail,
@@ -847,6 +876,8 @@ import {
   getFormattedDate,
   getGroupedRecipients,
   hasHtmlContent,
+  isMac,
+  isOverlayPresent,
   matchesScreenedValue,
   plainTextToHtml,
   raiseError,
@@ -864,8 +895,11 @@ import {
 } from '@/apps/mail/utils/composables'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
+import { eventFromMail } from '@/apps/mail/utils/eventFromMail'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
+import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { returnedStrip } from '@/apps/mail/utils/snoozeTimes'
 import { submissionRow } from '@/apps/mail/utils/submission'
@@ -885,6 +919,7 @@ const {
   mailbox,
   threadID,
   threads,
+  threadsLoading,
   messages,
   canGoNext,
   returned,
@@ -902,6 +937,8 @@ const {
   mailbox: string
   threadID?: string
   threads: string[]
+  // The list those ids come from is still on its way (see ThreadHeader).
+  threadsLoading?: boolean
   messages?: Mail[]
   // The message to open on, for a search: its newest match (see scrollToLanding).
   landOn?: string
@@ -1111,14 +1148,19 @@ usePageTitle(() =>
     ? appDocumentTitle(thread.value[0].subject || __('[No subject]'), 'Mail')
     : '',
 )
-const threadFallback = useQuery(api.mail.threads.get, () =>
-  !messages?.length && threadID
-    ? {
-        account: scopeAccountId.value,
-        thread_id: threadID,
-      }
-    : false,
-)
+// Asked only once the list is in and holds no row for the thread: while it loads, the row may be on
+// its way, and a thread fetched and marked read beside it leaves that row unread when it lands. The
+// query reacts to its input at once (a sync watch), so its input is copied once all props of an
+// update are set: a landing list hands over `threadsLoading` and the thread's `messages` in one
+// update, as does a list that starts loading again, and read straight off the props, the input
+// would see one set and not the other, and the pane would fetch the thread anyway.
+const fallbackInput = (): InputOf<typeof api.mail.threads.get> | false =>
+  !messages?.length && !threadsLoading && threadID
+    ? { account: scopeAccountId.value, thread_id: threadID }
+    : false
+const settledFallbackInput = shallowRef(fallbackInput())
+watch(fallbackInput, (input) => (settledFallbackInput.value = input))
+const threadFallback = useQuery(api.mail.threads.get, () => settledFallbackInput.value)
 watch(
   () => [threadFallback.data, threadFallback.error],
   () => {
@@ -1706,6 +1748,20 @@ const showsDsnCard = (mail: Mail) => !readonly && !isCollapsed(mail) && !!mail.d
 const dsnReplacesBody = (mail: Mail) =>
   showsDsnCard(mail) && dsnCardRendered.value[mail.name] !== false
 
+// In the dark theme a message's colours are remapped onto the dark canvas, which can spoil a
+// design, so each message the remap applies to offers to show it as sent instead, on a light
+// canvas. The choice is not kept past a reload. `adaptable` is EmailContent's word on whether
+// the remap applies: a message that renders as authored anyway offers nothing.
+const bodyViews = ref<Record<string, BodyView>>({})
+const onBodyAdaptable = (mail: Mail, adaptable: boolean) => {
+  if (!adaptable) delete bodyViews.value[mail.name]
+  else bodyViews.value[mail.name] ??= 'adapted'
+}
+const toggleAsSent = (mail: Mail) => {
+  const view = bodyViews.value[mail.name]
+  if (view) bodyViews.value[mail.name] = view === 'asSent' ? 'adapted' : 'asSent'
+}
+
 // The message's calendar invite, if it carries one — as a text/calendar (or application/ics)
 // part or a file merely named *.ics.
 const icsAttachment = (mail: Mail) =>
@@ -1840,8 +1896,17 @@ const discardLocalDraft = (mail: string) => {
 const handleKeydown = (e: KeyboardEvent) => {
   // Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
   // The listener sits on window, so it only acts while a Mail route is active.
-  if (readonly || !isMailRoute(route) || shouldIgnoreKeypress(e)) return
+  if (readonly || !isMailRoute(route)) return
   const key = e.key.toLowerCase()
+  // ⌘P / Ctrl+P prints the conversation rather than the app around it — from a field too, which
+  // shouldIgnoreKeypress would rule out. Over a dialog or the attachment viewer it is the browser's.
+  if (key === 'p' && (isMac ? e.metaKey : e.ctrlKey) && !e.shiftKey && !e.altKey) {
+    if (isOverlayPresent() || !printableMails.value.length) return
+    e.preventDefault()
+    printThread()
+    return
+  }
+  if (shouldIgnoreKeypress(e)) return
   const lastMail = thread.value?.at(-1)
   if (!lastMail || lastMail.draft) return
 
@@ -2098,6 +2163,13 @@ const getReplyIdentityEmail = (mail: Mail) => {
   )
 }
 
+// A date in a mail's own words opens Calendar's new-event form over the mail, at that date and
+// filled in from the mail, for the reader to finish and save without leaving it. Not in a draft,
+// which is still the reader's to write, nor in a thread shown for reading alone.
+const offersEvents = (mail: Mail) => !readonly && !mail.draft
+const openNewEvent = useNewEventDialog()
+const createEventAt = (mail: Mail, date: NamedDate) => void openNewEvent(eventFromMail(mail, date))
+
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing
 // them verbatim (or escaping them again) puts `&lt;` in front of the reader instead of
@@ -2111,14 +2183,41 @@ const getPlainTextBody = (mail: Mail) => decodeHtmlEntities(mail.html_body || ma
 // Deliberately not a <pre>: the editor parses one as a code block, so quoting or forwarding
 // a plain-text mail used to hand the recipient the sender's prose in monospace that never
 // wrapped. plainTextToHtml keeps the line breaks without asking for that.
-const getBodyContent = (mail: Mail) => {
-  // Contained, not verbatim: the original's body/html style rules would otherwise
-  // repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
-  // bleeding over the sender's own text).
-  if (hasHtmlContent(mail.html_body)) return containEmailHtml(mail.html_body)
+const bodyHtml = (mail: Mail) => {
+  if (hasHtmlContent(mail.html_body)) return mail.html_body
   const text = getPlainTextBody(mail)
   return `<div style="white-space: pre-wrap">${text ? plainTextToHtml(text) : '&nbsp;'}</div>`
 }
+// Contained, not verbatim: the original's body/html style rules would otherwise
+// repaint the entire outgoing mail (e.g. a marketing mail's dark backdrop
+// bleeding over the sender's own text).
+const getBodyContent = (mail: Mail) => containEmailHtml(bodyHtml(mail))
+// ── Printing ────────────────────────────────────────────────────────────────────────────────────
+
+// A message as it goes on paper: its own body, with remote content held back where the reader holds
+// it back — printing is no reason to load what the reader chose not to.
+const printed = (mail: Mail): PrintedMessage => {
+  // Bcc is only ever on the sender's own copy, which is theirs to print.
+  const { to, cc, bcc } = getGroupedRecipients(mail.recipients ?? [], true, true)
+  return {
+    from: mail.from_name ? `${mail.from_name} <${mail.from_email}>` : mail.from_email,
+    to,
+    cc,
+    bcc,
+    receivedAt: mail.received_at,
+    body: bodyHtml(mail),
+    blockRemote: isBlocked(mail),
+    attachments: filteredAttachments(mail).map((attachment) => attachment.filename),
+  }
+}
+const printMail = (mail: Mail) => printMessages(mail.subject, [printed(mail)])
+// The whole conversation, drafts aside, as it reads from the top.
+const printableMails = computed(() => thread.value.filter((mail) => !mail.draft))
+const printThread = () => {
+  const mails = printableMails.value
+  if (mails.length) printMessages(mails[0].subject, mails.map(printed))
+}
+
 const getQuotedContent = (mail: Mail) => `
 		<div class="frappe_mail_quote">
 			On ${dayjs(mail.received_at).format('DD MMM YYYY [at] h:mm A')}, ${mail.from_email} wrote:

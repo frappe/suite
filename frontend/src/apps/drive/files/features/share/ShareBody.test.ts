@@ -287,3 +287,39 @@ it('shows the people field and the access list in place while who has access loa
   )
   expect(root.textContent).toContain('Public on the web')
 })
+
+it('keeps who has access in view while people wait to be added', async () => {
+  const { transport, local } = server()
+  local.set('maya@example.com', grant('maya@example.com', 40))
+  const state = useShare('doc', { client: testClient(transport) })
+  await state.load()
+  const root = document.createElement('div')
+  document.body.append(root)
+  const app = createApp({ setup: () => () => h(ShareBody, { state, picked: 2 }) })
+  app.mount(root)
+  cleanup = () => {
+    app.unmount()
+    root.remove()
+  }
+  await vi.waitFor(() => expect(root.textContent).toContain('maya@example.com'))
+  expect(root.textContent).toContain('Public on the web')
+})
+
+it('offers no role choice on access a folder gives, only denying it here', async () => {
+  const group = {
+    grant: grant('$GROUP:Design', 30, { name: 'folder-design', node: 'folder' }),
+    redacted: false,
+    source_node: 'folder',
+    source_title: 'Launch',
+  }
+  const { transport, writes } = server([group])
+  const { row, items, choose } = await mount(transport)
+  await vi.waitFor(() => expect(row('via Launch')).toBeDefined())
+
+  expect(items('via Launch')).toEqual(['Deny access here'])
+  expect(row('via Launch').querySelector('[aria-label^="Access for"]')).toBeNull()
+  choose('via Launch', 'Deny access here')
+  await vi.waitFor(() =>
+    expect(writes).toContainEqual({ id: 'node_put_grant', principal: '$GROUP:Design', role: 0 }),
+  )
+})

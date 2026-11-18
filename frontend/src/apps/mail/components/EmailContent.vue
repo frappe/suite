@@ -1,43 +1,28 @@
 <template>
-  <!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
-	     for it. iframe-resizer sizes the frame by asking the document inside it how tall it is, so
-	     the frame has to have a box the whole time it is being measured. Under `display: none` the
-	     document answers with the child's starting 1px; the parent writes that back as the frame's
-	     height, and the child's own visibility observer then reads a 1px frame as off-screen and
-	     stops reporting size at all. The message is blank from then on however tall its content is,
-	     and nothing recovers it — not a resize, not content changing inside the frame, not even
-	     being handed a real height. Only reloading the frame does, which is why re-selecting the
-	     mail was the one thing that worked. -->
-  <div class="relative w-full">
-    <IframeResizer
+  <!-- Hidden, and taking no room, until the frame first says how tall its message is: it shows
+	     at its full height or not at all. Hidden with `invisible`, never `v-show`: the frame is made
+	     as tall as its own document says it is, and a document that is not laid out has no height
+	     to report. Under `display: none` the frame would never be measured, so never shown. The
+	     frame also waits for the date reader, so the dates are in the first document it loads
+	     rather than reloading it under the reader. -->
+  <div class="w-full">
+    <iframe
+      v-if="srcdoc"
       ref="frame"
       class="w-full"
-      :class="{ invisible: !isIframeReady }"
-      license="GPLv3"
-      :scrolling="true"
+      :class="{ invisible: !isMeasured }"
+      :style="{ height: `${height ?? 0}px` }"
+      scrolling="yes"
       :srcdoc
-      @on-ready="isIframeReady = true"
     />
-    <div v-if="!isIframeReady" class="absolute inset-0 animate-pulse space-y-2 py-4">
-      <div
-        v-for="i in 5"
-        :key="i"
-        class="bg-surface-gray-3 h-2"
-        :style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
-      />
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
-// The package maps `./sfc` only via its (non-honored) `browser` field under
-// Vite 8/Rolldown, so import the concrete SFC file directly.
-import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
-import DOMPurify from 'dompurify'
-import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
-import { blockRemoteAssets } from '@/apps/mail/utils'
+import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'
+import { isMac } from '@/apps/mail/utils'
 import { useComposeMail, useScreenSize, useTheme } from '@/apps/mail/utils/composables'
 import {
   declaresFixedPalette,
@@ -46,32 +31,67 @@ import {
   remapEmailForDarkMode,
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
-import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
+import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
+import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
 
 // Whether to withhold remote content is the thread's to say: it offers a Show in each message that
 // holds some (see HiddenImagesBanner), and lifts the block here once the reader asks.
-// `highlight`: the words a search found the message by, marked in its body.
+// `highlight`: the words a search found the message by, marked in its body. `sentAt`: when the mail
+// was sent; given it, the dates in the mail's own words are marked, read from then, and picking one
+// asks for an event at it (`pickDate`).
+// `asSent`: the reader asked to see the message as its sender designed it, on a light canvas,
+// because the dark-theme remap spoiled it. Only the thread knows that, and it learns whether
+// the remap applies at all from `adaptable`, which says so for the theme the app is in, shown
+// as sent or not.
 const {
   content,
   blockImages = false,
   highlight = '',
-} = defineProps<{ content: string; blockImages?: boolean; highlight?: string }>()
+  sentAt,
+  asSent = false,
+} = defineProps<{
+  content: string
+  blockImages?: boolean
+  highlight?: string
+  sentAt?: string
+  asSent?: boolean
+}>()
+const emit = defineEmits<{ pickDate: [date: NamedDate]; adaptable: [adaptable: boolean] }>()
+const mailDates = useMailDates()
 
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
-const frame = useTemplateRef<{ $el: HTMLIFrameElement }>('frame')
+const frame = useTemplateRef<HTMLIFrameElement>('frame')
 
-const isIframeReady = ref(false)
+// How tall the message is, in pixels, as its frame last reported it; nothing until it first does.
+const height = ref<number>()
+const isMeasured = computed(() => height.value !== undefined)
 
-// Listen for keyboard/swipe events from iframe
+// What the frame's own script tells the page: it cannot reach the page any other way.
 const handleMessage = (event: MessageEvent) => {
+  // Only this message's own frame says how tall it is: any window that can reach the page can
+  // post to it, and every expanded message hears every frame.
+  if (event.data?.type === 'height') {
+    if (event.source !== frame.value?.contentWindow) return
+    const reported: unknown = event.data.height
+    if (typeof reported === 'number' && Number.isFinite(reported) && reported >= 0)
+      height.value = reported
+    return
+  }
   // Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
   // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
   if (event.data?.type === 'swipe') {
     window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+    return
+  }
+  // A date in the message the reader picked (see markMailDates), by its place in this render's list.
+  if (event.data?.type === 'mail-date') {
+    if (event.source !== frame.value?.contentWindow) return
+    const date = body.value.dates[Number(event.data.index)]
+    if (date) emit('pickDate', date)
     return
   }
   // A `mailto:` the reader clicked inside the message — open our own composer on it.
@@ -79,7 +99,7 @@ const handleMessage = (event: MessageEvent) => {
   // can reach us (an attachment rendered in a frame, an embedder), and this one puts
   // a stranger's address and body in front of the user as a ready-to-send draft.
   if (event.data?.type === 'mailto') {
-    if (event.source !== frame.value?.$el?.contentWindow) return
+    if (event.source !== frame.value?.contentWindow) return
 
     const draft = parseMailto(String(event.data.href ?? ''))
     if (draft) requestCompose(draft)
@@ -89,12 +109,14 @@ const handleMessage = (event: MessageEvent) => {
   // handlers (reka's dismissable layers) see it land outside whatever popover is open. As a mouse
   // press: reka waits for a touch's click, and that click stays in the frame.
   if (event.data?.type === 'pointerdown') {
-    const iframe = frame.value?.$el
+    const iframe = frame.value
     if (!iframe || event.source !== iframe.contentWindow) return
     iframe.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
     return
   }
-  if (event.data?.type !== 'keyboard') return
+  // Only this message's own keys: every expanded message hears every frame's, and replaying them
+  // all would press each key once per message.
+  if (event.data?.type !== 'keyboard' || event.source !== frame.value?.contentWindow) return
 
   // Create a synthetic keyboard event in the parent
   const keyboardEvent = new KeyboardEvent(event.data.eventType, {
@@ -141,10 +163,11 @@ const collapseQuotes = (doc: Document) => {
   })
 }
 
-const srcdoc = computed(() => {
-  let sanitized = DOMPurify.sanitize(escapeBracketedAddresses(content), DOMPURIFY_CONFIG)
-  if (blockImages) sanitized = blockRemoteAssets(sanitized)
-  const doc = new DOMParser().parseFromString(sanitized, 'text/html')
+const body = computed(() => {
+  // Until the date reader has loaded, or failed to, the frame waits (see the template); the rest,
+  // whether the theme adapts the message among it, is known already.
+  const waiting = !!sentAt && mailDates.value === undefined
+  const doc = new DOMParser().parseFromString(sanitizeEmailHtml(content, blockImages), 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
   // declaring a fixed palette (suite's own templates), and art-directed ones
   // — the author claimed the full canvas and painted with color — where
@@ -157,18 +180,40 @@ const srcdoc = computed(() => {
   // light-scheme self. Remap runs before collapseQuotes so the toggle buttons
   // it inserts keep their exact theme colors.
   normalizeToLightScheme(doc)
-  const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  const adapts = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  const remapped = adapts && !asSent
   if (remapped) remapEmailForDarkMode(doc)
+  // Before the search highlight, which cuts text into pieces a date could straddle.
+  const dates =
+    sentAt && mailDates.value
+      ? mailDates.value.markMailDates(doc, sentAt, mailReader(), __('Create event'))
+      : []
   if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)
-  const transformedContent = doc.documentElement.outerHTML
+  return { html: doc.documentElement.outerHTML, adapts, remapped, dates, waiting }
+})
+
+watch(
+  () => body.value.adapts,
+  (adapts) => emit('adaptable', adapts),
+  { immediate: true },
+)
+
+// As sent, the frame takes the light theme whatever the app's: the sender's design on the
+// canvas it was drawn for.
+const frameTheme = computed(() => (asSent ? 'light' : dataTheme.value))
+const colors = computed(() => THEME_CONFIG[frameTheme.value])
+
+const srcdoc = computed(() => {
+  if (body.value.waiting) return null
+  const { html: transformedContent, remapped } = body.value
 
   return `
 		<!DOCTYPE html>
 		<html>
 		<head>
 			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<meta name="color-scheme" content="${dataTheme.value}">
+			<meta name="color-scheme" content="${frameTheme.value}">
 			<meta charset="UTF-8">
 			<style>
 				body {
@@ -277,13 +322,27 @@ const srcdoc = computed(() => {
 					display: none !important;
 				}
 
+				/* A date the reader can make an event of: underlined in the text's own colour, faintly,
+				   so it reads on any canvas the mail paints, and drawn without moving a thing. */
+				[data-mail-date] {
+					text-decoration: underline;
+					text-decoration-color: color-mix(in srgb, currentColor 50%, transparent);
+					text-underline-offset: 2px;
+					cursor: pointer;
+				}
+
+				[data-mail-date]:hover {
+					text-decoration-color: currentColor;
+				}
+
+				/* Code keeps its line breaks and indentation but wraps a line too long for the
+				   pane, as Gmail does: unwrapped, one long line (an inline <code> run in a
+				   notification) widened the whole message past the pane. */
 				pre, code {
 					font-family: 'Courier New', Courier, monospace;
-					white-space: pre;
-					overflow-x: auto;
+					white-space: pre-wrap;
 				}
 			</style>
-			<script> ${iframeResizerChildScript} <\/script>
 		</head>
 		<body>
 			${transformedContent}
@@ -385,19 +444,120 @@ const srcdoc = computed(() => {
 					});
 				};
 
+				// The last resort, as in Apple Mail: what still overflows once everything that can
+				// reflow has (a row of fixed-size images, a nowrap run, a grid's own min-width) is
+				// scaled down to the pane, never clipped at its edge or panned inside it. Zoom rather
+				// than a transform, so the frame's measured height shrinks with it. A zoomed body that
+				// kept following the pane would get wider by the same scale, and whatever takes its
+				// width from the body (a 100% column with padding) would overflow again, so the body
+				// is laid out once as on a pane as wide as the message, held at that width, and that
+				// layout is what gets scaled. Everything is measured unzoomed, where every browser
+				// agrees. Each pass lets go of the hold before anything else measures, so a pane that
+				// widens gets the message back at full size.
+				const root = document.documentElement;
+				const bodyStyle = document.body.style;
+				// The hold saves the value each property had just before it (a sent <body style>, or
+				// what normalizeWidths wrote this pass) and puts it back on release; mail that fits
+				// is never touched.
+				let heldOver = null;
+				const hold = (values) => {
+					heldOver ??= {};
+					Object.entries(values).forEach(([name, value]) => {
+						if (!(name in heldOver))
+							heldOver[name] = [bodyStyle.getPropertyValue(name), bodyStyle.getPropertyPriority(name)];
+						bodyStyle.setProperty(name, value, 'important');
+					});
+				};
+				const release = () => {
+					if (!heldOver) return;
+					Object.entries(heldOver).forEach(([name, saved]) => bodyStyle.setProperty(name, ...saved));
+					heldOver = null;
+				};
+				const fitToPane = () => {
+					const pane = root.clientWidth;
+					const content = root.scrollWidth;
+					if (!pane || content <= pane + 1) return;
+					const rootWidth = [root.style.getPropertyValue('width'), root.style.getPropertyPriority('width')];
+					root.style.setProperty('width', content + 'px', 'important');
+					const width = document.body.getBoundingClientRect().width;
+					root.style.setProperty('width', ...rootWidth);
+					hold({ 'box-sizing': 'border-box', width: width + 'px', 'min-width': '0', 'max-width': 'none' });
+					hold({ zoom: String(pane / root.scrollWidth) });
+				};
+
 				const normalizeAll = () => {
+					// Release first: normalizeWidths writes the same properties the hold saved.
+					release();
 					normalizeWidths();
 					unsquashImages();
+					fitToPane();
 				};
 				normalizeAll();
 				window.addEventListener('resize', normalizeAll);
-				document.querySelectorAll('img').forEach((img) =>
-					img.addEventListener('load', unsquashImages),
-				);
+				// An image that fails changes the layout as surely as one that arrives, so both
+				// refit; the window's own load is the backstop once every image has settled.
+				const refit = () => {
+					// Release first, so what follows measures the unheld layout.
+					release();
+					unsquashImages();
+					fitToPane();
+				};
+				document.querySelectorAll('img').forEach((img) => {
+					img.addEventListener('load', refit);
+					img.addEventListener('error', refit);
+				});
+				window.addEventListener('load', refit);
+
+				// The frame is as tall as the page makes it, and the page only knows what it is told
+				// here: the height of the message, each time it changes. A sheet that fills its window
+				// (html, body { height: 100% }) would make the message as tall as the frame, which
+				// could then never shrink to it, so both take their height from their content.
+				root.style.setProperty('height', 'auto', 'important');
+				bodyStyle.setProperty('height', 'auto', 'important');
+				// The message is as tall as its root's box, unless something is drawn below that box:
+				// positioned content, a negative margin. scrollHeight says how far down that reaches,
+				// but never less than the frame's own height, so in a frame taller than the box it
+				// says nothing, and only the elements themselves can tell. Their answer is held to
+				// scrollHeight, which content clipped by its own container would otherwise pass.
+				const messageHeight = () => {
+					const box = Math.ceil(root.getBoundingClientRect().height);
+					const reach = root.scrollHeight;
+					if (reach <= box || reach > root.clientHeight) return Math.max(box, reach);
+					let lowest = box;
+					document.body.querySelectorAll('*').forEach((el) => {
+						lowest = Math.max(lowest, el.getBoundingClientRect().bottom + window.scrollY);
+					});
+					return Math.min(Math.ceil(lowest), reach);
+				};
+				// Collapsed, the message is not laid out and has no height: the frame keeps the one
+				// it had, and hears again when the message is opened.
+				let reported;
+				const reportHeight = () => {
+					// Not clientWidth: a hidden frame keeps its window's width, but its root has no box.
+					if (!root.getBoundingClientRect().width) return;
+					const height = messageHeight();
+					if (height === reported) return;
+					reported = height;
+					window.parent.postMessage({ type: 'height', height }, '*');
+				};
+				// Whatever changes the root's box is seen here: an image or a font arriving, the
+				// quoted trail opening, the pane changing width. What is drawn below the box can
+				// change without it, when an image there arrives or the frame is resized.
+				new ResizeObserver(reportHeight).observe(root);
+				window.addEventListener('resize', reportHeight);
+				window.addEventListener('load', reportHeight);
+				document.querySelectorAll('img').forEach((img) => {
+					img.addEventListener('load', reportHeight);
+					img.addEventListener('error', reportHeight);
+				});
 
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
 					document.addEventListener(eventType, (e) => {
+						// ⌘P on a Mac, Ctrl+P elsewhere, is the thread's: forwarded, it prints the
+						// conversation. Left to the browser too, it would first print the whole app.
+						if (eventType === 'keydown' && e.${isMac ? 'metaKey' : 'ctrlKey'} && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p')
+							e.preventDefault();
 						window.parent.postMessage({
 							type: 'keyboard',
 							eventType: eventType,
@@ -416,7 +576,56 @@ const srcdoc = computed(() => {
 					window.parent.postMessage({ type: 'pointerdown' }, '*');
 				});
 
-				// Forward link clicks to parent
+				// A date picked in the message goes to the app to make an event of: a press and release
+				// in place that selected nothing. A drag, or a press that ends a selection, is the reader
+				// selecting text.
+				const pickDate = (mark) =>
+					window.parent.postMessage({ type: 'mail-date', index: mark.dataset.mailDate }, '*');
+				document.addEventListener('keydown', (e) => {
+					const mark = e.target.closest?.('[data-mail-date]');
+					if (!mark || (e.key !== 'Enter' && e.key !== ' ')) return;
+					e.preventDefault();
+					pickDate(mark);
+				});
+				// A date is focusable so Tab reaches it, but a browser starts no selection at the edge of
+				// a focusable element: while a press on it lasts it isn't one. It is again once the press
+				// ends, wherever it ends, and before any key can move focus. Where the press began tells
+				// a tap from a drag; a click with no press of its own (a screen reader's) is a pick.
+				let press = null;
+				let unfocused = null;
+				const refocusable = () => {
+					unfocused?.setAttribute('tabindex', '0');
+					unfocused = null;
+				};
+				document.addEventListener('pointerdown', (e) => {
+					refocusable();
+					const mark = e.target.closest?.('[data-mail-date]');
+					press = mark ? { x: e.clientX, y: e.clientY, date: mark.dataset.mailDate } : null;
+					if (!mark?.hasAttribute('tabindex')) return;
+					mark.removeAttribute('tabindex');
+					unfocused = mark;
+				}, true);
+				['pointerup', 'lostpointercapture', 'keydown'].forEach((type) =>
+					document.addEventListener(type, refocusable, true),
+				);
+				document.addEventListener('pointercancel', () => {
+					refocusable();
+					press = null;
+				}, true);
+				// A drag let go outside the frame sends no pointerup here: the pointer back without a
+				// button down says it is over.
+				document.addEventListener('pointermove', (e) => {
+					if (!e.buttons) refocusable();
+				}, true);
+				const moved = (e, mark) => {
+					const pressed = press;
+					press = null;
+					if (!pressed || pressed.date !== mark.dataset.mailDate) return false;
+					return Math.hypot(e.clientX - pressed.x, e.clientY - pressed.y) > 4;
+				};
+
+				// Forward link clicks to parent. A link comes first, whatever is around it: the frame
+				// never follows one itself.
 				document.addEventListener('click', (e) => {
 					const anchor = e.target.closest('a');
 					if (anchor) {
@@ -430,7 +639,12 @@ const srcdoc = computed(() => {
 							return;
 						}
 						window.open(anchor.href, '_blank');
+						return;
 					}
+					const mark = e.target.closest('[data-mail-date]');
+					if (!mark) return;
+					e.preventDefault();
+					if (!moved(e, mark) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
 				// Forward horizontal swipes to the parent — touches never leave the iframe, so
@@ -484,100 +698,6 @@ const srcdoc = computed(() => {
 		</html>
 	`
 })
-
-const colors = computed(() => THEME_CONFIG[dataTheme.value])
-
-const DOMPURIFY_CONFIG = {
-  ALLOWED_TAGS: [
-    'html',
-    'head',
-    'body',
-    'title',
-    'meta',
-    'style',
-    'table',
-    'tbody',
-    'thead',
-    'tfoot',
-    'tr',
-    'td',
-    'th',
-    'div',
-    'span',
-    'p',
-    'br',
-    'strong',
-    'b',
-    'em',
-    'i',
-    'u',
-    // Highlighted text. Without it KEEP_CONTENT hands the words back unstyled, so a
-    // highlight applied in our own composer came back to the reader as plain text —
-    // while the text colour beside it, which rides a <span>, survived.
-    'mark',
-    'h1',
-    'h2',
-    'h3',
-    'h4',
-    'h5',
-    'h6',
-    'a',
-    'img',
-    'blockquote',
-    'ul',
-    'ol',
-    'li',
-    'pre',
-    'code',
-  ],
-  ALLOWED_ATTR: [
-    'style',
-    'class',
-    'id',
-    'width',
-    'height',
-    'align',
-    'valign',
-    'cellpadding',
-    'cellspacing',
-    // Without colspan/rowspan a table email's grid falls apart: rows stop
-    // agreeing on column count, cells get crushed to slivers, and text can
-    // land outside its authored background (seen as invisible/vertical text).
-    'colspan',
-    'rowspan',
-    'border',
-    'bgcolor',
-    'color',
-    'href',
-    'src',
-    'alt',
-    'title',
-    'target',
-    'data-type',
-    'data-id',
-    'data-label',
-    'data-list',
-    'data-email-footer',
-    // Suite's own templates opt out of the dark-mode remap with this (see
-    // declaresFixedPalette); stripping it would silently re-enable remapping.
-    'data-fixed-palette',
-    // Apple Mail and Thunderbird mark a quoted trail with <blockquote type="cite">, the one thing
-    // that tells it apart from a quote the writer made (see findQuoteRoots); without it the trail
-    // was never folded away.
-    'type',
-    'xmlns',
-    'content',
-    'name',
-    'http-equiv',
-    'charset',
-  ],
-  KEEP_CONTENT: true,
-  ALLOW_UNKNOWN_PROTOCOLS: false,
-  WHOLE_DOCUMENT: true,
-  ADD_TAGS: ['meta', 'style', 'pre', 'code'],
-  ADD_ATTR: ['cellpadding', 'cellspacing', 'border', 'bgcolor', 'xmlns', 'charset'],
-  REMOVE_EMPTY: false,
-}
 
 const THEME_CONFIG = {
   light: {

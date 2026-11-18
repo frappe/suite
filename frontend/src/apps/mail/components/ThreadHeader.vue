@@ -4,8 +4,9 @@
   <DefineAction v-slot="{ action }">
     <Button
       variant="ghost"
-      class="max-sm:!h-8 max-sm:!w-8"
+      class="max-sm:!h-8 max-sm:!w-8 touch-target"
       :tooltip="action.label"
+      :aria-label="action.label"
       @click="action.onClick"
     >
       <template #icon>
@@ -34,7 +35,7 @@
       @pick="(until: string) => emit('snooze', until)"
     >
       <template v-if="!isMobile" #default>
-        <Button variant="ghost" :tooltip="laterLabel">
+        <Button variant="ghost" :tooltip="laterLabel" :aria-label="laterLabel">
           <template #icon>
             <Clock class="icon" />
           </template>
@@ -45,6 +46,7 @@
       v-if="inSnoozed && !isMobile"
       variant="ghost"
       :tooltip="__('Unsnooze')"
+      :aria-label="__('Unsnooze')"
       @click="emit('unsnooze')"
     >
       <template #icon>
@@ -59,7 +61,8 @@
   >
     <Button
       variant="ghost"
-      class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8"
+      class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
+      :aria-label="__('Back')"
       @click="$router.push(backRoute)"
     >
       <template #icon>
@@ -68,8 +71,8 @@
     </Button>
     <!-- Only actions up here, on a phone as on a desktop: the subject heads the thread below,
 	     where it can wrap. -->
-    <template v-if="thread?.length">
-      <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
+    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
+      <template v-if="thread?.length">
         <!-- Three groups, apart a step more than their buttons, with a line halfway: what is done to
              it, read or taken away; where it is filed; what holds it for later, the order of a row's
              hover actions. A group with nothing to offer here takes no room, and no line stands at
@@ -81,7 +84,12 @@
           <Divider v-if="visibleActions.length && !inDrafts" v-bind="GROUP_LINE" />
           <div v-if="!inDrafts" class="flex items-center space-x-2">
             <AdaptiveDropdown :options="moveToOptions" :title="__('Move To')">
-              <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Move To')">
+              <Button
+                variant="ghost"
+                class="max-sm:!h-8 max-sm:!w-8 touch-target"
+                :tooltip="__('Move To')"
+                :aria-label="__('Move To')"
+              >
                 <template #icon>
                   <FolderInput class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
                 </template>
@@ -94,7 +102,12 @@
               :options="folderOptions"
               :title="__('Folders')"
             >
-              <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :tooltip="__('Folders')">
+              <Button
+                variant="ghost"
+                class="max-sm:!h-8 max-sm:!w-8 touch-target"
+                :tooltip="__('Folders')"
+                :aria-label="__('Folders')"
+              >
                 <template #icon>
                   <Folders class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
                 </template>
@@ -111,6 +124,7 @@
               v-if="pinnable"
               variant="ghost"
               :tooltip="pinned ? __('Unpin') : __('Pin to Top')"
+              :aria-label="pinned ? __('Unpin') : __('Pin to Top')"
               @click="emit('setPinned', !pinned, pinFolder)"
             >
               <!-- Pinned, the filled blue pin a pinned row shows, hovered or not. -->
@@ -132,38 +146,60 @@
           :options="laterOptions"
           :title="__('More')"
         >
-          <Button variant="ghost" class="max-sm:!h-8 max-sm:!w-8" :aria-label="__('More')">
+          <Button
+            variant="ghost"
+            class="max-sm:!h-8 max-sm:!w-8 touch-target"
+            :aria-label="__('More')"
+          >
             <template #icon>
               <Ellipsis class="icon max-sm:!h-[18px] max-sm:!w-[18px]" />
             </template>
           </Button>
         </AdaptiveDropdown>
-        <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). -->
-        <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
-          <Button
-            variant="ghost"
-            :tooltip="__('Previous Thread (↑/K)')"
-            :disabled="threadID === threads[0]"
-            @click="emit('prevThread')"
-          >
-            <template #icon>
-              <ArrowLeft class="icon" />
-            </template>
-          </Button>
+      </template>
+      <!-- A thread on its way: its buttons in outline. Nothing to press yet: what a button does
+           depends on where the thread's mail is filed. -->
+      <ThreadActionsOutline v-else class="animate-pulse" :drafts="inDrafts" />
+      <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). They don't wait for the
+           thread: the reader can step on past one that is slow to load. -->
+      <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
+        <Button
+          variant="ghost"
+          :tooltip="__('Previous Thread (↑/K)')"
+          :aria-label="__('Previous Thread')"
+          aria-keyshortcuts="ArrowUp K"
+          :disabled="threadID === threads[0]"
+          @click="emit('prevThread')"
+        >
+          <template #icon>
+            <ArrowLeft class="icon" />
+          </template>
+        </Button>
 
-          <Button
-            variant="ghost"
-            :tooltip="__('Next Thread (↓/J)')"
-            :disabled="threadID === threads.at(-1) && !canGoNext"
-            @click="emit('nextThread')"
-          >
-            <template #icon>
-              <ArrowRight class="icon" />
-            </template>
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          :tooltip="__('Next Thread (↓/J)')"
+          :aria-label="__('Next Thread')"
+          aria-keyshortcuts="ArrowDown J"
+          :disabled="threadID === threads.at(-1) && !canGoNext"
+          @click="emit('nextThread')"
+        >
+          <template #icon>
+            <ArrowRight class="icon" />
+          </template>
+        </Button>
       </div>
-    </template>
+      <!-- While the list is on its way, whether the thread has one before or after it isn't known:
+           the arrows' places are held, so they don't land in an empty corner. -->
+      <div
+        v-else-if="threadsLoading && !isMobile"
+        class="!ml-auto flex animate-pulse space-x-2"
+        aria-hidden="true"
+        data-outline="thread-steps"
+      >
+        <ThreadButtonOutline v-for="n in 2" :key="n" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -188,6 +224,7 @@ import {
   Mail as MailIcon,
   Pin,
   PinOff,
+  Printer,
   Trash2,
 } from 'lucide-vue-next'
 import { computed, h, ref, type Component } from 'vue'
@@ -195,10 +232,12 @@ import { useRoute } from 'vue-router'
 
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
+import ThreadActionsOutline from '@/apps/mail/components/ThreadActionsOutline.vue'
+import ThreadButtonOutline from '@/apps/mail/components/ThreadButtonOutline.vue'
 import { FOLDER_ICON_COLOR_MAP, PINNED_PIN_STYLE } from '@/apps/mail/constants'
 import { takesPins } from '@/apps/mail/stores/user'
 import type { Mail, MailboxData } from '@/apps/mail/types'
-import { getIcon, getMailboxName } from '@/apps/mail/utils'
+import { getIcon, getMailboxName, isMac } from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { folderTicks } from '@/apps/mail/utils/folderTicks'
@@ -214,9 +253,11 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
-const { thread, threads, canGoNext, remindable } = defineProps<{
+const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   thread: Mail[]
   threads: string[]
+  // The list those ids come from is still on its way, so where the thread stands in it isn't known.
+  threadsLoading?: boolean
   canGoNext?: boolean
   // The last word is yours and nothing is set to chase it (see useReplyReminder).
   remindable?: boolean
@@ -236,6 +277,7 @@ const emit = defineEmits([
   'deleteThread',
   'prevThread',
   'nextThread',
+  'print',
 ])
 
 const { isMobile } = useScreenSize()
@@ -271,8 +313,14 @@ const threadMailboxes = computed(() =>
 )
 
 // Drafts offers only Discard: a draft isn't archived, junked, filed, starred or read. And Archive and
-// Junk act only on mail you received, so a conversation of nothing but your own has neither.
-const inDrafts = computed(() => mailbox.value === mailboxIds.value.drafts)
+// Junk act only on mail you received, so a conversation of nothing but your own has neither. The
+// merged folders' thread route names Drafts outright, as their list does; elsewhere a folder whose id
+// is not in yet is no folder, so it is not Drafts either.
+const inDrafts = computed(() =>
+  route.name === UNIFIED_THREAD_ROUTE
+    ? route.params.folder === 'drafts'
+    : !!mailboxIds.value.drafts && mailbox.value === mailboxIds.value.drafts,
+)
 const holdsReceived = computed(() =>
   holdsReceivedMail(
     (thread ?? []).filter((mail: Mail) => mail.id),
@@ -348,6 +396,8 @@ const laterOptions = computed(() => [
         },
       ]
     : []),
+  // A phone's toolbar has no room for it beside More.
+  ...(!inDrafts.value ? [{ label: __('Print'), icon: Printer, onClick: () => emit('print') }] : []),
 ])
 
 const moreActions = computed((): Action[] => [
@@ -397,26 +447,36 @@ const moreActions = computed((): Action[] => [
     icon: CircleCheck,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.junk),
   },
+  // In All Inboxes the button shows before the account's folders are in, so the Trash id may not be
+  // known yet: the merged list trashes the thread by the row's own Trash, as its Delete key does.
   {
     label: __('Move to Trash (Delete)'),
-    onClick: () => emit('moveThread', mailboxIds.value.trash),
+    onClick: () =>
+      route.name === UNIFIED_THREAD_ROUTE
+        ? emit('deleteThread')
+        : emit('moveThread', mailboxIds.value.trash),
     icon: Trash2,
-    condition: () =>
-      mailbox.value !== mailboxIds.value.drafts &&
-      !threadMailboxes.value.includes(mailboxIds.value.trash),
+    condition: () => !inDrafts.value && !threadMailboxes.value.includes(mailboxIds.value.trash),
   },
   // Read from Drafts, a draft is discarded for good, as the list and the composer do.
   {
     label: __('Discard (Delete)'),
     onClick: () => emit('deleteThread'),
     icon: Trash2,
-    condition: () => mailbox.value === mailboxIds.value.drafts,
+    condition: () => inDrafts.value,
   },
   {
     label: __('Delete Thread (Shift+Delete)'),
     onClick: () => emit('deleteThread'),
     icon: Trash2,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),
+  },
+  // The conversation on paper, or as a PDF from the same dialog. A phone prints from More.
+  {
+    label: isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
+    onClick: () => emit('print'),
+    icon: Printer,
+    condition: () => !inDrafts.value && !isMobile.value,
   },
 ])
 

@@ -1739,6 +1739,61 @@ const operationScreenEmailAddresses: MutationRef<
   loadValidators: async () => (await import('./validators')).operationScreenEmailAddresses,
 }
 
+export type AttachDriveFilesOutputAttachedFile = {
+  name: string
+  file_name: string
+  file_url: string
+  file_size: number
+}
+
+export type AttachDriveFilesInput = { nodes: Array<string> }
+
+export type AttachDriveFilesOutput = Array<AttachDriveFilesOutputAttachedFile>
+
+export type AttachDriveFilesError = 'PermissionError' | 'ValidationError'
+
+const operationAttachDriveFiles: MutationRef<
+  AttachDriveFilesInput,
+  AttachDriveFilesOutput,
+  AttachDriveFilesError
+> = {
+  id: 'attach_drive_files',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'attachments.fromDrive',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.attach_drive_files',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationAttachDriveFiles,
+}
+
+export type SyncChangesInput = Record<string, never>
+
+export type SyncChangesOutput = { new_mail_in: Array<string>; changed: boolean; failed: boolean }
+
+export type SyncChangesError = 'PermissionError' | 'AuthenticationError'
+
+const operationSyncChanges: MutationRef<SyncChangesInput, SyncChangesOutput, SyncChangesError> = {
+  id: 'sync_changes',
+  owner: 'mail',
+  kind: 'mutation',
+  publicName: 'changes.sync',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.sync_changes',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'AuthenticationError'],
+  loadValidators: async () => (await import('./validators')).operationSyncChanges,
+}
+
 export type UnscreenEmailAddressesInput = { account: string; emails: Array<string> }
 
 export type UnscreenEmailAddressesOutput = null
@@ -7622,6 +7677,14 @@ export const api = {
     createAutomation: operationCreateAutomationScript,
     rebuildAutomation: operationRebuildAutomationScriptForAccount,
   },
+  attachments: {
+    fromDrive: operationAttachDriveFiles,
+    download: operationFetchAttachment,
+    zip: operationFetchAttachmentsAsZip,
+  },
+  changes: {
+    sync: operationSyncChanges,
+  },
   calendar: {
     clientConfig: operationGetCalendarClientConfig,
     import: operationCreateCalendarImport,
@@ -7658,10 +7721,6 @@ export const api = {
     spam: operationSetMailsSpamStatus,
     delete: operationDeleteMessages,
     download: operationFetchMailAsEml,
-  },
-  attachments: {
-    download: operationFetchAttachment,
-    zip: operationFetchAttachmentsAsZip,
   },
   vacation: {
     get: operationGetVacationResponse,

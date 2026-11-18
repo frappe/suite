@@ -436,6 +436,112 @@ class TestGrantWorkflows(_GrantFixture):
         # Rewriting the anchor as it stands is allowed.
         self.assertEqual(grant(self.root.name, TARGET, MANAGE, self.admin)["role"], MANAGE)
 
+    def test_the_personal_root_owner_keeps_manage_after_sharing_with_everyone_or_a_group(self):
+        frappe.set_user("Administrator")
+        group = frappe.get_doc(
+            {
+                "doctype": "User Group",
+                "name": f"drive-owner-team-{frappe.generate_hash(length=6)}",
+                "user_group_members": [{"user": TARGET}, {"user": MANAGER}],
+            }
+        ).insert()
+        team = f"$GROUP:{group.name}"
+        owner = principals_for(TARGET)
+        colleague = principals_for(MANAGER)
+        cases = (
+            # (who shares, with whom, at what role)
+            ("owner", "$GENERAL", READ),
+            ("owner", "$GENERAL", COMMENT),
+            ("owner", "$GENERAL", EDIT),
+            ("owner", "$GENERAL", NONE),
+            ("owner", team, READ),
+            ("admin", "$GENERAL", NONE),
+        )
+        for sharer, principal, role in cases:
+            with self.subTest(sharer=sharer, principal=principal, role=role):
+                file = create_empty_file(owner, self.folder.name, f"notes-{sharer}-{principal}-{role}.txt")
+                grant(file, principal, role, owner if sharer == "owner" else self.admin)
+
+                node = frappe.db.get_value("Drive Node", file, ["name", "root", "path", "kind"], as_dict=True)
+                self.assertEqual(effective_role(node, owner), MANAGE)
+                # The share still reaches everyone else it names.
+                self.assertEqual(effective_role(node, colleague), role)
+                # And the owner can still change it.
+                grant(file, principal, READ, owner)
+
+    def test_the_personal_root_owner_keeps_manage_while_changing_the_level_for_everyone(self):
+        owner = principals_for(TARGET)
+        colleague = principals_for(MANAGER)
+        file = create_empty_file(owner, self.folder.name, "video-plan.sheet")
+        node = frappe.db.get_value("Drive Node", file, ["name", "root", "path", "kind"], as_dict=True)
+
+        # The share dialog's "Everyone at <org>" menu: each pick rewrites one row.
+        for role in (EDIT, COMMENT, READ, NONE, COMMENT):
+            with self.subTest(role=role):
+                grant(file, "$GENERAL", role, owner)
+                self.assertEqual(effective_role(node, owner), MANAGE)
+                self.assertEqual(effective_role(node, colleague), role)
+
+        revoke(file, "$GENERAL", owner)
+        self.assertEqual(effective_role(node, owner), MANAGE)
+
+    def test_changing_the_level_for_everyone_gives_a_lowered_owner_manage_back(self):
+        owner = principals_for(TARGET)
+        file = create_empty_file(owner, self.folder.name, "build-vs-buy.doc")
+        node = frappe.db.get_value("Drive Node", file, ["name", "root", "path", "kind"], as_dict=True)
+        # A row written before the fix: it lowered the owner to Comment.
+        frappe.get_doc(
+            {"doctype": "Drive Grant", "node": file, "principal": "$GENERAL", "role": COMMENT}
+        ).insert(ignore_permissions=True)
+        self.assertEqual(effective_role(node, owner), COMMENT)
+
+        grant(file, "$GENERAL", READ, self.admin)
+
+        self.assertEqual(effective_role(node, owner), MANAGE)
+
+    def test_sharing_with_everyone_or_a_group_raises_the_owners_own_lower_row_to_manage(self):
+        frappe.set_user("Administrator")
+        group = frappe.get_doc(
+            {
+                "doctype": "User Group",
+                "name": f"drive-owner-row-{frappe.generate_hash(length=6)}",
+                "user_group_members": [{"user": TARGET}],
+            }
+        ).insert()
+        owner = principals_for(TARGET)
+        yesterday = add_to_date(now_datetime(), days=-1)
+        cases = (
+            # (the owner's own row on the file, as a migration or an expiry left it)
+            (EDIT, None),
+            (MANAGE, yesterday),
+        )
+        for own_role, own_expiry in cases:
+            for principal in ("$GENERAL", f"$GROUP:{group.name}"):
+                with self.subTest(own_role=own_role, own_expiry=own_expiry, principal=principal):
+                    file = create_empty_file(owner, self.folder.name, f"carried-{own_role}-{principal}.doc")
+                    frappe.get_doc(
+                        {
+                            "doctype": "Drive Grant",
+                            "node": file,
+                            "principal": TARGET,
+                            "role": own_role,
+                            "expires_on": own_expiry,
+                        }
+                    ).insert(ignore_permissions=True)
+
+                    grant(file, principal, READ, self.admin)
+
+                    node = frappe.db.get_value(
+                        "Drive Node", file, ["name", "root", "path", "kind"], as_dict=True
+                    )
+                    self.assertEqual(effective_role(node, owner), MANAGE)
+                    rows = frappe.get_all(
+                        "Drive Grant",
+                        filters={"node": file, "principal": TARGET},
+                        fields=["role", "expires_on"],
+                    )
+                    self.assertEqual([(row.role, row.expires_on) for row in rows], [(MANAGE, None)])
+
     def test_explain_is_authorized_ordered_fresh_and_includes_unheld_rows(self):
         for principal, role in (
             ("$GROUP:manage", MANAGE),

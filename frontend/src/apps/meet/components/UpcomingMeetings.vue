@@ -8,7 +8,6 @@ import { api, useQuery } from '@/api'
 import { UpcomingEventList, upcomingEventWindow, type UpcomingEventRow } from '@/apps/calendar'
 import { userStore as useCalendarUserStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
-import { meetingCodeFrom } from '@/apps/meet/utils/meetingCode'
 import { useSession } from '@/platform/session'
 import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
@@ -176,7 +175,7 @@ const getTrustedMeetUrl = (url?: string | null) => {
       (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
       !parsed.username &&
       !parsed.password &&
-      meetingCodeFrom(parsed.href, parsed.origin)
+      meetingIdFromPath(parsed.pathname)
     )
       return parsed.origin === window.location.origin
         ? parsed.pathname + parsed.search + parsed.hash
@@ -188,12 +187,13 @@ const getTrustedMeetUrl = (url?: string | null) => {
   return ''
 }
 
-const getMeetingId = (event: CalendarEvent) =>
-  meetingCodeFrom(getMeetingUrl(event), window.location.origin)
+const meetingIdFromPath = (path: string) =>
+  path.match(/^\/meet\/(?!(?:scheduled|recordings)\/?$)([a-z0-9-]+)\/?$/i)?.[1] ?? ''
 
 const joinMeeting = (event: CalendarEvent) => {
-  if (getMeetingUrl(event).startsWith('http')) return
-  const meetingId = getMeetingId(event)
+  const url = getMeetingUrl(event)
+  if (!url || url.startsWith('http')) return
+  const meetingId = meetingIdFromPath(new URL(url, window.location.origin).pathname)
   if (!meetingId) return
   router.push({ name: 'meet-meeting', params: { meetingId } })
 }

@@ -127,22 +127,74 @@ export const raisePromiseToast = async (
   }
 }
 
-// Rows can update optimistically; confirmation follows the successful server write. The message
-// can be read off the write's answer, where what happened decides what it says.
+/**
+ * The Undo for a write still in flight: it runs once the write has landed, and not at all if the
+ * write was refused. Sent alongside the write, the inverse could land first and be overtaken by it,
+ * leaving the change in place under a toast that says it was taken back.
+ */
+export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
+  void forward.then(undo, () => {})
+
+/**
+ * When an action's toast shows, which its caller says. `onClick`: the screen already shows the change
+ * and the message doesn't hang on the answer, so it shows at once, with its Undo, and comes down with
+ * the error if the write is refused. `onAnswer`: it waits for the write to land, its message given or
+ * read off the answer.
+ */
+export type ToastTiming<T = unknown> =
+  { onClick: string } | { onAnswer: string | ((result: T) => string) }
+
 export const raiseOptimisticToast = <T>(
   forward: Promise<T>,
-  success: string | ((result: T) => string),
+  timing: ToastTiming<T>,
   undoAction?: () => void,
+  refused: (error: unknown) => void = raiseError,
 ) => {
   toast.dismiss()
+  const options = undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined
+  if ('onClick' in timing) {
+    const shown = toast.success(timing.onClick, options)
+    void forward.catch((error) => {
+      toast.dismiss(shown)
+      refused(error)
+    })
+    return
+  }
+  const { onAnswer } = timing
   void forward.then(
-    (result) =>
-      toast.success(
-        typeof success === 'string' ? success : success(result),
-        undoAction ? { action: { label: __('Undo'), onClick: undoAction } } : undefined,
-      ),
-    raiseError,
+    (result) => toast.success(typeof onAnswer === 'string' ? onAnswer : onAnswer(result), options),
+    refused,
   )
+}
+
+/**
+ * One action carried out in several accounts, told as one toast with one Undo, timed as a single
+ * write's is. Every account refusing says why; some refusing says why and still offers the Undo, which
+ * takes back the accounts that went through.
+ */
+export const raisePerAccountToast = <T>(
+  settled: Promise<PromiseSettledResult<T>[]>,
+  timing: ToastTiming<T[]>,
+  undoAction: () => void,
+) => {
+  let someLanded = false
+  const forward = settled.then((results) => {
+    const failure = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    someLanded = results.some((r) => r.status === 'fulfilled')
+    if (failure) throw failure.reason
+    return results.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+  })
+  raiseOptimisticToast(forward, timing, undoAction, (error) => {
+    if (!someLanded) return raiseError(error)
+    toast.error(
+      (error instanceof TransportError &&
+      error.type !== 'NetworkError' &&
+      error.type !== 'AbortError'
+        ? __(error.message)
+        : null) || __('Could not complete the action'),
+      { action: { label: __('Undo'), onClick: undoAction } },
+    )
+  })
 }
 
 /**
@@ -354,69 +406,6 @@ export const matchesScreenedValue = (email: string, value: string) => {
   return normalizedEmail === normalizedValue
 }
 
-// An externally-hosted reference (http/https or protocol-relative //). cid: (inline attachments) and
-// data: URIs are part of the message, so they're never remote.
-const REMOTE_URL = /^\s*(?:https?:)?\/\//i
-const REMOTE_CSS_URL = /url\(\s*['"]?(?:https?:)?\/\//i
-
-// Inspect the HTML for externally-hosted assets via the DOM (one parse): counts remote <img>, and flags
-// whether any remote asset is present at all — a remote <img>, or a remote url(...) in an inline style or
-// <style> block (background images, fonts). Used to decide the "images blocked" banner and its count.
-export const analyzeRemoteAssets = (html?: string) => {
-  if (!html) return { images: 0, hasRemote: false }
-
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-
-  const images = Array.from(doc.querySelectorAll('img')).filter((img) =>
-    REMOTE_URL.test(img.getAttribute('src') || ''),
-  ).length
-
-  const hasRemoteCss =
-    Array.from(doc.querySelectorAll('[style]')).some((el) =>
-      REMOTE_CSS_URL.test(el.getAttribute('style') || ''),
-    ) ||
-    Array.from(doc.querySelectorAll('style')).some((el) =>
-      REMOTE_CSS_URL.test(el.textContent || ''),
-    )
-
-  return { images, hasRemote: images > 0 || hasRemoteCss }
-}
-
-// Blank remote url(...) in a CSS string. Regex here is unavoidable — there's no DOM API to rewrite a
-// url() inside a style string without pulling in the full CSSOM.
-const blankRemoteCssUrls = (css: string) =>
-  css.replace(/url\(\s*(['"]?)(?:https?:)?\/\/[^'")]*\1\s*\)/gi, 'url()')
-
-// Neutralize remote assets so the browser never requests them. Parses the (already-sanitized) HTML into a
-// DOM and edits it there — robust against markup/attribute quirks regex would trip on: each remote <img>
-// has its src stashed on data-blocked-src (and is tagged for hiding), and remote url(...) in inline styles
-// and <style> blocks is blanked. Inline (cid:) and data: assets are left to load as normal.
-export const blockRemoteAssets = (html: string) => {
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-
-  doc.querySelectorAll('img').forEach((img) => {
-    const src = img.getAttribute('src') || ''
-    if (!REMOTE_URL.test(src)) return
-    img.setAttribute('data-blocked-src', src)
-    img.removeAttribute('src')
-    img.setAttribute('data-blocked-image', '')
-  })
-
-  doc.querySelectorAll('[style]').forEach((el) => {
-    const style = el.getAttribute('style') || ''
-    const cleaned = blankRemoteCssUrls(style)
-    if (cleaned !== style) el.setAttribute('style', cleaned)
-  })
-
-  doc.querySelectorAll('style').forEach((styleEl) => {
-    const css = styleEl.textContent || ''
-    const cleaned = blankRemoteCssUrls(css)
-    if (cleaned !== css) styleEl.textContent = cleaned
-  })
-
-  return doc.documentElement.outerHTML
-}
-
 export const getFileIcon = (type?: string) => {
   if (!type) return Paperclip
   if (type?.startsWith('image/')) return ImageIcon
@@ -502,6 +491,7 @@ export function turnsOffLine(running: string) {
 }
 
 export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
+export { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils/remoteAssets'
 
 export const getIcon = (mailbox: {
   _name?: string

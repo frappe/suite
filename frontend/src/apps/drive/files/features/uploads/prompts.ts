@@ -1,11 +1,11 @@
 import type { AppContext } from 'vue'
 
+import { presentDialog } from '@/platform/dialog-host'
 import { confirm, toast } from '@/platform/feedback'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 
 import { formatBytes } from '../../internal/format'
-import { presentDialog } from '../dialogHost'
 import type { CollisionChoice, UploadPrompts } from './queue'
 
 /**

@@ -107,6 +107,11 @@ export interface DocumentTypeDefinition {
   /** Translated New-menu label, evaluated at render time. */
   newLabel: () => string
   icon: Component
+  /**
+   * Drive's New from template offers this type. Slides ships templates, and
+   * Writer's came over from the old app. No other type has any.
+   */
+  hasTemplates?: boolean
   /** Lazy document surface. It receives the prop `session: DocumentSession`. */
   loadSurface: () => Promise<Component>
   /**

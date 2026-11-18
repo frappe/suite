@@ -28,11 +28,12 @@ RELATIONS = {
 }
 
 
-# One branch of the gate: `if|elsif <test> { fileinto [tags] "<mailbox>"; stop; }`, the mailbox an
-# RFC 5228 quoted string — or `keep [tags];`, delivery where the server would put it anyway. A tag
-# may carry a quoted argument (`:flags "unscreened"`).
+# One branch of the gate: `if|elsif <test> { [addflag "<flag>";] fileinto [tags] "<mailbox>"; stop; }`,
+# the mailbox an RFC 5228 quoted string — or `keep [tags];`, delivery where the server would put it
+# anyway. A tag may carry a quoted argument (`:flags "unscreened"`).
 GATE_BRANCH = re.compile(
-    r'\s*(?:if|elsif) (.+?) \{\s*(?:fileinto ((?::\w+(?: "[^"]*")? )*)"((?:[^"\\]|\\.)*)"'
+    r'\s*(?:if|elsif) (.+?) \{\s*((?:addflag "[^"]*";\s*)*)'
+    r'(?:fileinto ((?::\w+(?: "[^"]*")? )*)"((?:[^"\\]|\\.)*)"'
     r'|keep((?: :\w+(?: "[^"]*")?)*));\s*stop;\s*\}',
     re.DOTALL,
 )
@@ -56,8 +57,10 @@ def render_screening_gate(
         return sieve_script.build_screening_gate("account", accepted_emails)
 
 
-def parse_gate(gate: str) -> list[tuple[str, list[str], str]]:
-    """Split the rendered gate into its (test, fileinto tags, mailbox) branches, in order.
+def parse_gate(gate: str) -> list[tuple[str, set[str], str]]:
+    """Split the rendered gate into its (test, flags, mailbox) branches, in order. The flags are
+    those the branch leaves on the message, of the ones it sets itself: what it adds with `addflag`,
+    unless `:flags` on its `keep` or `fileinto` replaces them (RFC 5232 §5).
 
     Fails on anything else in the gate — an `else` branch, a trailing statement — rather than skip it.
     """
@@ -67,11 +70,11 @@ def parse_gate(gate: str) -> list[tuple[str, list[str], str]]:
 
     branches, pos = [], 0
     while match := GATE_BRANCH.match(body, pos):
-        test, tags, mailbox, keep_tags = match.groups()
-        if mailbox is None:
-            branches.append((test, (keep_tags or "").split(), KEEP))
-        else:
-            branches.append((test, tags.split(), re.sub(r"\\(.)", r"\1", mailbox)))
+        test, added, tags, mailbox, keep_tags = match.groups()
+        tags = tags if mailbox is not None else keep_tags or ""
+        given = re.search(r':flags "([^"]*)"', tags)
+        flags = {given[1]} if given else set(re.findall(r'addflag "([^"]*)"', added))
+        branches.append((test, flags, KEEP if mailbox is None else re.sub(r"\\(.)", r"\1", mailbox)))
         pos = match.end()
 
     assert branches and not body[pos:].strip(), f"Unparsed Sieve in the gate:\n{body[pos:]}"
@@ -110,11 +113,7 @@ def route_through_gate(
         raise AssertionError(f"Unrecognised Sieve test: {test}")
 
     return next(
-        (
-            (mailbox, ":flags" in tags and '"unscreened"' in tags)
-            for test, tags, mailbox in parse_gate(gate)
-            if evaluate(test)
-        ),
+        ((mailbox, "unscreened" in flags) for test, flags, mailbox in parse_gate(gate) if evaluate(test)),
         None,
     )
 
@@ -237,13 +236,15 @@ class IntegrationTestSieveScript(IntegrationTestCase):
 
     def test_screening_gate_requires_what_it_uses(self):
         """RFC 5228: a script using an extension it does not require fails to compile, and the account
-        keeps its previous script. `:flags` needs "imap4flags", `:value` "relational"."""
+        keeps its previous script. `addflag` needs "imap4flags", `:value` "relational", and the
+        Category block's `:regex` "regex"."""
 
         from suite.mail.doctype.sieve_script.sieve_script import AUTOMATION_SCRIPT_REQUIRE
 
         required = set(re.findall(r'"([^"]+)"', AUTOMATION_SCRIPT_REQUIRE))
         self.assertLessEqual(
-            {"fileinto", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric"}, required
+            {"fileinto", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric", "regex"},
+            required,
         )
 
     def test_rebuild_retries_accounts_that_fail(self):

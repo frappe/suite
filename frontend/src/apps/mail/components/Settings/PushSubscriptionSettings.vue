@@ -5,6 +5,7 @@
         variant="outline"
         icon="lucide-refresh-cw"
         :tooltip="__('Refresh')"
+        :aria-label="__('Refresh')"
         :loading="pushSubscriptions.isFetching"
         @click="pushSubscriptions.refetch().catch(() => {})"
       />

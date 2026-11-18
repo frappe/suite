@@ -35,11 +35,18 @@
     />
     <TlsStatTiles v-if="summary.status !== 'error'" :totals="summary.data?.totals" />
 
+    <!-- Reserve the header, borders and three pending rows on desktop so short
+         breakdowns do not pull the report list upward when the summary arrives. -->
     <div v-if="summary.status !== 'error'" class="grid grid-cols-1 gap-5 xl:grid-cols-2">
       <!-- What went wrong, biggest first: the failure type says whether a certificate, the
 			     MTA-STS policy or STARTTLS itself is to blame. -->
-      <DashboardCard :title="__('Failure types')">
-        <div v-if="failures.length" class="flex max-h-72 flex-col overflow-y-auto">
+      <DashboardCard :title="__('Failure types')" class="sm:min-h-[12.375rem]">
+        <DashboardRowsSkeleton
+          v-if="summary.status === 'pending'"
+          :rows="3"
+          row-class="min-h-12 border-b px-5 py-3 text-sm last:border-b-0"
+        />
+        <div v-else-if="failures.length" class="flex max-h-72 flex-col overflow-y-auto">
           <div
             v-for="row in failures"
             :key="row.result_type ?? 'other'"
@@ -67,8 +74,9 @@
           }}
         </div>
       </DashboardCard>
-      <DashboardCard :title="__('Reporters')">
+      <DashboardCard :title="__('Reporters')" class="sm:min-h-[12.375rem]">
         <TlsBreakdownRows
+          :loading="summary.status === 'pending'"
           :rows="summary.data?.reporters || []"
           label-key="reporter"
           :empty="__('No sending server has reported for this period yet.')"
@@ -140,7 +148,12 @@ import { formatDateTime, fromNow } from '@/apps/mail/utils/datetime'
 import { DEFAULT_PAGE_LENGTH } from '@/apps/mail/utils/paging'
 import { DEFAULT_PERIOD, formatRate, PERIOD_OPTIONS, rateTheme } from '@/apps/mail/utils/reports'
 import { resultTypeLabel, type TlsFailureType, type TlsReportRow } from '@/apps/mail/utils/tls'
-import { DashboardCard, DashboardLayout, DashboardList } from '@/platform/dashboard'
+import {
+  DashboardCard,
+  DashboardLayout,
+  DashboardList,
+  DashboardRowsSkeleton,
+} from '@/platform/dashboard'
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
 

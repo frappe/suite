@@ -16,7 +16,6 @@ import { createDocument, recordVisit } from '@/apps/drive/client/nodes'
 import { openDriveDocumentSession, type DocumentSession } from '@/apps/drive/client/session'
 import { DRIVE_ROLES, type DriveBreadcrumb, type DriveNode } from '@/apps/drive/client/types'
 import { announceTrash } from '@/apps/drive/files/features/changeToast'
-import { presentDialog, rememberDialogContext } from '@/apps/drive/files/features/dialogHost'
 import { openingFileState } from '@/apps/drive/files/features/document/openingLocation'
 import { nodeActions, type ActionNode } from '@/apps/drive/files/features/nodeActions'
 import { observePreviewRefresh } from '@/apps/drive/files/features/previewRefresh'
@@ -25,6 +24,7 @@ import { usePaletteSearch } from '@/apps/drive/files/features/usePaletteSearch'
 import { useLocationTitle } from '@/apps/drive/files/internal/locations'
 import { slugify } from '@/apps/drive/files/internal/slugify'
 import { type AreaDefinition, type PaletteSearchSource } from '@/platform/contracts'
+import { presentDialog, rememberDialogContext } from '@/platform/dialog-host'
 import { toast } from '@/platform/feedback'
 import { newDocumentState, openingTitleState } from '@/platform/page-meta'
 import { useSession } from '@/platform/session'
@@ -43,6 +43,7 @@ export type {
 } from '@/apps/drive/client/session'
 export { CredentialOverflowError } from '@/apps/drive/client/links'
 export { documentCredentials } from '@/apps/drive/client/session'
+export { openMediaReader, type MediaReader } from '@/apps/drive/client/mediaReader'
 export { hasDefaultDocumentTitle, nodeContentUrl } from '@/apps/drive/client/nodes'
 
 /** Remembers the share link a `#link=` fragment carried, for the node it opened. */
@@ -482,6 +483,11 @@ export interface DriveDialogs {
   share(node: string, known?: DriveNode): Promise<boolean>
   /** Opens the file picker. Resolves with the picked file or document, or `undefined` when cancelled. */
   pickFile(options?: { title?: string; action?: string }): Promise<DriveNodeSummary | undefined>
+  /**
+   * Opens the files picker, titled `title`, its button naming what is done with the files.
+   * Resolves with the files picked, or `undefined` when cancelled. Only files can be picked.
+   */
+  pickFiles(options?: { title?: string; action?: string }): Promise<DriveNodeSummary[] | undefined>
 }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
@@ -522,6 +528,13 @@ export function useDriveDialogs(): DriveDialogs {
         () => import('@/apps/drive/files/features/FilePicker.vue'),
         options,
         'choose',
+      ),
+    pickFiles: (options = {}) =>
+      presentDialog<DriveNodeSummary[]>(
+        context,
+        () => import('@/apps/drive/files/features/FilesPicker.vue'),
+        options,
+        'picked',
       ),
   }
 }

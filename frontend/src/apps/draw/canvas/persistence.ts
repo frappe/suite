@@ -73,15 +73,13 @@ export class DrawingPersistence {
       )
       if (this.disposed.value) return
       this.modified = document.modified
-      const drafts = await readDrafts(this.prefix).catch(() => {
-        this.recoveryAvailable.value = false
-        return []
-      })
+      const stored: unknown = JSON.parse(document.content)
+      const drafts = await this.unsavedDrafts(stored)
       this.otherDrafts = drafts
       this.recovered = drafts[0]
       const recovered = this.recovered?.value
       if (this.disposed.value) return
-      const scene = parseScene(recovered?.content ?? JSON.parse(document.content))
+      const scene = parseScene(recovered?.content ?? stored)
       if (recovered) {
         this.pending = {
           ...recovered,
@@ -233,6 +231,24 @@ export class DrawingPersistence {
     }
   }
 
+  /**
+   * Drafts holding changes the server lacks. A draft equal to the stored scene
+   * was saved, but its tab never heard back, as when the page reloads while a
+   * save is in flight. Its base revision is stale, yet it conflicts with nothing,
+   * so it is removed instead of pausing the editor.
+   */
+  private async unsavedDrafts(stored: unknown): Promise<DraftEntry[]> {
+    const drafts = await readDrafts(this.prefix).catch(() => {
+      this.recoveryAvailable.value = false
+      return []
+    })
+    const saved = drafts.filter((draft) => sameJson(draft.value.content, stored))
+    await Promise.all(saved.map(removeDraft)).catch(() => {
+      this.recoveryAvailable.value = false
+    })
+    return drafts.filter((draft) => !saved.includes(draft))
+  }
+
   private removeAcknowledged(pending: DrawingDraft): void {
     const recovered = this.recovered
     this.recovered = undefined
@@ -245,6 +261,19 @@ export class DrawingPersistence {
         this.recoveryAvailable.value = false
       })
   }
+}
+
+/** Equal JSON values, ignoring key order. */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (!a || !b || typeof a !== 'object' || typeof b !== 'object') return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  const left = Object.entries(a)
+  const right = new Map(Object.entries(b))
+  return (
+    left.length === right.size &&
+    left.every(([key, value]) => right.has(key) && sameJson(value, right.get(key)))
+  )
 }
 
 export const DRAWING_PERSISTENCE: InjectionKey<DrawingPersistence> = Symbol('draw-persistence')

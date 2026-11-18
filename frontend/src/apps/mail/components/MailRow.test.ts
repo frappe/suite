@@ -64,3 +64,36 @@ describe('pills on their own line', () => {
     expect(pill.parentElement!.parentElement).toBe(preview.parentElement)
   })
 })
+
+// A mail with no text to preview says so in a lighter gray than a real preview. Both classes on the
+// one line, the stylesheet's order would decide, and the darker one wins there.
+describe('the preview line', () => {
+  const preview = (previewPlaceholder: boolean) => {
+    const el = document.createElement('div')
+    const app = createApp({
+      render: () =>
+        h(
+          MailRow,
+          { isSelected: false, datetime: '2026-11-06T10:00:00Z', previewPlaceholder },
+          { sender: () => 'Dana', subject: () => 'Brief', preview: () => 'No preview' },
+        ),
+    })
+    app.provide('$user', { data: { show_reading_pane: true } })
+    app.config.globalProperties.__ = (text: string) => text
+    app.mount(el)
+    mounted.push(app)
+    return el.querySelector('h5')!.classList
+  }
+
+  it('is muted, and only muted, when it stands in for a missing preview', () => {
+    const classes = preview(true)
+    expect(classes.contains('text-ink-gray-4')).toBe(true)
+    expect(classes.contains('text-ink-gray-5')).toBe(false)
+  })
+
+  it('keeps the usual gray for a real preview', () => {
+    const classes = preview(false)
+    expect(classes.contains('text-ink-gray-5')).toBe(true)
+    expect(classes.contains('text-ink-gray-4')).toBe(false)
+  })
+})

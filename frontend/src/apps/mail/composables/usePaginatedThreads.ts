@@ -1,8 +1,9 @@
 import { useIntersectionObserver } from '@vueuse/core'
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
 import type { Thread } from '@/apps/mail/types'
+import { beginListRead } from '@/apps/mail/utils/draftsInList'
 
 /** Rows per window; the server reports whether another window exists. */
 export const PAGE_LENGTH = 25
@@ -14,12 +15,15 @@ export const PAGE_LENGTH = 25
 const MAX_FILL_WINDOWS = 20
 
 /**
- * What stands in the list's place: a spinner, the refusal with a way to ask again, the empty
- * message, or the rows.
+ * What stands in the list's place: its rows in outline, the refusal with a way to ask again, the
+ * empty message, or the rows.
  */
 export type ThreadListState = 'loading' | 'error' | 'empty' | 'list'
 
-/** Keyboard navigation, viewport filling and the list's state over engine-owned pages. */
+/**
+ * Reading the list again, keyboard navigation, viewport filling and the list's state over
+ * engine-owned pages.
+ */
 interface Options {
   query: () => InfiniteQueryState<unknown>
   rows: () => Thread[]
@@ -29,11 +33,9 @@ interface Options {
   fillProgress?: () => number
   /**
    * Whether the list's frame (toolbar, Inbox tabs, filter chips, search header) stays up around an
-   * empty or reloading list, so the reader can leave it by them: a split Inbox, a filtered list.
+   * empty or refused list, so the reader can leave it by them: a split Inbox, a filtered list.
    */
   framed?: () => boolean
-  /** Whether it stays up through the list's first load too: the reader just switched tab or filter. */
-  switching?: () => boolean
   /** Work under way that will change the whole list (emptying the folder): the list waits for it. */
   busy?: () => boolean
   /** Whether there is a list to ask for at all; a search waits for its query, and is empty till then. */
@@ -47,7 +49,6 @@ export function usePaginatedThreads({
   threadKey = (row) => row.thread_id,
   fillProgress,
   framed = () => false,
-  switching = () => false,
   busy = () => false,
   asked = () => true,
 }: Options) {
@@ -80,6 +81,37 @@ export function usePaginatedThreads({
       pendingEdge = false
     }
   }
+  /**
+   * Read the list again from its first window. Every such read goes through here: its rows settle
+   * the drafts shown on them (see beginListRead).
+   */
+  function refetch() {
+    const settleDrafts = beginListRead()
+    return query()
+      .refetch()
+      .then(() => settleDrafts(rows()))
+      .catch(() => {
+        /* Query state holds the refusal. */
+      })
+  }
+  // A refresh asked while the list is being read waits for that read rather than being dropped: the
+  // change that asked for it may have reached the server after the read went out.
+  const refreshOwed = ref(false)
+  /** Read the list again, now or once the read under way is in. */
+  function refresh() {
+    if (isFetching.value) refreshOwed.value = true
+    else void refetch()
+  }
+  // Reads nothing of the query until a refresh is owed: the source runs at setup, and a caller may
+  // declare its query further down.
+  watch(
+    () => refreshOwed.value && !isFetching.value,
+    (due) => {
+      if (!due) return
+      refreshOwed.value = false
+      void refetch()
+    },
+  )
   let fillWindows = 0
   let lastProgress = 0
   const visible = ref(false)
@@ -114,7 +146,7 @@ export function usePaginatedThreads({
     })
   }
   // A refusal stands in for the list only while there is nothing to show: a failed refresh of a
-  // loaded list keeps its rows. Asking again shows the spinner, not the stale refusal.
+  // loaded list keeps its rows. Asking again shows the outline, not the stale refusal.
   const listState = computed<ThreadListState>(() => {
     const state = query()
     if (busy()) return 'loading'
@@ -123,17 +155,17 @@ export function usePaginatedThreads({
     if (state.status === 'pending' || state.isFetching) return 'loading'
     return state.status === 'error' ? 'error' : 'empty'
   })
-  // A first load fills the whole view unless the reader's own switch asked for it.
+  // The frame stands around rows, and around rows on their way: it is there before them, so nothing
+  // moves when they land. An empty or refused list fills the whole view unless it is `framed`.
   const listFramed = computed(
-    () =>
-      switching() ||
-      listState.value === 'list' ||
-      (framed() && !busy() && query().status !== 'pending'),
+    () => listState.value === 'list' || listState.value === 'loading' || framed(),
   )
   return {
     listState,
     listFramed,
     container,
+    refetch,
+    refresh,
     hasMore,
     loadingMore,
     isFetching,

@@ -1,13 +1,27 @@
+import type { Transaction } from '@tiptap/pm/state'
 import { watchDebounced } from '@vueuse/core'
 import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
-import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, effectScope, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
+import { useDriveDialogs } from '@/apps/drive'
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
-import { commitAfterUndo, processInlineImages, raiseError, raiseToast } from '@/apps/mail/utils'
+import type {
+  Attachment,
+  ComposeMailData,
+  DraftRecipient,
+  Identity,
+  UserResource,
+} from '@/apps/mail/types'
+import {
+  commitAfterUndo,
+  formatBytes,
+  processInlineImages,
+  raiseError,
+  raiseToast,
+} from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
 import {
   useComposeMail as useComposeRequest,
@@ -15,7 +29,9 @@ import {
   useListReload,
   useUndo,
 } from '@/apps/mail/utils/composables'
+import { forgetDraftInList, showDraftInList } from '@/apps/mail/utils/draftsInList'
 import { createEditorBody } from '@/apps/mail/utils/editorBody'
+import { embeddedImagesIn, uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
 import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
 import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
 import {
@@ -28,6 +44,7 @@ import {
   type uploadFunction,
 } from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { translate as __ } from '@/platform/translation'
 
 /** The mounted editor, as far as this composable cares about it. */
@@ -38,6 +55,7 @@ interface EditorHost {
       insertContent: (content: string) => void
       focus: () => void
       setTextSelection: (range: { from: number; to: number }) => void
+      command: (fn: (props: { tr: Transaction }) => boolean) => boolean
     }
     state: {
       doc: {
@@ -70,8 +88,23 @@ interface ComposeMailOptions {
   host: () => EditorHost | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
-  /** How the host uploads an image dropped or pasted into the body, with its own size checks. */
+  /**
+   * How the host uploads an image dropped or pasted into the body, with its own size checks. An
+   * image already in the body is checked for size before it gets here (see `outgoingBody`).
+   */
   uploadInlineImage: typeof uploadFunction
+}
+
+/** A send refused because an image in the body is still a data URL; the message names it. */
+class UnsentImageError extends Error {}
+/** An image in the body over the Mail attachment limit, so not uploaded. */
+class OversizedImageError extends Error {
+  constructor(
+    readonly size: number,
+    readonly limit: number,
+  ) {
+    super()
+  }
 }
 
 /**
@@ -116,15 +149,17 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const { accountId: scopeAccountId, identities, mailboxIds } = scope
   const getIdentity = (email: string) =>
     identities.value.data?.find((identity: Identity) => identity.email === email)
-  const viewSentMessage = (threadID: string) =>
-    router.push({
-      name: 'mail-mail',
-      params: {
-        accountId: scopeAccountId.value,
-        mailbox: mailboxIds.value.sent,
-        threadID,
-      },
-    })
+  // The toasts' links go by path rather than route name: the composer also opens over other apps,
+  // and there Mail's routes are not registered until the first visit to /mail. The folder goes by
+  // its slug, as the URL names it: an id would be answered with a redirect that replaces the page
+  // the reader came from, and Back would skip it.
+  const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
+  const viewSentMessage = (threadID: string) => {
+    const sent = mailboxParam(mailboxIds.value.sent, scope.mailboxes.value.data)
+    return router.push(
+      `${accountPath()}/mailbox/${encodeURIComponent(sent)}/${encodeURIComponent(threadID)}`,
+    )
+  }
   const getDefaultFromEmail = () => {
     const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
     const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
@@ -156,7 +191,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     composed: true,
   })
   const originalMail = ref<ComposeMailData>()
-  const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
+  // `saved` is the mail as a save sent it. What was typed while the save was out is not in it, and
+  // stays to be saved. The id is the one the save came back with.
+  const updateOriginalMail = (saved = JSON.stringify(mail)) =>
+    (originalMail.value = { ...JSON.parse(saved), id: mail.id })
   const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
 
   // ── What's in the mail ──────────────────────────────────────────────────────────────────────
@@ -305,6 +343,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
   let listOwesReload = false
+  // The conversation an inline reply's draft shows in, on its list row, while the list owes it.
+  let shownInList: { account: string; threadId: string } | undefined
+  const forgetShownDraft = () => {
+    if (shownInList) forgetDraftInList(shownInList.account, shownInList.threadId)
+    shownInList = undefined
+  }
 
   /**
    * Bring the list up to date with the draft, once the editor is done with it.
@@ -321,8 +365,19 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // reloaded since still shows it by an earlier one, so a discard has to hold all of them.
   const formerIds = new Set<string>()
   let pendingSave: Promise<void> | undefined
+  // From Send until the send is answered. The send uploads before it reaches the server (see
+  // outgoingBody), and a save starting in between would create a second draft beside it, or race it
+  // to the same one.
+  let isSending = false
   const saveDraft = async () => {
-    if (pendingSave || discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value)
+    if (
+      pendingSave ||
+      isSending ||
+      discarded ||
+      !isDraftUpdated.value ||
+      isLoading.value ||
+      isDiscarding.value
+    )
       return
     isSavingDraft.value = true
     pendingSave = mail.id
@@ -345,6 +400,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       isSavingDraft.value = false
       pendingSave = undefined
     }
+    // Closed while this save was out. The save on the way out found it under way and stood down,
+    // so whatever was typed meanwhile goes now.
+    if (!isSaveFailed.value && !isOpen()) await saveDraft()
   }
   watchDebounced(
     mail,
@@ -381,7 +439,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
-    if (options.isUploading?.()) {
+    if (isUploading.value) {
       const message = __('Wait for attachments to finish uploading')
       if (sendAt) throw new Error(message)
       return raiseToast(message, 'error')
@@ -393,6 +451,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
     isSavingDraft.value = false
+    isSending = true
     try {
       await pendingSave
       sentAs = scopeAccountId.value
@@ -411,6 +470,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
+      if (error instanceof UnsentImageError) raiseToast(error.message, 'error')
+    } finally {
+      isSending = false
     }
   }
   // The composer is gone and its last save was refused: the draft lives only in this copy, which a
@@ -444,6 +506,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // and Undo returns it here.
     const thread = isInThread && draft.id ? router.currentRoute.value.fullPath : undefined
     discarded = true
+    forgetShownDraft()
     options.onDiscardUnsaved?.()
     options.onDiscardStarted?.()
     close()
@@ -571,15 +634,18 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         : undefined,
     )
   }
-  const onMailUpdateSuccess = ({
-    id,
-    status,
-    error,
-    thread_id,
-    submission_id,
-    send_at,
-    undo_send_period,
-  }: OutputOf<typeof api.mail.messages.create>) => {
+  const onMailUpdateSuccess = (
+    {
+      id,
+      status,
+      error,
+      thread_id,
+      submission_id,
+      send_at,
+      undo_send_period,
+    }: OutputOf<typeof api.mail.messages.create>,
+    sent: string,
+  ) => {
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     if (error) {
@@ -587,7 +653,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       raiseError(failure)
       throw failure
     }
-    updateOriginalMail()
+    updateOriginalMail(sent)
+    if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
@@ -598,7 +665,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // It cannot be a reload on each autosave, which is why this is a debt and not a call: that
     // rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
     // when the editor goes — see `payListDebt`.
-    else if (status === 'Drafted') listOwesReload = true
+    // The row shows the draft meanwhile, from the text just saved: the reply's Draft badge and its
+    // words, while the pane is left as it is.
+    else if (status === 'Drafted') {
+      listOwesReload = true
+      if (thread_id && id) {
+        shownInList = { account: scopeAccountId.value, threadId: thread_id }
+        showDraftInList(scopeAccountId.value, thread_id, id, mail.html_body)
+      }
+    }
     if (isOpen() && status !== 'Submitted') return
     if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved'))
     else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
@@ -611,13 +686,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
       raiseToast(__('Send scheduled'), 'success', {
         label: __('View'),
-        onClick: () =>
-          router.push({
-            name: 'mail-outbox',
-            params: {
-              accountId: scopeAccountId.value,
-            },
-          }),
+        onClick: () => router.push(`${accountPath()}/outbox`),
       })
     else if (status === 'Submitted')
       raiseToast(
@@ -635,7 +704,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // ── Resources ───────────────────────────────────────────────────────────────────────────────
 
-  const createMail = useMutation(api.mail.messages.create)
+  // Kept clear of the composer's own scope. A mutation made in a component cancels whatever it
+  // still has in flight when that component goes, and closing the composer is what makes it go:
+  // an autosave from two seconds earlier was cut off on its way to the server, and the cancel came
+  // back as a refusal ("Draft not saved") for a draft that was fine.
+  const writes = effectScope(true)
+  const createMail = writes.run(() => useMutation(api.mail.messages.create))!
   async function createMailSubmit({
     save_as_draft,
     send_at,
@@ -645,6 +719,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
+    const body = await outgoingBody({ sending: !save_as_draft })
     const input: InputOf<typeof api.mail.messages.create> = {
       account: scopeAccountId.value,
       from_email: mail.from_email,
@@ -655,19 +730,70 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       in_reply_to: mail.in_reply_to,
       in_reply_to_id: mail.in_reply_to_id,
       forwarded_from_id: mail.forwarded_from_id,
-      ...processInlineImages(mail, {
-        sending: !save_as_draft,
-      }),
+      ...body,
       from_name: getIdentity(mail.from_email)?._name ?? '',
       save_as_draft,
       send_at,
       undo_send,
       remind_at: save_as_draft ? undefined : remindAt.value,
     }
+    const sent = JSON.stringify(mail)
     const result = await createMail.run(input)
-    await onMailUpdateSuccess(result)
+    await onMailUpdateSuccess(result, sent)
   }
-  const updateDraft = useMutation(api.mail.messages.updateDraft)
+  const updateDraft = writes.run(() => useMutation(api.mail.messages.updateDraft))!
+  // The body and its inline attachments as a save or a send carries them. An image left in the body
+  // or the quote as a data URL goes as a file, not as base64 in the HTML (see uploadEmbeddedImages).
+  // Not while the editor's own uploads are running: one of those is about to replace its image, and
+  // uploading it here as well would send it twice. The host's upload counts towards that too, so a
+  // save starting meanwhile leaves these alone. The files are pointed at in the body as it is once
+  // they are up, which holds whatever was typed while they went: in the editor's own document when
+  // one is mounted, so its caret and anything it is still uploading stay put.
+  //
+  // A send goes with no data URL at all: Gmail and Outlook block them, and base64 can take a mail
+  // past the size limit. One whose upload failed refuses the send, naming the image. A save keeps it
+  // for the next try, quietly: an image over the limit is refused here, not by the host's upload, so
+  // the host's toast for it doesn't come back with every autosave.
+  async function outgoingBody({ sending }: { sending: boolean }) {
+    let failures = new Map<string, unknown>()
+    if (!options.isUploading?.()) {
+      const uploads = await uploadEmbeddedImages(
+        mail.html_body + mail.quoted_content,
+        uploadEmbeddedImage,
+      )
+      failures = uploads.failures
+      if (uploads.uploaded) {
+        const editor = host()?.editor
+        if (editor) {
+          editor.commands.command(({ tr }) => uploads.inDocument(tr.setMeta('addToHistory', false)))
+          onEditorChange(editor.getHTML())
+        } else mail.html_body = uploads.inHtml(mail.html_body)
+        mail.quoted_content = uploads.inHtml(mail.quoted_content)
+      }
+    }
+    const [unsent] = sending ? embeddedImagesIn(mail.html_body + (mail.quoted_content ?? '')) : []
+    if (unsent) {
+      const image = unsent.name
+        ? `“${unsent.name}”`
+        : __('Image {0} in the mail', [unsent.position])
+      const failure = failures.get(unsent.url)
+      throw new UnsentImageError(
+        failure instanceof OversizedImageError
+          ? __('{0} is {1}. Mail can attach files up to {2}. Remove it or use a smaller one.', [
+              image,
+              formatBytes(failure.size),
+              formatBytes(failure.limit),
+            ])
+          : __('{0} did not upload, so the mail was not sent. Try again, or remove it.', [image]),
+      )
+    }
+    return processInlineImages(mail, { sending })
+  }
+  const uploadEmbeddedImage = async (file: File) => {
+    const limit = user.data?.max_attachment_size
+    if (limit && file.size > limit) throw new OversizedImageError(file.size, limit)
+    return options.uploadInlineImage(file)
+  }
   async function updateDraftSubmit({
     submit,
     send_at,
@@ -677,6 +803,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     send_at?: string
     undo_send?: boolean
   }) {
+    const body = await outgoingBody({ sending: submit })
     const input: InputOf<typeof api.mail.messages.updateDraft> = {
       account: scopeAccountId.value,
       id: mail.id,
@@ -685,17 +812,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       cc: mail.cc,
       bcc: mail.bcc,
       subject: mail.subject,
-      ...processInlineImages(mail, {
-        sending: submit,
-      }),
+      ...body,
       from_name: getIdentity(mail.from_email)?._name ?? '',
       submit,
       send_at,
       undo_send,
       remind_at: submit ? remindAt.value : undefined,
     }
+    const sent = JSON.stringify(mail)
     const result = await updateDraft.run(input)
-    await onMailUpdateSuccess(result)
+    await onMailUpdateSuccess(result, sent)
   }
   const isLoading = computed(() => createMail.isPending || updateDraft.isPending)
 
@@ -716,6 +842,55 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       tab.close()
     }
   }
+
+  /**
+   * Puts a file just stored on the site on the mail: an upload from the device, or a copy from
+   * Drive. It has no blob until the draft is saved, so until then it opens from its URL.
+   */
+  const attachFile = (
+    doc: { file_name?: string; file_url?: string; file_size?: number },
+    type?: string,
+  ) => {
+    const file: Attachment & { file_name: string; file_size: number } = {
+      filename: doc.file_name ?? '',
+      file_name: doc.file_name ?? '',
+      blob_id: '',
+      // Kept for the pill's icon; the server reads the type from the file itself.
+      type: type ?? '',
+      size: doc.file_size ?? 0,
+      file_size: doc.file_size ?? 0,
+      file_url: doc.file_url ?? null,
+      disposition: 'attachment',
+    }
+    mail.attachments.push(file)
+  }
+
+  // Drive's own picker, then copies made on the server (attach_drive_files): what the mail carries
+  // is the file as it was picked, under the name Drive gives it. A refusal — a file too large, too
+  // much at once, or one the user can no longer read — comes back in the server's words, as an
+  // upload's does, and attaches none of the picked files.
+  const driveDialogs = useDriveDialogs()
+  const attachingFromDrive = ref(0)
+  const attachFromDrive = async () => {
+    const files = await driveDialogs.pickFiles({
+      title: __('Attach from Drive'),
+      action: __('Attach'),
+    })
+    if (!files?.length) return
+    attachingFromDrive.value++
+    try {
+      const attached = await client.mutation(api.mail.attachments.fromDrive, {
+        nodes: files.map(({ name }) => name),
+      })
+      for (const file of attached) attachFile(file)
+    } catch {
+      // The refusal has been shown already, as every refused write is.
+    } finally {
+      attachingFromDrive.value--
+    }
+  }
+  // Whether a file is still on its way to the mail, from the device or from Drive. Sending waits.
+  const isUploading = computed(() => !!options.isUploading?.() || attachingFromDrive.value > 0)
 
   // ── Mentions ────────────────────────────────────────────────────────────────────────────────
 
@@ -823,6 +998,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     setRemindAt,
     openQuotedContent,
     openAttachment,
+    attachFile,
+    attachFromDrive,
+    isUploading,
     editorExtensions,
     appendEmoji,
     editorContent,

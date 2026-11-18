@@ -144,7 +144,15 @@ const kpis = computed(() => {
             class="flex items-center justify-between gap-3 border-b border-outline-gray-2 px-4 py-3 sm:px-5 last:border-b-0 sm:block sm:space-y-1.5 sm:py-4 hover:bg-surface-gray-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-outline-gray-3 sm:border-b-0 sm:border-r sm:last:border-r-0"
           >
             <p class="text-sm text-ink-gray-5">{{ kpi.label }}</p>
-            <p class="text-3xl font-semibold tabular-nums text-ink-gray-9">
+            <DashboardSkeletonText
+              v-if="
+                (kpi.route === '/admin/users' && users.status === 'pending') ||
+                (kpi.route === '/admin/mail/domains' && !domainsComplete && !domains.error)
+              "
+              class="text-3xl"
+              width="3rem"
+            />
+            <p v-else class="text-3xl font-semibold tabular-nums text-ink-gray-9">
               {{ kpi.value }}
             </p>
           </RouterLink>

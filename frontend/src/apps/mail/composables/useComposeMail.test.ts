@@ -1,21 +1,25 @@
+import type { Editor as TiptapEditor } from '@tiptap/core'
 import { Editor, EditorContent } from 'frappe-ui/editor'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, onMounted, useTemplateRef } from 'vue'
 
 import type { ComposeMailData } from '@/apps/mail/types'
-import { mailEditorKit } from '@/apps/mail/utils/text-editor'
+import { raiseToast } from '@/apps/mail/utils'
+import { CustomImageExtension, mailEditorKit } from '@/apps/mail/utils/text-editor'
 
 import { useComposeMail } from './useComposeMail'
 
-const server = vi.hoisted(() => ({ updateDraft: vi.fn(), create: vi.fn() }))
+const server = vi.hoisted(() => ({ updateDraft: vi.fn(), create: vi.fn(), mutation: vi.fn() }))
+const pickFiles = vi.hoisted(() => vi.fn())
 const requestCompose = vi.hoisted(() => vi.fn())
 const toastError = vi.hoisted(() => vi.fn())
+const routerPush = vi.hoisted(() => vi.fn())
 
 vi.stubGlobal('__', (text: string) => text)
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn(), currentRoute: { value: { fullPath: '/' } } }),
+  useRouter: () => ({ push: routerPush, currentRoute: { value: { fullPath: '/' } } }),
   useRoute: () => ({ params: {} }),
 }))
 vi.mock('frappe-ui', () => ({ toast: { error: toastError, success: vi.fn(), dismiss: vi.fn() } }))
@@ -25,28 +29,47 @@ vi.mock('frappe-ui/editor', async (importOriginal) => ({
 }))
 vi.mock('@/apps/mail/utils/mentionSuggestion', () => ({ createMentionSuggestion: () => ({}) }))
 vi.mock('@/apps/mail/resources', () => ({ getAttachmentUrl: vi.fn() }))
-vi.mock('@/api', () => ({
-  api: {
-    mail: {
-      messages: { create: 'create', updateDraft: 'updateDraft', deleteDraft: 'deleteDraft' },
-      scheduled: { cancel: 'cancel' },
+// The suite router, which Mail's store imports.
+vi.mock('@/apps/mail/router', () => ({ default: {} }))
+vi.mock('@/api', async () => {
+  const { getCurrentScope, onScopeDispose } = await import('vue')
+  return {
+    api: {
+      mail: {
+        messages: { create: 'create', updateDraft: 'updateDraft', deleteDraft: 'deleteDraft' },
+        scheduled: { cancel: 'cancel' },
+        attachments: { fromDrive: 'fromDrive' },
+      },
     },
-  },
-  client: { mutation: vi.fn() },
-  useMutation: (reference: 'create' | 'updateDraft') => ({
-    run: (input: unknown) => server[reference](input),
-    isPending: false,
-  }),
-}))
+    client: { mutation: (reference: string, input: unknown) => server.mutation(reference, input) },
+    // As the real one does: the scope it was made in going away cancels what it has in flight.
+    useMutation: (reference: 'create' | 'updateDraft') => {
+      const cancels = new Set<() => void>()
+      if (getCurrentScope()) onScopeDispose(() => cancels.forEach((cancel) => cancel()))
+      return {
+        run: (input: unknown) =>
+          new Promise((resolve, reject) => {
+            cancels.add(() => reject(new DOMException('Aborted', 'AbortError')))
+            server[reference](input).then(resolve, reject)
+          }),
+        isPending: false,
+      }
+    },
+  }
+})
 vi.mock('@/apps/mail/utils', () => ({
   commitAfterUndo: vi.fn(),
+  // The body goes out with the quote below it, as the real one sends it.
   processInlineImages: (mail: ComposeMailData) => ({
-    html_body: mail.html_body,
+    html_body: mail.html_body! + (mail.quoted_content ?? ''),
     attachments: mail.attachments,
   }),
+  formatBytes: (bytes: number) => `${bytes} bytes`,
   raiseError: vi.fn(),
   raiseToast: vi.fn(),
+  randomString: () => 'cid1',
 }))
+vi.mock('@/apps/drive', () => ({ useDriveDialogs: () => ({ pickFiles }) }))
 interface TestIdentity {
   email: string
   _name: string
@@ -68,7 +91,8 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
         accountId: ref('account'),
         account: ref({ default_outgoing_email: 'maya@example.com' }),
         identities,
-        mailboxIds: ref({}),
+        mailboxes: ref({ data: [{ id: 'mbx-sent', slug: 'sent', role: 'sent' }] }),
+        mailboxIds: ref({ sent: 'mbx-sent' }),
       }
     },
   }
@@ -92,10 +116,18 @@ type ComposerHost = Parameters<typeof useComposeMail>[0]['host'] extends () => i
 
 let open = true
 const apps: ReturnType<typeof createApp>[] = []
+type Upload = Parameters<typeof useComposeMail>[0]['uploadInlineImage']
 function compose({
   signedInAs = 'maya@example.com',
   host = () => null,
-}: { signedInAs?: string; host?: () => ComposerHost } = {}) {
+  upload = vi.fn(),
+  maxAttachmentSize,
+}: {
+  signedInAs?: string
+  host?: () => ComposerHost
+  upload?: Upload
+  maxAttachmentSize?: number
+} = {}) {
   let composer!: ReturnType<typeof useComposeMail>
   const app = createApp(
     defineComponent({
@@ -106,25 +138,30 @@ function compose({
           close: () => (open = false),
           isOpen: () => open,
           host,
-          uploadInlineImage: vi.fn(),
+          uploadInlineImage: upload,
         })
         composer.onOpened()
         return () => null
       },
     }),
   )
-  app.provide('$user', { data: { name: signedInAs } })
+  app.provide('$user', { data: { name: signedInAs, max_attachment_size: maxAttachmentSize } })
   app.mount(document.createElement('div'))
   apps.push(app)
   return composer
 }
 
 beforeEach(() => {
+  routerPush.mockReset()
   open = true
   scope.identities = mayaIdentities
+  draft.attachments = []
   server.updateDraft.mockReset()
+  server.mutation.mockReset()
+  pickFiles.mockReset()
   requestCompose.mockReset()
   toastError.mockReset()
+  vi.mocked(raiseToast).mockReset()
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
@@ -262,6 +299,61 @@ describe('saving a draft', () => {
     expect(composer.isDraftUpdated.value).toBe(true)
   })
 
+  it('lets an autosave already on its way land when the composer closes', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    composer.mail.html_body = '<p>Last words.</p>'
+    const saving = composer.saveDraft()
+
+    open = false
+    apps.splice(0).forEach((app) => app.unmount())
+    answer({ id: 'draft-2', status: 'Drafted', error: null })
+    await saving
+
+    expect(toastError).not.toHaveBeenCalled()
+    expect(composer.isSaveFailed.value).toBe(false)
+  })
+
+  it('keeps what was typed while a save was out still to be saved', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    composer.mail.html_body = '<p>First.</p>'
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalled())
+
+    composer.mail.html_body = '<p>First. Second.</p>'
+    answer({ id: 'draft-2', status: 'Drafted', error: null })
+    await saving
+
+    expect(composer.isDraftUpdated.value).toBe(true)
+  })
+
+  it('saves what was typed while a save was out, once the composer has closed', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+      .mockResolvedValueOnce({ id: 'draft-3', status: 'Drafted', error: null })
+    composer.mail.html_body = '<p>First.</p>'
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalled())
+
+    composer.mail.html_body = '<p>First. Second.</p>'
+    open = false
+    apps.splice(0).forEach((app) => app.unmount())
+    await composer.saveDraft() // The host's save on the way out, while the first is still out.
+    answer({ id: 'draft-2', status: 'Drafted', error: null })
+    await saving
+
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(server.updateDraft.mock.calls[1][0]).toMatchObject({
+      id: 'draft-2',
+      html_body: '<p>First. Second.</p>',
+    })
+  })
+
   it('keeps a draft whose save on close was refused, ready to reopen', async () => {
     const composer = compose()
     server.updateDraft.mockRejectedValueOnce(new Error('Attachment is not a site file'))
@@ -282,6 +374,216 @@ describe('saving a draft', () => {
         restored: true,
       }),
     )
+  })
+})
+
+describe('an image held in the body as a data URL', () => {
+  // A 1×1 transparent PNG.
+  const png =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
+  const imagesOf = (html: string) =>
+    [...new DOMParser().parseFromString(html, 'text/html').querySelectorAll('img')].map((image) =>
+      image.getAttribute('src'),
+    )
+  const savedBody = (call: number) => server.updateDraft.mock.calls[call][0].html_body
+  // An upload that waits until the test lets it through.
+  const heldUpload = () => {
+    let finish!: () => void
+    const upload = vi.fn<Upload>(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve(fromPartial({ file_url: '/private/files/pasted.png' }))
+        }),
+    )
+    return { upload, finish: () => finish() }
+  }
+
+  it('keeps what was typed while it uploaded', async () => {
+    const { upload, finish } = heldUpload()
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    composer.onEditorChange(`<div>See this, and the rest:</div><img src="${png}">`)
+    finish()
+    await saving
+
+    for (const body of [composer.mail.html_body, savedBody(0)]) {
+      expect(body).toContain('See this, and the rest:')
+      expect(imagesOf(body)).toEqual(['/private/files/pasted.png'])
+    }
+  })
+
+  it('leaves the caret, and an image the editor is still uploading, where they were', async () => {
+    const { upload, finish } = heldUpload()
+    let editor!: TiptapEditor
+    let composer!: ReturnType<typeof useComposeMail>
+    const app = createApp(
+      defineComponent({
+        setup() {
+          const host = useTemplateRef<NonNullable<ComposerHost>>('editor')
+          composer = useComposeMail({
+            mailDetails: { ...draft, html_body: `<div>See this</div><img src="${png}">` },
+            reloadMails: vi.fn(),
+            close: vi.fn(),
+            isOpen: () => true,
+            host: () => host.value,
+            uploadInlineImage: upload,
+          })
+          onMounted(() => composer.onOpened())
+          return () =>
+            h(
+              Editor,
+              {
+                ref: 'editor',
+                modelValue: composer.editorContent.value,
+                extensions: mailEditorKit({ image: CustomImageExtension }),
+                onChange: composer.onEditorChange,
+              },
+              {
+                default: (slot: { editor: TiptapEditor }) => {
+                  editor = slot.editor
+                  return h(EditorContent, { editor: slot.editor })
+                },
+              },
+            )
+        },
+      }),
+    )
+    app.provide('$user', { data: { name: 'maya@example.com' } })
+    app.mount(document.body.appendChild(document.createElement('div')))
+    apps.push(app)
+    await nextTick()
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+
+    // The caret at the end of the first line, and an edit there to save.
+    editor.commands.setTextSelection({ from: 9, to: 9 })
+    editor.commands.insertContent(':')
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    // Meanwhile another image is pasted, below the caret, and starts its own upload.
+    editor
+      .chain()
+      .insertContentAt(
+        editor.state.doc.content.size,
+        { type: 'image', attrs: { src: null, uploadId: 'pasting' } },
+        { updateSelection: false },
+      )
+      .run()
+    finish()
+    await saving
+    editor.commands.insertContent(' and the rest')
+
+    const images: Record<string, unknown>[] = []
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'image') images.push(node.attrs)
+    })
+    expect(images).toMatchObject([
+      { src: '/private/files/pasted.png' },
+      { src: null, uploadId: 'pasting' },
+    ])
+    expect(editor.getHTML()).toMatch(/^<div>See this: and the rest<\/div>/)
+    expect(imagesOf(savedBody(0))[0]).toBe('/private/files/pasted.png')
+  })
+
+  it('goes as a file from a forwarded mail’s quote too', async () => {
+    const { upload, finish } = heldUpload()
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'sent-1', status: 'Submitted', error: null })
+    composer.mail.quoted_content = `<blockquote><img src="${png}"></blockquote>`
+
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    finish()
+    await sending
+
+    expect(imagesOf(savedBody(0))).toEqual(['/private/files/pasted.png'])
+  })
+
+  it('holds back a save that comes while a send uploads it', async () => {
+    const { upload, finish } = heldUpload()
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'sent-1', status: 'Submitted', error: null })
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(upload).toHaveBeenCalledOnce())
+    await composer.saveDraft()
+    finish()
+    await sending
+
+    expect(server.updateDraft).toHaveBeenCalledOnce()
+    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({ submit: true })
+  })
+
+  it('still saves when its upload is refused, and uploads it on the next save', async () => {
+    const upload = vi
+      .fn<Upload>()
+      .mockRejectedValueOnce(new Error('image.png is too large to attach.'))
+      .mockResolvedValueOnce(fromPartial({ file_url: '/private/files/pasted.png' }))
+    const composer = compose({ upload })
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+    await composer.saveDraft()
+    expect(composer.isSaveFailed.value).toBe(false)
+    expect(imagesOf(savedBody(0))).toEqual([png])
+
+    composer.onEditorChange(`<div>See this, again:</div><img src="${png}">`)
+    await composer.saveDraft()
+    expect(upload).toHaveBeenCalledTimes(2)
+    expect(imagesOf(savedBody(1))).toEqual(['/private/files/pasted.png'])
+  })
+
+  // Gmail and Outlook block data URLs, and base64 can take a mail past the size limit.
+  it('refuses a send whose upload failed, naming the image, and keeps the composer open', async () => {
+    const upload = vi.fn<Upload>().mockRejectedValue(new Error('Server error'))
+    const composer = compose({ upload })
+    composer.onEditorChange(
+      `<div>See this:</div><img src="${png.replace(';base64', ';name=chart.png;base64')}">`,
+    )
+
+    await composer.sendMail()
+
+    expect(server.updateDraft).not.toHaveBeenCalled()
+    expect(open).toBe(true)
+    expect(raiseToast).toHaveBeenCalledWith(expect.stringContaining('chart.png'), 'error')
+  })
+
+  it('refuses a scheduled send the same way, naming an unnamed image by its place', async () => {
+    const upload = vi.fn<Upload>().mockRejectedValue(new Error('Server error'))
+    const composer = compose({ upload })
+    composer.onEditorChange(
+      `<img src="/private/files/logo.png" data-cid="x"><img src="${png}" alt="">`,
+    )
+
+    await expect(composer.sendMail('2026-11-17 09:00:00')).rejects.toThrow(/Image 2\b/)
+    expect(server.updateDraft).not.toHaveBeenCalled()
+    expect(open).toBe(true)
+  })
+
+  it('is refused for its size only on Send, never on an autosave', async () => {
+    const upload = vi.fn<Upload>()
+    // The image is 68 bytes.
+    const composer = compose({ upload, maxAttachmentSize: 50 })
+    server.updateDraft.mockResolvedValue({ id: 'draft-1', status: 'Drafted', error: null })
+    composer.onEditorChange(`<div>See this:</div><img src="${png}">`)
+
+    await composer.saveDraft()
+    composer.onEditorChange(`<div>See this, again:</div><img src="${png}">`)
+    await composer.saveDraft()
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    // The host's upload is where an editor upload over the limit is refused with a toast.
+    expect(upload).not.toHaveBeenCalled()
+    expect(raiseToast).not.toHaveBeenCalled()
+
+    await composer.sendMail()
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(open).toBe(true)
+    expect(raiseToast).toHaveBeenCalledOnce()
+    expect(raiseToast).toHaveBeenCalledWith(expect.stringMatching(/68 bytes.*50 bytes/), 'error')
   })
 })
 
@@ -311,5 +613,102 @@ describe('a reminder if nobody replies', () => {
     server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
     await composer.sendMail()
     expect(server.updateDraft.mock.calls.at(-1)![0].remind_at).toBeUndefined()
+  })
+
+  it('links its toast to the thread in Sent, naming the folder as the URL does', async () => {
+    const composer = compose()
+    server.updateDraft.mockResolvedValueOnce({
+      id: 'sent-1',
+      status: 'Submitted',
+      error: null,
+      thread_id: 'thread-1',
+    })
+    await composer.sendMail()
+
+    const sent = vi.mocked(raiseToast).mock.calls.find(([message]) => message === 'Message sent')
+    sent?.[2]?.onClick()
+
+    // By path, which opens from another app before Mail's routes load; by slug, which the guard
+    // leaves alone, so the page the reader sent from stays in the history behind it.
+    expect(routerPush).toHaveBeenCalledWith('/mail/account/account/mailbox/sent/thread-1')
+  })
+})
+
+describe('attaching from Drive', () => {
+  const invoice = { name: 'node-invoice', title: 'Invoice.pdf' }
+  const copy = {
+    name: 'file-1',
+    file_name: 'Invoice.pdf',
+    file_url: '/private/files/Invoice.pdf',
+    file_size: 2048,
+  }
+  const sent = () => server.updateDraft.mock.calls.filter(([input]) => input.submit)
+
+  it('holds the send, and a scheduled send, until the copy is on the mail', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce([invoice])
+    let finishCopy!: (files: (typeof copy)[]) => void
+    server.mutation.mockReturnValueOnce(new Promise((resolve) => (finishCopy = resolve)))
+
+    const attaching = composer.attachFromDrive()
+    await vi.waitFor(() => expect(server.mutation).toHaveBeenCalled())
+    expect(composer.isUploading.value).toBe(true)
+
+    await composer.sendMail()
+    await expect(composer.scheduleSend('2026-11-20T09:00:00Z')).rejects.toThrow(
+      'Wait for attachments to finish uploading',
+    )
+    expect(sent()).toHaveLength(0)
+    expect(raiseToast).toHaveBeenCalledWith('Wait for attachments to finish uploading', 'error')
+
+    finishCopy([copy])
+    await attaching
+    expect(composer.isUploading.value).toBe(false)
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('sends the copy as a file on the site, not as a blob already on the mail server', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce([invoice])
+    server.mutation.mockResolvedValueOnce([copy])
+
+    await composer.attachFromDrive()
+    expect(server.mutation).toHaveBeenCalledWith('fromDrive', { nodes: ['node-invoice'] })
+
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    const [attachment] = sent()[0][0].attachments
+    expect(attachment).toMatchObject({
+      file_name: 'Invoice.pdf',
+      file_url: '/private/files/Invoice.pdf',
+      disposition: 'attachment',
+    })
+    expect(attachment.blob_id).toBeFalsy()
+  })
+
+  it('attaches nothing when the copy is refused, and lets the mail go without it', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce([invoice])
+    server.mutation.mockRejectedValueOnce(new Error('You cannot read Invoice.pdf'))
+
+    await composer.attachFromDrive()
+
+    expect(composer.mail.attachments).toEqual([])
+    expect(composer.isUploading.value).toBe(false)
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('asks the server for nothing when the picker is cancelled', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce(undefined)
+
+    await composer.attachFromDrive()
+
+    expect(server.mutation).not.toHaveBeenCalled()
+    expect(composer.mail.attachments).toEqual([])
   })
 })

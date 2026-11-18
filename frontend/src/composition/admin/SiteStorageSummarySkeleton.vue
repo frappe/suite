@@ -10,13 +10,13 @@ const { action = false } = defineProps<{ action?: boolean }>()
 <template>
   <section class="space-y-4 rounded-5 border border-outline-gray-2 p-4 sm:p-5" aria-hidden="true">
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <DashboardSkeletonText class="text-xl" width="14rem" />
+      <DashboardSkeletonText class="flex-none max-w-full text-xl" width="14rem" />
       <Skeleton v-if="action" class="h-7 w-28 rounded-4" />
     </div>
     <div class="space-y-3">
       <div class="h-2.5 rounded-full bg-surface-gray-2" />
-      <div class="grid grid-cols-2 gap-x-6 gap-y-4 pt-2 sm:flex sm:flex-wrap sm:gap-x-10">
-        <DashboardSkeletonText v-for="n in 3" :key="n" class="flex-none text-sm" width="7rem" />
+      <div class="flex flex-wrap gap-x-5 gap-y-2">
+        <DashboardSkeletonText v-for="n in 3" :key="n" class="flex-none text-p-sm" width="7rem" />
       </div>
     </div>
   </section>

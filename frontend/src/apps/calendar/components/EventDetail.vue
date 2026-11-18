@@ -41,6 +41,7 @@ import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { scopeOptions, type RecurringScope } from '@/apps/calendar/utils/recurringScope'
+import type { MailRecipient } from '@/apps/mail'
 import LinkifiedText from '@/components/LinkifiedText.vue'
 import { meetLogo } from '@/platform/brand'
 import { useSession } from '@/platform/session'
@@ -336,12 +337,13 @@ const visibleParticipants = computed(() =>
     : orderedParticipants.value.slice(0, VISIBLE_PARTICIPANT_COUNT),
 )
 
-// Everyone except the viewer; the host decides what "email them" means (mail
-// opens its compose window, the calendar app falls back to mailto).
-const participantEmails = computed(() =>
+// Everyone except the viewer, by name where the event has one, so the composer's chips say who
+// they are; the host decides what "email them" means (in mail and in the calendar alike, Mail's
+// composer opens on the page).
+const participantsToEmail = computed<MailRecipient[]>(() =>
   calendarEvent.participants
-    .map((p) => p.email)
-    .filter((email) => email && participantIdentities.data?.every((id) => id.email !== email)),
+    .filter((p) => p.email && participantIdentities.data?.every((id) => id.email !== p.email))
+    .map((p) => ({ email: p.email, display_name: p._name || undefined })),
 )
 
 // --- Alerts ---
@@ -858,11 +860,11 @@ const openInDesk = () =>
                 </div>
                 <!-- -my keeps the 28px ghost button from inflating the row. -->
                 <Button
-                  v-if="participantEmails.length"
+                  v-if="participantsToEmail.length"
                   variant="ghost"
                   class="-my-1.5 shrink-0"
                   :tooltip="__('Email participants')"
-                  @click="emit('emailParticipants', participantEmails)"
+                  @click="emit('emailParticipants', participantsToEmail)"
                 >
                   <Mail class="icon text-ink-gray-5 size-4" />
                 </Button>
@@ -980,13 +982,13 @@ const openInDesk = () =>
 				     neither, and a rule the card needs to mark its pinned blocks reads
 				     as a frame in a sheet. The page's own bottom padding clears the home
 				     indicator, so the block carries the pb-1 the RSVP does. -->
-        <template v-if="participantEmails.length">
+        <template v-if="participantsToEmail.length">
           <div class="shrink-0 px-4.5 pb-1 pt-2">
             <Button
               variant="subtle"
               size="md"
               class="w-full"
-              @click="emit('emailParticipants', participantEmails)"
+              @click="emit('emailParticipants', participantsToEmail)"
             >
               <template #prefix>
                 <Mail class="size-4" />

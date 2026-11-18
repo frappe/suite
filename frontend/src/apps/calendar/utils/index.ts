@@ -33,6 +33,15 @@ export const locationUrl = (str: string): string | null => {
   }
 }
 
+/** Someone just added to an event's guests, still to reply. */
+export const newGuest = (email: string, name?: string | null) => ({
+  email,
+  _name: name ?? undefined,
+  participation_status: 'NEEDS-ACTION',
+  expect_reply: true,
+  isNew: true,
+})
+
 export const getReorderedParticipants = (
   participants,
   organizerEmail,

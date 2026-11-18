@@ -52,21 +52,28 @@
       </InvitesView>
     </div>
   </DashboardLayout>
-  <AddAccountModal v-model="adding" @reload="reload" />
+  <AddAccountModal v-if="adding" v-model="adding" @reload="reload" />
 </template>
 
 <script setup lang="ts">
 import { Alert, Button } from 'frappe-ui'
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
-import AddAccountModal from '@/apps/mail/components/Modals/AddAccountModal.vue'
-import FailedCreationActions from '@/apps/mail/pages/dashboard/FailedCreationActions.vue'
-import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import { DashboardLayout } from '@/platform/dashboard'
 import { translate as __ } from '@/platform/translation'
+
+const AddAccountModal = defineAsyncComponent(
+  () => import('@/apps/mail/components/Modals/AddAccountModal.vue'),
+)
+const FailedCreationActions = defineAsyncComponent(
+  () => import('@/apps/mail/pages/dashboard/FailedCreationActions.vue'),
+)
+const InvitesView = defineAsyncComponent(
+  () => import('@/apps/mail/pages/dashboard/InvitesView.vue'),
+)
 
 // Suite composition supplies its preserved-identity directory; Mail owns invitations (§4.3).
 // `tabs` switches between the two and leads each page's filter row.
