@@ -29,6 +29,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { api, useMutation } from '@/api'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import MobileEventForm from '@/apps/calendar/components/mobile/MobileEventForm.vue'
+import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
@@ -1378,14 +1379,7 @@ const recurringScopeModalProps = computed(() => ({
 	     loaded. Not the form itself while loading: its rows and its participants screen read the
 	     event, which is empty until then. -->
   <div v-else-if="show && loading" class="fixed inset-0 z-30 flex flex-col bg-surface-base">
-    <header
-      class="flex shrink-0 items-center gap-1 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
-    >
-      <Button variant="ghost" class="-ml-1.5" :aria-label="__('Close')" @click="cancel">
-        <template #icon><X class="size-5 text-ink-gray-7" /></template>
-      </Button>
-      <h2 class="truncate text-xl font-medium text-ink-gray-9">{{ dialogTitle }}</h2>
-    </header>
+    <MobileScreenHeader :title="dialogTitle" @leave="cancel" />
     <div class="flex flex-1 items-center justify-center" role="status" :aria-label="__('Loading')">
       <LoadingIndicator class="size-5 text-ink-gray-5" />
     </div>

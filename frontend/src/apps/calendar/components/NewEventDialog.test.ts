@@ -90,11 +90,6 @@ vi.mock('frappe-ui', async () => {
     },
   }
 })
-// The test adapter's stub carries no palette; the phone's calendar picker draws from it.
-vi.mock('frappe-ui/experimental', async (original) => ({
-  ...(await original<object>()),
-  CalendarColorMap: { green: { color: 'green' } },
-}))
 vi.mock('reka-ui', async (original) => {
   const { defineComponent, h } = await import('vue')
   const passthrough = defineComponent({
@@ -471,6 +466,11 @@ describe("Calendar's new-event form opened over another area's page, on a phone"
 
     arrive()
     await vi.waitFor(() => expect(document.querySelector('[role="status"]')).toBeNull())
+    // The filled-in form in its place.
+    expect(
+      [...document.querySelectorAll('input')].some((field) => field.value === 'Q4 planning'),
+    ).toBe(true)
+    expect(button('Save')).toBeDefined()
     expect(renderErrors).toEqual([])
   })
 })

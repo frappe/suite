@@ -40,36 +40,19 @@
 					     calendar and leaving it discards the event, which is a cross; the
 					     participants screen is pushed from the form and steps back to it, which is
 					     a chevron. Reading the same mark on both would leave no way to tell whether
-					     going back returns to the form or throws the whole event away. -->
-          <header
-            class="flex shrink-0 items-center justify-between gap-2 px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
+					     going back returns to the form or throws the whole event away.
+
+					     Each screen's own header element, not one shared and re-labelled. A tap latches
+					     :hover onto what it touched until something else is touched, and the ghost
+					     Button paints that hover: coming back from the participants screen, a
+					     shared ✕ wore the highlight for a tap the reader made on the chevron.
+					     Blurring doesn't reach it — it isn't focus. A button that didn't take the
+					     tap can't be the one holding it. -->
+          <MobileScreenHeader
+            :title="s === 'form' ? title : __('Participants')"
+            :back="s !== 'form'"
+            @leave="leaveScreen"
           >
-            <div class="flex min-w-0 items-center gap-1">
-              <!-- -ml-1.5, not -ml-2: an icon-only Button is a 32px square with no padding
-							     of its own, so its 20px glyph sits 6px in. Pulling the square 6px left
-							     of the header's own 16px margin puts the glyph on that margin — the
-							     line the cards below it start on. -->
-              <!-- Each screen's own element, not one shared and re-labelled. A tap latches
-							     :hover onto what it touched until something else is touched, and the ghost
-							     Button paints that hover: coming back from the participants screen, a
-							     shared ✕ wore the highlight for a tap the reader made on the chevron.
-							     Blurring doesn't reach it — it isn't focus. A button that didn't take the
-							     tap can't be the one holding it. -->
-              <Button
-                variant="ghost"
-                class="-ml-1.5"
-                :aria-label="s === 'form' ? __('Close') : __('Back')"
-                @click="leaveScreen"
-              >
-                <template #icon>
-                  <X v-if="s === 'form'" class="size-5 text-ink-gray-7" />
-                  <ChevronLeft v-else class="size-5 text-ink-gray-7" />
-                </template>
-              </Button>
-              <h2 class="truncate text-xl font-medium text-ink-gray-9">
-                {{ s === 'form' ? title : __('Participants') }}
-              </h2>
-            </div>
             <!-- Two words and a button, as the design has it. Keeping a draft is what
 						     leaving offers when there is something to keep, and deleting a saved event
 						     is the detail sheet's ⋯ — neither needs a menu of its own up here.
@@ -85,7 +68,7 @@
               :disabled="disableSave"
               @click="emit('save')"
             />
-          </header>
+          </MobileScreenHeader>
           <template v-if="s === 'form'">
             <div class="min-h-0 flex-1 overflow-y-auto pb-10">
               <!-- The title is the one field that isn't a row: it reads as the event's name,
@@ -427,7 +410,6 @@ import {
   CalendarDays,
   Check,
   ChevronDown,
-  ChevronLeft,
   ChevronRight,
   Clock,
   Eye,
@@ -438,6 +420,7 @@ import {
 } from 'lucide-vue-next'
 import { computed, h, nextTick, ref, watch } from 'vue'
 
+import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import { requestAlertPermission } from '@/apps/calendar/reminders'
 import { eventColor } from '@/apps/calendar/utils/color'

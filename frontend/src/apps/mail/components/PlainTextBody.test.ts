@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick } from 'vue'
 
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
+import { mailDatesLoaded } from '@/apps/mail/composables/useMailDates'
 
 // Sent on Monday 16 November 2026.
 const sentAt = '2026-11-16T09:00:00Z'
@@ -14,6 +15,11 @@ const mount = (text: string, props: Record<string, unknown> = {}) => {
   app.mount(root)
   return root
 }
+// Once the date reader has loaded, and the body has drawn with it.
+const read = async () => {
+  await mailDatesLoaded()
+  await nextTick()
+}
 const marks = (root: HTMLElement) =>
   [...root.querySelectorAll<HTMLElement>('[role="button"]')].map((mark) => mark.textContent)
 
@@ -24,7 +30,8 @@ describe('dates in a mail sent as text', () => {
 
   it('marks the dates in the writer’s own words, not in a link, the quote or its lead line', async () => {
     const root = mount(text, { sentAt })
-    await vi.waitFor(() => expect(marks(root)).toEqual(['Thursday at 3pm']))
+    await read()
+    expect(marks(root)).toEqual(['Thursday at 3pm'])
     // The words read as they did.
     expect(root.textContent).toContain('Can we meet Thursday at 3pm? Notes at')
   })
@@ -32,7 +39,8 @@ describe('dates in a mail sent as text', () => {
   it('asks for an event at the date picked', async () => {
     const onPickDate = vi.fn()
     const root = mount(text, { sentAt, onPickDate })
-    await vi.waitFor(() => expect(marks(root)).toHaveLength(1))
+    await read()
+    expect(marks(root)).toHaveLength(1)
     root.querySelector<HTMLElement>('[role="button"]')!.click()
     expect(onPickDate).toHaveBeenCalledWith(
       expect.objectContaining({ start: { date: '2026-11-19', time: expect.any(String) } }),
@@ -42,7 +50,8 @@ describe('dates in a mail sent as text', () => {
   it('lets a drag that starts on a date select text, and opens nothing for it', async () => {
     const onPickDate = vi.fn()
     const root = mount(text, { sentAt, onPickDate })
-    await vi.waitFor(() => expect(marks(root)).toHaveLength(1))
+    await read()
+    expect(marks(root)).toHaveLength(1)
     const mark = root.querySelector<HTMLElement>('[role="button"]')!
     const at = (type: string, x: number) =>
       mark.dispatchEvent(new MouseEvent(type, { bubbles: true, clientX: x, clientY: 10 }))
@@ -58,7 +67,8 @@ describe('dates in a mail sent as text', () => {
   it('takes a click with no press of its own, as a screen reader makes, for a pick', async () => {
     const onPickDate = vi.fn()
     const root = mount(text, { sentAt, onPickDate })
-    await vi.waitFor(() => expect(marks(root)).toHaveLength(1))
+    await read()
+    expect(marks(root)).toHaveLength(1)
     const mark = root.querySelector<HTMLElement>('[role="button"]')!
     // An earlier tap on the same date, then a click far from it with no press before it.
     for (const type of ['pointerdown', 'pointerup', 'click'])
@@ -69,7 +79,7 @@ describe('dates in a mail sent as text', () => {
 
   it('marks nothing when it is not offered as an event', async () => {
     const root = mount(text)
-    await nextTick()
+    await read()
     expect(marks(root)).toEqual([])
   })
 })

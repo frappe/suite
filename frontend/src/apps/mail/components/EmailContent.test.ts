@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, nextTick, type App } from 'vue'
 
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
+import { mailDatesLoaded } from '@/apps/mail/composables/useMailDates'
 
 // The stubbed frame hands its emit back, so a test can say when the resizer reports ready.
 const resizer = vi.hoisted(() => ({ reportReady: () => {} }))
@@ -177,7 +178,9 @@ describe('EmailContent', () => {
 describe('dates in a message', () => {
   // Sent on Monday 16 November 2026.
   const sentAt = '2026-11-16T09:00:00Z'
+  // The message as its frame shows it, once the date reader has loaded.
   const shown = async (root: HTMLElement) => {
+    await mailDatesLoaded()
     await vi.waitFor(() => expect(frame(root)?.getAttribute('srcdoc')).toBeTruthy())
     return new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
   }
@@ -216,6 +219,7 @@ describe('dates in a message', () => {
 
   it('marks nothing when it is not offered as an event', async () => {
     const root = mount('<p>Can we meet Thursday at 3pm?</p>')
+    await mailDatesLoaded()
     await nextTick()
     const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
     expect(doc.querySelector('[data-mail-date]')).toBeNull()
