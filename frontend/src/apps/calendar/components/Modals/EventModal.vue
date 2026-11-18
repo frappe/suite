@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Button, Dialog, Dropdown, FormControl, Switch, toast, Tooltip } from 'frappe-ui'
+import {
+  Button,
+  Dialog,
+  Dropdown,
+  FormControl,
+  LoadingIndicator,
+  Switch,
+  toast,
+  Tooltip,
+} from 'frappe-ui'
 import {
   AlignLeft,
   Bell,
@@ -60,7 +69,7 @@ import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 const show = defineModel<boolean>()
-const { selectedEvent, createdAction, askBeforeLeaving } = defineProps<{
+const { selectedEvent, createdAction, askBeforeLeaving, loading } = defineProps<{
   selectedEvent: any
   /** What the toast for a new event offers, once it is saved and sent. */
   createdAction?: (created: CreatedEvent) => { label: string; onClick: () => void }
@@ -69,8 +78,19 @@ const { selectedEvent, createdAction, askBeforeLeaving } = defineProps<{
    * draft: for a form opened over another area's page, where nothing may be saved but by asking.
    */
   askBeforeLeaving?: boolean
+  /**
+   * The dialog, or the phone's screen, without its form: what the form reads is still loading.
+   * The form fills in when this turns false.
+   */
+  loading?: boolean
 }>()
-const emit = defineEmits(['reloadEvents'])
+const emit = defineEmits<{
+  reloadEvents: []
+  /** A new event, made and sent, ahead of the form closing. */
+  created: [event: CreatedEvent]
+  /** The form has gone from the screen, its closing transition included. */
+  afterLeave: []
+}>()
 const store = userStore()
 const user = store.userResource
 const { participantIdentities, calendars } = store
@@ -341,7 +361,9 @@ const meetLinkDisplay = computed(() =>
 // Moving the start drags the end along, keeping the gap the user set. A gap that
 // hasn't been set — or one the start has overtaken — falls back to the default.
 let previousStart: { date?: string; time?: string } | null = null
-watch(show, (val) => {
+// The form opens once it is shown and has what it reads.
+const formOpen = computed(() => !!show.value && !loading)
+watch(formOpen, (val) => {
   if (!val) return
   Object.assign(event, getEventData())
   // Reopening the same event leaves the start untouched, so the watcher below
@@ -351,6 +373,18 @@ watch(show, (val) => {
     time: event.startTime,
   }
   originalParams = JSON.parse(JSON.stringify(eventParams.value))
+})
+// Filled in under a dialog already open, the title gets the caret its autofocus gave to nothing.
+watch(
+  () => loading,
+  (now, before) => {
+    if (before && !now && show.value && isNew.value && !isMobile.value)
+      void nextTick(() => titleInput.value?.focus())
+  },
+)
+// The phone's screen leaves at once; the dialog says so itself, once it has faded.
+watch(show, (val) => {
+  if (!val && isMobile.value) void nextTick(() => emit('afterLeave'))
 })
 
 // Identities can land after the modal opened; give the new event its organizer then,
@@ -466,6 +500,16 @@ const repeatLabel = computed(() => {
 
 // --- Save logic ---
 
+// A new event made and sent, not one kept as a draft, told before the form closes.
+const announceCreated = (result: unknown) => {
+  if (savingDraft.value) return
+  emit('created', createdEvent(result))
+}
+const createdEvent = (result: unknown): CreatedEvent => ({
+  id: createdId(result),
+  account: event.account ?? '',
+  date: event.startDate ?? '',
+})
 const handleSuccess = () => {
   show.value = false
   emit('reloadEvents')
@@ -485,6 +529,7 @@ async function createEventSubmit({ sendEmail }: { sendEmail: boolean }) {
       sendEmail,
     }),
   )
+  announceCreated(result)
   handleSuccess()
   return result
 }
@@ -497,6 +542,7 @@ async function createMeetEventSubmit({ sendEmail }: { sendEmail: boolean }) {
     ...eventParams.value,
     send_scheduling_messages: sendEmail,
   })
+  announceCreated(result)
   handleSuccess()
   return result
 }
@@ -642,13 +688,14 @@ const submitEvent = (sendEmail: boolean) => {
   }
   const offer = isNew.value && createdAction
   // Read now: the save closes the form, and the next one to open refills it.
-  const created = { account: event.account ?? '', date: event.startDate ?? '' }
+  const account = event.account ?? ''
+  const date = event.startDate ?? ''
   toast.promise(submit(), {
     ...messages,
     ...(offer && {
       success: (result: unknown) => ({
         message: messages.success,
-        action: offer({ ...created, id: createdId(result) }),
+        action: offer({ account, date, id: createdId(result) }),
       }),
     }),
     // The refusal's own message, as the request layer shows it for a non-silent call.
@@ -683,7 +730,7 @@ const createdId = (result: unknown) =>
 const isDirty = computed(() => Object.keys(patch.value).length > 0 || pendingMeetAttach.value)
 const showDiscardModal = ref(false)
 const cancel = () => {
-  if (isDirty.value) showDiscardModal.value = true
+  if (!loading && isDirty.value) showDiscardModal.value = true
   else show.value = false
 }
 
@@ -701,7 +748,7 @@ const discardChanges = () => {
   show.value = false
 }
 const leave = () => {
-  if (!isDirty.value) {
+  if (loading || !isDirty.value) {
     show.value = false
     return
   }
@@ -956,14 +1003,31 @@ const recurringScopeModalProps = computed(() => ({
     size="4xl"
     bare
     @update:open="(open) => (open ? (show = true) : leave())"
+    @after-leave="emit('afterLeave')"
   >
     <template #default>
       <DialogDescription class="sr-only">
         {{ isNew ? __('Create a calendar event.') : __('Edit this calendar event.') }}
       </DialogDescription>
+      <!-- Up at once, the form in it once what it reads has loaded. -->
+      <div v-if="loading" class="flex h-96 flex-col text-ink-gray-8">
+        <div class="flex items-center border-b px-6 py-4">
+          <DialogTitle class="text-md font-semibold">{{ dialogTitle }}</DialogTitle>
+          <Button variant="ghost" class="ml-auto" :aria-label="__('Close')" @click="leave">
+            <template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
+          </Button>
+        </div>
+        <div
+          class="flex flex-1 items-center justify-center"
+          role="status"
+          :aria-label="__('Loading')"
+        >
+          <LoadingIndicator class="size-5 text-ink-gray-5" />
+        </div>
+      </div>
       <!-- On a phone the dialog is the screen: 85vh of a 4xl box left the form in
 			     a letterbox with its own scrollbar inside the page's. -->
-      <div class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">
+      <div v-else class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">
         <!-- header -->
         <div class="flex items-center border-b px-6 py-4">
           <DialogTitle class="text-md font-semibold">{{ dialogTitle }}</DialogTitle>
@@ -1321,6 +1385,7 @@ const recurringScopeModalProps = computed(() => ({
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"
+    :loading="loading"
     @cancel="cancel"
     @save="handleSaveClick"
     @toggle-repeat="toggleRepeat"

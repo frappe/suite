@@ -87,7 +87,16 @@
             />
           </header>
           <template v-if="s === 'form'">
-            <div class="min-h-0 flex-1 overflow-y-auto pb-10">
+            <!-- The screen is up at once; the rows come when what they read has loaded. -->
+            <div
+              v-if="loading"
+              class="flex min-h-0 flex-1 items-center justify-center"
+              role="status"
+              :aria-label="__('Loading')"
+            >
+              <LoadingIndicator class="size-5 text-ink-gray-5" />
+            </div>
+            <div v-else class="min-h-0 flex-1 overflow-y-auto pb-10">
               <!-- The title is the one field that isn't a row: it reads as the event's name,
 							     the way the desktop dialog's lead title does, and carries the caret on a
 							     new event. -->
@@ -420,7 +429,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
+import { Avatar, BottomSheet, Button, Dropdown, LoadingIndicator, Switch } from 'frappe-ui'
 import {
   Bell,
   Briefcase,
@@ -465,6 +474,8 @@ const { event, participants, calendarChoices } = defineProps<{
   calendarChoices: { label: string; value: string; color: string }[]
   meetUrl?: string
   meetLinkDisplay?: string
+  /** The screen without its rows, while what they read is still loading. */
+  loading?: boolean
 }>()
 
 /** The calendar it is on, as `account|id`. */

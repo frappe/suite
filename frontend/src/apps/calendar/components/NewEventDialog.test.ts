@@ -1,15 +1,19 @@
 import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, reactive, watch, type App } from 'vue'
+import { createApp, h, nextTick, type App } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
-import { useNewEventDialog, type NewEventDraft } from '@/apps/calendar'
+import type { CreatedEvent, NewEventDraft } from '@/apps/calendar'
 import { format } from '@/platform/translation/format'
 
+// A closed dialog's fade, held until a test lets it finish.
+const fading = vi.hoisted(() => ({ finish: () => {} }))
+
 // frappe-ui's dialogs and buttons as plain elements: a dialog is its title, message, body and
-// actions while open, and its own close (Escape, the backdrop) is a button.
+// actions while open, teleported to <body> as frappe-ui's are, and its own close (Escape, the
+// backdrop) is a button. Closing it fades until `fading.finish()`.
 vi.mock('frappe-ui', async () => {
-  const { defineComponent, h } = await import('vue')
+  const { defineComponent, h, Teleport, watch } = await import('vue')
   const passthrough = defineComponent({
     inheritAttrs: false,
     setup:
@@ -31,19 +35,27 @@ vi.mock('frappe-ui', async () => {
     }),
     Dialog: defineComponent({
       props: { open: Boolean, title: String, message: String },
-      emits: ['update:open'],
-      setup:
-        (props, { slots, emit }) =>
-        () =>
-          props.open
-            ? h('div', { role: 'dialog' }, [
-                props.title,
-                props.message,
-                slots.default?.(),
-                slots.actions?.(),
-                h('button', { 'data-dismiss': '', onClick: () => emit('update:open', false) }),
-              ])
-            : null,
+      emits: ['update:open', 'after-leave'],
+      setup: (props, { slots, emit }) => {
+        watch(
+          () => props.open,
+          (open) => {
+            if (!open) fading.finish = () => emit('after-leave')
+          },
+        )
+        return () =>
+          h(Teleport, { to: 'body' }, [
+            props.open
+              ? h('div', { role: 'dialog' }, [
+                  props.title,
+                  props.message,
+                  slots.default?.(),
+                  slots.actions?.(),
+                  h('button', { 'data-dismiss': '', onClick: () => emit('update:open', false) }),
+                ])
+              : null,
+          ])
+      },
     }),
     FormControl: defineComponent({
       props: { modelValue: [String, Number, Boolean] },
@@ -53,6 +65,7 @@ vi.mock('frappe-ui', async () => {
     BottomSheet: passthrough,
     Combobox: passthrough,
     Dropdown: passthrough,
+    LoadingIndicator: passthrough,
     Radio: passthrough,
     RadioGroup: passthrough,
     Switch: passthrough,
@@ -166,7 +179,7 @@ const draft: NewEventDraft = {
 
 let app: App | undefined
 let router: Router
-let open: (draft: NewEventDraft) => Promise<void>
+let open: (draft: NewEventDraft) => Promise<CreatedEvent | undefined>
 const page = document.createElement('div')
 
 beforeEach(async () => {
@@ -193,6 +206,9 @@ beforeEach(async () => {
   await router.push('/mail/inbox/thread-1')
   vi.spyOn(router, 'push')
   vi.spyOn(router, 'replace')
+  // Fresh each time: the dialog host is the page's, and holds the app that first used it.
+  vi.resetModules()
+  const { useNewEventDialog } = await import('@/apps/calendar')
   // A page in another area, which never visited Calendar, asking for the form.
   app = createApp({
     setup() {
@@ -206,9 +222,15 @@ beforeEach(async () => {
   document.body.append(page)
   app.mount(page)
 })
-afterEach(() => {
+afterEach(async () => {
+  // Off the page, which closes any form still up, and out of its fade.
+  await router.push('/elsewhere')
+  await settle()
+  fading.finish()
+  await settle()
   app?.unmount()
-  document.body.innerHTML = ''
+  page.remove()
+  document.body.className = ''
 })
 
 const settle = async () => {
@@ -236,6 +258,7 @@ const click = async (target: Element | null | undefined) => {
   target.click()
   await settle()
 }
+const loadingFrame = () => document.querySelector('[role="dialog"] [role="status"]')
 const created = () => server.writes.filter((write) => write.to === 'calendar.events.create')
 
 describe("Calendar's new-event form opened over another area's page", () => {
@@ -331,23 +354,89 @@ describe("Calendar's new-event form opened over another area's page", () => {
     expect(server.writes).toEqual([])
   })
 
-  it('waits for the account and its calendars when Calendar has not loaded them yet', async () => {
+  it('shows the dialog at once, and the form in it once the account and its calendars have come', async () => {
     let arrive = () => {}
     const arrived = new Promise<void>((resolve) => (arrive = resolve))
     server.arrival = () => arrived
 
     void open(draft)
-    // The form's code has loaded, and its host is on the page.
-    await vi.waitFor(() => expect(document.body.childElementCount).toBe(2), { timeout: 5000 })
-    await settle()
+    await vi.waitFor(() => expect(loadingFrame()).not.toBeNull(), { timeout: 5000 })
     // Without its account the form would have no calendars to offer and no one to look up.
     expect(form()).toBeUndefined()
 
     arrive()
     await opened()
+    expect(loadingFrame()).toBeNull()
     expect(titleField()?.value).toBe('Q4 planning')
     await click(button('Save'))
     await click(button('Send Email'))
     expect(created()[0].input).toMatchObject({ account: 'acc', calendar_ids: ['cal-1'] })
+  })
+
+  it('resolves with the event Save made', async () => {
+    const closing = open(draft)
+    await opened()
+    await click(button('Save'))
+    await click(button('Skip'))
+
+    await expect(closing).resolves.toEqual({ id: 'evt-1', account: 'acc', date: '2026-11-19' })
+  })
+
+  it('closes on Back and leaves the reader on the mail, sending nothing', async () => {
+    const closing = open(draft)
+    await opened()
+
+    history.back()
+    await vi.waitFor(() => expect(form()).toBeUndefined())
+    await expect(closing).resolves.toBeUndefined()
+    expect(router.currentRoute.value.fullPath).toBe('/mail/inbox/thread-1')
+    expect(server.writes).toEqual([])
+  })
+
+  it('closes when the page it was asked from goes', async () => {
+    const closing = open(draft)
+    await opened()
+
+    await router.push('/mail/inbox/thread-2')
+    await settle()
+    expect(form()).toBeUndefined()
+    await expect(closing).resolves.toBeUndefined()
+  })
+
+  it('never shows once the reader has left the page while it loaded', async () => {
+    let arrive = () => {}
+    const arrived = new Promise<void>((resolve) => (arrive = resolve))
+    server.arrival = () => arrived
+
+    // Every dialog put on the page, however briefly.
+    let shownDialogs = 0
+    const watcher = new MutationObserver((changes) => {
+      for (const change of changes)
+        for (const node of change.addedNodes)
+          if (node instanceof Element && node.matches('[role="dialog"]')) shownDialogs++
+    })
+    watcher.observe(document.body, { childList: true, subtree: true })
+
+    const closing = open(draft)
+    await router.push('/mail/inbox/thread-2')
+    arrive()
+    await expect(closing).resolves.toBeUndefined()
+    await settle()
+    watcher.disconnect()
+    expect(shownDialogs).toBe(0)
+  })
+
+  it("keeps Calendar's styles on the page until the dialog has faded out", async () => {
+    void open(draft)
+    await opened()
+    expect(document.body.classList).toContain('calendar-app')
+
+    await click(button('Cancel'))
+    expect(form()).toBeUndefined()
+    expect(document.body.classList).toContain('calendar-app')
+
+    fading.finish()
+    await settle()
+    expect(document.body.classList).not.toContain('calendar-app')
   })
 })

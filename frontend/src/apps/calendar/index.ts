@@ -1,11 +1,13 @@
 import { useNow } from '@vueuse/core'
 import { defineAsyncComponent, getCurrentInstance, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
 import { showEventReminder, type EventReminder } from '@/apps/calendar/reminders'
-import type { NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+import type { CreatedEvent, NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import type { AreaDefinition } from '@/platform/contracts'
+import { presentDialog } from '@/platform/dialog-host'
 import { realtime, type Realtime } from '@/platform/realtime'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
@@ -22,7 +24,7 @@ export {
 
 export type { CalendarEvent } from '@/apps/calendar/client/events'
 export { upcomingEventWindow } from './upcomingWindow'
-export type { NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+export type { CreatedEvent, NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 
 export { useUpcomingEvents } from '@/apps/calendar/client/useUpcomingEvents'
 /** Shared upcoming-event presentation; callers supply their own event window and actions. */
@@ -49,16 +51,21 @@ export const calendarArea: AreaDefinition = {
 
 /**
  * Opens Calendar's new-event form over the page, filled in from `draft`, for the reader to finish and
- * save there: the URL stays, and closing the form leaves the page as it was. The form's code loads
- * on the first call. The returned function resolves when the form closes. Call it in a component's
- * setup.
+ * save there: the URL stays, and closing the form, or Back, leaves the page as it was. The form's
+ * code loads on the first call. Resolves when the form closes, with the event if Save made one.
+ * Call it in a component's setup.
  */
-export function useNewEventDialog(): (draft: NewEventDraft) => Promise<void> {
+export function useNewEventDialog(): (draft: NewEventDraft) => Promise<CreatedEvent | undefined> {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useNewEventDialog() must be called in a component setup')
+  const route = useRoute()
   return (draft) =>
-    import('@/apps/calendar/components/newEventDialog').then((dialog) =>
-      dialog.presentNewEventDialog(context, draft),
+    presentDialog<CreatedEvent>(
+      context,
+      () => import('@/apps/calendar/components/NewEventDialog.vue'),
+      // The page it was asked from: a form that loads after the reader has left it never shows.
+      { draft, from: route.fullPath },
+      'saved',
     )
 }
 
