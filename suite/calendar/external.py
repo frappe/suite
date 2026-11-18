@@ -275,7 +275,10 @@ def upsert_calendar(
         # The lookup above is not a guarantee — another writer can insert between it and this,
         # and the table's unique index is what settles it. Theirs is as good as ours, so the
         # loser reads it back rather than failing a run over which of two identical calendars
-        # was made first.
+        # was made first. A locking read, since a plain one answers from this transaction's
+        # snapshot, taken before the winner committed, and finds nothing. A server keeping
+        # snapshot isolation (MariaDB 11.6 on) refuses that read as a deadlock instead, and a
+        # background job is retried on one: the retry's lookup finds the winner's calendar.
         made = None
         with savepoint(catch=frappe.UniqueValidationError):
             calendar = frappe.new_doc("External Calendar")
@@ -283,7 +286,7 @@ def upsert_calendar(
             calendar.insert(ignore_permissions=True)
             made = calendar.name
         return made or frappe.db.get_value(
-            "External Calendar", {"source": source, "source_key": source_key}, "name"
+            "External Calendar", {"source": source, "source_key": source_key}, "name", for_update=True
         )
 
     if any(existing.get(field) != value for field, value in wanted.items()):

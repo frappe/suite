@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
 import frappe
+from frappe.database import get_db
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from pydantic import TypeAdapter
 
@@ -254,22 +255,60 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         """A run that loses the insert carries on with the calendar the other one made, rather
         than failing over which of two identical calendars was written first."""
 
-        # as a race arrives: the lookup finds nothing, and so does the check in validate —
-        # the other writer's calendar lands between the two
-        with (
-            patch.object(external.frappe.db, "get_value", side_effect=[None, self.calendar]),
-            patch.object(ExternalCalendar, "validate_one_per_source_key"),
-        ):
-            again = external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
+        key = "holidays:Kerala 2026"
+        winner = self.second_connection()
+        # what set-up wrote holds locks the other run would queue behind; this race is between
+        # two runs that have each written nothing yet
+        frappe.db.rollback()
 
-        self.assertEqual(again, self.calendar)
+        def the_other_run_wins(_calendar: ExternalCalendar) -> None:
+            # the other run commits its calendar after this one looked and found none, and
+            # while this transaction still reads from the snapshot it took before
+            winner.sql(
+                """insert into `tabExternal Calendar`
+                (name, source, source_key, calendar_name, site_wide, creation, modified, owner,
+                modified_by) values ('race-winner', 'Test Source', %s, 'Kerala 2026', 0, now(), now(),
+                'Administrator', 'Administrator')""",
+                key,
+            )
+            winner.sql("commit")
+
+        with patch.object(ExternalCalendar, "validate_one_per_source_key", the_other_run_wins):
+            try:
+                again = external.upsert_calendar("Test Source", key, "Kerala 2026")
+            except frappe.QueryDeadlockError:
+                # a server keeping snapshot isolation (MariaDB 11.6 on) refuses to read a row
+                # committed after the snapshot, as a deadlock; a background job is retried on
+                # one, in a fresh transaction, as here
+                frappe.db.rollback()
+                again = external.upsert_calendar("Test Source", key, "Kerala 2026")
+
+        self.assertEqual(again, "race-winner")
         # and the one that lost was not stored
-        self.assertEqual(
-            frappe.db.count(
-                "External Calendar", {"source": "Test Source", "source_key": "holidays:India 2026"}
-            ),
-            1,
+        self.assertEqual(frappe.db.count("External Calendar", {"source": "Test Source", "source_key": key}), 1)
+
+    def second_connection(self):
+        """Another writer's own connection, whose commit is seen as a concurrent run's would be.
+        What it committed is removed when the test ends, after this transaction lets go of it."""
+
+        conf = frappe.conf
+        other = get_db(
+            socket=conf.db_socket,
+            host=conf.db_host,
+            port=conf.db_port,
+            user=conf.db_user,
+            password=conf.db_password,
+            cur_db_name=conf.db_name,
         )
+
+        def forget() -> None:
+            frappe.db.rollback()
+            other.sql("delete from `tabExternal Calendar` where name = 'race-winner'")
+            other.sql("commit")
+            other.close()
+
+        self.addCleanup(forget)
+        return other
 
     def test_a_site_wide_calendar_is_drawn_for_everyone_with_nothing_assigned(self):
         external.replace_events(self.calendar, [self.holiday])
