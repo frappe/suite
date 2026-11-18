@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest'
 import {
   calendarColor,
   canEditEvent,
+  carriedVisibility,
   defaultCalendar,
   destinationOptions,
+  onShownCalendar,
+  sharedCalendarVisible,
   type CalendarRow,
 } from '@/apps/calendar/utils/calendars'
 
@@ -82,5 +85,63 @@ describe('canEditEvent', () => {
   it('is true on a calendar the list does not know', () => {
     expect(canEditEvent(on('elsewhere'), calendars)).toBe(true)
     expect(canEditEvent(on('shared'), undefined)).toBe(true)
+  })
+})
+
+describe('sharedCalendarVisible', () => {
+  const holidays = cal('holidays', { may_write_all: 0 })
+
+  it('leaves a shared calendar undrawn until the reader switches it on', () => {
+    expect(sharedCalendarVisible(holidays, {})).toBe(false)
+    expect(sharedCalendarVisible(holidays, { 'acc|holidays': 1 })).toBe(true)
+  })
+
+  it("is the reader's last word, and about that calendar alone", () => {
+    expect(sharedCalendarVisible(holidays, { 'acc|holidays': 0 })).toBe(false)
+    expect(sharedCalendarVisible(holidays, { 'acc|other': 1 })).toBe(false)
+  })
+})
+
+describe('carriedVisibility', () => {
+  const team = cal('team', { may_write_all: 0 })
+  const archive = cal('archive', { may_write_all: 0 })
+  const holidays = { ...cal('h1', { may_write_all: 0 }), name: 'external|h1', account: 'external' }
+
+  it('keeps drawn the shared calendars the old list did not hide, and hidden the ones it did', () => {
+    expect(carriedVisibility([cal('mine'), team, archive], ['acc|archive'], {})).toEqual({
+      'acc|team': 1,
+      'acc|archive': 0,
+    })
+  })
+
+  it("starts the site's own calendars unticked, whatever the old list says", () => {
+    expect(carriedVisibility([team, holidays], [], {})).toEqual({ 'acc|team': 1 })
+  })
+
+  it('leaves a choice already made in the map alone', () => {
+    expect(carriedVisibility([team], [], { 'acc|team': 0 })).toEqual({ 'acc|team': 0 })
+  })
+})
+
+describe('onShownCalendar', () => {
+  const drawn = onShownCalendar([cal('mine'), cal('birthdays', { may_write_all: 0, visible: 0 })])
+
+  it('draws an event on a calendar being shown, named or carried', () => {
+    expect(drawn({ calendars: ['acc|mine'] })).toBe(true)
+    expect(drawn({ calendars: [{ calendar: 'acc|mine' }] })).toBe(true)
+  })
+
+  it('leaves a switched-off calendar out', () => {
+    expect(drawn({ calendars: ['acc|birthdays'] })).toBe(false)
+    expect(drawn({ calendars: [{ calendar: 'acc|birthdays' }] })).toBe(false)
+  })
+
+  it('draws nothing until the calendar list is known, and nothing the list does not have', () => {
+    expect(onShownCalendar(undefined)({ calendars: ['acc|mine'] })).toBe(false)
+    expect(drawn({ calendars: ['acc|elsewhere'] })).toBe(false)
+  })
+
+  it('draws an event on two calendars where either is shown', () => {
+    expect(drawn({ calendars: ['acc|birthdays', 'acc|mine'] })).toBe(true)
   })
 })

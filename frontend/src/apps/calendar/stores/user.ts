@@ -3,7 +3,12 @@ import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useQuery, type OutputOf } from '@/api'
-import { calendarColor } from '@/apps/calendar/utils/calendars'
+import {
+  calendarColor,
+  carriedVisibility,
+  sharedCalendarVisible,
+  type SharedVisibility,
+} from '@/apps/calendar/utils/calendars'
 import { useSession } from '@/platform/session'
 
 type UserAccount = NonNullable<OutputOf<typeof api.mail.account.get>>['accounts'][number]
@@ -85,7 +90,9 @@ export const userStore = defineStore('calendar-user', () => {
         ? cal
         : {
             ...cal,
-            visible: hiddenShared.value.includes(cal.name) ? (0 as const) : (1 as const),
+            visible: sharedCalendarVisible(cal, sharedVisibility.value)
+              ? (1 as const)
+              : (0 as const),
           },
     ),
   )
@@ -103,9 +110,27 @@ export const userStore = defineStore('calendar-user', () => {
   })
 
   // Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
-  // someone who can write to it change — so a calendar shared read-only is hidden in this
-  // browser instead.
-  const hiddenShared = useStorage<string[]>('calendar-hidden-shared', [])
+  // someone who can write to it change — so a calendar shared read-only is shown or hidden in
+  // this browser instead. Kept only where the reader made a choice; the rest stay unticked.
+  const sharedVisibility = useStorage<SharedVisibility>('calendar-shared-visibility', {})
+
+  // An earlier build kept the hidden ones as a list. It is folded in with the first calendar
+  // list that arrives, before anything is drawn, so nobody's shared calendars vanish.
+  const LEGACY_HIDDEN_KEY = 'calendar-hidden-shared'
+  watch(
+    () => calendarQuery.data,
+    (rows) => {
+      const legacy = localStorage.getItem(LEGACY_HIDDEN_KEY)
+      if (!rows || legacy === null) return
+      try {
+        sharedVisibility.value = carriedVisibility(rows, JSON.parse(legacy), sharedVisibility.value)
+      } catch {
+        // nothing readable under the old key, so nothing to carry
+      }
+      localStorage.removeItem(LEGACY_HIDDEN_KEY)
+    },
+    { flush: 'sync', immediate: true },
+  )
 
   // The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
   // A calendar shared from another account names that account beneath.
@@ -168,7 +193,7 @@ export const userStore = defineStore('calendar-user', () => {
     identities,
     participantIdentities,
     calendars,
-    hiddenShared,
+    sharedVisibility,
     calendarOptions,
     accountCalendarOptions,
     organizerIdentity,
