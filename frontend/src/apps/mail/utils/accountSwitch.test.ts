@@ -40,8 +40,6 @@ const switcherAt = async (path: string) => {
   return {
     switchAccount: async (id: string) => {
       await switcher.switchAccount(id)
-      // Not every branch hands back its navigation: let any that started finish.
-      await new Promise((settled) => setTimeout(settled))
       return router.currentRoute.value.fullPath
     },
   }

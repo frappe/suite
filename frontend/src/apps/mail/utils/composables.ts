@@ -92,7 +92,7 @@ export const useAccountSwitch = () => {
         name: 'mail-mailbox',
         params: { accountId, mailbox: route.params.mailbox },
       })
-    router.push(
+    return router.push(
       route.params.accountId
         ? {
             name: route.name!,
