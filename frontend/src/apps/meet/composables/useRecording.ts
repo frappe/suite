@@ -16,7 +16,13 @@ type RecordingEvent = {
   recording: RecordingState | null
 }
 
-export function useRecording(meetingId: string) {
+/**
+ * The recording state of a meeting, for its indicator and controls. `signedIn` says whether the
+ * page has a session: the state route needs one. A guest without a session gets the state in its
+ * join answer (`syncState`) and on its own realtime room instead, so it never asks the route.
+ * Call it in a component's setup.
+ */
+export function useRecording(meetingId: string, { signedIn }: { signedIn: () => boolean }) {
   const state = ref<RecordingState | null>(null)
   const globalEnabled = ref(false)
   const preflightPending = ref(false)
@@ -36,6 +42,7 @@ export function useRecording(meetingId: string) {
   const isStarting = computed(() => ['Pending', 'Starting'].includes(state.value?.status || ''))
 
   async function loadState() {
+    if (!signedIn()) return
     try {
       const version = stateVersion
       const recordingName = state.value?.name
@@ -51,7 +58,7 @@ export function useRecording(meetingId: string) {
         return
       setState(loaded)
     } catch {
-      // Guests may receive state through the room-scoped realtime channel instead.
+      // A member the meeting no longer admits is refused; realtime still carries the state.
     }
   }
 
