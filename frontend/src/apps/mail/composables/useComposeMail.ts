@@ -2,7 +2,7 @@ import type { Transaction } from '@tiptap/pm/state'
 import { watchDebounced } from '@vueuse/core'
 import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
-import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
+import { computed, effectScope, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
@@ -188,7 +188,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     composed: true,
   })
   const originalMail = ref<ComposeMailData>()
-  const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
+  // `saved` is the mail as a save sent it. What was typed while the save was out is not in it, and
+  // stays to be saved. The id is the one the save came back with.
+  const updateOriginalMail = (saved = JSON.stringify(mail)) =>
+    (originalMail.value = { ...JSON.parse(saved), id: mail.id })
   const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
 
   // ── What's in the mail ──────────────────────────────────────────────────────────────────────
@@ -394,6 +397,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       isSavingDraft.value = false
       pendingSave = undefined
     }
+    // Closed while this save was out. The save on the way out found it under way and stood down,
+    // so whatever was typed meanwhile goes now.
+    if (!isSaveFailed.value && !isOpen()) await saveDraft()
   }
   watchDebounced(
     mail,
@@ -625,15 +631,18 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         : undefined,
     )
   }
-  const onMailUpdateSuccess = ({
-    id,
-    status,
-    error,
-    thread_id,
-    submission_id,
-    send_at,
-    undo_send_period,
-  }: OutputOf<typeof api.mail.messages.create>) => {
+  const onMailUpdateSuccess = (
+    {
+      id,
+      status,
+      error,
+      thread_id,
+      submission_id,
+      send_at,
+      undo_send_period,
+    }: OutputOf<typeof api.mail.messages.create>,
+    sent: string,
+  ) => {
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     if (error) {
@@ -641,7 +650,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       raiseError(failure)
       throw failure
     }
-    updateOriginalMail()
+    updateOriginalMail(sent)
     if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
     if (!isInThread || status === 'Submitted') reloadMails()
@@ -698,7 +707,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 
   // ── Resources ───────────────────────────────────────────────────────────────────────────────
 
-  const createMail = useMutation(api.mail.messages.create)
+  // Kept clear of the composer's own scope. A mutation made in a component cancels whatever it
+  // still has in flight when that component goes, and closing the composer is what makes it go:
+  // an autosave from two seconds earlier was cut off on its way to the server, and the cancel came
+  // back as a refusal ("Draft not saved") for a draft that was fine.
+  const writes = effectScope(true)
+  const createMail = writes.run(() => useMutation(api.mail.messages.create))!
   async function createMailSubmit({
     save_as_draft,
     send_at,
@@ -726,10 +740,11 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: save_as_draft ? undefined : remindAt.value,
     }
+    const sent = JSON.stringify(mail)
     const result = await createMail.run(input)
-    await onMailUpdateSuccess(result)
+    await onMailUpdateSuccess(result, sent)
   }
-  const updateDraft = useMutation(api.mail.messages.updateDraft)
+  const updateDraft = writes.run(() => useMutation(api.mail.messages.updateDraft))!
   // The body and its inline attachments as a save or a send carries them. An image left in the body
   // or the quote as a data URL goes as a file, not as base64 in the HTML (see uploadEmbeddedImages).
   // Not while the editor's own uploads are running: one of those is about to replace its image, and
@@ -807,8 +822,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: submit ? remindAt.value : undefined,
     }
+    const sent = JSON.stringify(mail)
     const result = await updateDraft.run(input)
-    await onMailUpdateSuccess(result)
+    await onMailUpdateSuccess(result, sent)
   }
   const isLoading = computed(() => createMail.isPending || updateDraft.isPending)
 
