@@ -77,6 +77,8 @@ const whoHasAccess = (dialog: Locator) => dialog.getByRole("region", { name: "Wh
 const rowFor = (dialog: Locator, text: string | RegExp) =>
 	whoHasAccess(dialog).getByRole("listitem").filter({ hasText: text });
 const accessButton = (row: Locator) => row.getByRole("button", { name: /^Access for / });
+// A role set elsewhere is plain text; what can be done about it here sits in this menu.
+const moreButton = (row: Locator) => row.getByRole("button", { name: /^More for / });
 const peopleField = (dialog: Locator) => dialog.getByRole("combobox", { name: "Add people, groups or emails" });
 
 /** Picks PERSON in the people field. The pick waits in "People to add" until Share is pressed. */
@@ -157,15 +159,15 @@ test("an inherited grant shows its source; Deny access here, then Allow again", 
 	const dialog = await openShare(page, file.name);
 
 	const inherited = rowFor(dialog, PERSON).filter({ hasText: `via ${home.title}` });
-	await expect(accessButton(inherited)).toHaveAccessibleName(/: Comment$/);
-	await accessButton(inherited).click();
+	await expect(inherited.getByText("Comment", { exact: true })).toBeVisible();
+	await moreButton(inherited).click();
 	await page.getByRole("menuitem", { name: "Deny access here" }).click();
 
 	const denied = rowFor(dialog, PERSON_NAME).filter({ hasText: "Denied here" });
 	await expect(denied).toBeVisible();
 	expect((await grants(file.name)).find((grant) => grant.principal === PERSON)?.role).toBe(0);
 
-	await accessButton(denied).click();
+	await moreButton(denied).click();
 	await page.getByRole("menuitem", { name: "Allow again" }).click();
 	await expect(rowFor(dialog, "Denied here")).toHaveCount(0);
 	expect((await grants(file.name)).some((grant) => grant.principal === PERSON)).toBe(false);
