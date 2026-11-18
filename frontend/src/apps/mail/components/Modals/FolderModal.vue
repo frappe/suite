@@ -49,7 +49,6 @@
                   />
                 </template>
               </FormControl>
-              <hr />
               <SettingsRow :title="__('Disable Push Notifications')" class="!py-0">
                 <Switch
                   v-model="folder.disable_push_notification"
