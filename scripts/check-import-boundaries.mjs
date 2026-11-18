@@ -94,6 +94,7 @@ const moduleGraphDebtGroups = [
       'Remove each entry when the owner migrates that dependency to platform or a declared product package root.',
     entries: [
       'mail/components/CommandPalette/MailSearchResult.vue|@/components/HighlightedText.vue',
+      'mail/components/ComposeAttachMenu.vue|@/components/AdaptiveDropdown.vue',
       'mail/components/DefaultLayout.vue|@/apps/calendar/components/EventDetail.vue',
       'mail/components/DefaultLayout.vue|@/apps/calendar/components/EventPopover.vue',
       'mail/components/ListSelection/MobileSelectionBar.vue|@/components/AdaptiveDropdown.vue',

@@ -186,6 +186,8 @@ def _from_automated_sender(headers: _Headers) -> bool:
 # - a campaign tool marks a promotion however automated the rest of the message looks;
 # - a system notice or a billing address is an update even when it offers an unsubscribe link,
 #   while a bare "noreply" is an update only when nothing says the mail was subscribed to.
+# The mail server runs the same rules, in this order, as it delivers a message: a rule added here
+# needs its Sieve test in `sieve._TESTS`.
 _RULES: tuple[tuple[Category, Callable[[_Headers], bool]], ...] = (
     (Category.PRIMARY, _reports_on_sent_mail),
     (Category.SOCIAL, _from_social_network),

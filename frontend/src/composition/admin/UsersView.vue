@@ -22,18 +22,22 @@
     :retry="() => storage.refetch()"
   />
   <DashboardLayout v-else area="admin" :breadcrumbs="[{ label: __('Users') }]">
-    <!-- The directory below shows its own placeholder rows. -->
-    <LocalUsers v-if="!onInvitations" embedded />
+    <!-- Mount the directory once the instance-specific layout is ready. -->
+    <template v-if="onInvitations">
+      <UsersTabs />
+      <DashboardListSkeleton :columns="3" />
+    </template>
+    <DashboardListSkeleton v-else :columns="4" />
   </DashboardLayout>
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent, h } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import { loadMailAdminUsers } from '@/apps/mail'
-import { DashboardLayout } from '@/platform/dashboard'
+import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
 import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
@@ -41,7 +45,27 @@ import UsersTabs from './UsersTabs.vue'
 
 const storage = useQuery(api.suite.storage.get)
 const route = useRoute()
-const MailUsers = defineAsyncComponent(loadMailAdminUsers)
-const LocalUsers = defineAsyncComponent(() => import('./LocalUsersView.vue'))
 const onInvitations = computed(() => route.path.endsWith('/invitations'))
+// Keep the directory request alive as the cloud layout replaces its loading view.
+useQuery(api.suite.users.list, () => (onInvitations.value ? false : {}))
+// Keep the dashboard header mounted while the cloud-only chunk loads: its
+// teleported header reserves space in the shell outside this component.
+const MailUsers = defineAsyncComponent({
+  loader: loadMailAdminUsers,
+  delay: 0,
+  loadingComponent: {
+    render: () =>
+      h(
+        DashboardLayout,
+        { area: 'admin', breadcrumbs: [{ label: __('Users') }] },
+        {
+          default: () =>
+            onInvitations.value
+              ? [h(UsersTabs), h(DashboardListSkeleton, { columns: 3 })]
+              : h(DashboardListSkeleton, { columns: 4 }),
+        },
+      ),
+  },
+})
+const LocalUsers = defineAsyncComponent(() => import('./LocalUsersView.vue'))
 </script>

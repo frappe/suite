@@ -219,6 +219,26 @@ describe('Suite API references and shared client', () => {
     expect(page.hasNext).toBe(false)
   })
 
+  it('keeps a query snapshot stable between reads and replaces it on refresh', async () => {
+    fetcher.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message: [{ email: 'first@example.com', action: 'Spam', creation: '', modified: '' }],
+        }),
+      ),
+    )
+    const screening = observe(() => engine.useQuery(api.mail.screening.list, { account: 'alice' }))
+    await vi.waitFor(() => expect(screening.data).toHaveLength(1))
+    const snapshot = screening.data
+    expect(screening.data).toBe(snapshot)
+
+    fetcher.mockResolvedValue(new Response(JSON.stringify({ message: [] })))
+    await screening.refetch()
+    expect(screening.data).toEqual([])
+    expect(screening.data).not.toBe(snapshot)
+    expect(snapshot?.map((row) => row.email)).toEqual(['first@example.com'])
+  })
+
   it('shares sender-blocking optimism, rolls back a refusal, and keeps other accounts separate', async () => {
     const write = deferred<Response>()
     fetcher.mockImplementation(async (url) =>

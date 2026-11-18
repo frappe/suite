@@ -1,5 +1,6 @@
 /** Vue observers follow arguments and access partitions and detach on scope disposal. */
 import {
+  computed,
   getCurrentScope,
   onScopeDispose,
   reactive,
@@ -110,11 +111,16 @@ export function observe<I, O>(
       detach()
     })
 
+  // A row can read the same query many times. Materialize once per reactive change,
+  // while still tracking normalized entities so detail writes update list observers.
+  const data = computed(() => {
+    // SAFETY: this observer attaches only to the read record for reference; its output
+    // validators run in transport before normalization, and materialization reverses normalization.
+    return current.value ? (reads.entities.materialize(current.value.value) as O) : undefined
+  })
   const query: QueryState<O> = shallowReactive({
     get data() {
-      // SAFETY: this observer attaches only to the read record for reference; its output
-      // validators run in transport before normalization, and materialization reverses normalization.
-      return current.value ? (reads.entities.materialize(current.value.value) as O) : undefined
+      return data.value
     },
     get status() {
       return error.value ? ('error' as const) : (current.value?.status ?? 'pending')

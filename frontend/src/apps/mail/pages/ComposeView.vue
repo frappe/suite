@@ -41,17 +41,13 @@
       />
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
-      <Button
-        variant="ghost"
-        class="touch-target"
-        :label="__('Attach files')"
-        @click="fileInput?.click()"
-      >
-        <template #icon>
-          <Paperclip class="text-ink-gray-5 size-5" />
-        </template>
-      </Button>
-      <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+      <ComposeAttachMenu @select-files="onFilesSelected" @attach-from-drive="attachFromDrive">
+        <Button variant="ghost" class="touch-target" :label="__('Attach')">
+          <template #icon>
+            <Paperclip class="text-ink-gray-5 size-5" />
+          </template>
+        </Button>
+      </ComposeAttachMenu>
       <AdaptiveDropdown :options="ACTIONS">
         <Button variant="ghost" class="touch-target" :label="__('More actions')">
           <template #icon>
@@ -300,6 +296,7 @@ import {
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
+import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
@@ -321,10 +318,8 @@ const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef<{ setFocus: () => void }>('toInput')
 const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
 const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
-const fileInput = useTemplateRef<HTMLInputElement>('fileInput')
 const scroller = useTemplateRef<HTMLElement>('scroller')
 const pendingUploads = ref(0)
-const isUploading = computed(() => pendingUploads.value > 0)
 
 const uploadInlineImage = async (file: File) => {
   pendingUploads.value++
@@ -376,6 +371,9 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFile,
+  attachFromDrive,
+  isUploading,
   editorExtensions,
   editorContent,
   onEditorChange,
@@ -387,7 +385,7 @@ const {
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  isUploading: () => pendingUploads.value > 0,
   uploadInlineImage,
 })
 
@@ -549,19 +547,12 @@ const removeAttachment = (index: number) => {
   mail.attachments.splice(mail.attachments.indexOf(file), 1)
 }
 
-const onFilesSelected = async (e: Event) => {
-  const checkedEventTarget = e.target
-  if (!(checkedEventTarget instanceof HTMLInputElement)) return
-
-  const input = checkedEventTarget
-  const files = Array.from(input.files ?? [])
-  input.value = ''
-
+const onFilesSelected = async (files: File[]) => {
   for (const file of files) {
     pendingUploads.value++
     try {
       const doc = await uploadFunction(file)
-      mail.attachments.push({ ...doc, disposition: 'attachment' })
+      attachFile(doc, file.type)
     } catch (error) {
       raiseToast(
         (error instanceof TransportError &&

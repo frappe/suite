@@ -40,6 +40,18 @@ vi.mock('@/apps/mail/components/EmojiPicker.vue', async () => {
     }),
   }
 })
+// The Attach menu shows only its trigger here; its items are tested on their own.
+vi.mock('@/apps/mail/components/ComposeAttachMenu.vue', async () => {
+  const { defineComponent } = await import('vue')
+  return {
+    default: defineComponent({
+      setup:
+        (_props, { slots }) =>
+        () =>
+          slots.default?.(),
+    }),
+  }
+})
 vi.mock('@/apps/mail/utils', () => ({ isMac: false }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: ref(screen.mobile) }),
@@ -67,7 +79,7 @@ describe("the composer's toolbar", () => {
     const shown = names()
     expect(shown).not.toContain(null)
     expect(shown).toEqual(
-      expect.arrayContaining(['Send', 'Schedule send', 'Insert emoji', 'Attach files', 'Discard']),
+      expect.arrayContaining(['Send', 'Schedule send', 'Insert emoji', 'Attach', 'Discard']),
     )
   })
 
@@ -75,6 +87,6 @@ describe("the composer's toolbar", () => {
     screen.mobile = true
     const shown = names()
     expect(shown).not.toContain(null)
-    expect(shown).toContain('Attach files')
+    expect(shown).toContain('Attach')
   })
 })

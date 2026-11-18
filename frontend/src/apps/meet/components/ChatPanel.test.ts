@@ -14,10 +14,14 @@ vi.mock('frappe-ui', () => ({
 }))
 
 let cleanup: () => void
-afterEach(() => cleanup?.())
+afterEach(() => {
+  cleanup?.()
+  vi.restoreAllMocks()
+})
 it.each([false, true])(
   'focuses on opening and reopening without stealing focus on messages or other updates (initially open: %s)',
   async (initiallyOpen) => {
+    const focus = vi.spyOn(HTMLTextAreaElement.prototype, 'focus')
     const props = reactive({
       open: initiallyOpen,
       userName: 'Alex',
@@ -50,6 +54,7 @@ it.each([false, true])(
     await nextTick()
     await nextTick()
     expect(document.activeElement).toBe(root.querySelector('textarea'))
+    expect(focus).toHaveBeenLastCalledWith({ preventScroll: true })
     elsewhere.focus()
     props.messages.push({
       id: 'new',

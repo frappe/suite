@@ -203,3 +203,14 @@ class ZipAttachment(TypedDict):
 
 class AttachmentsZipInput(AccountInput):
     attachments: list[ZipAttachment]
+
+
+class AttachDriveFiles(TypedDict):
+    nodes: list[str]
+
+
+class AttachedFile(TypedDict):
+    name: str
+    file_name: str
+    file_url: str
+    file_size: int
