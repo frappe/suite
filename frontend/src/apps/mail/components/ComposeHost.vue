@@ -7,6 +7,7 @@
     v-model="showCompose"
     :mail-details="composeDetails"
     :account="composeDetails?.account"
+    :closes-with-page="away"
     @reload-mails="requestListReload()"
   />
 </template>

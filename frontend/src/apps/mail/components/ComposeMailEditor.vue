@@ -433,6 +433,7 @@ const {
   isInThread = false,
   expanded = false,
   fillsHost = false,
+  closesWithPage = false,
 } = defineProps<{
   reloadMails: () => void
   mailDetails?: ComposeMailData
@@ -443,6 +444,9 @@ const {
   // The host is a flex column of a definite height, and the composer is to take all of it —
   // a draft that is the whole thread, given the reading pane to itself.
   fillsHost?: boolean
+  // The window over another app's page, which goes with that page while still open (see
+  // `leaving`).
+  closesWithPage?: boolean
 }>()
 const emit = defineEmits([
   'discardMail',
@@ -503,13 +507,13 @@ const uploadInlineImage = async (file: File) => {
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
 // to this dialog stays here: the contact picker, drag-and-drop, and the in-thread draft actions.
-// Going without a Close: the window unmounted while still open, by the page it is on going (another
-// app's, or Mail's layout) or by a second request replacing it. It is closed all the same, so a save
-// still out when it goes catches up on what was typed meanwhile, and one refused is kept for Reopen,
-// as after a Close. Not on a hand-off (see popOut), which the window it went to saves.
+// The window over another app's page goes with that page, unmounted while still open: leaving the
+// page is how it closes there. It is closed all the same, so a save still out when it goes catches
+// up on what was typed meanwhile, and one refused is kept for Reopen, as after a Close. Only there:
+// Mail's own window and a thread's reply go on unmounting as they always have.
 let leaving = false
 onBeforeUnmount(() => {
-  if (!handedOff) leaving = true
+  if (closesWithPage) leaving = true
 })
 const {
   mail,
