@@ -4,6 +4,12 @@ import { createApp, nextTick, type App } from 'vue'
 
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import { mailDatesLoaded } from '@/apps/mail/composables/useMailDates'
+import {
+  allowsInline,
+  allowsLoad,
+  headPolicy,
+  type Fetch,
+} from '@/apps/mail/utils/contentPolicy.test-support'
 
 // The app's theme, which a test switches before it mounts.
 interface Theme {
@@ -737,5 +743,66 @@ describe('EmailContent renders mail as it was sent', () => {
     await nextTick()
 
     expect(adaptable).toHaveBeenLastCalledWith(false)
+  })
+})
+
+// A srcdoc frame takes the app's origin, which is where the server points a mail's inline (cid:)
+// images.
+const APP = 'https://suite.example'
+const INLINE_IMAGE = '/api/method/suite.mail.api.mail.get_attachment?account=a&blob_id=b'
+const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
+// Every kind of load a message's markup or CSS could make of the sender's servers.
+const FETCHES: Fetch[] = ['img', 'font', 'style', 'media', 'connect', 'frame', 'object', 'prefetch']
+const REMOTE = ['https://tracker.example/p.png', 'http://tracker.example/p.png', '//cdn.example/f']
+
+describe("EmailContent's frame loads nothing remote until the reader shows it", () => {
+  const policyOf = async (props: Record<string, unknown>) => {
+    const root = mount('<p style="color: red">Hello</p>', props)
+    await nextTick()
+    return headPolicy(rendered(root))
+  }
+
+  it('refuses every load from another host while remote content is withheld', async () => {
+    const policy = await policyOf({ blockImages: true })
+
+    for (const fetch of FETCHES)
+      for (const url of REMOTE)
+        expect(allowsLoad(policy, fetch, url, APP), `${fetch} ${url}`).toBe(false)
+  })
+
+  it("still shows what is the message's own while withheld: inline images and styles, data: images and fonts", async () => {
+    const policy = await policyOf({ blockImages: true })
+
+    expect(allowsLoad(policy, 'img', INLINE_IMAGE, APP)).toBe(true)
+    expect(allowsLoad(policy, 'img', PIXEL, APP)).toBe(true)
+    expect(allowsLoad(policy, 'font', 'data:font/woff2;base64,AAAA', APP)).toBe(true)
+    expect(allowsInline(policy, 'style')).toBe(true)
+  })
+
+  it('loads remote images, fonts and stylesheets once the reader shows them', async () => {
+    const policy = await policyOf({ blockImages: false })
+
+    for (const fetch of ['img', 'font', 'style', 'media'] as const)
+      for (const url of [...REMOTE, INLINE_IMAGE, PIXEL])
+        expect(allowsLoad(policy, fetch, url, APP), `${fetch} ${url}`).toBe(true)
+    expect(allowsInline(policy, 'style')).toBe(true)
+  })
+
+  it("runs the frame's own script, and nothing the message brings", async () => {
+    for (const blockImages of [true, false]) {
+      const root = mount(REPLY, { blockImages })
+      await nextTick()
+      const doc = rendered(root)
+      const policy = headPolicy(doc)
+
+      for (const script of doc.querySelectorAll('script'))
+        expect(allowsInline(policy, 'script', script.getAttribute('nonce') ?? undefined)).toBe(true)
+      expect(allowsInline(policy, 'script')).toBe(false)
+      // An inline handler is refused with the rest, so nothing of the frame's may rely on one.
+      const handlers = [...doc.querySelectorAll('*')].flatMap((el) =>
+        el.getAttributeNames().filter((name) => name.startsWith('on')),
+      )
+      expect(handlers).toEqual([])
+    }
   })
 })

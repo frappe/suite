@@ -6,6 +6,7 @@
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { inUserTimeZone } from '@/apps/mail/utils/datetime'
 import { escapeHtml } from '@/apps/mail/utils/html'
+import { mailDocumentPolicy } from '@/apps/mail/utils/mailDocumentPolicy'
 import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
 
 /**
@@ -43,7 +44,10 @@ const PAGE_STYLE = `
 const line = (label: string, value: string) =>
   value ? `<div><span>${escapeHtml(label)}:</span> ${escapeHtml(value)}</div>` : ''
 
-/** The page that prints `messages` under `subject`. */
+/**
+ * The page that prints `messages` under `subject`. One page has one policy, so it withholds remote
+ * loads for every message on it when any of them is withheld.
+ */
 const printPage = (subject: string, messages: readonly PrintedMessage[]): string => {
   const title = escapeHtml(subject || __('[No Subject]'))
   const sections = messages
@@ -71,7 +75,8 @@ const printPage = (subject: string, messages: readonly PrintedMessage[]): string
       </section>`
     })
     .join('')
-  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${title}</title>
+  const policy = mailDocumentPolicy(messages.some((message) => message.blockRemote))
+  return `<!DOCTYPE html><html><head>${policy}<meta charset="utf-8"><title>${title}</title>
     <style>${PAGE_STYLE}</style></head><body><h1>${title}</h1>${sections}</body></html>`
 }
 

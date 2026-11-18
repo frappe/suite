@@ -32,6 +32,7 @@ import {
 } from '@/apps/mail/utils/darkMail'
 import { highlightBody } from '@/apps/mail/utils/highlightBody'
 import type { NamedDate } from '@/apps/mail/utils/mailDates'
+import { mailDocumentPolicy, scriptNonce } from '@/apps/mail/utils/mailDocumentPolicy'
 import { parseMailto } from '@/apps/mail/utils/mailto'
 import { findQuoteRoots } from '@/apps/mail/utils/quotedContent'
 import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
@@ -152,13 +153,9 @@ const collapseQuotes = (doc: Document) => {
     button.dataset.hide = __('Hide trimmed content')
     button.appendChild(label)
     // Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
-    // inline styles, so the mobile variant can size the touch target up.
+    // inline styles, so the mobile variant can size the touch target up. The frame's script
+    // toggles it: the frame's policy runs no inline handler.
     button.className = 'quote-toggle'
-    button.setAttribute(
-      'onclick',
-      "var hidden = this.nextElementSibling.classList.toggle('quote-hidden');" +
-        'this.lastElementChild.textContent = hidden ? this.dataset.show : this.dataset.hide;',
-    )
     quote.parentNode?.insertBefore(button, quote)
   })
 }
@@ -203,6 +200,9 @@ watch(
 // canvas it was drawn for.
 const frameTheme = computed(() => (asSent ? 'light' : dataTheme.value))
 const colors = computed(() => THEME_CONFIG[frameTheme.value])
+// The frame's own script is the one its policy runs. One nonce for the frame's lifetime: a fresh
+// one would make each recomputed document differ and reload the frame for nothing.
+const nonce = scriptNonce()
 
 const srcdoc = computed(() => {
   if (body.value.waiting) return null
@@ -212,6 +212,7 @@ const srcdoc = computed(() => {
 		<!DOCTYPE html>
 		<html>
 		<head>
+			${mailDocumentPolicy(blockImages, nonce)}
 			<meta name="viewport" content="width=device-width, initial-scale=1">
 			<meta name="color-scheme" content="${frameTheme.value}">
 			<meta charset="UTF-8">
@@ -346,7 +347,7 @@ const srcdoc = computed(() => {
 		</head>
 		<body>
 			${transformedContent}
-			<script>
+			<script nonce="${nonce}">
 				// The stylesheet's max-width clamp can't reach fixed-width tables nested
 				// inside other tables: during the outer table's intrinsic sizing a
 				// percentage max-width counts as auto, so the inner pixel width still
@@ -639,6 +640,13 @@ const srcdoc = computed(() => {
 							return;
 						}
 						window.open(anchor.href, '_blank');
+						return;
+					}
+					// A quoted trail's toggle (see collapseQuotes) shows or hides the trail after it.
+					const toggle = e.target.closest('.quote-toggle');
+					if (toggle?.nextElementSibling && toggle.lastElementChild) {
+						const hidden = toggle.nextElementSibling.classList.toggle('quote-hidden');
+						toggle.lastElementChild.textContent = hidden ? toggle.dataset.show : toggle.dataset.hide;
 						return;
 					}
 					const mark = e.target.closest('[data-mail-date]');
