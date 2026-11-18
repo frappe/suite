@@ -36,7 +36,7 @@ export const calendarSettings = {
     },
     {
       id: 'calendar.advanced',
-      label: () => __('Advanced'),
+      label: () => __('Import and setup'),
       icon: 'lucide-wrench',
       body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
       sections: [

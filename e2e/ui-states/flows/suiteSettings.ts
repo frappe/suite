@@ -7,7 +7,7 @@ import { perScene, type BaseScene } from "../scene";
 /** One tab of an app's group: its name in the sidebar, which of the same names it is, and text only its loaded body shows. */
 interface AppTab {
 	nav: string;
-	/** Mail and Calendar both have Advanced: Mail's comes first. */
+	/** Set where an earlier tab or button goes by the same name, as Calendars does. */
 	last?: boolean;
 	marker: string;
 	description: string;
@@ -23,7 +23,7 @@ const MAIL_TABS = {
 
 const CALENDAR_TABS = {
 	calendarCalendars: { nav: "Calendars", last: true, marker: "Your calendars", description: "Calendar > Calendars: Your calendars, with Maya's own marked Default, its Edit button and New; then Invite addresses, a row with a button that opens the addresses in a dialog." },
-	calendarAdvanced: { nav: "Advanced", last: true, marker: "Calendar client setup", description: "Calendar > Advanced: one short list of Import, Export and Calendar client setup, each with a button that opens it in a dialog." },
+	calendarAdvanced: { nav: "Import and setup", marker: "Calendar client setup", description: "Calendar > Import and setup: one short list of Import, Export and Calendar client setup, each with a button that opens it in a dialog." },
 } as const satisfies Record<string, AppTab>;
 
 const APP_TABS = new Map<string, AppTab>(Object.entries({ ...MAIL_TABS, ...CALENDAR_TABS }));
