@@ -1,3 +1,4 @@
+import { defineAsyncComponent, defineComponent, type Component } from 'vue'
 import type { Router } from 'vue-router'
 
 /**
@@ -5,7 +6,8 @@ import type { Router } from 'vue-router'
  * a deploy asks for chunk files the deploy removed, and a full load of the
  * same URL fetches the new build, so that failure reloads the page once. Any
  * other failure, or a stale chunk again after that reload, opens the error
- * route, which offers a reload.
+ * route, which offers a reload. A lazy part of the frame around every page
+ * that fails to load leaves the page showing (`defineAsyncWrapper`).
  */
 
 export interface LoadFailureOptions {
@@ -70,4 +72,26 @@ function forgetReload(): void {
   } catch {
     // Without storage there is no reload to forget.
   }
+}
+
+// Renders what it wraps, and nothing when it wraps nothing.
+const PassThrough = defineComponent(
+  (_props, { slots }) =>
+    () =>
+      slots.default?.(),
+)
+
+/**
+ * A lazily loaded component that wraps the page, such as the shell's frame. If
+ * its code fails to load, the page inside it still shows without it, so the
+ * error route can say what happened; a component with no default slot shows
+ * nothing.
+ */
+export function defineAsyncWrapper(load: () => Promise<Component>): Component {
+  return defineAsyncComponent(() =>
+    load().catch((error: unknown) => {
+      console.error('Could not load a part of the page', error)
+      return PassThrough
+    }),
+  )
 }

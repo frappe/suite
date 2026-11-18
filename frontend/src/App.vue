@@ -14,24 +14,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineAsyncComponent, provide } from 'vue'
+import { computed, provide } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { drivePaletteSearch, DriveUploadTracker } from '@/apps/drive'
 import { findArea, useAppRegistry, useAreaWork } from '@/composition/appRegistry'
 import { settingsGroups } from '@/composition/settings'
 import { PALETTE_SEARCH_KEY } from '@/platform/contracts'
+import { defineAsyncWrapper } from '@/platform/load-failure'
 import { AREA_PROGRESS_KEY } from '@/shell/areaProgress'
 import { SETTINGS_GROUPS_KEY } from '@/shell/settings/settings'
 
-const FeedbackProvider = defineAsyncComponent(() =>
+// Each wraps the page or sits beside it: one that fails to load leaves the page showing, the load
+// error page included.
+const FeedbackProvider = defineAsyncWrapper(() =>
   import('@/platform/feedback').then(({ FeedbackProvider }) => FeedbackProvider),
 )
-const ShellLayout = defineAsyncComponent(() => import('@/shell/ShellLayout.vue'))
-const NotificationsBell = defineAsyncComponent(
+const ShellLayout = defineAsyncWrapper(() => import('@/shell/ShellLayout.vue'))
+const NotificationsBell = defineAsyncWrapper(
   () => import('@/composition/notifications/NotificationsBell.vue'),
 )
-const NotificationsTab = defineAsyncComponent(
+const NotificationsTab = defineAsyncWrapper(
   () => import('@/composition/notifications/NotificationsTab.vue'),
 )
 const registry = useAppRegistry()
