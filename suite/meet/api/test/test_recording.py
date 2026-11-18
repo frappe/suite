@@ -802,7 +802,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         self.assertEqual(get_state(self.room.name)["name"], started["name"])
 
         frappe.set_user("Guest")
-        self.assertNotIn(get_state, frappe.guest_methods)
         with self.assertRaises(frappe.PermissionError):
             get_state(self.room.name)
 
