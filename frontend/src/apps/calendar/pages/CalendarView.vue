@@ -908,10 +908,14 @@ watch(selectedCalendarEvent, (open) => {
 })
 
 // The calendar has no composer of its own; Mail lends its own, over the calendar (mailto:
-// would depend on the OS having a mail handler, and the suite IS the mail client). The card
-// stays: it is the URL's, and the first click into the composer puts it away.
+// would depend on the OS having a mail handler, and the suite IS the mail client). Writing to
+// everyone is where attention goes next, so the card or sheet steps aside first, as it does in
+// Mail, rather than sitting over the window.
 const mailCompose = useMailCompose()
-const emailParticipants = (emails: string[]) => void mailCompose.compose(emails)
+const emailParticipants = async (emails: string[]) => {
+  await closeEventDetail()
+  await mailCompose.compose(emails)
+}
 
 // A deep link can only be built from the ids its author has. The grid's own
 // events come out of a recurrence-expanded query, so each carries a synthetic
