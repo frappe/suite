@@ -49,35 +49,33 @@
       />
     </template>
 
-    <Button
-      class="min-h-7 self-start"
-      :label="__('Start export')"
-      :loading="isExporting"
-      :disabled="isExportBlocked"
-      @click="createCalendarExport.run(makeInput())"
+    <Alert
+      v-if="isExportRunning"
+      :title="__('Export in progress. We’ll email you when it’s ready.')"
     />
-    <div class="!mt-3 space-x-1 text-base">
-      <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-      <a class="hover:underline" :href="exportHref" target="_blank">
-        {{ exportLinkText }}
-      </a>
-    </div>
-    <ErrorMessage
-      v-if="createCalendarExport.error"
-      :message="createCalendarExport.error?.message"
-      class="mb-2.5"
-    />
+    <ErrorMessage :message="exportError" />
+    <SettingsDialogActions>
+      <Button :label="exportLinkText" :href="exportHref" />
+      <Button
+        :label="__('Start export')"
+        variant="solid"
+        :loading="isExporting"
+        :disabled="isExportBlocked"
+        @click="createCalendarExport.run(makeInput())"
+      />
+    </SettingsDialogActions>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Alert, Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import { computed, onScopeDispose, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 
 const store = userStore()
 const { accountId } = store
@@ -147,9 +145,9 @@ const ongoingExport = useQuery(api.mail.calendar.ongoingExchange, () =>
       }
     : false,
 )
-const isExporting = computed(
-  () => Boolean(ongoingExport.data?.name) || createCalendarExport.isPending,
-)
+const isExportRunning = computed(() => Boolean(ongoingExport.data?.name))
+const isExporting = computed(() => isExportRunning.value || createCalendarExport.isPending)
+const exportError = computed(() => createCalendarExport.error?.message)
 const isExportBlocked = computed(
   () => ongoingExport.isFetching || Boolean(ongoingExport.error) || createCalendarExport.isPending,
 )
@@ -158,10 +156,6 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 }
 socket.on('calendar_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
-const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __('Export in progress. We’ll email you when it’s ready.')
-  return __('No exports in progress.')
-})
 const exportHref = computed(() => {
   if (ongoingExport.data?.name) return `/mail/calendar-exchanges/${ongoingExport.data.name}`
   return '/mail/calendar-exchanges?operation=Export'

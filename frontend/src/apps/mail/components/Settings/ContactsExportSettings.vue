@@ -39,35 +39,37 @@
     />
   </template>
 
-  <Button
-    class="min-h-7 self-start"
-    :label="__('Start export')"
-    :loading="Boolean(ongoingExport.data?.name) || createContactsExport.isPending"
-    :disabled="
-      ongoingExport.isFetching || Boolean(ongoingExport.error) || createContactsExport.isPending
-    "
-    @click="createContactsExportSubmit()"
+  <Alert
+    v-if="isExportRunning"
+    :title="__('Export in progress. We’ll email you when it’s ready.')"
   />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-    <a class="hover:underline" :href="exportHref" target="_blank">
-      {{ exportLinkText }}
-    </a>
-  </div>
-  <ErrorMessage
-    v-if="createContactsExport.error"
-    :message="createContactsExport.error?.message"
-    class="mb-2.5"
-  />
+  <ErrorMessage :message="exportError" />
+  <!-- Both tabs' forms are mounted, and only the shown one's buttons go in the dialog -->
+  <SettingsDialogActions v-if="isActive">
+    <Button :label="exportLinkText" :href="exportHref" />
+    <Button
+      :label="__('Start export')"
+      variant="solid"
+      :loading="isExporting"
+      :disabled="isExportBlocked"
+      @click="createContactsExportSubmit()"
+    />
+  </SettingsDialogActions>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Alert, Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import { computed, onScopeDispose, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+
+const { isActive } = defineProps<{
+  /** Whether this is the form on show. Its buttons are the dialog's only while it is. */
+  isActive: boolean
+}>()
 
 const store = userStore()
 const user = store.userResource
@@ -139,10 +141,12 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 }
 socket.on('contacts_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('contacts_exchange_completed', onExchangeCompleted))
-const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __('Export in progress. We’ll email you when it’s ready.')
-  return __('No exports in progress.')
-})
+const isExportRunning = computed(() => Boolean(ongoingExport.data?.name))
+const isExporting = computed(() => isExportRunning.value || createContactsExport.isPending)
+const isExportBlocked = computed(
+  () => ongoingExport.isFetching || Boolean(ongoingExport.error) || createContactsExport.isPending,
+)
+const exportError = computed(() => createContactsExport.error?.message)
 const exportHref = computed(() => {
   if (ongoingExport.data?.name) return `/mail/contacts-exchanges/${ongoingExport.data.name}`
   return '/mail/contacts-exchanges?operation=Export'

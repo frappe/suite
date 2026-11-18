@@ -5,12 +5,12 @@
          one and holds still when the tab changes. -->
     <div class="grid">
       <div
-        v-for="{ type, form, isHidden } in forms"
+        v-for="{ type, form, isHidden, isActive } in forms"
         :key="type"
         class="col-start-1 row-start-1 flex min-w-0 flex-col gap-5"
         :class="{ invisible: isHidden }"
       >
-        <component :is="form" />
+        <component :is="form" :is-active />
       </div>
     </div>
   </div>
@@ -40,6 +40,7 @@ const forms = computed(() =>
     type,
     form,
     isHidden: type !== activeType.value,
+    isActive: type === activeType.value,
   })),
 )
 </script>
