@@ -411,6 +411,19 @@ describe('sending a reply in a thread', () => {
     expect(heard).toEqual([])
   })
 
+  // jsdom does not keep the focus or the pointer out of an inert element; a browser does.
+  it('locks the reply from Send until the answer, and unlocks it on a refusal', async () => {
+    const { body, answer } = await sendHeld()
+    expect(body.closest('[inert]')).not.toBeNull()
+
+    answer(answered('Dana’s server refused the address'))
+
+    await vi.waitFor(() => expect(body.closest('[inert]')).toBeNull())
+    expect(toasts.error).toHaveBeenCalledWith('Mail not sent', {
+      description: 'Dana’s server refused the address',
+    })
+  })
+
   it('puts the focus back in the reply when the send is refused', async () => {
     const { body, answer } = await sendHeld()
     body.blur()

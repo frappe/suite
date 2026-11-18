@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
@@ -25,7 +26,8 @@ const reply = (body: unknown, status = 200) =>
 
 // The real frappe-ui pieces the page is built from (tests otherwise get the recorder's stand-ins).
 // Its dialogs stay shut, so they render nothing; its bottom sheet is the real one, since that is
-// what a phone's menus open as.
+// what a phone's menus open as. Its toasts are recorded.
+const toasts = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 vi.mock('frappe-ui', async () => {
   const { defineComponent } = await import('vue')
   const shut = defineComponent({ setup: () => () => null })
@@ -42,9 +44,14 @@ vi.mock('frappe-ui', async () => {
     Dialog: shut,
     ErrorMessage: shut,
     FormControl: shut,
-    toast: { error: vi.fn(), success: vi.fn(), dismiss: vi.fn(), warning: vi.fn(), info: vi.fn() },
+    toast: { ...toasts, dismiss: vi.fn(), warning: vi.fn(), info: vi.fn() },
   }
 })
+// The draft the navigation to the page carries (see composeHandoff): none, unless a test says.
+const handoff = vi.hoisted<{ draft?: object }>(() => ({}))
+vi.mock('@/apps/mail/composables/composeHandoff', () => ({
+  takePendingCompose: () => handoff.draft,
+}))
 // A phone: the page is only ever reached at that width, and its menus open as bottom sheets there.
 // Set before anything loads, since the app reads the width once, at load.
 vi.hoisted(() => {
@@ -79,7 +86,10 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
   return { injectAccountScope: scope, provideAccountScope: scope }
 })
 
+// jsdom lays nothing out; the editor scrolls to its caret.
 Element.prototype.scrollIntoView = () => {}
+Range.prototype.getClientRects = () => fromPartial<DOMRectList>({ length: 0, item: () => null })
+Range.prototype.getBoundingClientRect = () => new DOMRect()
 
 const apps: ReturnType<typeof createApp>[] = []
 beforeEach(() => {
@@ -87,6 +97,8 @@ beforeEach(() => {
   server.answer = () => reply({ message: [] })
   pickFiles.mockReset()
   upload.mockReset()
+  toasts.error.mockReset()
+  handoff.draft = undefined
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
@@ -214,5 +226,53 @@ describe("the compose page's More actions", () => {
 
     expect(sheetRows()).toContain('Schedule send')
     expect(sheetRows()).not.toContain('Attach from Drive')
+  })
+})
+
+describe('sending from the compose page', () => {
+  // jsdom does not keep the focus or the taps out of an inert element; a phone's browser does.
+  it('locks the page from Send until the answer, and gives it back on a refusal', async () => {
+    let answer!: (response: Response) => void
+    const held = new Promise<Response>((resolve) => (answer = resolve))
+    server.answer = (method) => (method === 'update_draft_mail' ? held : reply({ message: [] }))
+    // A reply to Dana, saved as a draft: it opens with the caret in its body.
+    handoff.draft = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Re: Brief',
+      html_body: '<p>Looks good.</p>',
+      in_reply_to: '<brief@brightwave.example>',
+      attachments: [],
+    }
+    await openComposePage()
+    const body = document.querySelector<HTMLElement>('.ProseMirror')!
+    await vi.waitFor(() => expect(document.activeElement).toBe(body))
+
+    button('Send')!.click()
+    await vi.waitFor(() => expect(server.asked).toContain('update_draft_mail'))
+    expect(body.closest('[inert]')).not.toBeNull()
+    // The locked page gives up the focus (a browser does this for `inert`; jsdom does not).
+    body.blur()
+
+    answer(
+      reply({
+        message: {
+          name: 'draft-1',
+          id: 'draft-1',
+          status: 'Drafted',
+          error: 'Dana’s server refused the address',
+          thread_id: null,
+          submission_id: null,
+          send_at: null,
+          undo_send_period: null,
+        },
+      }),
+    )
+
+    await vi.waitFor(() => expect(body.closest('[inert]')).toBeNull())
+    expect(toasts.error).toHaveBeenCalledWith('Mail not sent', {
+      description: 'Dana’s server refused the address',
+    })
+    await vi.waitFor(() => expect(document.activeElement).toBe(body))
   })
 })
