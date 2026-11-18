@@ -348,6 +348,20 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     expect(router.currentRoute.value.fullPath).toBe(PAGE)
   })
 
+  it('on a phone, if asked all the same, goes to Mail by its compose link', async () => {
+    isMobile.value = true
+    const { router } = await openPage([{ email: 'maya@example.com' }, ...PARTICIPANTS])
+
+    button('Email participants')!.click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/mail'), {
+      timeout: 15_000,
+    })
+    // Everyone but the reader, by address: the link carries no names.
+    expect(router.currentRoute.value.query).toEqual({ compose: '1', to: ADDRESSES.join(',') })
+    expect(composer()).toBeNull()
+  })
+
   it('on a desktop, with no Mail account, hands them to the device’s mail app', async () => {
     server.mailAccounts = false
     const open = vi.spyOn(window, 'open').mockImplementation(() => null)
