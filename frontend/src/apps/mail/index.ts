@@ -2,7 +2,7 @@ import { defineAsyncComponent, getCurrentInstance, onScopeDispose, watch } from 
 
 import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
-import type { MailComposeHost } from '@/apps/mail/composables/composeHost'
+import type { MountedComposeHost } from '@/apps/mail/composables/mountComposeHost'
 import { showMailReminder } from '@/apps/mail/reminders'
 import type { AreaDefinition } from '@/platform/contracts'
 import { realtime } from '@/platform/realtime'
@@ -79,7 +79,7 @@ export interface MailCompose {
 export function useMailCompose(): MailCompose {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useMailCompose() must be called in a component setup')
-  let host: Promise<MailComposeHost> | undefined
+  let host: Promise<MountedComposeHost> | undefined
   let disposed = false
   // The window belongs to the page that opened it, as Mail's belongs to Mail: leaving the page
   // closes it, and a draft in it is kept, as closing it would keep it.
@@ -90,7 +90,7 @@ export function useMailCompose(): MailCompose {
   return {
     compose: async (to) => {
       if (disposed) return
-      host ??= import('@/apps/mail/composables/composeHost').then((module) =>
+      host ??= import('@/apps/mail/composables/mountComposeHost').then((module) =>
         module.mountComposeHost(context),
       )
       ;(await host).compose(to)

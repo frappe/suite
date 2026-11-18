@@ -11,7 +11,6 @@
 </template>
 
 <script setup lang="ts">
-import { providePortalTarget } from 'frappe-ui'
 import { computed, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -19,6 +18,7 @@ import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
 import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavailableView.vue'
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
+import { provideMailOverlayLayer } from '@/apps/mail/composables/mailOverlayLayer'
 import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
@@ -54,17 +54,8 @@ const { userResource } = userStore()
 const router = useRouter()
 const route = useRoute()
 
-// Mail's overlay layer. frappe-ui overlays (Dialogs, Dropdowns, Popovers, BottomSheets) and
-// Mail's own full-screen panes teleport here instead of to bare <body>, so the Mail styles
-// below reach them through `.mail-app` without a class on <body>. Nothing Mail styles then
-// reaches the document, the shell, or another area. The layer is a plain block at the end of
-// <body>: it makes no stacking context, so the overlays stack as they did on <body>. It exists
-// from setup on, before any child mounts a Teleport, and leaves with the layout.
-const overlayLayer = document.createElement('div')
-overlayLayer.className = 'mail-app'
-document.body.append(overlayLayer)
-providePortalTarget(overlayLayer)
-onScopeDispose(() => overlayLayer.remove())
+// Mail's overlay layer, where every Mail overlay teleports.
+provideMailOverlayLayer()
 
 // `?` and the `g`+letter mailbox jumps belong to the whole non-admin app, not to whichever
 // list happens to be mounted: they were only reachable from a mailbox view before, so they

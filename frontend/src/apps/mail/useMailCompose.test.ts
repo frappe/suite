@@ -93,6 +93,7 @@ vi.mock('frappe-ui', async () => {
     Dialog: shut,
     ErrorMessage: shut,
     FormControl: shut,
+    LoadingIndicator: shut,
     toast: { error: vi.fn(), success: vi.fn(), dismiss: vi.fn(), warning: vi.fn(), info: vi.fn() },
   }
 })
@@ -159,7 +160,7 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     await openPage()
     // Every chance for an eager load to show: the composer's code and Mail's response validators
     // are in hand, so a request made from it would have gone out.
-    await Promise.all([import('./composables/composeHost'), import('./client/validators')])
+    await Promise.all([import('./composables/mountComposeHost'), import('./client/validators')])
     await new Promise((resolve) => setTimeout(resolve, 100))
 
     expect(server.asked).toEqual([])

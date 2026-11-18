@@ -25,7 +25,7 @@ import { useComposeMail, useListReload, useScreenSize } from '@/apps/mail/utils/
  * Mail's composer for whatever page is on screen: a window over the page on a desktop, the compose
  * page on a phone. It answers every compose request (`useComposeMail().requestCompose`): another
  * app writing to someone, a `mailto:` link in a message, the Undo of a discarded draft. Mount one
- * per page — Mail's layout does, and so does the host another app gets (see composeHost.ts).
+ * per page — Mail's layout does, and so does another app's page (see mountComposeHost.ts).
  */
 const store = userStore()
 const router = useRouter()
