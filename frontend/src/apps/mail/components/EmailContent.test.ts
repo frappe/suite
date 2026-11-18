@@ -5,8 +5,6 @@ import { createApp, nextTick, type App } from 'vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import { mailDatesLoaded } from '@/apps/mail/composables/useMailDates'
 
-// The stubbed frame hands its emit back, so a test can say when the resizer reports ready.
-const resizer = vi.hoisted(() => ({ reportReady: () => {} }))
 // The app's theme, which a test switches before it mounts.
 interface Theme {
   value: 'light' | 'dark'
@@ -14,21 +12,6 @@ interface Theme {
 const theme = vi.hoisted((): Theme => ({ value: 'light' }))
 // Which platform the reader is on: the print chord is ⌘P on a Mac and Ctrl+P elsewhere.
 const platform = vi.hoisted(() => ({ mac: true }))
-
-vi.mock('@iframe-resizer/vue/iframe-resizer.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return {
-    default: defineComponent({
-      emits: ['onReady'],
-      setup(_props, { emit }) {
-        resizer.reportReady = () => emit('onReady')
-        return () => h('iframe', { 'data-frame': '' })
-      },
-    }),
-  }
-})
-
-vi.mock('@iframe-resizer/child/index.umd.js?raw', () => ({ default: '' }))
 
 vi.mock('@/apps/mail/utils', () => ({
   analyzeRemoteAssets: () => ({ images: 0, hasRemote: false }),
@@ -57,21 +40,43 @@ const mount = (content = '<p>A message with a body.</p>', props: Record<string, 
   return root
 }
 
-const frame = (root: HTMLElement) => root.querySelector<HTMLElement>('[data-frame]')
+const frame = (root: HTMLElement) => root.querySelector('iframe')
 const rendered = (root: HTMLElement) =>
   new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
 const stylesheets = (doc: Document) =>
   [...doc.querySelectorAll('style')].map((style) => style.textContent).join('\n')
-const placeholder = (root: HTMLElement) => root.querySelector('.animate-pulse')
+const waiting = (root: HTMLElement) => frame(root)!.classList.contains('invisible')
 
 // The frame's document with its own scripts run, as the frame runs them. Nothing is laid out
 // here, so the pane's width and the width the message takes up are given; changing them and
 // sending a resize stands in for the pane changing size. The message's width can instead follow
 // the body's, for content sized from it. The body is as wide as it is held, else as the root it is
 // laid out in, else it fills the pane on screen, which a zoomed body outgrows by the zoom.
-type Pane = { width: number; content: number | ((body: number) => number) }
-const framed = (root: HTMLElement, pane: Pane) =>
-  new JSDOM(frame(root)!.getAttribute('srcdoc')!, {
+// The message's height is given the same way, as a number or read off the document, and `settle`
+// is the browser's part once it has laid the message out: it tells whoever watches the message's
+// box that the box changed, if it did. A collapsed message is not laid out: its root has no box,
+// though its window keeps the width it had, as in Chrome. What
+// the document then posts to its parent reaches the page as coming from this message's frame.
+type Pane = {
+  width: number
+  content: number | ((body: number) => number)
+  height?: number | ((message: Document) => number)
+  // How far down the message's content reaches, when something is drawn below its box.
+  reach?: number
+  // False while the message is collapsed.
+  laidOut?: boolean
+}
+const framed = (root: HTMLElement, pane: Pane) => {
+  const box = (message: Document) =>
+    pane.laidOut === false
+      ? { width: 0, height: 0 }
+      : {
+          width: pane.width,
+          height: typeof pane.height === 'function' ? pane.height(message) : (pane.height ?? 0),
+        }
+  let watcher = () => {}
+  let watched = { width: 0, height: 0 }
+  const { window: inner } = new JSDOM(frame(root)!.getAttribute('srcdoc')!, {
     runScripts: 'dangerously',
     beforeParse(window) {
       const bodyWidth = () => {
@@ -102,12 +107,44 @@ const framed = (root: HTMLElement, pane: Pane) =>
       Object.defineProperty(window.HTMLBodyElement.prototype, 'getBoundingClientRect', {
         value: () => ({ width: bodyWidth() }),
       })
+      Object.defineProperty(window.HTMLHtmlElement.prototype, 'scrollHeight', {
+        get: () => pane.reach ?? box(window.document).height,
+      })
+      Object.defineProperty(window.HTMLHtmlElement.prototype, 'getBoundingClientRect', {
+        value: () => box(window.document),
+      })
+      Object.assign(window, {
+        ResizeObserver: class {
+          constructor(changed: () => void) {
+            watcher = changed
+          }
+          observe() {}
+        },
+      })
+      Object.defineProperty(window, 'parent', {
+        value: {
+          postMessage: (data: unknown) =>
+            globalThis.window.dispatchEvent(
+              new MessageEvent('message', { data, source: frame(root)!.contentWindow }),
+            ),
+        },
+      })
     },
   })
+  const settle = () => {
+    const now = box(inner.document)
+    if (now.width === watched.width && now.height === watched.height) return
+    watched = now
+    watcher()
+  }
+  return { window: inner, settle }
+}
+
+const REPLY =
+  '<div>Thanks, will do.</div><blockquote type="cite"><div>On 4 Feb, Ana wrote:</div><div>Can you send it?</div></blockquote>'
 
 beforeEach(() => {
   window.__ = (message: string) => message
-  resizer.reportReady = () => {}
   theme.value = 'light'
   platform.mac = true
   document.body.innerHTML = ''
@@ -118,33 +155,21 @@ afterEach(() => {
 })
 
 describe('EmailContent', () => {
-  // The frame is measured by asking the document inside it how tall it is, so it has to be laid
-  // out the whole time — taken out of the layout it reports 1px, and stops reporting at all.
-  it('lays the frame out while it is still waiting to be ready', async () => {
+  // The frame is made as tall as the document inside it says it is, so it has to be laid out
+  // the whole time: taken out of the layout, its document has no height to say.
+  it('lays the frame out while it is still waiting to be measured', async () => {
     const root = mount()
     await nextTick()
 
     expect(frame(root)).not.toBeNull()
     expect(frame(root)!.style.display).not.toBe('none')
-    expect(placeholder(root)).not.toBeNull()
-  })
-
-  it('shows the frame and drops the placeholder once the resizer reports ready', async () => {
-    const root = mount()
-    await nextTick()
-
-    resizer.reportReady()
-    await nextTick()
-
-    expect(frame(root)!.style.display).not.toBe('none')
-    expect(frame(root)!.className).not.toContain('invisible')
-    expect(placeholder(root)).toBeNull()
+    expect(waiting(root)).toBe(true)
+    // Hidden, it takes no room: what follows the message does not wait below an empty gap.
+    expect(frame(root)!.style.height).toBe('0px')
   })
 
   it("folds away an Apple Mail reply's quoted trail", async () => {
-    const root = mount(
-      '<div>Thanks, will do.</div><blockquote type="cite"><div>On 4 Feb, Ana wrote:</div><div>Can you send it?</div></blockquote>',
-    )
+    const root = mount(REPLY)
     await nextTick()
 
     const doc = new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
@@ -217,12 +242,160 @@ describe('EmailContent', () => {
         }),
       )
 
-    send(first.querySelector<HTMLIFrameElement>('[data-frame]')!.contentWindow)
+    send(frame(first)!.contentWindow)
     expect(presses).toHaveBeenCalledTimes(1)
 
     send(null)
     expect(presses).toHaveBeenCalledTimes(1)
     document.removeEventListener('keydown', presses)
+  })
+})
+
+describe('EmailContent makes its frame as tall as its message', () => {
+  it('shows the frame once, at the height of the message', async () => {
+    const root = mount()
+    await nextTick()
+
+    framed(root, { width: 600, content: 600, height: 420 }).settle()
+    await nextTick()
+
+    expect(frame(root)!.style.height).toBe('420px')
+    expect(waiting(root)).toBe(false)
+  })
+
+  it('grows when the quoted trail is shown, and shrinks back when it is hidden again', async () => {
+    const root = mount(REPLY)
+    await nextTick()
+    const { window, settle } = framed(root, {
+      width: 600,
+      content: 600,
+      height: (message) => (message.querySelector('blockquote.quote-hidden') ? 120 : 900),
+    })
+    const toggle = window.document.querySelector<HTMLElement>('.quote-toggle')!
+    settle()
+    await nextTick()
+    expect(frame(root)!.style.height).toBe('120px')
+
+    toggle.click()
+    settle()
+    await nextTick()
+    expect(frame(root)!.style.height).toBe('900px')
+
+    toggle.click()
+    settle()
+    await nextTick()
+    expect(frame(root)!.style.height).toBe('120px')
+  })
+
+  // An image that arrives late, or the pane narrowing and the text wrapping onto more lines. A
+  // height between two pixels is rounded up, so the last line is never cut.
+  it('follows the message as it is laid out again, never a pixel short of it', async () => {
+    const root = mount()
+    await nextTick()
+    const pane: Pane = { width: 600, content: 600, height: 420 }
+    const { settle } = framed(root, pane)
+    settle()
+
+    Object.assign(pane, { width: 360, height: 1310.25 })
+    settle()
+    await nextTick()
+
+    expect(frame(root)!.style.height).toBe('1311px')
+  })
+
+  // A block the sender positioned below the rest of the message is part of it, not cut off.
+  it('makes room for content drawn below the rest of the message', async () => {
+    const root = mount()
+    await nextTick()
+
+    framed(root, { width: 600, content: 600, height: 48, reach: 700 }).settle()
+    await nextTick()
+
+    expect(frame(root)!.style.height).toBe('700px')
+  })
+
+  // A message is mounted collapsed when it is not the last of its thread, and collapsed it has
+  // no layout to measure.
+  it('stays hidden until a collapsed message is opened', async () => {
+    const root = mount()
+    await nextTick()
+    const pane: Pane = { width: 600, content: 600, height: 420, laidOut: false }
+    const { settle } = framed(root, pane)
+    settle()
+    await nextTick()
+    expect(waiting(root)).toBe(true)
+
+    Object.assign(pane, { laidOut: true })
+    settle()
+    await nextTick()
+    expect(frame(root)!.style.height).toBe('420px')
+    expect(waiting(root)).toBe(false)
+  })
+
+  it('keeps its height while its message is collapsed, to open at it again', async () => {
+    const root = mount()
+    await nextTick()
+    const pane: Pane = { width: 600, content: 600, height: 420 }
+    const { settle } = framed(root, pane)
+    settle()
+
+    Object.assign(pane, { laidOut: false })
+    settle()
+    await nextTick()
+
+    expect(frame(root)!.style.height).toBe('420px')
+    expect(waiting(root)).toBe(false)
+  })
+
+  // A sheet that fills its window would make the message as tall as its frame, whatever its
+  // content, and the frame could never shrink to it.
+  it('measures a message by its content when its own sheet says to fill the window', async () => {
+    const root = mount(
+      '<style>html, body { height: 100% !important; }</style><p>A short message.</p>',
+    )
+    await nextTick()
+
+    const { window } = framed(root, { width: 600, content: 600 })
+    const { documentElement, body } = window.document
+    expect(window.getComputedStyle(documentElement).height).toBe('auto')
+    expect(window.getComputedStyle(body).height).toBe('auto')
+  })
+
+  // Every expanded message hears every frame, and any window that can reach the page can post
+  // to it.
+  it("takes its height from its own frame only, not from another message's or a stranger", async () => {
+    const first = mount()
+    const second = mount()
+    await nextTick()
+    const report = (source: Window | null) =>
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { type: 'height', height: 5000 }, source }),
+      )
+
+    report(frame(second)!.contentWindow)
+    report(null)
+    await nextTick()
+
+    expect(frame(first)!.style.height).toBe('0px')
+    expect(waiting(first)).toBe(true)
+    expect(frame(second)!.style.height).toBe('5000px')
+  })
+
+  it('ignores a height that is not a length', async () => {
+    const root = mount()
+    await nextTick()
+
+    for (const height of ['tall', Number.NaN, Number.POSITIVE_INFINITY, -40, null])
+      window.dispatchEvent(
+        new MessageEvent('message', {
+          data: { type: 'height', height },
+          source: frame(root)!.contentWindow,
+        }),
+      )
+    await nextTick()
+
+    expect(frame(root)!.style.height).toBe('0px')
+    expect(waiting(root)).toBe(true)
   })
 })
 
@@ -281,7 +454,16 @@ describe('dates in a message', () => {
   const inFrame = async (content: string) => {
     const root = mount(content, { sentAt })
     await shown(root)
-    const dom = new JSDOM(frame(root)!.getAttribute('srcdoc')!, { runScripts: 'dangerously' })
+    const dom = new JSDOM(frame(root)!.getAttribute('srcdoc')!, {
+      runScripts: 'dangerously',
+      // jsdom lays nothing out, so nothing resizes; it has no ResizeObserver to say so.
+      beforeParse: (window) =>
+        Object.assign(window, {
+          ResizeObserver: class {
+            observe() {}
+          },
+        }),
+    })
     const posted = vi.fn()
     const opened = vi.fn()
     // The frame's parent is itself here.

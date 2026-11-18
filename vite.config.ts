@@ -234,10 +234,6 @@ export default defineConfig(({ mode }) => ({
     // name does not resolve from this package and Vite skips it.
     include: [
       'mediasoup-client > debug',
-      // Imported from @iframe-resizer/vue's raw .vue source, which is never pre-bundled, so
-      // left alone Vite resolves it through its `browser` field to a UMD build that has no
-      // default export, and the page fails to load.
-      '@iframe-resizer/vue > @iframe-resizer/core',
       // The frappe-ui plugin lists these two by bare name, which pnpm cannot resolve here.
       'frappe-ui > highlight.js/lib/core',
       'frappe-ui > vue-sonner',

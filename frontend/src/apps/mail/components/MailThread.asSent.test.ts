@@ -49,13 +49,6 @@ vi.mock('@/apps/mail/components/MessageReactions.vue', empty)
 vi.mock('@/apps/mail/components/MailDate.vue', empty)
 vi.mock('@/apps/mail/components/AttachmentViewer.vue', empty)
 
-// The message's frame, as EmailContent's own tests stub it.
-vi.mock('@iframe-resizer/vue/iframe-resizer.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return { default: defineComponent({ setup: () => () => h('iframe', { 'data-frame': '' }) }) }
-})
-vi.mock('@iframe-resizer/child/index.umd.js?raw', () => ({ default: '' }))
-
 const query = vi.hoisted(() => ({
   current: {
     data: fromPartial<Partial<Mail>[] | undefined>(undefined),
@@ -135,7 +128,7 @@ const openThread = async () => {
 
 const colorScheme = () =>
   new DOMParser()
-    .parseFromString(root.querySelector('[data-frame]')!.getAttribute('srcdoc')!, 'text/html')
+    .parseFromString(root.querySelector('iframe')!.getAttribute('srcdoc')!, 'text/html')
     .querySelector('meta[name="color-scheme"]')!
     .getAttribute('content')
 
