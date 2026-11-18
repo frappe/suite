@@ -72,8 +72,15 @@ export const useListSelection = ({
   // at a time, and whatever was ticked before the run began stays ticked. Toggling the rows stepped
   // between instead lost the anchor, and turning round unticked two rows a step. A run ends when the
   // cursor moves without Shift — the next one then starts from wherever it is — or on a tick by hand.
+  // So every arrow step comes through here, Shift or not: a run that ended only when the next
+  // Shift step started elsewhere carried on after a walk away and back to where it stopped.
+  // `from` is empty when there was no cursor; the run then starts on `to`. An empty `to` (the edge
+  // of the list) moves nothing.
   let run: { anchor: string[]; to: string[]; before: string[] } | undefined
-  const extendRange = (from: string[], to: string[]) => {
+  const moveCursor = (from: string[], to: string[], extend: boolean) => {
+    if (!extend) return void (run = undefined)
+    if (!to.length) return
+    if (!from.length) from = to
     const all = keys()
     const continues = run && from.length === run.to.length && from.every((k, i) => k === run!.to[i])
     if (!run || !continues)
@@ -106,7 +113,7 @@ export const useListSelection = ({
     isAllSelected,
     mobileSelectionMode,
     toggleSelect,
-    extendRange,
+    moveCursor,
     toggleSelectAll,
     resetSelections,
     isGroupSelected,
