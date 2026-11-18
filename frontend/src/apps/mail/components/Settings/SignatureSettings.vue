@@ -47,7 +47,6 @@
       v-model="showAddSignature"
       @reload-signatures="signatures.refetch().catch(() => {})"
     />
-    <SetDefaultSignatureModal v-model="showSetSignature" :signature="selectedSignature" />
     <EditSignatureModal
       v-model="showEditSignature"
       :signature-i-d="selectedSignature"
@@ -58,13 +57,12 @@
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
+import { Edit2, Ellipsis, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
 import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal.vue'
-import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
@@ -78,7 +76,6 @@ function addSignature() {
 }
 
 const selectedSignature = ref('')
-const showSetSignature = ref(false)
 const showEditSignature = ref(false)
 
 const signatures = useQuery(api.mail.signatures.list)
@@ -90,15 +87,6 @@ const editSignature = (signature: string) => {
 }
 
 const signatureOptions = (signature: OutputOf<typeof api.mail.signatures.list>[number]) => [
-  {
-    label: __('Set as default'),
-    icon: Pin,
-    onClick: () => {
-      selectedSignature.value = signature.html_body!
-      showSetSignature.value = true
-    },
-    condition: () => Boolean(signature.html_body),
-  },
   {
     label: __('Edit'),
     icon: Edit2,
