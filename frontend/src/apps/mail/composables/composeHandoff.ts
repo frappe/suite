@@ -1,8 +1,6 @@
 import type { Router } from 'vue-router'
 
-import { writesSettled } from '@/api'
 import type { ComposeMailData } from '@/apps/mail/types'
-import { loadPage, pageLoadNeededFor } from '@/platform/pwa'
 
 /**
  * The draft a `/compose` navigation is carrying — a reply, a forward, a `mailto:` link, or a draft
@@ -19,41 +17,11 @@ import { loadPage, pageLoadNeededFor } from '@/platform/pwa'
  */
 let pending: ComposeMailData | undefined
 
-/*
- * One move loads the page afresh, which takes what is in memory with it: an iPhone's browser reloads
- * on going from another app into Mail (see `pageLoadNeededFor`), and another app writing to someone
- * is exactly that move. That move is made as a page load from the start (see `openComposePage`), and
- * its draft waits in sessionStorage for the page that loads.
- */
-const STORAGE_KEY = 'suite.mail.pending-compose'
-
-const isDraft = (value: unknown): value is ComposeMailData =>
-  !!value && typeof value === 'object' && !Array.isArray(value)
-
-const store = (draft?: ComposeMailData) => {
-  try {
-    if (draft) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
-    else sessionStorage.removeItem(STORAGE_KEY)
-  } catch {
-    /* No storage, or a draft too big for it: the page opens empty, as it did before this copy. */
-  }
-}
-
-const takeStored = (): ComposeMailData | undefined => {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
-    sessionStorage.removeItem(STORAGE_KEY)
-    const stored: unknown = raw ? JSON.parse(raw) : undefined
-    return isDraft(stored) ? stored : undefined
-  } catch {
-    return undefined
-  }
-}
+const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
 
 export const takePendingCompose = () => {
-  const draft = pending ?? takeStored()
+  const draft = pending
   pending = undefined
-  store(undefined)
   return draft
 }
 
@@ -64,28 +32,8 @@ export const takePendingCompose = () => {
  *
  * Passing no draft is a request for an empty one, and clears whatever a navigation that never
  * happened left behind.
- *
- * A move that would load the page afresh anyway is made as a page load at once. Left to the router,
- * it mounted the compose page on the page being left before the reload; that composer saved the
- * draft, and the page that loaded saved it again — two drafts for one press.
  */
-export const openComposePage = async (
-  router: Router,
-  accountId: string,
-  draft?: ComposeMailData,
-): Promise<void> => {
-  // By path rather than name: from another app, Mail's routes are not registered until the first
-  // visit to /mail, which this may be.
-  const path = `/mail/account/${encodeURIComponent(accountId)}/compose`
-  if (pageLoadNeededFor(path)) {
-    pending = undefined
-    store(draft)
-    // What the page being left is still saving lands first, as it does before the router's reload.
-    await writesSettled()
-    loadPage(path)
-    return
-  }
-  pending = draft
-  store(undefined)
-  await router.push(path)
+export const openComposePage = (router: Router, accountId: string, draft?: ComposeMailData) => {
+  setPendingCompose(draft)
+  return router.push({ name: 'mail-compose', params: { accountId } })
 }

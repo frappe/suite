@@ -1,4 +1,5 @@
 import { defineAsyncComponent, getCurrentInstance, onScopeDispose, watch } from 'vue'
+import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
@@ -72,22 +73,32 @@ export type MailRecipient = Pick<DraftRecipient, 'email' | 'display_name'>
 
 export interface MailCompose {
   /**
-   * Opens Mail's composer addressed to `to`, less the reader's own addresses. Resolves once it has
-   * been asked to open, or once the failure to load Mail's code has been said.
+   * Opens Mail's composer addressed to `to`: on a desktop, less the reader's own addresses, and
+   * resolved once it has been asked to open or the failure to load Mail's code has been said; on a
+   * phone, once Mail's compose link has been reached.
    */
   compose(to: readonly MailRecipient[]): Promise<void>
 }
 
+export interface MailComposeOptions {
+  /**
+   * Whether the page is a phone's. There Mail's composer is a page of its own: `compose` goes to
+   * Mail by its compose link (`/mail?compose=1&to=`), which Mail's layout opens.
+   */
+  phone?: () => boolean
+}
+
 /**
- * Writes to people from another app without leaving it: Mail's compose window opens over the page
- * on a desktop, and on a phone Mail's compose page opens, which Back leaves for the page it came
- * from. Either way it is Mail's composer, writing as Mail's active account; with no Mail account,
- * the device's mail app gets the same people. Mail's code loads on the first `compose`, not
- * before. Call it in a component's setup.
+ * Writes to people from another app. On a desktop it does so without leaving the page: Mail's
+ * compose window opens over it, writing as Mail's active account, to everyone but the reader; with
+ * no Mail account, the device's mail app gets the same people. Mail's composer loads on the first
+ * `compose`, not before. On a phone it goes to Mail's compose page (see `phone`). Call it in a
+ * component's setup.
  */
-export function useMailCompose(): MailCompose {
+export function useMailCompose({ phone = () => false }: MailComposeOptions = {}): MailCompose {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useMailCompose() must be called in a component setup')
+  const router = useRouter()
   let host: Promise<MountedComposeHost> | undefined
   let disposed = false
   // The window belongs to the page that opened it, as Mail's belongs to Mail: leaving the page
@@ -102,6 +113,13 @@ export function useMailCompose(): MailCompose {
     )
   return {
     compose: async (to) => {
+      if (phone()) {
+        await router.push({
+          path: '/mail',
+          query: { compose: '1', to: to.map(({ email }) => email).join(',') },
+        })
+        return
+      }
       // A load that failed (a dropped connection, or a deploy since the page loaded) is not kept:
       // the next press tries again.
       host ??= mount().catch((error: unknown) => {

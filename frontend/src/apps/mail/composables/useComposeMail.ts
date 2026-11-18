@@ -46,7 +46,6 @@ import {
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { translate as __ } from '@/platform/translation'
-import { TransportError } from '@/platform/transport'
 
 /** The mounted editor, as far as this composable cares about it. */
 interface EditorHost {
@@ -116,11 +115,6 @@ class OversizedImageError extends Error {
  * mobile — and the only way to keep those from drifting into two subtly different mail clients is
  * for the behaviour to live in one place and only the markup to differ.
  */
-/** A request that got no answer: the connection or the page dropped it, or it was aborted. */
-const isUnanswered = (error: unknown) =>
-  (error instanceof TransportError && error.status === 0) ||
-  (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError')
-
 export const useComposeMail = (options: ComposeMailOptions) => {
   const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
 
@@ -197,11 +191,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     composed: true,
   })
   const originalMail = ref<ComposeMailData>()
-  // What the server holds. After a save, that is the mail as the save sent it, not as it stands by
-  // the time the answer comes: what was typed while the save was going is still to be saved.
-  const snapshot = (): ComposeMailData => JSON.parse(JSON.stringify(mail))
-  const updateOriginalMail = (asSaved: ComposeMailData = snapshot()) =>
-    (originalMail.value = { ...asSaved, id: mail.id })
+  const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
   const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
 
   // ── What's in the mail ──────────────────────────────────────────────────────────────────────
@@ -376,43 +366,24 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // outgoingBody), and a save starting in between would create a second draft beside it, or race it
   // to the same one.
   let isSending = false
-  // From a send's answer on: the message is the server's to deliver, and a draft save made for it
-  // after that (autosave, Close, the page going, the editor unmounting) would turn it back into a
-  // draft. Undo send brings it back as a draft of its own, in Drafts, not in this composer.
-  let submitted = false
-  // The mail as a draft's first save sent it, when no answer came back: the browser drops a page's
-  // requests as the page goes, and the server may well have made the draft all the same. A save on
-  // the way out with nothing new since makes no second one; the draft the server made, if it did,
-  // stands. With something typed since, it is made anyway: a second draft can be thrown away, lost
-  // text cannot be brought back. A composer that stays (a dropped connection) saves as before.
-  let unansweredCreate: string | undefined
-  // `keepalive`: the page is going (see flushDraft), and the request has to outlive it.
-  // `leaving`: the save of a composer on its way out (see settleDraft and flushDraft).
-  const saveDraft = async ({
-    keepalive = false,
-    leaving = keepalive,
-  }: { keepalive?: boolean; leaving?: boolean } = {}) => {
+  const saveDraft = async () => {
     if (
       pendingSave ||
       isSending ||
-      submitted ||
       discarded ||
       !isDraftUpdated.value ||
       isLoading.value ||
-      isDiscarding.value ||
-      (leaving && !mail.id && unansweredCreate === JSON.stringify(mail))
+      isDiscarding.value
     )
       return
     isSavingDraft.value = true
     pendingSave = mail.id
       ? updateDraftSubmit({
           submit: false,
-          keepalive,
         })
       : !isMailEmpty.value
         ? createMailSubmit({
             save_as_draft: true,
-            keepalive,
           })
         : Promise.resolve()
     try {
@@ -427,25 +398,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       pendingSave = undefined
     }
   }
-  /**
-   * Keeps the draft for a page that is leaving its document, which runs no route guard and unmounts
-   * nothing: on an iPhone browser the compose page is a page load of its own, and both its Close and
-   * the Back gesture go back to the page before it. A save already going lands first, then whatever
-   * was typed since is saved, to the same draft.
-   */
-  const settleDraft = async () => {
-    while (pendingSave) await pendingSave.catch(() => {})
-    await saveDraft({ leaving: true })
-  }
-
-  /**
-   * The same on `pagehide`, which waits for nothing: what was typed since the last save goes now,
-   * in a request that outlives the page. Under the same rules as every save, so it updates the draft
-   * already made, makes none while the first save is still going, and none for an empty composer.
-   * A body over the browser's limit for such a request (64 KB) does not go: the last autosave stands.
-   */
-  const flushDraft = () => void saveDraft({ keepalive: true })
-
   watchDebounced(
     mail,
     () => {
@@ -509,7 +461,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           send_at: sendAt,
           undo_send: !sendAt,
         })
-      submitted = true
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
@@ -558,9 +509,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // signature still saves) goes quietly.
     if (isUntouched.value) {
       if (draft.id)
-        // In a request that outlives the page, which the phone's compose page leaves at once.
         void client
-          .mutation(api.mail.messages.deleteDraft, { account, id: draft.id }, { keepalive: true })
+          .mutation(api.mail.messages.deleteDraft, { account, id: draft.id })
           .then(requestListReload, () => {})
       return
     }
@@ -678,18 +628,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         : undefined,
     )
   }
-  const onMailUpdateSuccess = (
-    {
-      id,
-      status,
-      error,
-      thread_id,
-      submission_id,
-      send_at,
-      undo_send_period,
-    }: OutputOf<typeof api.mail.messages.create>,
-    asSaved?: ComposeMailData,
-  ) => {
+  const onMailUpdateSuccess = ({
+    id,
+    status,
+    error,
+    thread_id,
+    submission_id,
+    send_at,
+    undo_send_period,
+  }: OutputOf<typeof api.mail.messages.create>) => {
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     if (error) {
@@ -697,7 +644,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       raiseError(failure)
       throw failure
     }
-    updateOriginalMail(asSaved)
+    updateOriginalMail()
     if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
     if (!isInThread || status === 'Submitted') reloadMails()
@@ -753,12 +700,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     save_as_draft,
     send_at,
     undo_send,
-    keepalive = false,
   }: {
     save_as_draft: boolean
     send_at?: string
     undo_send?: boolean
-    keepalive?: boolean
   }) {
     const body = await outgoingBody({ sending: !save_as_draft })
     const input: InputOf<typeof api.mail.messages.create> = {
@@ -778,26 +723,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: save_as_draft ? undefined : remindAt.value,
     }
-    // A draft is saved as it stood when it went, so what is typed meanwhile is still owed a save.
-    // A send owes nothing more (see `submitted`).
-    const asSaved = save_as_draft ? snapshot() : undefined
-    let result: OutputOf<typeof api.mail.messages.create>
-    try {
-      result = await (keepalive ? createMailOnLeave : createMail).run(input)
-      unansweredCreate = undefined
-    } catch (error) {
-      // No answer at all, as status 0 or as the request's abort: whether the server made the draft
-      // is not known.
-      if (save_as_draft && isUnanswered(error)) unansweredCreate = JSON.stringify(asSaved)
-      throw error
-    }
-    await onMailUpdateSuccess(result, asSaved)
+    const result = await createMail.run(input)
+    await onMailUpdateSuccess(result)
   }
   const updateDraft = useMutation(api.mail.messages.updateDraft)
-  // The saves made as the page goes: the same calls, in requests that outlive the page. Only then,
-  // as the browser caps such requests at 64 KB, which a quoted reply can pass on its own.
-  const createMailOnLeave = useMutation(api.mail.messages.create, { keepalive: true })
-  const updateDraftOnLeave = useMutation(api.mail.messages.updateDraft, { keepalive: true })
   // The body and its inline attachments as a save or a send carries them. An image left in the body
   // or the quote as a data URL goes as a file, not as base64 in the HTML (see uploadEmbeddedImages).
   // Not while the editor's own uploads are running: one of those is about to replace its image, and
@@ -854,12 +783,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     submit,
     send_at,
     undo_send,
-    keepalive = false,
   }: {
     submit: boolean
     send_at?: string
     undo_send?: boolean
-    keepalive?: boolean
   }) {
     const body = await outgoingBody({ sending: submit })
     const input: InputOf<typeof api.mail.messages.updateDraft> = {
@@ -877,17 +804,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: submit ? remindAt.value : undefined,
     }
-    const asSaved = submit ? undefined : snapshot()
-    const result = await (keepalive ? updateDraftOnLeave : updateDraft).run(input)
-    await onMailUpdateSuccess(result, asSaved)
+    const result = await updateDraft.run(input)
+    await onMailUpdateSuccess(result)
   }
-  const isLoading = computed(
-    () =>
-      createMail.isPending ||
-      updateDraft.isPending ||
-      createMailOnLeave.isPending ||
-      updateDraftOnLeave.isPending,
-  )
+  const isLoading = computed(() => createMail.isPending || updateDraft.isPending)
 
   // ── Attachments ─────────────────────────────────────────────────────────────────────────────
 
@@ -1051,8 +971,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     isSaveFailed,
     isDiscarding,
     saveDraft,
-    settleDraft,
-    flushDraft,
     payListDebt,
     sendMail,
     discardMail,

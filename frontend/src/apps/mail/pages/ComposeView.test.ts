@@ -1,57 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
-import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
-import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { translate } from '@/platform/translation'
 
 import ComposeView from './ComposeView.vue'
 
 // The phone's full-page composer, mounted whole as its own route at phone width, against a small
-// Frappe that answers each call as the test tells it to, and records each draft save it is sent.
-interface Save {
-  method: string
-  body: Record<string, unknown>
-  keepalive: boolean
-}
-const SAVES = ['create_mail', 'update_draft_mail']
+// Frappe that answers each call as the test tells it to.
 const server = vi.hoisted<{
   asked: string[]
-  saves: Save[]
   answer: (method: string) => Promise<Response> | Response
-}>(() => ({ asked: [], saves: [], answer: () => new Response('{}') }))
+}>(() => ({ asked: [], answer: () => new Response('{}') }))
 vi.hoisted(() => {
-  globalThis.fetch = async (input, init) => {
+  globalThis.fetch = async (input) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
     const method = url.pathname.split('.').at(-1) ?? ''
     server.asked.push(method)
-    if (method === 'create_mail' || method === 'update_draft_mail')
-      server.saves.push({
-        method,
-        body: JSON.parse(String(init?.body ?? '{}')),
-        keepalive: !!init?.keepalive,
-      })
     return server.answer(method)
   }
 })
 const reply = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
-// A save, answered as the draft the server keeps: one, under one id.
-const savedDraft = () =>
-  reply({
-    message: {
-      name: 'draft-1',
-      id: 'draft-1',
-      status: 'Drafted',
-      error: null,
-      thread_id: null,
-      submission_id: null,
-      send_at: null,
-      undo_send_period: null,
-    },
-  })
-const answerSaves = (method: string) =>
-  SAVES.includes(method) ? savedDraft() : reply({ message: [] })
 
 // The real frappe-ui pieces the page is built from (tests otherwise get the recorder's stand-ins).
 // Its dialogs stay shut, so they render nothing; its bottom sheet is the real one, since that is
@@ -104,7 +74,6 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
     accountId: computed(() => 'acc'),
     account: computed(() => ({ default_outgoing_email: 'maya@example.com' })),
     identities: computed(() => ({ data: [{ email: 'maya@example.com', _name: 'Maya' }] })),
-    mailboxes: computed(() => ({ data: [] })),
     mailboxIds: computed(() => ({ sent: 'e' })),
   })
   return { injectAccountScope: scope, provideAccountScope: scope }
@@ -115,8 +84,7 @@ Element.prototype.scrollIntoView = () => {}
 const apps: ReturnType<typeof createApp>[] = []
 beforeEach(() => {
   server.asked = []
-  server.saves = []
-  server.answer = answerSaves
+  server.answer = () => reply({ message: [] })
   pickFiles.mockReset()
   upload.mockReset()
 })
@@ -125,8 +93,8 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-/** The compose page, open on a new mail, from Mail. */
-async function openFromMail() {
+/** The compose page, open on a new mail. */
+async function openComposePage() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -176,7 +144,7 @@ const watchFileChooser = () => {
 
 describe("the compose page's paperclip", () => {
   it('offers a file from the device and one from Drive, and nothing else', async () => {
-    await openFromMail()
+    await openComposePage()
 
     await openSheet('Attach')
 
@@ -190,7 +158,7 @@ describe("the compose page's paperclip", () => {
       file_url: '/private/files/Report.pdf',
       file_size: 1024,
     })
-    await openFromMail()
+    await openComposePage()
     const chooserOpened = watchFileChooser()
 
     await openSheet('Attach')
@@ -225,7 +193,7 @@ describe("the compose page's paperclip", () => {
           })
         : reply({ message: [] })
     pickFiles.mockResolvedValueOnce([{ name: 'node-invoice', title: 'Invoice.pdf' }])
-    await openFromMail()
+    await openComposePage()
     const chooserOpened = watchFileChooser()
 
     await openSheet('Attach')
@@ -240,83 +208,11 @@ describe("the compose page's paperclip", () => {
 
 describe("the compose page's More actions", () => {
   it('leaves Drive to the paperclip', async () => {
-    await openFromMail()
+    await openComposePage()
 
     await openSheet('More actions')
 
     expect(sheetRows()).toContain('Schedule send')
     expect(sheetRows()).not.toContain('Attach from Drive')
-  })
-})
-
-/** The compose page, opened for the event's people as the first page of its document. */
-async function openFirstPage(): Promise<Router> {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/mail/account/:accountId/compose', component: ComposeView }],
-  })
-  // The first navigation of the router: no page of this document before it.
-  await openComposePage(router, 'acc', { to: [{ email: 'dana@brightwave.example' }] })
-  const app = createApp({ render: () => h(RouterView) })
-  app.config.globalProperties.__ = translate
-  app.provide('$user', { data: { name: 'maya@example.com', undo_send_period: 10 } })
-  app.use(router)
-  app.mount(document.body.appendChild(document.createElement('div')))
-  apps.push(app)
-  await vi.waitFor(() => expect(subject()).not.toBeNull())
-  return router
-}
-
-const subject = () =>
-  [...document.querySelectorAll('label')]
-    .find((label) => label.textContent?.includes('Subject'))
-    ?.querySelector('input') ?? null
-const typeSubject = async (text: string) => {
-  const field = subject()!
-  field.value = text
-  field.dispatchEvent(new Event('input', { bubbles: true }))
-  await nextTick()
-}
-
-describe('leaving the compose page for the page before its document', () => {
-  it('keeps what was typed when Close goes back', async () => {
-    const router = await openFirstPage()
-    const back = vi.spyOn(router, 'back')
-    await typeSubject('Planning, Thursday')
-
-    button('Close')!.click()
-
-    await vi.waitFor(() => expect(back).toHaveBeenCalledOnce())
-    // Saved before going: going back leaves the document, which waits for nothing.
-    expect(server.saves).toHaveLength(1)
-    expect(server.saves[0]).toMatchObject({
-      method: 'create_mail',
-      body: { subject: 'Planning, Thursday', to: [{ email: 'dana@brightwave.example' }] },
-    })
-  })
-
-  it('keeps what was typed when the page is hidden by the Back gesture', async () => {
-    await openFirstPage()
-    await typeSubject('Planning, Thursday')
-
-    window.dispatchEvent(new Event('pagehide'))
-
-    await vi.waitFor(() => expect(server.saves).toHaveLength(1))
-    expect(server.saves[0]).toMatchObject({
-      method: 'create_mail',
-      body: { subject: 'Planning, Thursday' },
-      keepalive: true,
-    })
-  })
-
-  it('sends nothing for a page left as it opened', async () => {
-    const router = await openFirstPage()
-    const back = vi.spyOn(router, 'back')
-
-    window.dispatchEvent(new Event('pagehide'))
-    button('Close')!.click()
-
-    await vi.waitFor(() => expect(back).toHaveBeenCalledOnce())
-    expect(server.saves).toEqual([])
   })
 })

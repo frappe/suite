@@ -13,14 +13,11 @@ vi.mock('frappe-ui', async (original) => ({
 
 // The server, and what has been written down for a page that closes mid-wait.
 const sent: unknown[] = []
-// The options each was sent with: keepalive for one sent as the page goes.
-const leftWith: { keepalive?: boolean }[] = []
 let refuse = false
 const stored = new Map<string, unknown>()
 vi.mock('@/apps/mail/utils/pendingRemovals', () => ({
-  sendRemoval: vi.fn((removal: unknown, options?: { keepalive?: boolean }) => {
+  sendRemoval: vi.fn((removal: unknown) => {
     sent.push(removal)
-    leftWith.push(options ?? {})
     return refuse ? Promise.reject(new Error('refused')) : Promise.resolve()
   }),
   rememberRemoval: vi.fn((removal: unknown) => {
@@ -37,11 +34,8 @@ const removal = { kind: 'draft', account: 'a', id: 'd1' } as const
 
 describe('commitAfterUndo', () => {
   beforeEach(() => {
-    // An earlier test's page goes, with whatever it left waiting.
-    window.dispatchEvent(new Event('pagehide'))
     shown.length = 0
     sent.length = 0
-    leftWith.length = 0
     stored.clear()
     refuse = false
   })
@@ -50,35 +44,6 @@ describe('commitAfterUndo', () => {
     const commitAfterUndo = await load()
     commitAfterUndo({ message: 'Draft discarded', removal, restore: vi.fn() })
     expect([...stored.values()]).toEqual([removal])
-    expect(sent).toEqual([])
-  })
-
-  it('sends the removal as the page goes, in a request that outlives it, and only once', async () => {
-    const commitAfterUndo = await load()
-    // Its own, told apart from any an earlier test left waiting.
-    const discarded = { kind: 'draft', account: 'a', id: 'd-left' } as const
-    const sends = () => sent.flatMap((item, i) => (item === discarded ? [leftWith[i]] : []))
-    const restore = vi.fn()
-    commitAfterUndo({ message: 'Draft discarded', removal: discarded, restore })
-
-    window.dispatchEvent(new Event('pagehide'))
-
-    expect(sends()).toEqual([{ keepalive: true }])
-    // The toast going with the page sends nothing more, and its Undo no longer brings anything back.
-    shown.at(-1)!.onDismiss()
-    shown.at(-1)!.action.onClick()
-    window.dispatchEvent(new Event('pagehide'))
-    expect(sends()).toHaveLength(1)
-    expect(restore).not.toHaveBeenCalled()
-  })
-
-  it('sends nothing as the page goes once Undo has taken it back', async () => {
-    const commitAfterUndo = await load()
-    commitAfterUndo({ message: 'Draft discarded', removal, restore: vi.fn() })
-    shown[0].action.onClick()
-
-    window.dispatchEvent(new Event('pagehide'))
-
     expect(sent).toEqual([])
   })
 

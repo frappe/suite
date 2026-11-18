@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
-import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
@@ -162,7 +161,6 @@ beforeEach(() => {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
-  takePendingCompose()
 })
 
 const PAGE = '/calendar/week/2026-11-18?event=standup'
@@ -186,7 +184,8 @@ async function openPage(
   await router.push(PAGE)
   const Page = defineComponent({
     setup() {
-      const mail = useMailCompose()
+      // As the calendar asks: a phone's page is the phone's layout.
+      const mail = useMailCompose({ phone: () => isMobile.value })
       return () =>
         h('button', { onClick: () => void mail.compose(participants) }, 'Email participants')
     },
@@ -265,42 +264,34 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     expect(router.currentRoute.value.fullPath).toBe(PAGE)
   })
 
-  it("on a phone, opens Mail's compose page for the account, carrying them, and Back returns", async () => {
+  it('on a phone, goes to Mail by its compose link, carrying their addresses', async () => {
     isMobile.value = true
     const { router } = await openPage()
 
     button('Email participants')!.click()
 
-    await vi.waitFor(
-      () => expect(router.currentRoute.value.path).toBe('/mail/account/acc/compose'),
-      { timeout: 15_000 },
-    )
+    // Mail's layout opens its compose page from the link, as it does for any app.
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/mail'))
+    expect(router.currentRoute.value.query).toEqual({ compose: '1', to: ADDRESSES.join(',') })
+    // Nothing of the desktop window on the calendar's page: no composer, and none asked for.
+    await new Promise((resolve) => setTimeout(resolve, 100))
     expect(composer()).toBeNull()
-    expect(takePendingCompose()?.to).toEqual(PARTICIPANTS)
-
-    router.back()
-    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(PAGE))
+    expect(useComposeMail().composeRequest.value).toBeUndefined()
   })
 
-  it.each([false, true])(
-    'with no Mail account, hands them to the device’s mail app (phone: %s)',
-    async (phone) => {
-      isMobile.value = phone
-      server.mailAccounts = false
-      const open = vi.spyOn(window, 'open').mockImplementation(() => null)
-      const { router } = await openPage()
+  it('on a desktop, with no Mail account, hands them to the device’s mail app', async () => {
+    server.mailAccounts = false
+    const open = vi.spyOn(window, 'open').mockImplementation(() => null)
+    const { router } = await openPage()
 
-      button('Email participants')!.click()
+    button('Email participants')!.click()
 
-      await vi.waitFor(() => expect(open).toHaveBeenCalledOnce(), { timeout: 15_000 })
-      expect(decodeURIComponent(String(open.mock.calls[0][0]))).toBe(
-        `mailto:${ADDRESSES.join(',')}`,
-      )
-      expect(composer()).toBeNull()
-      expect(router.currentRoute.value.fullPath).toBe(PAGE)
-      open.mockRestore()
-    },
-  )
+    await vi.waitFor(() => expect(open).toHaveBeenCalledOnce(), { timeout: 15_000 })
+    expect(decodeURIComponent(String(open.mock.calls[0][0]))).toBe(`mailto:${ADDRESSES.join(',')}`)
+    expect(composer()).toBeNull()
+    expect(router.currentRoute.value.fullPath).toBe(PAGE)
+    open.mockRestore()
+  })
 
   it('opens nothing later for a page left while Mail was still loading', async () => {
     let answer!: () => void

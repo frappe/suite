@@ -907,13 +907,13 @@ watch(selectedCalendarEvent, (open) => {
   if (!open) openRow.value = ''
 })
 
-// The calendar has no composer of its own; Mail lends its own, over the calendar (mailto:
-// would depend on the OS having a mail handler, and the suite IS the mail client). Writing to
-// everyone is where attention goes next, so the card or sheet steps aside first, as it does in
-// Mail, rather than sitting over the window.
-const mailCompose = useMailCompose()
+// The calendar has no composer of its own; Mail lends its own (mailto: would depend on the OS
+// having a mail handler, and the suite IS the mail client). On a desktop it opens over the
+// calendar, and writing to everyone is where attention goes next, so the card steps aside first,
+// as it does in Mail, rather than sitting over the window. On a phone it is Mail's compose page.
+const mailCompose = useMailCompose({ phone: () => isMobile.value })
 const emailParticipants = async (people: MailRecipient[]) => {
-  await closeEventDetail()
+  if (!isMobile.value) await closeEventDetail()
   await mailCompose.compose(people)
 }
 

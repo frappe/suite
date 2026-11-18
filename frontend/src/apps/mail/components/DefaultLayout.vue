@@ -144,4 +144,22 @@ const emailEventParticipants = (people: DraftRecipient[]) => {
   selectedEvent.value = null
   requestCompose({ to: people })
 }
+
+// Compose deep link (?compose=1&to=a,b): how other apps on a phone (calendar's "email
+// participants") open mail's composer. Consumed on arrival — the query is cleared so reload/back
+// don't reopen the draft. Cleared first: on a phone the composer is a page, and the clearing,
+// started after it, would cancel the move to it.
+watch(
+  () => route.query.compose,
+  async (compose) => {
+    if (!compose) return
+    const to = String(route.query.to || '')
+      .split(',')
+      .filter(Boolean)
+    const { compose: _compose, to: _to, ...query } = route.query
+    await router.replace({ query })
+    requestCompose({ to: to.map((email) => ({ email })) })
+  },
+  { immediate: true },
+)
 </script>

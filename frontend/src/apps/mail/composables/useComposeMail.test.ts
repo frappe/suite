@@ -6,7 +6,6 @@ import { createApp, defineComponent, h, nextTick, onMounted, useTemplateRef } fr
 import type { ComposeMailData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { CustomImageExtension, mailEditorKit } from '@/apps/mail/utils/text-editor'
-import { TransportError } from '@/platform/transport'
 
 import { useComposeMail } from './useComposeMail'
 
@@ -41,9 +40,8 @@ vi.mock('@/api', () => ({
     },
   },
   client: { mutation: (reference: string, input: unknown) => server.mutation(reference, input) },
-  // A save's options (keepalive) reach the server beside its input.
-  useMutation: (reference: 'create' | 'updateDraft', options?: { keepalive?: boolean }) => ({
-    run: (input: unknown) => server[reference](input, options),
+  useMutation: (reference: 'create' | 'updateDraft') => ({
+    run: (input: unknown) => server[reference](input),
     isPending: false,
   }),
 }))
@@ -112,9 +110,7 @@ function compose({
   host = () => null,
   upload = vi.fn(),
   maxAttachmentSize,
-  mailDetails = draft,
 }: {
-  mailDetails?: ComposeMailData
   signedInAs?: string
   host?: () => ComposerHost
   upload?: Upload
@@ -125,7 +121,7 @@ function compose({
     defineComponent({
       setup() {
         composer = useComposeMail({
-          mailDetails,
+          mailDetails: draft,
           reloadMails: vi.fn(),
           close: () => (open = false),
           isOpen: () => open,
@@ -149,7 +145,6 @@ beforeEach(() => {
   scope.identities = mayaIdentities
   draft.attachments = []
   server.updateDraft.mockReset()
-  server.create.mockReset()
   server.mutation.mockReset()
   pickFiles.mockReset()
   requestCompose.mockReset()
@@ -569,199 +564,6 @@ describe('a reminder if nobody replies', () => {
     // By path, which opens from another app before Mail's routes load; by slug, which the guard
     // leaves alone, so the page the reader sent from stays in the history behind it.
     expect(routerPush).toHaveBeenCalledWith('/mail/account/account/mailbox/sent/thread-1')
-  })
-})
-
-describe('leaving a page that leaves its document', () => {
-  const saved = (id: string) => ({ id, status: 'Drafted', error: null })
-  const held = () => {
-    let settle!: (value: unknown) => void
-    return { promise: new Promise((resolve) => (settle = resolve)), settle }
-  }
-
-  it('saves what was typed since the last save as the page goes, to the same draft', async () => {
-    const composer = compose()
-    server.updateDraft.mockResolvedValue(saved('draft-1'))
-    composer.mail.subject = 'Fwd: Brief, with the dates'
-
-    composer.flushDraft()
-
-    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
-    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({
-      id: 'draft-1',
-      subject: 'Fwd: Brief, with the dates',
-      submit: false,
-    })
-    // In a request the browser lets outlive the page.
-    expect(server.updateDraft.mock.calls[0][1]).toEqual({ keepalive: true })
-    expect(server.create).not.toHaveBeenCalled()
-  })
-
-  it('sends nothing for a composer left as it opened', async () => {
-    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
-
-    composer.flushDraft()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(server.create).not.toHaveBeenCalled()
-    expect(server.updateDraft).not.toHaveBeenCalled()
-  })
-
-  it('makes no second draft while the first save is still going', async () => {
-    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
-    const first = held()
-    server.create.mockReturnValueOnce(first.promise)
-    composer.mail.subject = 'Planning'
-    void composer.saveDraft()
-    await vi.waitFor(() => expect(server.create).toHaveBeenCalledOnce())
-
-    composer.mail.subject = 'Planning, Thursday'
-    composer.flushDraft()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    expect(server.create).toHaveBeenCalledOnce()
-    expect(server.updateDraft).not.toHaveBeenCalled()
-    first.settle(saved('draft-9'))
-  })
-
-  const dropped = {
-    'as status 0': () =>
-      new TransportError({ type: 'NetworkError', message: 'Load request cancelled', status: 0 }),
-    'as an abort': () => new DOMException('Aborted', 'AbortError'),
-  }
-  it.each(Object.entries(dropped))(
-    'makes no second draft when the first save went out with all of it and its answer was dropped %s',
-    async (_, error) => {
-      const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
-      // The browser drops the request as the page goes: no answer, though the server may have
-      // made the draft.
-      server.create.mockRejectedValueOnce(error())
-      composer.mail.subject = 'Planning'
-      await composer.saveDraft()
-      expect(server.create).toHaveBeenCalledOnce()
-
-      // Then the page goes, with nothing typed since: pagehide, and Close on the way out.
-      composer.flushDraft()
-      await composer.settleDraft()
-      await new Promise((resolve) => setTimeout(resolve, 0))
-
-      expect(server.create).toHaveBeenCalledOnce()
-      expect(server.updateDraft).not.toHaveBeenCalled()
-    },
-  )
-
-  it('saves what was typed while that first save was out, as the page goes', async () => {
-    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
-    let drop!: () => void
-    server.create
-      .mockReturnValueOnce(
-        new Promise((_, reject) => (drop = () => reject(dropped['as status 0']()))),
-      )
-      .mockResolvedValue(saved('draft-2'))
-    composer.mail.subject = 'Planning'
-    const first = composer.saveDraft()
-    await vi.waitFor(() => expect(server.create).toHaveBeenCalledOnce())
-    composer.mail.subject = 'Planning, Thursday at ten'
-    drop()
-    await first
-
-    composer.flushDraft()
-
-    await vi.waitFor(() => expect(server.create).toHaveBeenCalledTimes(2))
-    expect(server.create.mock.calls[1][0]).toMatchObject({ subject: 'Planning, Thursday at ten' })
-    expect(server.create.mock.calls[1][1]).toEqual({ keepalive: true })
-  })
-
-  it('still saves a draft refused by the server on the way out', async () => {
-    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
-    // An answer: the server made nothing.
-    server.create
-      .mockRejectedValueOnce(
-        new TransportError({ type: 'ValidationError', message: 'Try again', status: 417 }),
-      )
-      .mockResolvedValue(saved('draft-1'))
-    composer.mail.subject = 'Planning'
-    await composer.saveDraft()
-
-    await composer.settleDraft()
-
-    expect(server.create).toHaveBeenCalledTimes(2)
-  })
-
-  it('on Close, lets a save that is going land, then saves what came since to that draft', async () => {
-    const composer = compose()
-    const first = held()
-    server.updateDraft.mockReturnValueOnce(first.promise).mockResolvedValue(saved('draft-3'))
-    composer.mail.subject = 'Fwd: Brief, v2'
-    void composer.saveDraft()
-    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
-    composer.mail.subject = 'Fwd: Brief, v3'
-
-    let closed = false
-    const closing = composer.settleDraft().then(() => (closed = true))
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(closed).toBe(false)
-    // Saved as a new version, which the server names afresh.
-    first.settle(saved('draft-2'))
-    await closing
-
-    expect(server.updateDraft).toHaveBeenCalledTimes(2)
-    expect(server.updateDraft.mock.calls[1][0]).toMatchObject({
-      id: 'draft-2',
-      subject: 'Fwd: Brief, v3',
-    })
-    expect(server.create).not.toHaveBeenCalled()
-  })
-})
-
-describe('a sent message', () => {
-  it('is not saved again for what was typed while it went, however the composer closes', async () => {
-    const composer = compose()
-    let answer!: (value: unknown) => void
-    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
-    const sending = composer.sendMail()
-    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
-
-    composer.mail.html_body = '<p>Typed after Send.</p>'
-    answer({ id: 'sent-1', status: 'Submitted', error: null })
-    await sending
-    // Every way the composer goes after a send: Close on the phone page, the page going, and the
-    // editor unmounting with the window.
-    await composer.settleDraft()
-    composer.flushDraft()
-    await composer.saveDraft()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-
-    // Only the send: a draft save on the sent message makes it a draft again.
-    expect(server.updateDraft).toHaveBeenCalledOnce()
-    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({ id: 'draft-1', submit: true })
-    expect(server.create).not.toHaveBeenCalled()
-  })
-
-  it.each([
-    [
-      'refused',
-      () => Promise.resolve({ id: 'draft-1', status: 'Drafted', error: 'Relay refused' }),
-    ],
-    ['cut off', () => Promise.reject(new Error('Network error'))],
-  ])('is still a draft to save when its send was %s', async (_, answer) => {
-    const composer = compose()
-    server.updateDraft.mockImplementationOnce(answer).mockResolvedValue({
-      id: 'draft-2',
-      status: 'Drafted',
-      error: null,
-    })
-    await composer.sendMail()
-
-    composer.mail.html_body = '<p>Fixed the address.</p>'
-    await composer.settleDraft()
-
-    expect(server.updateDraft).toHaveBeenCalledTimes(2)
-    expect(server.updateDraft.mock.calls[1][0]).toMatchObject({
-      id: 'draft-1',
-      submit: false,
-      html_body: expect.stringContaining('Fixed the address.'),
-    })
   })
 })
 

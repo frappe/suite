@@ -209,14 +209,6 @@ export function pageLoadNeededFor(path: string): boolean {
 }
 
 /**
- * Opens `path` as a page load of its own: the move `pageLoadNeededFor` asks for, made by the caller
- * before the router does it, so that nothing of the next page mounts on the one about to go.
- */
-export function loadPage(path: string): void {
-  window.location.assign(path)
-}
-
-/**
  * Where vite-plugin-pwa emits the FCM worker. A build-only file: the dev
  * server has none, so registration fails there and push works only in a
  * production build. Its scope is the default one, the script's directory.
