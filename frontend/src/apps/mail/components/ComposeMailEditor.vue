@@ -9,13 +9,14 @@
 	     list visible; the panel's own max-h still clips it on a short viewport. In a thread the
 	     height is the thread's — unless the draft is the whole thread, when the card it sits in
 	     is stretched to the pane and the composer fills that (`fillsHost`). -->
+  <!-- Locked from the press of Send, not from the server's answer: until then it took typing that
+	     no request carried, and once grayed it still took the keyboard. `inert` takes the focus
+	     out with the pointer. -->
   <div
     ref="composerRoot"
     class="relative flex w-full flex-col"
-    :class="[
-      { 'pointer-events-none opacity-50': !show },
-      fillsHost || windowed ? 'sm:min-h-0 sm:flex-1' : '',
-    ]"
+    :inert="isLocked || undefined"
+    :class="[{ 'opacity-50': isLocked }, fillsHost || windowed ? 'sm:min-h-0 sm:flex-1' : '']"
     @dragenter.prevent="handleDragEnter"
     @dragover.prevent="handleDragOver"
     @dragleave.prevent="handleDragLeave"
@@ -366,6 +367,7 @@
         <ComposeMailToolbar
           :is-recipients-empty
           :is-uploading
+          :is-sending
           :save-failed="isSaveFailed"
           class="border-t sm:px-4 sm:pb-2.5"
           :class="{ 'border-transparent': isDragging }"
@@ -429,6 +431,7 @@ import ScheduleSendModal from './Modals/ScheduleSendModal.vue'
 const show = defineModel<boolean>()
 const {
   reloadMails,
+  showSent,
   mailDetails,
   isInThread = false,
   expanded = false,
@@ -436,6 +439,8 @@ const {
   closesWithPage = false,
 } = defineProps<{
   reloadMails: () => void
+  /** A thread's reply: shows the mail as sent in the thread (see useComposeMail). */
+  showSent?: () => Promise<void>
   mailDetails?: ComposeMailData
   isInThread?: boolean
   // The composer window expanded over the page, rather than docked in its corner: the page takes
@@ -526,6 +531,7 @@ const {
   isSaveFailed,
   payListDebt,
   sendMail,
+  isSending,
   discardMail,
   isUntouched,
   onClosed,
@@ -547,11 +553,13 @@ const {
   mailDetails,
   isInThread,
   reloadMails,
+  showSent,
   close: () => (show.value = false),
   isOpen: () => !!show.value && !leaving,
   onDiscardUnsaved: () => emit('discardMail'),
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
+  root: () => composerRoot.value,
   isUploading: () =>
     pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
   uploadInlineImage,
@@ -564,6 +572,9 @@ const identityOptions = computed(() =>
   })),
 )
 
+// From Send until the mail is out of this composer: sent, and in a thread shown in its place (see
+// `showSent` in MailThread), or refused, and open again with the reason.
+const isLocked = computed(() => isSending.value || !show.value)
 // The composer stays mounted when it closes, so the in-flight flags have to be cleared on the way out.
 watch(show, (open) => !open && onClosed())
 // A file on the mail comes in one of two shapes: uploaded here a moment ago (file_name, file_size)

@@ -17,9 +17,12 @@
 	  was nothing inside it for iOS to scroll instead. There is now — and `focusWithoutReveal` below
 	  takes focus into its own hands so iOS never starts the pan to begin with.
 	-->
+  <!-- Locked while a send is out, as the desktop composer is: what is typed then is in no request. -->
   <div
+    ref="composerRoot"
     class="bg-surface-base fixed inset-x-0 z-30 flex flex-col overflow-hidden"
     :style="{ top: `${keyboardTop}px`, height: `${viewportHeight}px` }"
+    :inert="isSending || undefined"
   >
     <header
       class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
@@ -60,6 +63,7 @@
         class="touch-target ml-2"
         :label="__('Send')"
         :disabled="isRecipientsEmpty || isUploading"
+        :loading="isSending"
         @click="sendMail()"
       >
         <template #icon>
@@ -77,7 +81,7 @@
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
-    <div class="relative flex min-h-0 w-full flex-1 flex-col">
+    <div class="relative flex min-h-0 w-full flex-1 flex-col" :class="{ 'opacity-50': isSending }">
       <Editor
         ref="textEditor"
         :model-value="editorContent"
@@ -323,6 +327,7 @@ import { TransportError } from '@/platform/transport'
 
 const router = useRouter()
 
+const composerRoot = useTemplateRef<HTMLElement>('composerRoot')
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef<{ setFocus: () => void }>('toInput')
 const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
@@ -364,6 +369,7 @@ const {
   saveDraft,
   isSaveFailed,
   sendMail,
+  isSending,
   discardMail,
   showScheduleModal,
   openScheduleModal,
@@ -386,6 +392,7 @@ const {
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
+  root: () => composerRoot.value,
   isUploading: () => pendingUploads.value > 0,
   uploadInlineImage,
 })

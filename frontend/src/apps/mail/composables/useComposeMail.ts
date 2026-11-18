@@ -71,6 +71,12 @@ interface ComposeMailOptions {
   /** Inline in a thread (desktop), rather than a composer of its own. */
   isInThread?: boolean
   reloadMails: () => void
+  /**
+   * A thread's reply: the host shows the mail as sent, in place, and resolves once it has. The
+   * send waits for it, so the composer stays locked until the thread has the reply, and is never
+   * seen done with its mail still in it. Without it, a send reloads the list.
+   */
+  showSent?: () => Promise<void>
   /** Take the composer off screen — the dialog's v-model on desktop, a route pop on mobile. */
   close: () => void
   /** Whether the composer is still on screen. Drives whether a result is worth a toast. */
@@ -86,6 +92,8 @@ interface ComposeMailOptions {
   onDiscardStarted?: () => void
   /** The mounted editor, for mention bookkeeping and emoji insertion. */
   host: () => EditorHost | null | undefined
+  /** The composer's outermost element: the part a send locks (see `isSending`). */
+  root: () => HTMLElement | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
   /**
@@ -378,11 +386,32 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // From Send until the send is answered. The send uploads before it reaches the server (see
   // outgoingBody), and a save starting in between would create a second draft beside it, or race it
   // to the same one.
-  let isSending = false
+  //
+  // The composer is locked for as long (see ComposeMailEditor and ComposeView): what is typed after
+  // Send is in no request, so it would be lost without a word.
+  const isSending = ref(false)
+  // From a send's answer on: the message is the server's to deliver, and a draft save made for it
+  // after that (autosave, Close, the editor unmounting) is refused as "not a draft", and comes back
+  // as "Draft not saved". Undo send brings it back as a draft of its own, in Drafts.
+  let submitted = false
+  // `inert` takes the focus out of the locked composer, and does not give it back: it falls to the
+  // page. What was typed next went to the thread's own shortcuts, so `e` archived the thread being
+  // answered and Backspace trashed it, and after a refusal ⌘Enter could not send again. So while a
+  // send that took the focus is out, keys at the page stop there, and a refusal gives it back.
+  let heldFocus = false
+  const holdKeys = (e: KeyboardEvent) => {
+    if (!isSending.value || !heldFocus) return
+    const focused = document.activeElement
+    // Focus the reader has since put somewhere else is theirs.
+    if (!focused || focused === document.body) e.stopPropagation()
+  }
+  window.addEventListener('keydown', holdKeys, true)
+  onScopeDispose(() => window.removeEventListener('keydown', holdKeys, true))
   const saveDraft = async () => {
     if (
       pendingSave ||
-      isSending ||
+      isSending.value ||
+      submitted ||
       discarded ||
       !isDraftUpdated.value ||
       isLoading.value ||
@@ -449,6 +478,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
+    // One send per mail: a second ⌘Enter while the first is out would send it again.
+    if (isSending.value || submitted) return
     if (isUploading.value) {
       const message = __('Wait for attachments to finish uploading')
       if (sendAt) throw new Error(message)
@@ -461,7 +492,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
     isSavingDraft.value = false
-    isSending = true
+    // Read before the lock is drawn, which is when `inert` takes the focus.
+    heldFocus = !!options.root()?.contains(document.activeElement)
+    isSending.value = true
     try {
       await pendingSave
       sentAs = scopeAccountId.value
@@ -477,12 +510,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           send_at: sendAt,
           undo_send: !sendAt,
         })
+      submitted = true
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
       if (error instanceof UnsentImageError) raiseToast(error.message, 'error')
     } finally {
-      isSending = false
+      isSending.value = false
+      // After the lock is gone: an inert composer takes no focus.
+      if (!submitted && heldFocus) void nextTick(() => host()?.editor?.commands.focus())
     }
   }
   // The composer is gone and its last save was refused: the draft lives only in this copy, which a
@@ -593,7 +629,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     await undoSend.run(input)
     reloadMails()
-    raiseToast(__('Sending undone. The message is back in your drafts.'))
+    raiseToast(__('Message unsent. It is back in your drafts.'))
   }
   const { setUndoAction, retireUndoAction } = useUndo()
 
@@ -638,28 +674,34 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       viewSentAction(threadId),
     )
   }
-  const onMailUpdateSuccess = (
-    {
-      id,
-      status,
-      error,
-      thread_id,
-      submission_id,
-      send_at,
-      undo_send_period,
-    }: OutputOf<typeof api.mail.messages.create>,
+  const onMailUpdateSuccess = async (
+    result: OutputOf<typeof api.mail.messages.create>,
     sent: string,
   ) => {
+    const { id, status, error, thread_id } = result
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     if (error) {
       const failure = new Error(error)
-      raiseError(failure)
+      // The mail server's own reason, such as an address it will not take: without it, a refused send
+      // read only as "Could not complete the action", and the mail looked as if it had gone. A
+      // scheduled send says it in its dialog instead (see ScheduleSendModal).
+      if (!isSending.value) raiseError(failure)
+      else if (sendMode.value === 'undo') toast.error(__('Mail not sent'), { description: error })
       throw failure
     }
     updateOriginalMail(sent)
     if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
+    // The toast, with its Undo, goes up as the answer lands: the server holds delivery for the undo
+    // window from the send, so an Undo raised after the thread's own fetch could outlive the hold.
+    confirmResult(result)
+    if (status === 'Submitted' && options.showSent) {
+      // What the saves owed the list goes with it: paid on the way out, it rebuilt the thread.
+      listOwesReload = false
+      await options.showSent().catch(reloadMails)
+      return
+    }
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
     // list is holding, not from a fetch of its own. So a draft saved in here goes to the server
@@ -678,6 +720,15 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         showDraftInList(scopeAccountId.value, thread_id, id, mail.html_body)
       }
     }
+  }
+  // Says how the save or send went, once the composer is off screen (a send is always said).
+  const confirmResult = ({
+    status,
+    thread_id,
+    submission_id,
+    send_at,
+    undo_send_period,
+  }: OutputOf<typeof api.mail.messages.create>) => {
     if (isOpen() && status !== 'Submitted') return
     if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved'))
     else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
@@ -983,6 +1034,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     saveDraft,
     payListDebt,
     sendMail,
+    isSending,
     discardMail,
     onClosed,
     showScheduleModal,

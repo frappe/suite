@@ -196,6 +196,7 @@
                       v-model="mail.show"
                       :reload-mails="reload"
                       :mail-details="draftMails[mail.name]"
+                      :show-sent="() => showSent(mail.name)"
                       :is-in-thread="true"
                       :fills-host="isDraftAlone"
                       @discard-mail="discardLocalDraft(mail.name)"
@@ -817,7 +818,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import { useNewEventDialog } from '@/apps/calendar'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -864,6 +865,7 @@ import type {
   Mail,
   Mailbox,
   MailboxData,
+  MailCopy,
   Recipient,
   ScreenedAddress,
 } from '@/apps/mail/types'
@@ -896,7 +898,13 @@ import {
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
 import { eventFromMail } from '@/apps/mail/utils/eventFromMail'
-import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import {
+  byCopyId,
+  copiesBeside,
+  isMailSeen,
+  mailCopies,
+  mailCopyIds,
+} from '@/apps/mail/utils/mailCopies'
 import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
@@ -1099,12 +1107,14 @@ const mailBeforeUnseenMarker = computed(() => {
   const idx = data.findIndex((m) => m.id === firstUnseenMail.value)
   return idx > 0 ? data[idx - 1].name : null
 })
-const isSomeSeen = computed(() => (thread.value || []).some((m) => m.seen))
-const unseenCount = computed(() => (thread.value || []).filter((m) => !m.seen && !m.draft).length)
+const isSomeSeen = computed(() => (thread.value || []).some(isMailSeen))
+const unseenCount = computed(
+  () => (thread.value || []).filter((m) => !isMailSeen(m) && !m.draft).length,
+)
 
 // A draft that is the whole thread — opened from Drafts, nothing above it to read.
 const isDraftAlone = computed(() => thread.value.length === 1 && !!thread.value[0]?.draft)
-const firstUnseenMail = computed(() => thread.value?.find((m) => !m.seen && !m.draft)?.id)
+const firstUnseenMail = computed(() => thread.value?.find((m) => !isMailSeen(m) && !m.draft)?.id)
 const unseenMessage = computed(() =>
   unseenCount.value === 1
     ? __('1 new message')
@@ -1212,7 +1222,7 @@ const transformThreadMails = (mails: Mail[]) =>
             {
               ...mail,
               groupedRecipients: getGroupedRecipients(mail.recipients, false),
-              collapsed: !!mail.seen,
+              collapsed: isMailSeen(mail),
               show: true,
             },
           ]
@@ -1353,55 +1363,92 @@ const setThreadSeen = (seen: boolean) => {
 // cache, so the unread-from-here marker appears immediately and survives reopening a fallback thread
 // (whose source is the cache, not the parent's list data).
 const handleSyncUnseen = (ids: string[]) => {
-  const markUnseen = (mail: Mail) => {
-    if (ids.includes(mail.id)) mail.seen = 0
+  // Every copy, or the one in Sent would still count the message read (see isMailSeen).
+  const markUnseen = (copy: MailCopy) => {
+    if (ids.includes(copy.id)) copy.seen = 0
   }
-  thread.value.forEach(markUnseen)
-  thread.value.forEach(markUnseen)
+  thread.value.flatMap(mailCopies).forEach(markUnseen)
   emit('syncUnseen', ids)
 }
 
 // A reply that arrives while the thread is open (picked up by a background list reload) is appended
 // in place. Re-deriving would clobber unsaved inline drafts, so only the genuinely new messages are
-// added — before any trailing draft so the in-progress reply stays at the bottom.
-const syncWithSource = () => {
-  const source = sourceMessages()
+// added — after the last message, so the in-progress reply stays at the bottom.
+const syncWithSource = (source = sourceMessages()) => {
   if (!source?.length) return
 
   // Refresh existing mails' mailbox membership, screening and star from the list (e.g. after a move,
   // a sender accepted or a row starred from the list, or an undo), in place so unsaved inline drafts
   // and collapse state survive.
-  const sourceById = new Map(source.map((mail) => [mail.id, mail]))
+  // Found by any of its copies: a reply to yourself is shown as its Sent copy until it is delivered,
+  // and the list leads with the delivered one from then on. It is the same message, kept as the
+  // one card it has, not added as a second.
+  const freshByCopy = byCopyId(source)
   thread.value.forEach((mail) => {
-    const fresh = sourceById.get(mail.id)
-    if (!fresh) return
-    mail.mailboxes = fresh.mailboxes
+    const found = freshByCopy.get(mail.id)
+    if (!found) return
+    const { message: fresh, copy } = found
+    // Folders and star are each copy's own, so they come from the copy this card is: taken from the
+    // delivered copy, the Sent one claimed the Inbox, and an Undo of its trash put it back there,
+    // out of Sent (see mailCopies).
+    mail.mailboxes = copy.mailboxes
     // Waiting again after an undo: a decision made here no longer holds, so the banner returns.
     mail.unscreened = fresh.unscreened
     // A star set or cleared from the list row, or on another device, reaches the open thread.
-    mail.flagged = fresh.flagged
+    mail.flagged = copy.flagged
     mail.pinned_in = fresh.pinned_in
     // A reaction landing on a message already open. It comes with the copy actions have to reach.
     mail.reactions = fresh.reactions
-    mail.duplicates = fresh.duplicates
+    mail.duplicates = copiesBeside(fresh, mail.id)
   })
 
-  // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
+  // Append any newly-arrived messages, before the drafts at the bottom. Drafts are excluded: the only draft
   // that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
   // saved id isn't known here), so a draft returning from a background reload would otherwise be
   // mistaken for a new message and spawn a duplicate, blank compose editor.
-  const existing = new Set(thread.value.map((mail) => mail.id))
+  const existing = new Set(thread.value.flatMap(mailCopyIds))
   const additions = transformThreadMails(source).filter(
     (mail) => !existing.has(mail.id) && !mail.draft,
   )
   if (!additions.length) return
-  const draftIndex = thread.value.findIndex((mail) => mail.draft)
+  // After the last message, not before the first draft: a draft put aside earlier in the
+  // conversation keeps its place, and what came after it goes after it. Placed before it, a reply
+  // just sent landed above the messages it answered.
+  const lastMessage = thread.value.findLastIndex((mail) => !mail.draft)
   // Arrivals leave the reader's place alone: the message being read stays open under them, and
   // the fold hides what it hid — still open, if it was opened.
   holdNewestOpen(thread.value)
-  if (draftIndex === -1) thread.value.push(...additions)
-  else thread.value.splice(draftIndex, 0, ...additions)
+  thread.value.splice(lastMessage + 1, 0, ...additions)
   if (landsPending && scrollToLanding(thread.value)) landsPending = false
+}
+// Fresh rows for the open thread without a rebuild: the list's, when it holds the thread, or else
+// the thread's own fetch. They are synced in place when they land (see rederive), so a message the
+// reader opened stays open. With no thread open, there is only the list to ask.
+const refreshInPlace = () => {
+  if (messages?.length || !threadID) emit('reloadMails')
+  else void threadFallback.refetch().catch(() => {})
+}
+// A reply sent from the pane, shown as sent while the composer is still up (see `showSent` in
+// useComposeMail): the thread is asked for on its own, which is one short call where the list's
+// reload is the whole folder, and the reply takes the composer's place the moment the send is done.
+// In place, as an arrival is: a rebuild folded the message being answered away under the reply.
+const showSent = async (draft: string) => {
+  const opened = threadID
+  const rows = opened
+    ? await client
+        .query(api.mail.threads.get, { account: scopeAccountId.value, thread_id: opened })
+        .catch(() => undefined)
+    : undefined
+  // The list catches up behind.
+  refreshInPlace()
+  // The reader has moved on, while the send was out or since: the pane is another thread's now,
+  // and the reply's card went with the thread it was written in.
+  if (!thread.value.some((mail: Mail) => mail.name === draft)) return
+  dropDraftCard(draft)
+  if (rows?.length) syncWithSource(rows.map(mailRow))
+  // A forward leaves for a thread of its own: sent from a draft that was the whole pane, it leaves
+  // nothing here to show.
+  if (!thread.value.length) goToMailbox()
 }
 // The mail the "more messages" divider hides, settled when the thread loads and emptied when the
 // divider opens it (see stillFolded for what it hides as the thread changes).
@@ -1675,19 +1722,16 @@ const handleReload = (isUndo = false) => {
   }
   reload()
 }
-// Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
-// added to it out of sight. The fresh rows sync in place (see syncWithSource).
 // The conversation's account, which in All Inboxes need not be the active one.
 const ownEmails = computed(
   () => new Set((identities.value.data ?? []).map((identity) => identity.email.toLowerCase())),
 )
+// Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
+// added to it out of sight.
 const { reactionsOn, react } = useMessageReactions(
   () => scopeAccountId.value,
   ownEmails,
-  () => {
-    if (messages?.length) emit('reloadMails')
-    else void threadFallback.refetch().catch(() => {})
-  },
+  refreshInPlace,
 )
 const replyForwardActions = computed(() =>
   [
@@ -1883,9 +1927,13 @@ const createLocalDraft = (mail: Mail, draftDetails: ComposeMailData) => {
     )
   })
 }
+// A reply's card out of the thread, and its composer with it.
+const dropDraftCard = (name: string) => {
+  delete draftMails[name]
+  thread.value = thread.value.filter((mail: Mail) => mail.name !== name)
+}
 const discardLocalDraft = (mail: string) => {
-  delete draftMails[mail]
-  thread.value = thread.value.filter((m: Mail) => m.name !== mail)
+  dropDraftCard(mail)
   // Opened from Drafts, the thread was there for its draft: with the last one gone it has left the
   // folder, and the list has already let it go, so the pane goes with it. Undo puts it back in the list.
   if (mailbox === mailboxIds.value.drafts && !thread.value.some((m: Mail) => m.draft)) goToMailbox()

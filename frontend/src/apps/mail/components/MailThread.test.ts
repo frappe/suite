@@ -335,6 +335,22 @@ describe('printing the conversation', () => {
     ])
   })
 
+  it('keeps a reply to yourself as one message when its delivered copy lands', async () => {
+    await open()
+    const sent = conversation[1]
+
+    // Delivered: the server leads with the copy in the Inbox, the Sent one hanging off it.
+    query.current.data = [
+      conversation[0],
+      { ...sent, id: 'delivered', name: 'delivered', seen: 0, duplicates: [fromPartial(sent)] },
+    ]
+    await nextTick()
+    await nextTick()
+
+    press({ ctrlKey: true })
+    expect(printedMessages()).toHaveLength(2)
+  })
+
   it('prints on ⌘P on a Mac, where Ctrl+P is left to the browser', async () => {
     platform.mac = true
     await open()
