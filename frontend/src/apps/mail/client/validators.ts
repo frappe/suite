@@ -41,6 +41,8 @@ import type {
   AddPushSubscriptionOutput,
   AllowScreeningSendersInput,
   AllowScreeningSendersOutput,
+  AttachDriveFilesInput,
+  AttachDriveFilesOutput,
   BlockSendersInput,
   BlockSendersOutput,
   BookInput,
@@ -2848,6 +2850,46 @@ export const operationScreenEmailAddresses: Validators<
     assertSchema(value, { type: 'null' }, 'screen_email_addresses output')
   },
 }
+
+export const operationAttachDriveFiles: Validators<AttachDriveFilesInput, AttachDriveFilesOutput> =
+  {
+    validateInput(value: unknown): asserts value is AttachDriveFilesInput {
+      assertSchema(
+        value,
+        {
+          type: 'object',
+          properties: { nodes: { items: { type: 'string' }, title: 'Nodes', type: 'array' } },
+          required: ['nodes'],
+          additionalProperties: false,
+          $defs: {},
+        },
+        'attach_drive_files input',
+      )
+    },
+    validateOutput(value: unknown): asserts value is AttachDriveFilesOutput {
+      assertSchema(
+        value,
+        {
+          $defs: {
+            AttachedFile: {
+              properties: {
+                name: { title: 'Name', type: 'string' },
+                file_name: { title: 'File Name', type: 'string' },
+                file_url: { title: 'File Url', type: 'string' },
+                file_size: { title: 'File Size', type: 'integer' },
+              },
+              required: ['name', 'file_name', 'file_url', 'file_size'],
+              title: 'AttachedFile',
+              type: 'object',
+            },
+          },
+          items: { $ref: '#/$defs/AttachedFile' },
+          type: 'array',
+        },
+        'attach_drive_files output',
+      )
+    },
+  }
 
 export const operationSyncChanges: Validators<SyncChangesInput, SyncChangesOutput> = {
   validateInput(value: unknown): asserts value is SyncChangesInput {

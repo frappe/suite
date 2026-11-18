@@ -3,6 +3,7 @@
 import frappe
 from frappe import _
 
+from suite.suite_core import account_state
 from suite.utils.user import is_suite_admin, is_user_enabled
 
 ADMIN_ROLES_SQL = """
@@ -30,14 +31,13 @@ def list_users() -> list[dict]:
     admins = set(
         frappe.get_all("Has Role", filters={"role": "Suite Admin", "parenttype": "User"}, pluck="parent")
     )
+    lifecycle_by_user = account_state.read_all()
     for row in rows:
         # Rows written without User.validate have no full name; publish the id, as Drive's Person does.
         row["full_name"] = row["full_name"] or row["name"]
         row["is_admin"] = row["name"] in admins
         row["enabled"] = bool(row["enabled"])
-        from suite.suite_core.account_state import read
-
-        lifecycle = read(row["name"])
+        lifecycle = lifecycle_by_user.get(row["name"], {})
         row["account"] = lifecycle.get("account")
         row["setup_status"] = lifecycle.get("status") or "Active"
         row["must_change_password"] = bool(lifecycle.get("must_change_password"))

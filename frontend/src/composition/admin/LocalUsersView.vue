@@ -62,7 +62,6 @@
             type="select"
             :aria-label="__('Status')"
             :options="[
-              { label: __('Any status'), value: 'all' },
               { label: __('Active'), value: 'enabled' },
               { label: __('Disabled'), value: 'disabled' },
             ]"
@@ -94,7 +93,7 @@
             }
       "
     >
-      <ListHeader>
+      <ListHeader :inert="loading">
         <ListHeaderCell>{{ __('User') }}</ListHeaderCell>
         <ListHeaderCell class="max-sm:hidden">{{ __('Email') }}</ListHeaderCell>
         <ListHeaderCell>{{ __('Status') }}</ListHeaderCell>
@@ -106,7 +105,7 @@
         >
       </ListHeader>
       <ListRows v-if="loading" v-slot="{ item }" :items="SKELETON_ROWS" row-key="name">
-        <ListRow :value="item.name" class="pointer-events-none" aria-hidden="true">
+        <ListRow :value="item.name" class="pointer-events-none" aria-hidden="true" inert>
           <ListCell>
             <Skeleton class="size-6 shrink-0 rounded-full" />
             <div class="ml-3 min-w-0 flex-1">
@@ -119,9 +118,8 @@
           </ListCell>
           <ListCell><Skeleton class="h-5 w-14 rounded-4" /></ListCell>
           <ListCell v-if="storage.data?.cloud" class="max-sm:hidden">
-            <div class="flex-1 space-y-1.5">
+            <div class="flex-1">
               <DashboardSkeletonText class="text-p-sm" width="70%" />
-              <div class="h-1 rounded-7 bg-surface-gray-2" />
             </div>
           </ListCell>
           <ListCell />
@@ -603,7 +601,10 @@ const StorageLimitDialog = defineAsyncComponent(loadStorageLimitDialog)
 const storageEditing = ref(false)
 const storageUsers = ref<string[]>([])
 const users = useQuery(api.suite.users.list)
-const loading = computed(() => users.status === 'pending')
+const loading = computed(
+  () =>
+    (!users.data && users.status === 'pending') || (!storage.data && storage.status === 'pending'),
+)
 const SKELETON_ROWS = Array.from({ length: 8 }, (_, index) => ({ name: `skeleton-${index}` }))
 const storage = useQuery(api.suite.storage.get)
 // Every user change runs inside a dialog that shows its own error, so none of them also toasts.
@@ -612,14 +613,14 @@ const change = useMutation(api.suite.users.update, { silent: true })
 defineSlots<{ lead?: () => unknown }>()
 const search = ref('')
 const roleFilter = ref('all')
-const statusFilter = ref('all')
+const statusFilter = ref<'enabled' | 'disabled'>('enabled')
 const hasFilters = computed(
-  () => !!search.value || roleFilter.value !== 'all' || statusFilter.value !== 'all',
+  () => !!search.value || roleFilter.value !== 'all' || statusFilter.value === 'disabled',
 )
 watch(
   () => props.status,
   (status) => {
-    statusFilter.value = status === 'enabled' || status === 'disabled' ? status : 'all'
+    statusFilter.value = status === 'disabled' ? 'disabled' : 'enabled'
   },
   { immediate: true },
 )
@@ -669,7 +670,7 @@ const filtered = computed(() =>
   (users.data ?? []).filter(
     (user) =>
       (roleFilter.value === 'all' || user.is_admin === (roleFilter.value === 'admin')) &&
-      (statusFilter.value === 'all' || !!user.enabled === (statusFilter.value === 'enabled')) &&
+      !!user.enabled === (statusFilter.value === 'enabled') &&
       `${user.full_name} ${user.email} ${user.account ?? ''}`
         .toLowerCase()
         .includes(search.value.toLowerCase()),

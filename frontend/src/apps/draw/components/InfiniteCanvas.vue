@@ -187,9 +187,9 @@ const pendingText = ref<RectangleShape>()
 const pendingDraw = ref<FreeDrawShape>()
 const erasedShapeIds = ref<string[]>([])
 const drawStyle = reactive<
-  Required<Pick<RectangleShape, 'stroke' | 'fill' | 'strokeWidth' | 'strokeStyle' | 'opacity'>>
+  Pick<RectangleShape, 'stroke'> &
+    Required<Pick<RectangleShape, 'fill' | 'strokeWidth' | 'strokeStyle' | 'opacity'>>
 >({
-  stroke: '#171717',
   fill: 'none',
   strokeWidth: 3,
   strokeStyle: 'solid',
@@ -247,7 +247,6 @@ const armedTextStyle = reactive<
     | 'textAlign'
   >
 >({
-  fill: '#171717',
   backgroundColor: undefined,
   fontFamily: 'shantell',
   fontSize: 16,
@@ -720,7 +719,7 @@ const textEditorStyle = computed(() => {
     width: `${editor.width}px`,
     height: `${Math.max(editor.height, editor.fontSize * TEXT_LINE_HEIGHT)}px`,
     fontSize: `${editor.fontSize}px`,
-    color: editor.fill ?? 'var(--ink-gray-9, #171717)',
+    color: editor.fill ?? 'var(--draw-ink)',
     backgroundColor: editor.backgroundColor ?? 'transparent',
     lineHeight: `${TEXT_LINE_HEIGHT}`,
     fontFamily: TEXT_FONT_FAMILIES[editor.fontFamily ?? 'shantell'],
@@ -1544,7 +1543,7 @@ function editLabel(shape: RectangleShape) {
     y: fitted.shape.y + (fitted.shape.height - fitted.layout.height) / 2,
     width: labelTextWidth(fitted.shape),
     height: fitted.layout.height,
-    fill: shape.labelFill ?? '#171717',
+    fill: shape.labelFill,
     fontSize: shape.labelFontSize ?? 16,
     fontFamily: shape.labelFontFamily ?? 'shantell',
     fontWeight: shape.labelFontWeight,
@@ -2332,7 +2331,7 @@ function replaceLine(next: LineShape) {
 
 function shapeStyle(shape: Shape) {
   return {
-    stroke: shape.stroke === null ? 'none' : (shape.stroke ?? '#171717'),
+    stroke: shape.stroke === null ? 'none' : (shape.stroke ?? 'var(--draw-ink)'),
     fill:
       isLine(shape) || isImage(shape) || (isFreeDraw(shape) && !isClosedFreeDraw(shape))
         ? 'none'
@@ -4109,7 +4108,7 @@ onBeforeUnmount(() => {
               :font-size="rectangle.labelFontSize ?? 16"
               class="shape-label"
               :style="{
-                fill: rectangle.labelFill ?? 'var(--ink-gray-9, #171717)',
+                fill: rectangle.labelFill ?? 'var(--draw-ink)',
                 fontFamily: TEXT_FONT_FAMILIES[rectangle.labelFontFamily ?? 'shantell'],
                 fontWeight: rectangle.labelFontWeight ?? 400,
                 fontStyle: rectangle.labelFontStyle ?? 'normal',
@@ -4165,7 +4164,7 @@ onBeforeUnmount(() => {
               :font-size="text.fontSize"
               class="drawn-text"
               :style="{
-                fill: text.fill ?? 'var(--ink-gray-9, #171717)',
+                fill: text.fill ?? 'var(--draw-ink)',
                 opacity: text.opacity ?? 1,
                 fontFamily: TEXT_FONT_FAMILIES[text.fontFamily ?? 'shantell'],
                 fontWeight: text.fontWeight ?? 400,
@@ -5005,6 +5004,10 @@ onBeforeUnmount(() => {
 }
 
 .infinite-canvas {
+  --draw-paper: var(--surface-base);
+  --draw-ink: var(--ink-gray-9);
+  --selection-blue: #4285f4;
+
   container: draw-canvas / inline-size;
   position: relative;
   z-index: 0;
@@ -5016,7 +5019,6 @@ onBeforeUnmount(() => {
   background: var(--surface-base);
   cursor: default;
   user-select: none;
-  --selection-blue: #4285f4;
 }
 
 .infinite-canvas.is-pan-ready {
@@ -5085,7 +5087,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   display: block;
-  background: var(--surface-white);
+  background: var(--draw-paper);
   pointer-events: none;
 }
 
@@ -5145,7 +5147,7 @@ onBeforeUnmount(() => {
 .free-draw,
 .drawn-image-border {
   fill: none;
-  stroke: #171717;
+  stroke: var(--draw-ink);
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
 }
@@ -5185,7 +5187,7 @@ onBeforeUnmount(() => {
 
 .drawn-text,
 .shape-label {
-  fill: var(--ink-gray-9, #171717);
+  fill: var(--draw-ink);
   font-family: InterVar, ui-sans-serif, system-ui, sans-serif;
   dominant-baseline: alphabetic;
   white-space: pre;
@@ -5202,7 +5204,7 @@ onBeforeUnmount(() => {
   outline: 0 !important;
   box-shadow: none !important;
   background: transparent;
-  color: var(--ink-gray-9, #171717);
+  color: var(--draw-ink);
   font-family: InterVar, ui-sans-serif, system-ui, sans-serif;
   border-radius: 0;
   user-select: text;
@@ -5269,7 +5271,7 @@ onBeforeUnmount(() => {
 }
 
 .lasso-outline--background {
-  stroke: var(--surface-white, #fff);
+  stroke: var(--draw-paper);
 }
 .lasso-outline--foreground {
   stroke: var(--selection-blue);
@@ -5298,7 +5300,7 @@ onBeforeUnmount(() => {
 }
 
 .selection-handle {
-  fill: var(--surface-white, #fff);
+  fill: var(--draw-paper);
   stroke: var(--selection-blue);
   stroke-width: 1px;
   transition: fill 100ms ease;
@@ -5329,7 +5331,7 @@ onBeforeUnmount(() => {
 
 .selection-rotate-control.is-highlighted {
   background: var(--selection-blue);
-  color: var(--surface-white, #fff);
+  color: #fff;
 }
 
 .selection-rotate-icon {
@@ -5338,7 +5340,7 @@ onBeforeUnmount(() => {
 }
 
 .curve-handle {
-  fill: var(--surface-white, #fff);
+  fill: var(--draw-paper);
   stroke: var(--selection-blue);
   stroke-width: 1px;
 }
@@ -5350,8 +5352,8 @@ onBeforeUnmount(() => {
 }
 
 .guide-dot {
-  fill: var(--ink-gray-4);
-  fill-opacity: 0.55;
+  fill: var(--draw-ink);
+  fill-opacity: 0.15;
 }
 
 .viewport-panel {

@@ -107,6 +107,41 @@ describe('the printed page', () => {
     }
   })
 
+  // Mail still hides its stylesheet from old clients inside an HTML comment or a CDATA section;
+  // CSS reads past both, so the print keeps the rules, the @media ones that stack a newsletter's
+  // columns included.
+  it.each([
+    ['an HTML comment', '<!--', '-->'],
+    ['a CDATA section', '/*<![CDATA[*/', '/*]]>*/'],
+  ])(
+    'keeps the rules of a stylesheet wrapped in %s, applied to its own message',
+    (_, open, close) => {
+      const newsletter = `<html><head><style>${open}
+        .cta { color: #c00 }
+        @media (max-width: 600px) { .column { display: block } }
+      ${close}</style></head><body>
+        <div class="column"><p class="cta">Shop the sale</p></div></body></html>`
+      const doc = printPage('Sale', [{ ...message, body: newsletter, attachments: [] }])
+
+      const section = doc.querySelector('.message')!
+      const header = section.querySelector('.header')!
+      const rules = senderRules(section)
+      const cta = doc.querySelector('.cta')!
+      const column = doc.querySelector('.column')!
+      expect(
+        rules.some((rule) => cta.matches(rule.selector) && /color/.test(rule.declarations)),
+      ).toBe(true)
+      expect(
+        rules.some((rule) => column.matches(rule.selector) && /display/.test(rule.declarations)),
+      ).toBe(true)
+      for (const rule of rules) {
+        for (const reached of doc.querySelectorAll(rule.selector)) {
+          expect(section.contains(reached) && !header.contains(reached)).toBe(true)
+        }
+      }
+    },
+  )
+
   it('loads nothing remote from a message whose remote content is blocked, until it is allowed', () => {
     const tracked = `<table background="https://t.example/bg.png"><tr><td>
         <img src="https://t.example/a.png" srcset="https://t.example/a@2x.png 2x" alt="Logo">

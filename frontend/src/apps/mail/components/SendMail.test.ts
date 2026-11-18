@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -48,6 +48,13 @@ vi.mock('frappe-ui', async () => {
 const { none } = vi.hoisted(() => ({ none: () => ({ default: { render: () => null } }) }))
 vi.mock('@/apps/mail/components/Modals/ContactsModal.vue', none)
 vi.mock('@/apps/mail/components/Modals/ScheduleSendModal.vue', none)
+// Drive's own file picker, which opens over the composer in a dialog of its own: the test picks for
+// the user.
+const pickFiles = vi.hoisted(() => vi.fn())
+vi.mock('@/apps/drive', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/apps/drive')>()),
+  useDriveDialogs: () => ({ pickFiles }),
+}))
 // The suite router, which the mail composables import; the composer gets its own.
 vi.mock('@/apps/mail/router', () => ({ default: {} }))
 vi.mock('@/apps/mail/utils/accountScope', async () => {
@@ -69,6 +76,7 @@ beforeEach(() => {
   server.asked = []
   toasts.error.mockReset()
   toasts.success.mockReset()
+  pickFiles.mockReset()
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
@@ -152,5 +160,68 @@ describe('typing a recipient', () => {
     await vi.waitFor(() =>
       expect(chips()).toEqual(['dana@brightwave.example', 'jordan@northwind.example']),
     )
+  })
+})
+
+describe('the Attach menu', () => {
+  const menuItem = (label: string) =>
+    [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
+      (el) => el.textContent?.trim() === label,
+    )
+  const chooseFromAttach = async (item: string) => {
+    button('Attach')!.dispatchEvent(
+      new MouseEvent('pointerdown', { button: 0, bubbles: true, cancelable: true }),
+    )
+    await vi.waitFor(() => expect(menuItem(item)).toBeDefined())
+    menuItem(item)!.click()
+    await nextTick()
+  }
+  // The browser shows its file chooser when a file input is clicked: each one clicked, in order.
+  const watchFileChooser = () => {
+    const clicked: HTMLInputElement[] = []
+    const record = (event: Event) => {
+      if (event.target instanceof HTMLInputElement && event.target.type === 'file')
+        clicked.push(event.target)
+    }
+    document.addEventListener('click', record, true)
+    onTestFinished(() => document.removeEventListener('click', record, true))
+    return clicked
+  }
+
+  it('opens the device file chooser from Upload from computer', async () => {
+    server.answer = () => reply({ message: [] })
+    await openComposer()
+    const chooserOpened = watchFileChooser()
+
+    await chooseFromAttach('Upload from computer')
+
+    expect(chooserOpened).toHaveLength(1)
+    expect(pickFiles).not.toHaveBeenCalled()
+  })
+
+  it('attaches the files picked in Drive from Attach from Drive', async () => {
+    server.answer = (method) =>
+      method === 'attach_drive_files'
+        ? reply({
+            message: [
+              {
+                name: 'file-1',
+                file_name: 'Invoice.pdf',
+                file_url: '/private/files/Invoice.pdf',
+                file_size: 2048,
+              },
+            ],
+          })
+        : reply({ message: [] })
+    pickFiles.mockResolvedValueOnce([{ name: 'node-invoice', title: 'Invoice.pdf' }])
+    await openComposer()
+    const chooserOpened = watchFileChooser()
+
+    await chooseFromAttach('Attach from Drive')
+
+    expect(pickFiles).toHaveBeenCalledOnce()
+    await vi.waitFor(() => expect(document.body.textContent).toContain('Invoice.pdf'))
+    expect(server.asked).toContain('attach_drive_files')
+    expect(chooserOpened).toHaveLength(0)
   })
 })

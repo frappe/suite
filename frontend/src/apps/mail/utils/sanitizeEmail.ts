@@ -4,10 +4,30 @@
  * no scripts, no forms, and none of the remote loads (`background`, `srcset`, `poster`, media)
  * the list leaves out. The whole document is kept, its `<head>` styles with it.
  */
-import DOMPurify from 'dompurify'
+import DOMPurify, { type UponSanitizeElementHook } from 'dompurify'
 
 import { blockRemoteAssets } from '@/apps/mail/utils'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
+
+// Mail still hides its stylesheets from clients that would print them as text, inside an
+// HTML comment (`<style><!-- … --></style>`) or an XHTML CDATA section
+// (`/*<![CDATA[*/ … /*]]>*/`). CSS reads straight past both, but the sanitizer drops any
+// element whose text looks like markup, and with it about a third of real-world mail's
+// stylesheets: the @media rules that stack a newsletter's columns on a phone, so the mail
+// stayed 650px wide in a 360px pane. The wrappers mean nothing to CSS, so they go just
+// before the sanitizer judges the stylesheet; any other markup-like text still costs it, as
+// before. A hook rather than a pattern over the raw HTML: the parser has already found where
+// each stylesheet ends, where a pattern scanned to the end of the mail once per unclosed
+// <style>, and a body of them froze the tab.
+const STYLE_WRAPPER = /<!--|-->|<!\[CDATA\[|\]\]>/g
+
+const unwrapStyleSheet: UponSanitizeElementHook = (node, { tagName }) => {
+  if (tagName !== 'style') return
+  node.childNodes.forEach((child) => {
+    if (child.nodeType === Node.TEXT_NODE && child.nodeValue)
+      child.nodeValue = child.nodeValue.replace(STYLE_WRAPPER, '')
+  })
+}
 
 const DOMPURIFY_CONFIG = {
   ALLOWED_TAGS: [
@@ -101,11 +121,15 @@ const DOMPURIFY_CONFIG = {
   REMOVE_EMPTY: false,
 }
 
+// Mail's own instance, so the hook stays out of the HTML other code cleans with the shared one.
+const mailPurifier = DOMPurify(window)
+mailPurifier.addHook('uponSanitizeElement', unwrapStyleSheet)
+
 /**
  * `html` cleaned for display, as a whole document. Remote images and CSS urls are held back when
  * `blockRemote` is set — after sanitizing, so only markup the allow-list kept is looked at.
  */
 export const sanitizeEmailHtml = (html: string, blockRemote: boolean): string => {
-  const sanitized = DOMPurify.sanitize(escapeBracketedAddresses(html), DOMPURIFY_CONFIG)
+  const sanitized = mailPurifier.sanitize(escapeBracketedAddresses(html), DOMPURIFY_CONFIG)
   return blockRemote ? blockRemoteAssets(sanitized) : sanitized
 }

@@ -4,7 +4,7 @@
 	     would keep the sheet from opening. -->
   <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
     <AdaptiveDropdown :options="moreActions(mail)" align="end">
-      <Button variant="ghost" :tooltip="__('More')">
+      <Button variant="ghost" class="touch-target" :tooltip="__('More')" :aria-label="__('More')">
         <template #icon>
           <Ellipsis class="text-ink-gray-5 icon" />
         </template>
@@ -17,6 +17,7 @@
     :key="action.label"
     variant="ghost"
     :tooltip="action.label"
+    :aria-label="action.label"
     @click.stop="action.onClick"
   >
     <template #icon>
@@ -31,6 +32,7 @@
     :key="action.label"
     variant="ghost"
     :tooltip="action.label"
+    :aria-label="action.label"
     @click.stop="action.onClick"
   >
     <template #icon>
@@ -53,12 +55,14 @@ import {
   ListFilter,
   LockOpen,
   Mail as MailIcon,
+  Moon,
   Printer,
   Reply,
   ReplyAll,
   ShieldCheck,
   SquarePen,
   Star,
+  Sun,
   Trash2,
 } from 'lucide-vue-next'
 import { h, inject } from 'vue'
@@ -67,7 +71,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { api, client, type InputOf } from '@/api'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
-import type { ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
+import type { BodyView, ComposeMailData, Identity, Mail, ScreenedAddress } from '@/apps/mail/types'
 import {
   afterLanding,
   downloadUrlAsFile,
@@ -98,6 +102,7 @@ const {
   dropMail,
   thread,
   hideStar = false,
+  bodyView,
 } = defineProps<{
   mailbox: string
   mail: Mail
@@ -114,6 +119,8 @@ const {
   thread: Mail[]
   /** The host draws the star itself — a folded row, which keeps it at its far right. */
   hideStar?: boolean
+  /** How the message's body is shown in the dark theme; absent when it isn't remapped. */
+  bodyView?: BodyView
 }>()
 const emit = defineEmits([
   'setFlagged',
@@ -122,6 +129,7 @@ const emit = defineEmits([
   'markMailSpam',
   'deleteMail',
   'print',
+  'toggleAsSent',
 ])
 const { isMobile } = useScreenSize()
 const route = useRoute()
@@ -304,6 +312,12 @@ const moreActions = (mail: Mail): GroupedAction[] => [
   {
     group: '',
     options: [
+      {
+        label: bodyView === 'asSent' ? __('Show in Dark Theme') : __('Show as Sent'),
+        onClick: () => emit('toggleAsSent'),
+        icon: bodyView === 'asSent' ? Moon : Sun,
+        condition: () => !!bodyView,
+      },
       {
         label: __('Print'),
         onClick: () => emit('print', mail),

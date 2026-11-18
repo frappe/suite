@@ -4,7 +4,7 @@
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
+    class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
     :class="[
       ROW_BOX_CLASS,
       {
@@ -44,7 +44,12 @@
         :class="{ flex: isFullWidth }"
         @click.stop.prevent="emit('setSelected', !isSelected)"
       >
-        <Checkbox :model-value="isSelected" size="md" class="pointer-events-none" />
+        <Checkbox
+          :model-value="isSelected"
+          size="md"
+          class="pointer-events-none"
+          :aria-label="selectLabel"
+        />
       </div>
       <div
         v-else-if="isSelected"
@@ -66,8 +71,12 @@
     <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
 		     rows shrank to their text and no longer lined up with the day headers. Hold that
 		     height here so the rhythm survives the column going away. -->
+    <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, the
+         chips clip themselves (below), and clipping these too would cut the star's hit area down to
+         the glyph. That area runs past the row's right edge, which the row itself clips, so the
+         list can't scroll sideways. -->
     <div
-      class="grow truncate"
+      class="min-w-0 grow"
       :class="[
         pillsBelow
           ? // The first line exactly as a plain row's: sender, subject, preview, held to the leading
@@ -125,8 +134,8 @@
       </h4>
 
       <div
-        class="flex items-center justify-between truncate"
-        :class="{ 'min-w-0 flex-1 !text-base': isFullWidth }"
+        class="flex min-w-0 items-center justify-between"
+        :class="{ 'flex-1 !text-base': isFullWidth }"
       >
         <h5
           class="truncate text-sm !leading-[1.5]"
@@ -143,11 +152,21 @@
         </div>
       </div>
 
-      <!-- Its own line under the subject, so the first line stays a plain row's. -->
-      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex">
+      <!-- Its own line under the subject, so the first line stays a plain row's. Here and in the
+           stacked layout, chips that don't fit are cut off at the column's edge, short of the date
+           and the star, and only sideways, so a chip's focus ring still shows. -->
+      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex min-w-0 overflow-x-clip">
         <slot name="extra" :is-full-width="isFullWidth" />
       </div>
-      <slot v-else name="extra" :is-full-width="isFullWidth" />
+      <!-- The wide line without pills has none to show (see hasExtra). Stacked, they get a block
+           spaced inside as the column is, so its lines sit as they would without it, and hidden
+           when there is nothing in it, so it adds no gap. -->
+      <div
+        v-else-if="!isFullWidth"
+        class="min-w-0 space-y-1 overflow-x-clip empty:hidden sm:space-y-0.5"
+      >
+        <slot name="extra" :is-full-width="isFullWidth" />
+      </div>
     </div>
 
     <div
@@ -191,6 +210,7 @@ const {
   unread = false,
   hideSender = false,
   avatarLabel,
+  selectLabel,
   avatarImage,
   datetime,
   subjectPlaceholder = false,
@@ -211,6 +231,9 @@ const {
   // repeating it on every row is noise.
   hideSender?: boolean
   avatarLabel: string
+  // The name of the row's checkbox: what ticking it selects, said in full, where the avatar has
+  // only an initial.
+  selectLabel: string
   avatarImage?: string
   datetime: string
   // The row stands in for a missing subject or preview: the placeholder is muted, as a hint

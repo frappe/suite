@@ -13,7 +13,7 @@
           <!-- Folders, the thread toolbar's menu of ticks, for every ticked thread at once: stays
                open, to file them in several. -->
           <Dropdown v-for="menu in filing" :key="menu.label" :options="menu.options">
-            <Button variant="ghost" :tooltip="menu.label">
+            <Button variant="ghost" :tooltip="menu.label" :aria-label="menu.label">
               <template #icon>
                 <component :is="menu.icon" class="icon" />
               </template>
@@ -21,7 +21,7 @@
           </Dropdown>
         </template>
         <Dropdown v-else-if="group.key === 'folded'" v-model:open="foldedOpen" :options="folded">
-          <Button variant="ghost" :tooltip="__('Actions')">
+          <Button variant="ghost" :tooltip="__('Actions')" :aria-label="__('Actions')">
             <template #icon>
               <Ellipsis class="icon" />
             </template>
@@ -35,6 +35,7 @@
           >
             <Button
               :tooltip="action.label"
+              :aria-label="action.label"
               variant="ghost"
               @click="action.menu ? undefined : action.onClick()"
             >
