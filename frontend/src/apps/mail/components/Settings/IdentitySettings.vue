@@ -264,7 +264,10 @@ async function save() {
     html_signature: form.signature,
   })
   raiseToast(__('Address updated'))
-  showList()
+  // A slow save can end after another page was opened, and that page stays
+  if (draft.value === form) {
+    showList()
+  }
 }
 
 // The picker's choices: none, one of the saved signatures, or words written for this address alone;
@@ -321,13 +324,16 @@ function chooseSignature(choice: unknown) {
 const addIdentity = useMutation(api.mail.identities.create)
 const isCreateBlocked = computed(() => !newAddress.value?.email)
 async function createAddress() {
-  if (!newAddress.value) {
+  const form = newAddress.value
+  if (!form) {
     return
   }
 
-  await addIdentity.run({ account: store.accountId, ...newAddress.value })
+  await addIdentity.run({ account: store.accountId, ...form })
   raiseToast(__('Address created'))
-  showList()
+  if (newAddress.value === form) {
+    showList()
+  }
 }
 
 // The address a new message starts from, found as the composer finds it: the saved one, or the

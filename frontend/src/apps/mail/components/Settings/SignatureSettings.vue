@@ -122,11 +122,12 @@ function showList() {
 }
 
 async function save() {
-  if (!draft.value) {
+  const form = draft.value
+  if (!form) {
     return
   }
 
-  const { name, ...content } = draft.value
+  const { name, ...content } = form
   if (name) {
     await updateSignature.run({ name, ...content })
     raiseToast(__('Signature updated'))
@@ -135,7 +136,10 @@ async function save() {
     raiseToast(__('Signature created'))
   }
 
-  showList()
+  // A slow save can end after another signature was opened, and that one stays
+  if (draft.value === form) {
+    showList()
+  }
 }
 
 function signatureOptions(signature: Signature) {

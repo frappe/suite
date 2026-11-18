@@ -354,6 +354,36 @@ it('keeps the address open, with what was typed, when the save is refused', asyn
   expect(field('Display name')?.value).toBe('Maya')
   expect(state.toast).not.toHaveBeenCalled()
 })
+it('keeps another address open when a slow save of the first one ends', async () => {
+  const answer = Promise.withResolvers<void>()
+  state.run.mockReturnValue(answer.promise)
+  mount([me, sales])
+  await openAddress('me@example.com')
+  await type('Display name', 'Maya')
+  await press('Save')
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  await type('Display name', 'Sales team')
+
+  answer.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(field('Display name')?.value).toBe('Sales team')
+})
+it('keeps an address open when a slow create ends after the new page was left', async () => {
+  const answer = Promise.withResolvers<void>()
+  state.run.mockReturnValue(answer.promise)
+  mount([me, sales])
+  await press('New address')
+  await type('Email address', 'new@example.com')
+  await press('Save')
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  await type('Display name', 'Sales team')
+
+  answer.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(field('Display name')?.value).toBe('Sales team')
+})
 it('keeps Reply-to and Bcc behind a button until the address uses one', async () => {
   const support = { ...sales, bcc: [{ email: 'log@example.com', display_name: '' }] }
   mount([me, support])

@@ -145,6 +145,20 @@ it('creates a signature from New signature, then shows the list', async () => {
   expect(nameField()).toBeNull()
   expect(state.toast).toHaveBeenCalledWith('Signature created')
 })
+it('keeps a new signature open when a slow save of another one ends', async () => {
+  const answer = Promise.withResolvers<void>()
+  state.run.mockReturnValue(answer.promise)
+  await openSaved()
+  await type(nameField(), 'Work, short')
+  await press('Save')
+  await press('Back to signatures')
+  await press('New signature')
+  await type(nameField(), 'Home')
+
+  answer.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(nameField()?.value).toBe('Home')
+})
 it('keeps Save off until the signature has both a name and a body', async () => {
   await press('New signature')
   expect(button('Save').disabled).toBe(true)
