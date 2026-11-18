@@ -239,7 +239,7 @@ async function mount(openActions = true, initialTransferUser?: string, embedded 
   await client.query(api.suite.storage.get)
   const element = document.createElement('div')
   document.body.append(element)
-  app = createApp(LocalUsersView, { embedded, initialTransferUser })
+  app = createApp(LocalUsersView, { embedded, initialTransferUser, status: 'disabled' })
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [

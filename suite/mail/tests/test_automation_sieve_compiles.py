@@ -13,9 +13,10 @@ JMAP_CORE = "urn:ietf:params:jmap:core"
 JMAP_SIEVE = "urn:ietf:params:jmap:sieve"
 
 
-def render_automation_script() -> str:
+def render_automation_script(classify: bool = True) -> str:
     """The automation script for an account using every block the generator writes, with the lookups
-    it would make over JMAP stubbed out. Paths and keywords carry quotes and backslashes."""
+    it would make over JMAP stubbed out. Paths and keywords carry quotes and backslashes. `classify`
+    is whether Mail Settings has mail classified, and so whether the Category block is there."""
 
     from suite.mail.doctype.sieve_script import sieve_script
 
@@ -34,6 +35,7 @@ def render_automation_script() -> str:
     }
 
     with (
+        patch.object(sieve_script.classification, "is_enabled", return_value=classify),
         patch.object(sieve_script, "get_mailboxes", return_value=[{"id": "m1", "_name": "Gold"}]),
         patch.object(sieve_script, "get_mailbox_automation_rules", return_value=rules),
         patch.object(sieve_script, "get_mailbox_path", return_value='Clients/"VIP" \\ Gold'),

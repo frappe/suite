@@ -1,5 +1,14 @@
 <script setup lang="ts">
-import { Button, Dialog, Dropdown, FormControl, Switch, toast, Tooltip } from 'frappe-ui'
+import {
+  Button,
+  Dialog,
+  Dropdown,
+  FormControl,
+  LoadingIndicator,
+  Switch,
+  toast,
+  Tooltip,
+} from 'frappe-ui'
 import {
   AlignLeft,
   Bell,
@@ -20,6 +29,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { api, useMutation } from '@/api'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import MobileEventForm from '@/apps/calendar/components/mobile/MobileEventForm.vue'
+import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
@@ -33,8 +43,21 @@ import { inUserTimeZone } from '@/apps/calendar/utils/datetime'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { VISIBILITY_OPTIONS } from '@/apps/calendar/utils/eventOptions'
-import { formEventFields, formStart, occurrenceStart } from '@/apps/calendar/utils/eventWrite'
+import {
+  formEventFields,
+  formStart,
+  occurrenceStart,
+  type EventForm,
+} from '@/apps/calendar/utils/eventWrite'
 import { getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
+import {
+  draftGuests,
+  newEventTimes,
+  seatOrganizer,
+  withoutReader,
+  type CreatedEvent,
+  type NewEventDraft,
+} from '@/apps/calendar/utils/newEventDraft'
 import {
   isFirstOccurrence,
   scopeOptions,
@@ -47,10 +70,28 @@ import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 const show = defineModel<boolean>()
-const { selectedEvent } = defineProps<{
+const { selectedEvent, createdAction, askBeforeLeaving, loading } = defineProps<{
   selectedEvent: any
+  /** What the toast for a new event offers, once it is saved and sent. */
+  createdAction?: (created: CreatedEvent) => { label: string; onClick: () => void }
+  /**
+   * Leaving a changed form asks what to do with it, as Cancel does, rather than keeping it as a
+   * draft: for a form opened over another area's page, where nothing may be saved but by asking.
+   */
+  askBeforeLeaving?: boolean
+  /**
+   * The dialog, or the phone's screen, without its form: what the form reads is still loading.
+   * The form fills in when this turns false.
+   */
+  loading?: boolean
 }>()
-const emit = defineEmits(['reloadEvents'])
+const emit = defineEmits<{
+  reloadEvents: []
+  /** A new event, made and sent, ahead of the form closing. */
+  created: [event: CreatedEvent]
+  /** The form has gone from the screen, its closing transition included. */
+  afterLeave: []
+}>()
 const store = userStore()
 const user = store.userResource
 const { participantIdentities, calendars } = store
@@ -144,43 +185,60 @@ const defaultStartTime = (date: string) =>
 // "7:30 am" reads the 7 and stops.
 const SLOT_TIME_FORMATS = ['h:mm a', 'h a', 'HH:mm']
 const getDefaultEventData = () => {
-  const startTime = selectedEvent?.time
-    ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
-    : defaultStartTime(selectedEvent.date)
-
+  // Filled in by another area (an event from a mail): its title, words and time, and the people in
+  // it as participants beside the organizer, each still to reply.
+  const prefill: NewEventDraft | undefined = selectedEvent?.prefill
+  const slotDate = dayjs(selectedEvent.date).format('YYYY-MM-DD')
   // A new event is a timed one. Only a click in the all-day lane says otherwise — that is
   // the reader pointing at the all-day row, not the absence of a time: a month cell and the
   // New Event button carry no time either, and neither is a statement that the event runs
   // all day. Off by default, and a switch away when it isn't.
-  const isAllDay = selectedEvent?.isFullDay === true
+  const { isAllDay, startDate, startTime, endDate, endTime } = newEventTimes(
+    prefill,
+    {
+      date: slotDate,
+      time: selectedEvent?.time
+        ? dayjs(selectedEvent.time, SLOT_TIME_FORMATS).format('HH:mm')
+        : defaultStartTime(selectedEvent.date),
+      isAllDay: selectedEvent?.isFullDay === true,
+    },
+    DEFAULT_DURATION_MINUTES,
+  )
 
   // Shared calendars are never writable, so the default is always the account's own.
   const calendar = defaultCalendar(calendars.data)
   const identity = store.organizerIdentity
+  const guests = withoutReader(draftGuests(prefill), ownAddresses())
   return {
-    title: '',
+    title: prefill?.title ?? '',
     organizer: identity?.email,
     account: store.accountId,
     // Empty until the list has loaded, and then the server puts it in the default.
     calendar_ids: [calendar?.id].filter(Boolean),
     isAllDay,
     repeat: false,
-    startDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
+    startDate,
     startTime,
-    endDate: dayjs(selectedEvent.date).format('YYYY-MM-DD'),
-    endTime: dayjs(startTime, 'HH:mm').add(DEFAULT_DURATION_MINUTES, 'minute').format('HH:mm'),
+    endDate,
+    endTime,
     locations: [],
     links: [],
-    alerts: [defaultAlert(isAllDay, dayjs(selectedEvent.date).format('YYYY-MM-DD'))],
+    alerts: [defaultAlert(isAllDay, startDate)],
     followsDefaults: false,
     description: '',
     free_busy_status: 'Busy',
     privacy: 'Public',
-    participants: identity ? [organizerParticipant(identity)] : [],
+    participants: identity ? seatOrganizer(guests, organizerParticipant(identity)) : guests,
     recurrence_rule: {},
     addMeetLink: false,
   }
 }
+
+// Every address the account sends or attends as, so none of them is invited to its own event.
+const ownAddresses = () =>
+  [...(store.identities.data ?? []), ...(store.participantIdentities.data ?? [])].map(
+    (identity) => identity.email,
+  )
 
 // The organizer row of a new event: the participant identity the store picked, which
 // can differ from the login user. Without one the event has no organizer at all.
@@ -190,7 +248,11 @@ const organizerParticipant = (identity: ParticipantIdentity) => ({
   _name: identity._name || user.data.full_name,
   participation_status: 'ACCEPTED',
 })
-const event = reactive({})
+// What the form holds: the fields a write takes, and three only the modal reads. Empty until
+// the modal opens.
+const event = reactive<EventForm & { account?: string; repeat?: boolean; addMeetLink?: boolean }>(
+  {},
+)
 let originalParams: Record<string, unknown> = {}
 
 // A new event cannot be saved, or kept as a draft, without an organizer, and only an
@@ -299,8 +361,10 @@ const meetLinkDisplay = computed(() =>
 
 // Moving the start drags the end along, keeping the gap the user set. A gap that
 // hasn't been set — or one the start has overtaken — falls back to the default.
-let previousStart = null
-watch(show, (val) => {
+let previousStart: { date?: string; time?: string } | null = null
+// The form opens once it is shown and has what it reads.
+const formOpen = computed(() => !!show.value && !loading)
+watch(formOpen, (val) => {
   if (!val) return
   Object.assign(event, getEventData())
   // Reopening the same event leaves the start untouched, so the watcher below
@@ -311,15 +375,39 @@ watch(show, (val) => {
   }
   originalParams = JSON.parse(JSON.stringify(eventParams.value))
 })
+// Filled in under a dialog already open, the title gets the caret its autofocus gave to nothing,
+// selected as autofocus would have it, so typing replaces a title the event came in with.
+watch(
+  () => loading,
+  (now, before) => {
+    if (before && !now && show.value && isNew.value && !isMobile.value)
+      void nextTick(() => {
+        titleInput.value?.focus()
+        titleInput.value?.select()
+      })
+  },
+)
+// The phone's screen leaves at once; the dialog says so itself, once it has faded.
+watch(show, (val) => {
+  if (!val && isMobile.value) void nextTick(() => emit('afterLeave'))
+})
 
 // Identities can land after the modal opened; give the new event its organizer then,
-// ahead of any attendee already added.
+// ahead of any attendee already added,
 watch(
   () => store.organizerIdentity,
   (identity) => {
     if (!show.value || !identity || !isNew.value || event.organizer) return
     event.organizer = identity.email
-    event.participants = [organizerParticipant(identity), ...(event.participants ?? [])]
+    event.participants = seatOrganizer(event.participants ?? [], organizerParticipant(identity))
+  },
+)
+// and drop a guest who turns out to be the reader, organizer or not.
+watch(
+  () => ownAddresses().join(),
+  () => {
+    if (!show.value || !isNew.value) return
+    event.participants = withoutReader(event.participants ?? [], ownAddresses(), event.organizer)
   },
 )
 watch(
@@ -417,6 +505,16 @@ const repeatLabel = computed(() => {
 
 // --- Save logic ---
 
+// A new event made and sent, not one kept as a draft, told before the form closes.
+const announceCreated = (result: unknown) => {
+  if (savingDraft.value) return
+  emit('created', createdEvent(result))
+}
+const createdEvent = (result: unknown): CreatedEvent => ({
+  id: createdId(result),
+  account: event.account ?? '',
+  date: event.startDate ?? '',
+})
 const handleSuccess = () => {
   show.value = false
   emit('reloadEvents')
@@ -436,6 +534,7 @@ async function createEventSubmit({ sendEmail }: { sendEmail: boolean }) {
       sendEmail,
     }),
   )
+  announceCreated(result)
   handleSuccess()
   return result
 }
@@ -448,6 +547,7 @@ async function createMeetEventSubmit({ sendEmail }: { sendEmail: boolean }) {
     ...eventParams.value,
     send_scheduling_messages: sendEmail,
   })
+  announceCreated(result)
   handleSuccess()
   return result
 }
@@ -591,8 +691,18 @@ const submitEvent = (sendEmail: boolean) => {
       sendEmail,
     })
   }
+  const offer = isNew.value && createdAction
+  // Read now: the save closes the form, and the next one to open refills it.
+  const account = event.account ?? ''
+  const date = event.startDate ?? ''
   toast.promise(submit(), {
     ...messages,
+    ...(offer && {
+      success: (result: unknown) => ({
+        message: messages.success,
+        action: offer({ account, date, id: createdId(result) }),
+      }),
+    }),
     // The refusal's own message, as the request layer shows it for a non-silent call.
     error: (error: unknown) =>
       (error instanceof TransportError && error.type !== 'NetworkError'
@@ -601,6 +711,15 @@ const submitEvent = (sendEmail: boolean) => {
   })
   showNotifyParticipantsModal.value = false
 }
+
+// The new event's id, as either create answers: the plain one with the id alone, the one with a
+// Meet room with the meeting around it.
+const createdId = (result: unknown) =>
+  typeof result === 'string'
+    ? result
+    : result && typeof result === 'object' && 'event_id' in result
+      ? String(result.event_id)
+      : ''
 
 // --- Leaving the modal ---
 //
@@ -616,7 +735,7 @@ const submitEvent = (sendEmail: boolean) => {
 const isDirty = computed(() => Object.keys(patch.value).length > 0 || pendingMeetAttach.value)
 const showDiscardModal = ref(false)
 const cancel = () => {
-  if (isDirty.value) showDiscardModal.value = true
+  if (!loading && isDirty.value) showDiscardModal.value = true
   else show.value = false
 }
 
@@ -634,11 +753,11 @@ const discardChanges = () => {
   show.value = false
 }
 const leave = () => {
-  if (!isDirty.value) {
+  if (loading || !isDirty.value) {
     show.value = false
     return
   }
-  if (canSaveDraft.value && !missingOrganizer.value) saveDraftAndLeave()
+  if (canKeepAsDraft.value && !askBeforeLeaving) saveDraftAndLeave()
   else showDiscardModal.value = true
 }
 const discardDraft = useMutation(api.calendar.events.delete, {
@@ -889,14 +1008,31 @@ const recurringScopeModalProps = computed(() => ({
     size="4xl"
     bare
     @update:open="(open) => (open ? (show = true) : leave())"
+    @after-leave="emit('afterLeave')"
   >
     <template #default>
       <DialogDescription class="sr-only">
         {{ isNew ? __('Create a calendar event.') : __('Edit this calendar event.') }}
       </DialogDescription>
+      <!-- Up at once, the form in it once what it reads has loaded. -->
+      <div v-if="loading" class="flex h-96 flex-col text-ink-gray-8">
+        <div class="flex items-center border-b px-6 py-4">
+          <DialogTitle class="text-md font-semibold">{{ dialogTitle }}</DialogTitle>
+          <Button variant="ghost" class="ml-auto" :aria-label="__('Close')" @click="leave">
+            <template #icon><X :size="18" class="icon text-ink-gray-5" /></template>
+          </Button>
+        </div>
+        <div
+          class="flex flex-1 items-center justify-center"
+          role="status"
+          :aria-label="__('Loading')"
+        >
+          <LoadingIndicator class="size-5 text-ink-gray-5" />
+        </div>
+      </div>
       <!-- On a phone the dialog is the screen: 85vh of a 4xl box left the form in
 			     a letterbox with its own scrollbar inside the page's. -->
-      <div class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">
+      <div v-else class="flex max-h-[85vh] flex-col text-ink-gray-8 max-sm:h-dvh max-sm:max-h-none">
         <!-- header -->
         <div class="flex items-center border-b px-6 py-4">
           <DialogTitle class="text-md font-semibold">{{ dialogTitle }}</DialogTitle>
@@ -1243,6 +1379,15 @@ const recurringScopeModalProps = computed(() => ({
       </div>
     </template>
   </Dialog>
+  <!-- The phone's screen, up at once: its header, and the form under it once what it reads has
+	     loaded. Not the form itself while loading: its rows and its participants screen read the
+	     event, which is empty until then. -->
+  <div v-else-if="show && loading" class="fixed inset-0 z-30 flex flex-col bg-surface-base">
+    <MobileScreenHeader :title="dialogTitle" @leave="cancel" />
+    <div class="flex flex-1 items-center justify-center" role="status" :aria-label="__('Loading')">
+      <LoadingIndicator class="size-5 text-ink-gray-5" />
+    </div>
+  </div>
   <MobileEventForm
     v-else-if="show"
     v-model:calendar="eventCalendar"

@@ -4,6 +4,7 @@ import { createApp, h, nextTick, ref, type App } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import { mailDatesLoaded } from '@/apps/mail/composables/useMailDates'
 import type { Mail } from '@/apps/mail/types'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -147,6 +148,9 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
   await nextTick()
 
   expect(menu.bodyView).toBe('adapted')
+  // The frame waits for the date reader, so that the dates are in the first document it loads.
+  await mailDatesLoaded()
+  await nextTick()
   expect(colorScheme()).toBe('dark')
 
   menu.toggle()

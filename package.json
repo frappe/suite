@@ -99,6 +99,7 @@
     "@vueuse/core": "^14.1.0",
     "@workadventure/noise-suppression": "0.0.4",
     "cheerio": "^1.2.0",
+    "chrono-node": "^2.10.3",
     "dayjs": "^1.11.20",
     "docx": "^9.5.1",
     "dompurify": "^3.2.6",

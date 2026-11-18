@@ -628,7 +628,9 @@
                             :content="mail.html_body"
                             :block-images="isBlocked(mail)"
                             :highlight="isMatch(mail) ? searchTerm : ''"
+                            :sent-at="offersEvents(mail) ? mail.received_at : undefined"
                             :as-sent="bodyViews[mail.name] === 'asSent'"
+                            @pick-date="createEventAt(mail, $event)"
                             @adaptable="(adaptable: boolean) => onBodyAdaptable(mail, adaptable)"
                           />
 
@@ -642,7 +644,9 @@
                             v-else
                             :text="getPlainTextBody(mail)"
                             :term="isMatch(mail) ? searchTerm : ''"
+                            :sent-at="offersEvents(mail) ? mail.received_at : undefined"
                             class="font-sans !font-normal text-base !leading-5 sm:text-sm"
+                            @pick-date="createEventAt(mail, $event)"
                           />
                         </template>
 
@@ -808,6 +812,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { useNewEventDialog } from '@/apps/calendar'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
@@ -883,7 +888,9 @@ import {
 } from '@/apps/mail/utils/composables'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
+import { eventFromMail } from '@/apps/mail/utils/eventFromMail'
 import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
@@ -2140,6 +2147,13 @@ const getReplyIdentityEmail = (mail: Mail) => {
     [mail.from_email, ...[...to, ...cc, ...bcc].map((r) => r.email)].find(isUserEmail),
   )
 }
+
+// A date in a mail's own words opens Calendar's new-event form over the mail, at that date and
+// filled in from the mail, for the reader to finish and save without leaving it. Not in a draft,
+// which is still the reader's to write, nor in a thread shown for reading alone.
+const offersEvents = (mail: Mail) => !readonly && !mail.draft
+const openNewEvent = useNewEventDialog()
+const createEventAt = (mail: Mail, date: NamedDate) => void openNewEvent(eventFromMail(mail, date))
 
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing

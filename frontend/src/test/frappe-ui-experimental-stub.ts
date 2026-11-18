@@ -3,3 +3,5 @@
 // get this instead, and vi.mock('frappe-ui/experimental', ...) replaces it as needed.
 // The palette family is the real one: a palette test drives its listbox, which a stub cannot.
 export * from '../../../node_modules/frappe-ui/experimental/CommandPalette'
+// The calendar colours are the real ones too: Calendar draws every calendar and event from them.
+export { colorMap as CalendarColorMap } from '../../../node_modules/frappe-ui/experimental/Calendar/calendarUtils'

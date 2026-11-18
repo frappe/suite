@@ -62,7 +62,6 @@
             type="select"
             :aria-label="__('Status')"
             :options="[
-              { label: __('Any status'), value: 'all' },
               { label: __('Active'), value: 'enabled' },
               { label: __('Disabled'), value: 'disabled' },
             ]"
@@ -614,14 +613,14 @@ const change = useMutation(api.suite.users.update, { silent: true })
 defineSlots<{ lead?: () => unknown }>()
 const search = ref('')
 const roleFilter = ref('all')
-const statusFilter = ref('all')
+const statusFilter = ref<'enabled' | 'disabled'>('enabled')
 const hasFilters = computed(
-  () => !!search.value || roleFilter.value !== 'all' || statusFilter.value !== 'all',
+  () => !!search.value || roleFilter.value !== 'all' || statusFilter.value === 'disabled',
 )
 watch(
   () => props.status,
   (status) => {
-    statusFilter.value = status === 'enabled' || status === 'disabled' ? status : 'all'
+    statusFilter.value = status === 'disabled' ? 'disabled' : 'enabled'
   },
   { immediate: true },
 )
@@ -671,7 +670,7 @@ const filtered = computed(() =>
   (users.data ?? []).filter(
     (user) =>
       (roleFilter.value === 'all' || user.is_admin === (roleFilter.value === 'admin')) &&
-      (statusFilter.value === 'all' || !!user.enabled === (statusFilter.value === 'enabled')) &&
+      !!user.enabled === (statusFilter.value === 'enabled') &&
       `${user.full_name} ${user.email} ${user.account ?? ''}`
         .toLowerCase()
         .includes(search.value.toLowerCase()),

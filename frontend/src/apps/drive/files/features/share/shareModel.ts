@@ -45,8 +45,9 @@ export interface InheritedPart {
 
 /** Someone picked in the people picker and not yet added. `name` is a user's full name, which grant rows do not carry. */
 export interface PickedPerson {
+  /** A user's email, a `$GROUP:` principal, or, for `email`, the outside address a link goes to. */
   principal: string
-  kind: 'user' | 'group'
+  kind: 'user' | 'group' | 'email'
   label: string
   name: string | null
 }
