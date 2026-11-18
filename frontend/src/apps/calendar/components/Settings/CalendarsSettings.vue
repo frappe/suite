@@ -36,10 +36,9 @@
           <Badge v-if="calendar.default" :label="__('Default')" />
           <Badge v-if="!canEdit(calendar)" :label="__('Read-only')" />
           <!-- .stop on the wrapper, as mail's folder list has it: the phone's sheet opens
-					     on the click bubbling to AdaptiveDropdown's own span. Invisible rather than
-					     gone with nothing to offer, so the row keeps the button's height. -->
-          <div class="flex" :class="!hasMenuOptions(calendar) && 'invisible'" @click.stop>
-            <AdaptiveDropdown :options="menuOptions(calendar)" :title="calendar._name">
+					     on the click bubbling to AdaptiveDropdown's own span. -->
+          <div class="flex" @click.stop>
+            <AdaptiveDropdown :options="options(calendar)" :title="calendar._name">
               <Button variant="ghost" :aria-label="__('Calendar options')">
                 <template #icon>
                   <Ellipsis class="size-4 text-ink-gray-5" />
@@ -58,21 +57,33 @@
 
 <script setup lang="ts">
 import { Badge, Button } from 'frappe-ui'
-import { Ellipsis } from 'lucide-vue-next'
+import { Ellipsis, Eye, EyeOff } from 'lucide-vue-next'
 
 import CalendarModal from '@/apps/calendar/components/Modals/CalendarModal.vue'
 import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalendarModal.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 import { userStore } from '@/apps/calendar/stores/user'
-import { calendarColor } from '@/apps/calendar/utils/calendars'
+import { calendarColor, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
+import { translate as __ } from '@/platform/translation'
 
 const { calendars } = userStore()
 const { isMobile } = useScreenSize()
-const { selected, showEdit, showDelete, create, edit, canEdit, menuOptions, hasMenuOptions } =
+const { selected, showEdit, showDelete, create, edit, canEdit, toggleVisible, menuOptions } =
   useCalendarActions()
+
+// The sidebar shows or hides a calendar on a tap of its row; this page has no such tap, so it
+// offers it first in every calendar's menu, read-only ones included.
+const options = (calendar: CalendarRow) => [
+  {
+    label: calendar.visible ? __('Hide') : __('Show'),
+    icon: calendar.visible ? EyeOff : Eye,
+    onClick: () => toggleVisible(calendar),
+  },
+  ...menuOptions(calendar),
+]
 </script>
