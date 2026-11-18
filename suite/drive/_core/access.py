@@ -1450,8 +1450,10 @@ def _keep_owner_manage(node: Mapping, principal_kind: str) -> None:
     outranks it (§5.1). Without this, sharing a document with everyone at the
     organization would lower its owner to the role they shared. The user's own
     grant on the node is beside the new one and outranks it, so it keeps
-    their Manage there and on everything below. Their own row is left to
-    them: a change to it is theirs to make.
+    their Manage there and on everything below. When the user already has a
+    row on the node below Manage, or one that has expired, that row is raised
+    to Manage with no expiry; otherwise a new row is written. Neither writes
+    an activity entry: the owner's own access is not news.
     """
     if node.get("kind") == "root" or principal_kind not in ("general", "group"):
         return
@@ -1461,6 +1463,10 @@ def _keep_owner_manage(node: Mapping, principal_kind: str) -> None:
     from suite.drive.framework import principals_for_principal
 
     if effective_role(node, principals_for_principal(owner)) >= MANAGE:
+        return
+    own = frappe.db.get_value("Drive Grant", {"node": node.get("name"), "principal": owner}, "name")
+    if own:
+        frappe.db.set_value("Drive Grant", own, {"role": MANAGE, "expires_on": None})
         return
     frappe.get_doc(
         {"doctype": "Drive Grant", "node": node.get("name"), "principal": owner, "role": MANAGE}

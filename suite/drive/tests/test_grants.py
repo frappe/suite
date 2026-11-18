@@ -499,6 +499,49 @@ class TestGrantWorkflows(_GrantFixture):
 
         self.assertEqual(effective_role(node, owner), MANAGE)
 
+    def test_sharing_with_everyone_or_a_group_raises_the_owners_own_lower_row_to_manage(self):
+        frappe.set_user("Administrator")
+        group = frappe.get_doc(
+            {
+                "doctype": "User Group",
+                "name": f"drive-owner-row-{frappe.generate_hash(length=6)}",
+                "user_group_members": [{"user": TARGET}],
+            }
+        ).insert()
+        owner = principals_for(TARGET)
+        yesterday = add_to_date(now_datetime(), days=-1)
+        cases = (
+            # (the owner's own row on the file, as a migration or an expiry left it)
+            (EDIT, None),
+            (MANAGE, yesterday),
+        )
+        for own_role, own_expiry in cases:
+            for principal in ("$GENERAL", f"$GROUP:{group.name}"):
+                with self.subTest(own_role=own_role, own_expiry=own_expiry, principal=principal):
+                    file = create_empty_file(owner, self.folder.name, f"carried-{own_role}-{principal}.doc")
+                    frappe.get_doc(
+                        {
+                            "doctype": "Drive Grant",
+                            "node": file,
+                            "principal": TARGET,
+                            "role": own_role,
+                            "expires_on": own_expiry,
+                        }
+                    ).insert(ignore_permissions=True)
+
+                    grant(file, principal, READ, self.admin)
+
+                    node = frappe.db.get_value(
+                        "Drive Node", file, ["name", "root", "path", "kind"], as_dict=True
+                    )
+                    self.assertEqual(effective_role(node, owner), MANAGE)
+                    rows = frappe.get_all(
+                        "Drive Grant",
+                        filters={"node": file, "principal": TARGET},
+                        fields=["role", "expires_on"],
+                    )
+                    self.assertEqual([(row.role, row.expires_on) for row in rows], [(MANAGE, None)])
+
     def test_explain_is_authorized_ordered_fresh_and_includes_unheld_rows(self):
         for principal, role in (
             ("$GROUP:manage", MANAGE),
