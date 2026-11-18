@@ -6,7 +6,7 @@
         <template #actions>
           <Button
             icon-left="lucide-plus"
-            :label="__('New')"
+            :label="__('New calendar')"
             :size="isMobile ? 'md' : 'sm'"
             @click="create"
           />

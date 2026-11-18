@@ -8,7 +8,12 @@
         :loading="pushSubscriptions.isFetching"
         @click="pushSubscriptions.refetch().catch(() => {})"
       />
-      <Button variant="solid" icon-left="lucide-plus" :label="__('New')" @click="openAddModal" />
+      <Button
+        variant="solid"
+        icon-left="lucide-plus"
+        :label="__('New subscription')"
+        @click="openAddModal"
+      />
     </SettingsDialogActions>
     <template v-if="rows.length">
       <!-- A long list scrolls in its own box, so the dialog stays short. -->

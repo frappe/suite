@@ -61,7 +61,7 @@
               @click="toggleSortDir"
             />
           </div>
-          <Button icon-left="lucide-plus" :label="__('New')" @click="addSender" />
+          <Button icon-left="lucide-plus" :label="__('New sender')" @click="addSender" />
         </div>
 
         <!-- A long list scrolls in its own box, so the dialog keeps its size. -->
@@ -104,7 +104,12 @@
       <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
         <p class="text-base font-medium">{{ __('No screened senders yet') }}</p>
         <p>{{ MESSAGE }}</p>
-        <Button icon-left="lucide-plus" :label="__('New')" class="w-fit" @click="addSender" />
+        <Button
+          icon-left="lucide-plus"
+          :label="__('New sender')"
+          class="w-fit"
+          @click="addSender"
+        />
       </div>
 
       <AddScreenedSenderModal v-model="showAddModal" />
