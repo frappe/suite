@@ -15,6 +15,7 @@ from datetime import date, datetime, timedelta
 import frappe
 from frappe.utils import get_datetime
 from isodate import duration_isoformat
+from pypika.queries import QueryBuilder
 
 from suite.utils.dt import utcnow
 
@@ -47,7 +48,7 @@ def calendar_rows(user: str) -> list[dict]:
             "may_write_all": 0,
             "may_delete": 0,
         }
-        for calendar in _calendars_for(user)
+        for calendar in calendars_for(user)
     ]
 
 
@@ -58,7 +59,7 @@ def events_in_window(user: str, from_date: str, to_date: str) -> list[dict]:
     stored once a year.
     """
 
-    calendars = {calendar.name: calendar for calendar in _calendars_for(user)}
+    calendars = {calendar.name: calendar for calendar in calendars_for(user)}
     if not calendars:
         return []
 
@@ -67,13 +68,13 @@ def events_in_window(user: str, from_date: str, to_date: str) -> list[dict]:
 
     stamp = utcnow()
     events = []
-    for row in _rows_in_window(list(calendars), start, end):
-        for day in _occurrences(row, start, end):
-            events.append(_event_row(calendars[row.calendar], row, day, stamp))
+    for row in stored_events(list(calendars), start, end).run(as_dict=True):
+        for day in occurrences(row, start, end):
+            events.append(event_row(calendars[row.calendar], row, day, stamp))
     return events
 
 
-def _calendars_for(user: str) -> list[frappe._dict]:
+def calendars_for(user: str) -> list[frappe._dict]:
     """The calendars drawn for this user: those assigned to them, and the site-wide ones.
 
     Read as the site. Who sees an external calendar is decided here and nowhere else, so the
@@ -91,36 +92,39 @@ def _calendars_for(user: str) -> list[frappe._dict]:
     )
 
 
-def _rows_in_window(calendars: list[str], start: datetime, end: datetime) -> list[frappe._dict]:
-    """The stored events that can reach the window: those that run through it, and the yearly
-    ones whose day falls in it, whatever year they were anchored in."""
+def stored_events(
+    calendars: list[str], start: datetime | None = None, end: datetime | None = None
+) -> QueryBuilder:
+    """A query for the stored events on `calendars` that can reach the window: those that run
+    through it, and the yearly ones whose day falls in it, whatever year they were anchored in.
 
-    fields = ["name", "calendar", "uid", *EVENT_FIELDS]
-    dated = frappe.get_all(
-        "External Calendar Event",
-        {
-            "calendar": ("in", calendars),
-            "repeats": "",
-            "starts_on": ("<", end),
-            "ends_on": (">", start),
-        },
-        fields,
+    Either bound alone narrows as far as it can: a yearly event is asked for by its day only
+    where both are given. Left a query so a search can narrow it by its words before it runs.
+    """
+
+    event = frappe.qb.DocType("External Calendar Event")
+    query = (
+        frappe.qb.from_(event)
+        .select(event.name, event.calendar, event.uid, *(event[field] for field in EVENT_FIELDS))
+        .where(event.calendar.isin(calendars))
     )
+    if not (start or end):
+        return query
 
-    # Asked for by the days the window holds, which the index answers. There are at most 366 of
-    # them however long the window, so this never comes to every birthday on the calendar.
-    yearly = frappe.get_all(
-        "External Calendar Event",
-        {
-            "calendar": ("in", calendars),
-            "repeats": "Yearly",
-            "starts_on": ("<", end),
-            "month_day": ("in", _days_between(start, end)),
-        },
-        fields,
-    )
-
-    return dated + yearly
+    # A blank and a missing repeat alike happen once: a row written past the event's validate
+    # can carry either.
+    dated = event.repeats.isnull() | (event.repeats == "")
+    yearly = event.repeats == "Yearly"
+    if start:
+        dated &= event.ends_on > start
+    if end:
+        dated &= event.starts_on < end
+        yearly &= event.starts_on < end
+    if start and end:
+        # Asked for by the days the window holds, which the index answers. There are at most 366
+        # of them however long the window, so this never comes to every birthday on the calendar.
+        yearly &= event.month_day.isin(_days_between(start, end))
+    return query.where(dated | yearly)
 
 
 def _days_between(start: datetime, end: datetime) -> list[str]:
@@ -136,7 +140,7 @@ def _days_between(start: datetime, end: datetime) -> list[str]:
     return sorted(days)
 
 
-def _occurrences(row: frappe._dict, start: datetime, end: datetime) -> list[date]:
+def occurrences(row: frappe._dict, start: datetime, end: datetime) -> list[date]:
     """The days this event lands on inside the window."""
 
     first = get_datetime(row.starts_on)
@@ -170,7 +174,7 @@ def yearly_occurrence(month_day: str, year: int) -> date:
         return date(year, 2, 28)
 
 
-def _event_row(calendar: frappe._dict, row: frappe._dict, day: date, stamp: str) -> dict:
+def event_row(calendar: frappe._dict, row: frappe._dict, day: date, stamp: str) -> dict:
     """One occurrence, in the shape the app reads events in.
 
     The fields an event carries on the mail server that these never have — participants, alerts,

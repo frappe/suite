@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 
 from suite.calendar import api, external, external_store
 from suite.calendar.doctype.external_calendar.external_calendar import ExternalCalendar
-from suite.calendar.external import _occurrences, yearly_occurrence
+from suite.calendar.external import occurrences, yearly_occurrence
 from suite.calendar.external_store import _differs
 from suite.calendar.http import routes
 from suite.calendar.tests.fixtures import HOLIDAY
@@ -52,18 +52,18 @@ class UnitTestOccurrences(UnitTestCase):
         return frappe._dict(starts_on=starts_on, repeats=repeats, month_day=month_day)
 
     def test_a_birthday_falls_in_every_year_of_the_window(self):
-        days = _occurrences(self.event(datetime(2026, 7, 9)), datetime(2026, 1, 1), datetime(2028, 12, 31))
+        days = occurrences(self.event(datetime(2026, 7, 9)), datetime(2026, 1, 1), datetime(2028, 12, 31))
         self.assertEqual(days, [date(2026, 7, 9), date(2027, 7, 9), date(2028, 7, 9)])
 
     def test_a_window_that_misses_the_day_has_no_occurrence(self):
         self.assertEqual(
-            _occurrences(self.event(datetime(2026, 7, 9)), datetime(2026, 8, 1), datetime(2026, 8, 31)),
+            occurrences(self.event(datetime(2026, 7, 9)), datetime(2026, 8, 1), datetime(2026, 8, 31)),
             [],
         )
 
     def test_nothing_before_the_series_began(self):
         # a work anniversary has no year nought: the first one is where it starts
-        days = _occurrences(self.event(datetime(2027, 3, 1)), datetime(2025, 1, 1), datetime(2027, 12, 31))
+        days = occurrences(self.event(datetime(2027, 3, 1)), datetime(2025, 1, 1), datetime(2027, 12, 31))
         self.assertEqual(days, [date(2027, 3, 1)])
 
     def test_a_leap_day_lands_on_the_28th_in_a_year_without_one(self):
@@ -74,7 +74,7 @@ class UnitTestOccurrences(UnitTestCase):
         # anchored in 2027, which has no 29 February; 2028 has one, and it belongs there
         leap_day = self.event(datetime(2027, 2, 28), month_day="02-29")
         self.assertEqual(
-            _occurrences(leap_day, datetime(2027, 1, 1), datetime(2028, 12, 31)),
+            occurrences(leap_day, datetime(2027, 1, 1), datetime(2028, 12, 31)),
             [date(2027, 2, 28), date(2028, 2, 29)],
         )
 
@@ -85,7 +85,7 @@ class UnitTestOccurrences(UnitTestCase):
         self.assertEqual(days, ["02-27", "02-28", "02-29", "03-01"])
 
     def test_a_day_of_its_own_happens_once(self):
-        days = _occurrences(
+        days = occurrences(
             self.event(datetime(2026, 10, 2), repeats=""), datetime(2026, 1, 1), datetime(2026, 12, 31)
         )
         self.assertEqual(days, [date(2026, 10, 2)])

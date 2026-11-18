@@ -9,13 +9,7 @@ from datetime import datetime, timedelta
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
-from suite.calendar.external import (
-    EVENT_FIELDS,
-    _calendars_for,
-    _days_between,
-    _event_row,
-    _occurrences,
-)
+from suite.calendar.external import calendars_for, event_row, occurrences, stored_events
 from suite.utils.dt import utcnow
 
 # How many of a yearly event's occurrences a search answers with, nearest today first, and how
@@ -52,7 +46,7 @@ def search_events(
     crowded out by birthdays outside it that rank nearer.
     """
 
-    drawn = {calendar.name: calendar for calendar in _calendars_for(user)}
+    drawn = {calendar.name: calendar for calendar in calendars_for(user)}
     if calendars is not None:
         drawn = {name: drawn[name] for name in calendars if name in drawn}
     if not drawn:
@@ -68,7 +62,7 @@ def search_events(
         if not row.repeats:
             days = [get_datetime(row.starts_on).date()]
         else:
-            days = _occurrences(row, since, until)
+            days = occurrences(row, since, until)
             if not windowed:
                 days.sort(key=lambda day: abs(day - now.date()))
                 del days[SEARCH_INSTANCES:]
@@ -81,7 +75,7 @@ def search_events(
     del found[limit:]
 
     stamp = utcnow()
-    return [_event_row(drawn[row.calendar], row, day, stamp) for row, days in found for day in days]
+    return [event_row(drawn[row.calendar], row, day, stamp) for row, days in found for day in days]
 
 
 def _rows_carrying(
@@ -91,35 +85,14 @@ def _rows_carrying(
     start: datetime | None = None,
     end: datetime | None = None,
 ) -> list[frappe._dict]:
-    """The stored events on `calendars` whose title — or notes, unless the title alone was
-    asked — carries every one of `words`; every event on them, for none. Within the bounds
-    where given, the way `_rows_in_window` reads a window: a dated event that runs through
-    them, a yearly one whose day falls between them."""
+    """The stored events on `calendars` that can reach the bounds, whose title — or notes,
+    unless the title alone was asked — carries every one of `words`; every such event, for none."""
 
     event = frappe.qb.DocType("External Calendar Event")
-    query = (
-        frappe.qb.from_(event)
-        .select(event.name, event.calendar, event.uid, *(getattr(event, field) for field in EVENT_FIELDS))
-        .where(event.calendar.isin(calendars))
-    )
+    query = stored_events(calendars, start, end)
     for word in words:
         carries = event.title.like(f"%{word}%")
         if not title_only:
             carries = carries | event.description.like(f"%{word}%")
         query = query.where(carries)
-
-    if start or end:
-        # Read as the grid's `get_all` reads a blank: an event written with no repeat at all
-        # happens once.
-        dated = event.repeats.isnull() | (event.repeats == "")
-        yearly = event.repeats == "Yearly"
-        if start:
-            dated &= event.ends_on > start
-        if end:
-            dated &= event.starts_on < end
-            yearly &= event.starts_on < end
-        if start and end:
-            yearly &= event.month_day.isin(_days_between(start, end))
-        query = query.where(dated | yearly)
-
     return query.run(as_dict=True)
