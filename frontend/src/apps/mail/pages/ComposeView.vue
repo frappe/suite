@@ -24,29 +24,36 @@
     <header
       class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
     >
-      <Button variant="ghost" :label="__('Close')" @click="closeCompose">
+      <Button variant="ghost" class="touch-target" :label="__('Close')" @click="closeCompose">
         <template #icon>
           <X class="text-ink-gray-5 size-5" />
         </template>
       </Button>
       <h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
+      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. -->
       <Button
         v-if="isSaveFailed"
         variant="ghost"
         theme="red"
+        class="touch-target"
         :label="__('Not saved · Retry')"
         @click="saveDraft()"
       />
       <!-- In the header, where it can always be reached: in the formatting row it only appeared once
            the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
-      <Button variant="ghost" :label="__('Attach files')" @click="fileInput?.click()">
+      <Button
+        variant="ghost"
+        class="touch-target"
+        :label="__('Attach files')"
+        @click="fileInput?.click()"
+      >
         <template #icon>
           <Paperclip class="text-ink-gray-5 size-5" />
         </template>
       </Button>
       <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
       <AdaptiveDropdown :options="ACTIONS">
-        <Button variant="ghost" :label="__('More actions')">
+        <Button variant="ghost" class="touch-target" :label="__('More actions')">
           <template #icon>
             <EllipsisVertical class="text-ink-gray-5 size-5" />
           </template>
@@ -54,7 +61,7 @@
       </AdaptiveDropdown>
       <Button
         variant="ghost"
-        class="ml-2"
+        class="touch-target ml-2"
         :label="__('Send')"
         :disabled="isRecipientsEmpty || isUploading"
         @click="sendMail()"

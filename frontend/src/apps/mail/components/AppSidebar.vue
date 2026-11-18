@@ -8,9 +8,15 @@
     <!-- The active account leads. Its menu lists the accounts, and every account at once. With
          one account, or on the dashboard, there is nothing to pick: it is just named. A phone
          switches accounts on the Profile page instead, so its folders sheet is folders only. -->
-    <SidebarSection v-if="!isMobile" class="!mt-0">
+    <!-- Rows look the same on a touch screen: touch-target-row grows their hit area only where no
+         other row is, and needs its section isolated. -->
+    <SidebarSection v-if="!isMobile" class="isolate !mt-0">
       <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
-        <SidebarItem :label="subtitle || __('Account')" icon="lucide-circle-user-round">
+        <SidebarItem
+          :label="subtitle || __('Account')"
+          icon="lucide-circle-user-round"
+          class="touch-target-row"
+        >
           <template #suffix>
             <span
               class="lucide-chevrons-up-down mr-2 size-3.5 text-ink-gray-5"
@@ -19,16 +25,22 @@
           </template>
         </SidebarItem>
       </Dropdown>
-      <SidebarItem v-else :label="subtitle || __('Account')" icon="lucide-circle-user-round" />
+      <SidebarItem
+        v-else
+        :label="subtitle || __('Account')"
+        icon="lucide-circle-user-round"
+        class="touch-target-row"
+      />
     </SidebarSection>
     <!-- A section's own action (the folders' "+") sits over the right end of its heading:
 	     SidebarSection draws the heading itself and leaves no place in it for one. -->
     <div v-for="section in sidebarItems" :key="section.key ?? section.label" class="relative mt-4">
-      <!-- Small and muted, lined up with the folders' counts below it. -->
+      <!-- Small and muted, lined up with the folders' counts below it. On a touch screen its area
+           is the heading's height, h-7, and stops short of the first folder row's ⋯ below. -->
       <Tooltip v-if="sectionAction(section)" :text="sectionAction(section)!.label">
         <button
           type="button"
-          class="text-ink-gray-5 hover:text-ink-gray-8 absolute right-2 top-1.5 z-10 flex size-4 items-center justify-center"
+          class="touch-target text-ink-gray-5 hover:text-ink-gray-8 absolute right-2 top-1.5 z-10 flex size-4 items-center justify-center [@media(pointer:coarse)]:after:!h-7"
           :aria-label="sectionAction(section)!.label"
           @click="sectionAction(section)!.onClick()"
         >
@@ -39,7 +51,7 @@
         :label="section.label"
         :collapsible="section.collapsible"
         :collapsed="isSectionCollapsed(section)"
-        class="!mt-0"
+        class="isolate !mt-0"
         @update:collapsed="(collapsed) => setSectionCollapsed(section.key, collapsed)"
       >
         <SidebarItem
@@ -54,7 +66,7 @@
           "
           :active="item.activeFor?.includes(activeKey)"
           :on-click="item.onClick"
-          class="group has-[>:is(a,button):focus-visible]:focus-ring [&>:is(a,button):focus-visible]:!outline-none"
+          class="group has-[>:is(a,button):focus-visible]:focus-ring [&>:is(a,button):focus-visible]:!outline-none touch-target-row"
           @dragover="onFolderDragOver($event, item)"
           @dragleave="onFolderDragLeave(item)"
           @drop="onFolderDrop($event, item)"
@@ -64,9 +76,15 @@
                  suffix. -->
             <div v-if="!isMoreToggle(item)" class="flex items-center">
               <!-- The menu shows on hover, on a touch screen (no hover to show it), and when Tab
-                   reaches it: hidden then, its focus ring ringed nothing. -->
+                   reaches it: hidden then, its focus ring ringed nothing. Its touch area is the
+                   row's height, so it doesn't take taps meant for the rows above and below. -->
               <Dropdown v-if="item.menuOptions && !isMobile" :options="item.menuOptions">
-                <Button variant="ghost" class="!bg-transparent" @click.stop>
+                <Button
+                  variant="ghost"
+                  class="touch-target !bg-transparent [@media(pointer:coarse)]:after:!h-7"
+                  :aria-label="__('{0} options', [item.label])"
+                  @click.stop
+                >
                   <template #icon>
                     <Ellipsis
                       class="text-ink-gray-6 invisible h-4 w-4 group-hover:visible group-has-[button:focus-visible]:visible [@media(hover:none)]:visible"
@@ -185,7 +203,7 @@ const moreToggle = (holds: string[]) => {
   }
 }
 interface SidebarItem {
-  label?: string
+  label: string
   mailboxId?: string
   moreToggle?: boolean
   icon?: string | Component | VNode
@@ -271,7 +289,7 @@ watch(threadDrag.isDragging, (dragging) => {
   springOpened.value = false
 })
 
-const onFolderDragOver = (e: DragEvent, item: { mailboxId?: string }) => {
+const onFolderDragOver = (e: DragEvent, item: SidebarItem) => {
   if (isMoreToggle(item)) {
     if (!threadDrag.isDragging.value || moreOpen.value || springTimer) return
     springTimer = setTimeout(() => {
@@ -288,7 +306,7 @@ const onFolderDragOver = (e: DragEvent, item: { mailboxId?: string }) => {
   threadDrag.overMailbox.value = item.mailboxId!
 }
 
-const onFolderDragLeave = (item: { mailboxId?: string }) => {
+const onFolderDragLeave = (item: SidebarItem) => {
   if (isMoreToggle(item)) cancelSpring()
   if (threadDrag.overMailbox.value === item.mailboxId) threadDrag.overMailbox.value = ''
 }

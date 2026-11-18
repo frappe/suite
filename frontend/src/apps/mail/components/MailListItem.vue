@@ -8,6 +8,7 @@
     :unread="!mail.seen"
     :hide-sender
     :avatar-label="avatarLabel"
+    :select-label="selectLabel"
     :avatar-image="mail.user_image"
     :datetime="mail.received_at"
     :subject-placeholder="!mail.subject"
@@ -171,6 +172,7 @@
                       />
                       <button
                         class="hidden sm:group-hover/capsule:block"
+                        :aria-label="__('Download {0}', [attachment.filename])"
                         @click.stop.prevent="downloadAttachment(attachment)"
                       >
                         <Download class="hover:text-ink-gray-8 h-4 w-4 shrink-0" />
@@ -201,23 +203,25 @@
           />
         </template>
       </div>
-      <template v-if="!isFullWidth && mailboxesToShow.length">
+      <!-- Their own line, as the files have: one line however long the names, cut off where the
+           row ends (see MailRow). -->
+      <div v-if="!isFullWidth && mailboxesToShow.length" class="flex items-center gap-1.5">
         <Badge
           v-for="m in mailboxesToShow"
           :key="m.mailbox_id"
           size="lg"
           variant="subtle"
-          :class="['mr-1.5', CHIP_CLASS]"
+          :class="CHIP_CLASS"
           :label="m.mailbox_name"
         />
         <Badge
           v-if="moreMailboxes"
           size="lg"
           variant="subtle"
-          :class="['mr-1.5', CHIP_CLASS]"
+          :class="CHIP_CLASS"
           :label="`+${moreMailboxes}`"
         />
-      </template>
+      </div>
     </template>
 
     <AttachmentViewer
@@ -422,6 +426,14 @@ const participants = computed(() =>
 const header = computed(() => {
   if (isOutgoing.value) return getFormattedRecipients(mail.recipients) || __('To:')
   return threadDisplayName(participants.value, mail)
+})
+
+// What the checkbox ticks, by the names the row shows: who it is from, or who it is going to.
+const selectLabel = computed(() => {
+  if (!isOutgoing.value)
+    return header.value ? __('Select mail from {0}', [header.value]) : __('Select mail')
+  const recipients = (mail.recipients ?? []).map((r) => r.display_name || r.email).join(', ')
+  return recipients ? __('Select mail to {0}', [recipients]) : __('Select mail with no recipients')
 })
 
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.

@@ -53,6 +53,7 @@
             variant="outline"
             :icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
             :tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
+            :aria-label="sortDir === 'asc' ? __('Ascending') : __('Descending')"
             class="-ml-px !rounded-l-none"
             @click="toggleSortDir"
           />
@@ -94,7 +95,12 @@
                     :label="__('Remove')"
                     @click="showRemoveModal = true"
                   />
-                  <Button icon="lucide-x" variant="ghost" @click="unselectAll" />
+                  <Button
+                    icon="lucide-x"
+                    variant="ghost"
+                    :aria-label="__('Clear selection')"
+                    @click="unselectAll"
+                  />
                 </div>
               </template>
             </ListSelectBanner>

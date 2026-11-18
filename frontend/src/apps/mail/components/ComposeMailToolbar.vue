@@ -54,13 +54,25 @@
           v-slot="{ toggle }"
           @update:model-value="emit('appendEmoji', $event)"
         >
-          <Button variant="ghost" class="max-h-6 max-w-6" @click="toggle()">
+          <Button
+            variant="ghost"
+            class="max-h-6 max-w-6"
+            :tooltip="__('Insert emoji')"
+            :aria-label="__('Insert emoji')"
+            @click="toggle()"
+          >
             <template #icon>
               <Laugh class="text-ink-gray-8 h-4 w-4" />
             </template>
           </Button>
         </EmojiPicker>
-        <Button variant="ghost" class="max-h-6 max-w-6" @click="fileInput?.click()">
+        <Button
+          variant="ghost"
+          class="max-h-6 max-w-6"
+          :tooltip="__('Attach files')"
+          :aria-label="__('Attach files')"
+          @click="fileInput?.click()"
+        >
           <template #icon>
             <Paperclip class="text-ink-gray-8 h-4 w-4" />
           </template>
