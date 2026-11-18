@@ -71,6 +71,12 @@ interface ComposeMailOptions {
   /** Inline in a thread (desktop), rather than a composer of its own. */
   isInThread?: boolean
   reloadMails: () => void
+  /**
+   * A thread's reply: the host shows the mail as sent, in place, and resolves once it has. The
+   * send waits for it, so the composer stays locked until the thread has the reply, and is never
+   * seen done with its mail still in it. Without it, a send reloads the list.
+   */
+  showSent?: () => Promise<void>
   /** Take the composer off screen — the dialog's v-model on desktop, a route pop on mobile. */
   close: () => void
   /** Whether the composer is still on screen. Drives whether a result is worth a toast. */
@@ -378,11 +384,19 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // From Send until the send is answered. The send uploads before it reaches the server (see
   // outgoingBody), and a save starting in between would create a second draft beside it, or race it
   // to the same one.
-  let isSending = false
+  //
+  // The composer is locked for as long (see ComposeMailEditor and ComposeView): what is typed after
+  // Send is in no request, so it would be lost without a word.
+  const isSending = ref(false)
+  // From a send's answer on: the message is the server's to deliver, and a draft save made for it
+  // after that (autosave, Close, the editor unmounting) is refused as "not a draft", and comes back
+  // as "Draft not saved". Undo send brings it back as a draft of its own, in Drafts.
+  let submitted = false
   const saveDraft = async () => {
     if (
       pendingSave ||
-      isSending ||
+      isSending.value ||
+      submitted ||
       discarded ||
       !isDraftUpdated.value ||
       isLoading.value ||
@@ -449,6 +463,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
+    // One send per mail: a second ⌘Enter while the first is out would send it again.
+    if (isSending.value || submitted) return
     if (isUploading.value) {
       const message = __('Wait for attachments to finish uploading')
       if (sendAt) throw new Error(message)
@@ -461,7 +477,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
     isSavingDraft.value = false
-    isSending = true
+    isSending.value = true
     try {
       await pendingSave
       sentAs = scopeAccountId.value
@@ -477,12 +493,13 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           send_at: sendAt,
           undo_send: !sendAt,
         })
+      submitted = true
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
       if (error instanceof UnsentImageError) raiseToast(error.message, 'error')
     } finally {
-      isSending = false
+      isSending.value = false
     }
   }
   // The composer is gone and its last save was refused: the draft lives only in this copy, which a
@@ -638,7 +655,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       viewSentAction(threadId),
     )
   }
-  const onMailUpdateSuccess = (
+  const onMailUpdateSuccess = async (
     {
       id,
       status,
@@ -648,19 +665,27 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       send_at,
       undo_send_period,
     }: OutputOf<typeof api.mail.messages.create>,
-    sent: string,
+    sent?: string,
   ) => {
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
     if (id) mail.id = id
     if (error) {
       const failure = new Error(error)
-      raiseError(failure)
+      // The mail server's own reason, such as an address it will not take: without it, a refused send
+      // read only as "Could not complete the action", and the mail looked as if it had gone. A
+      // scheduled send says it in its dialog instead (see ScheduleSendModal).
+      if (!isSending.value) raiseError(failure)
+      else if (sendMode.value === 'undo') toast.error(__('Mail not sent'), { description: error })
       throw failure
     }
     updateOriginalMail(sent)
     if (status === 'Submitted') forgetShownDraft()
     if (isDiscarding.value) return
-    if (!isInThread || status === 'Submitted') reloadMails()
+    if (status === 'Submitted' && options.showSent) {
+      // What the saves owed the list goes with it: paid on the way out, it rebuilt the thread.
+      listOwesReload = false
+      await options.showSent().catch(reloadMails)
+    } else if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
     // list is holding, not from a fetch of its own. So a draft saved in here goes to the server
     // and the list goes on holding the version from before this sitting: leave the thread, open
@@ -731,7 +756,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: save_as_draft ? undefined : remindAt.value,
     }
-    const sent = JSON.stringify(mail)
+    // A draft is saved as it went, so what is typed meanwhile is still owed a save. A send owes
+    // nothing more (see `submitted`).
+    const sent = save_as_draft ? JSON.stringify(mail) : undefined
     const result = await createMail.run(input)
     await onMailUpdateSuccess(result, sent)
   }
@@ -813,7 +840,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: submit ? remindAt.value : undefined,
     }
-    const sent = JSON.stringify(mail)
+    const sent = submit ? undefined : JSON.stringify(mail)
     const result = await updateDraft.run(input)
     await onMailUpdateSuccess(result, sent)
   }
@@ -983,6 +1010,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     saveDraft,
     payListDebt,
     sendMail,
+    isSending,
     discardMail,
     onClosed,
     showScheduleModal,

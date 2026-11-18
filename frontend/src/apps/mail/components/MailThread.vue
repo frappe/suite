@@ -196,6 +196,7 @@
                       v-model="mail.show"
                       :reload-mails="reload"
                       :mail-details="draftMails[mail.name]"
+                      :show-sent="() => showSent(mail.name)"
                       :is-in-thread="true"
                       :fills-host="isDraftAlone"
                       @discard-mail="discardLocalDraft(mail.name)"
@@ -817,7 +818,7 @@ import {
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
-import { api, useMutation, useQuery, type InputOf } from '@/api'
+import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import { useNewEventDialog } from '@/apps/calendar'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
@@ -1373,8 +1374,7 @@ const handleSyncUnseen = (ids: string[]) => {
 // A reply that arrives while the thread is open (picked up by a background list reload) is appended
 // in place. Re-deriving would clobber unsaved inline drafts, so only the genuinely new messages are
 // added — before any trailing draft so the in-progress reply stays at the bottom.
-const syncWithSource = () => {
-  const source = sourceMessages()
+const syncWithSource = (source = sourceMessages()) => {
   if (!source?.length) return
 
   // Refresh existing mails' mailbox membership, screening and star from the list (e.g. after a move,
@@ -1414,6 +1414,29 @@ const syncWithSource = () => {
   if (draftIndex === -1) thread.value.push(...additions)
   else thread.value.splice(draftIndex, 0, ...additions)
   if (landsPending && scrollToLanding(thread.value)) landsPending = false
+}
+// A reply sent from the pane, shown as sent while the composer is still up (see `showSent` in
+// useComposeMail): the thread is asked for on its own, which is one short call where the list's
+// reload is the whole folder, and the reply takes the composer's place the moment the send is done.
+// In place, as an arrival is: a rebuild folded the message being answered away under the reply.
+const showSent = async (draft: string) => {
+  const opened = threadID
+  const rows = opened
+    ? await client
+        .query(api.mail.threads.get, { account: scopeAccountId.value, thread_id: opened })
+        .catch(() => undefined)
+    : undefined
+  // The list catches up behind, and is synced in place when it lands.
+  if (messages?.length || !threadID) emit('reloadMails')
+  else void threadFallback.refetch().catch(() => {})
+  // The reader has moved on: the pane is another thread's now.
+  if (threadID !== opened) return
+  delete draftMails[draft]
+  thread.value = thread.value.filter((mail: Mail) => mail.name !== draft)
+  if (rows?.length) syncWithSource(rows.map(mailRow))
+  // A forward leaves for a thread of its own: sent from a draft that was the whole pane, it leaves
+  // nothing here to show.
+  if (!thread.value.length) goToMailbox()
 }
 // The mail the "more messages" divider hides, settled when the thread loads and emptied when the
 // divider opens it (see stillFolded for what it hides as the thread changes).

@@ -21,6 +21,7 @@
           :label="__('Send')"
           :tooltip="__('Send ({0}+Enter)', [modifier])"
           :disabled="isRecipientsEmpty || isUploading"
+          :loading="isSending"
           class="!rounded-r-none !pr-2"
           @click="emit('sendMail')"
         />
@@ -119,9 +120,11 @@ import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 
-const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
+const { isRecipientsEmpty, isUploading, isSending, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
   isUploading?: boolean
+  /** A send is out: Send shows it, and the composer around this is locked. */
+  isSending?: boolean
   saveFailed?: boolean
   // When to be reminded if nobody replies, once asked for (see useComposeMail).
   remindAt?: string

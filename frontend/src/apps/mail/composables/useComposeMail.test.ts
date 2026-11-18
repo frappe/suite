@@ -123,11 +123,15 @@ function compose({
   host = () => null,
   upload = vi.fn(),
   maxAttachmentSize,
+  showSent,
+  reloadMails = vi.fn(),
 }: {
   signedInAs?: string
   host?: () => ComposerHost
   upload?: Upload
   maxAttachmentSize?: number
+  showSent?: () => Promise<void>
+  reloadMails?: () => void
 } = {}) {
   let composer!: ReturnType<typeof useComposeMail>
   const app = createApp(
@@ -135,7 +139,8 @@ function compose({
       setup() {
         composer = useComposeMail({
           mailDetails: draft,
-          reloadMails: vi.fn(),
+          reloadMails,
+          showSent,
           close: () => (open = false),
           isOpen: () => open,
           host,
@@ -728,5 +733,122 @@ describe('attaching from Drive', () => {
 
     expect(server.mutation).not.toHaveBeenCalled()
     expect(composer.mail.attachments).toEqual([])
+  })
+})
+
+describe('a sent message', () => {
+  it('is not saved again for what changed while it went, however the composer closes', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
+
+    composer.mail.html_body = '<p>Typed after Send.</p>'
+    answer({ id: 'sent-1', status: 'Submitted', error: null })
+    await sending
+    // The composer is closed by the send; the editor's save on the way out still runs.
+    await composer.saveDraft()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Only the send: a draft save on the sent message is refused as "not a draft".
+    expect(server.updateDraft).toHaveBeenCalledOnce()
+    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({ id: 'draft-1', submit: true })
+    expect(server.create).not.toHaveBeenCalled()
+    expect(toastError).not.toHaveBeenCalled()
+  })
+})
+
+describe('a send the mail server refuses', () => {
+  it('says why, and keeps the composer open with the mail in it', async () => {
+    const composer = compose()
+    const reason = 'invalidProperties: Invalid e-mail address "lena@harbor.example". (envelope)'
+    server.updateDraft.mockResolvedValueOnce({
+      id: 'draft-2',
+      status: 'Failed to Submit',
+      error: reason,
+    })
+
+    await composer.sendMail()
+
+    expect(toastError).toHaveBeenCalledWith('Mail not sent', { description: reason })
+    expect(open).toBe(true)
+  })
+})
+
+describe('a send that is out', () => {
+  it('holds the composer locked from the press until the answer, and lets go on a refusal', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    expect(composer.isSending.value).toBe(false)
+
+    const sending = composer.sendMail()
+    expect(composer.isSending.value).toBe(true)
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
+    expect(composer.isSending.value).toBe(true)
+
+    answer({ id: 'draft-2', status: 'Failed to Submit', error: 'tooLarge' })
+    await sending
+    expect(composer.isSending.value).toBe(false)
+    expect(open).toBe(true)
+  })
+
+  it('goes once, however many times Send is pressed meanwhile or after', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+
+    const sending = composer.sendMail()
+    await composer.sendMail()
+    answer({ id: 'sent-1', status: 'Submitted', error: null })
+    await sending
+    await composer.sendMail()
+
+    expect(server.updateDraft).toHaveBeenCalledOnce()
+    expect(server.create).not.toHaveBeenCalled()
+  })
+})
+
+describe("a thread's reply, once sent", () => {
+  it('stays locked until the thread shows it, then closes without reloading the list', async () => {
+    let shown!: () => void
+    const showSent = vi.fn(() => new Promise<void>((resolve) => (shown = resolve)))
+    const reloadMails = vi.fn()
+    const composer = compose({ showSent, reloadMails })
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(showSent).toHaveBeenCalledOnce())
+    expect(composer.isSending.value).toBe(true)
+    expect(open).toBe(true)
+
+    shown()
+    await sending
+    expect(composer.isSending.value).toBe(false)
+    expect(open).toBe(false)
+    expect(reloadMails).not.toHaveBeenCalled()
+  })
+
+  it('reloads the list instead when the thread cannot show it', async () => {
+    const reloadMails = vi.fn()
+    const composer = compose({ showSent: () => Promise.reject(new Error('offline')), reloadMails })
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+
+    await composer.sendMail()
+
+    expect(reloadMails).toHaveBeenCalledOnce()
+    expect(open).toBe(false)
+  })
+
+  it('is not asked to show a draft save', async () => {
+    const showSent = vi.fn(async () => {})
+    const composer = compose({ showSent })
+    server.updateDraft.mockResolvedValueOnce({ id: 'draft-2', status: 'Drafted', error: null })
+    composer.mail.html_body = '<p>More.</p>'
+
+    await composer.saveDraft()
+
+    expect(showSent).not.toHaveBeenCalled()
   })
 })
