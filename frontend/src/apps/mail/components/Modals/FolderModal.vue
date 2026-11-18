@@ -49,7 +49,7 @@
                   />
                 </template>
               </FormControl>
-              <SettingsRow :title="__('Disable Push Notifications')" class="!py-0">
+              <SettingsRow :title="__('Disable Push Notifications')" class="!pb-0">
                 <Switch
                   v-model="folder.disable_push_notification"
                   :disabled="isNotificationsDisabled"
