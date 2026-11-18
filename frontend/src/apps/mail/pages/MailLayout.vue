@@ -123,7 +123,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
               shortcut: 'Mod+Shift+Comma',
               enterHint: 'open settings',
               icon: 'lucide-settings',
-              run: () => openSettings('mail.credentials'),
+              run: () => openSettings('mail.general'),
             },
           ],
         },

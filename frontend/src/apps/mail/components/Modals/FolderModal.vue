@@ -27,18 +27,20 @@
           <div class="space-y-4 px-0.5 pt-4 sm:pt-6">
             <!-- General -->
             <template v-if="panel.value === 'general'">
-              <FormControl v-model="folder.name" :label="__('Name')" required />
+              <FormControl v-model="folder.name" :label="__('Name')" variant="outline" required />
               <div class="space-y-1.5">
-                <label class="text-ink-gray-5 block text-xs">
+                <!-- The picker has no label of its own, so this one is set as a field's label is -->
+                <label class="text-ink-gray-6 leading-tighter block text-sm">
                   {{ __('Icon') }}
                 </label>
-                <IconPicker v-model="folder.icon" />
+                <IconPicker v-model="folder.icon" variant="outline" />
               </div>
               <FormControl
                 v-model="folder.color"
                 type="select"
                 :label="__('Color')"
                 :options="COLOR_OPTIONS"
+                variant="outline"
               >
                 <template #prefix>
                   <span
@@ -47,32 +49,26 @@
                   />
                 </template>
               </FormControl>
-              <hr />
-              <Switch
-                v-model="folder.disable_push_notification"
-                :label="__('Disable Push Notifications')"
-                :disabled="isNotificationsDisabled"
-                :description="__('Check to disable push notifications for this folder.')"
-                class="!p-0"
-              />
+              <SettingsRow :title="__('Disable Push Notifications')" class="!pb-0">
+                <Switch
+                  v-model="folder.disable_push_notification"
+                  :disabled="isNotificationsDisabled"
+                />
+              </SettingsRow>
             </template>
 
             <!-- Automation  -->
             <template v-else>
               <Alert
                 v-if="activeScript !== 'frappe_mail_automation'"
-                :title="__('Folder Automation Disabled')"
-                :description="
-                  __(`Please enable it to ensure that your rules function properly.`, [
-                    activeScript,
-                  ])
-                "
+                :title="__('Folder automation is off')"
+                :description="__('Nothing on this tab runs until you turn it on.')"
                 theme="amber"
                 :dismissable="false"
               >
                 <template #actions>
                   <Button
-                    :label="__('Enable')"
+                    :label="__('Turn on')"
                     variant="outline"
                     @click="showEnableFolderAutomation = true"
                   />
@@ -82,6 +78,7 @@
                 v-model="automationRules.emails_from"
                 :label="__('Emails From')"
                 placeholder="john@example.com, jane@example.com, *@example.io"
+                variant="outline"
                 :description="
                   __('Emails from these addresses will be automatically moved to this folder.')
                 "
@@ -90,6 +87,7 @@
                 v-model="automationRules.subject_contains"
                 :label="__('Subject Contains')"
                 placeholder="Important, Urgent, Follow Up"
+                variant="outline"
                 :description="
                   __(
                     'Emails with these keywords in the subject will be automatically moved to this folder.',
@@ -101,6 +99,7 @@
                 v-model="automationRules.match_if"
                 :label="__('Match If')"
                 type="select"
+                variant="outline"
                 :options="[
                   { label: __('Either condition is met'), value: 'any' },
                   { label: __('Both conditions are met'), value: 'all' },
@@ -108,27 +107,32 @@
               />
               <template v-if="automationRules.emails_from || automationRules.subject_contains">
                 <hr />
-                <Switch
-                  v-model="automationRules.mark_as_read"
-                  :label="__('Mark as Read')"
-                  :disabled="isNotificationsDisabled"
+                <SettingsRow
+                  :title="__('Mark as Read')"
                   :description="
                     __('Automatically mark emails as read when they are moved to this folder.')
                   "
-                  class="!p-0"
-                />
-                <Switch
-                  v-model="automationRules.add_star"
-                  :label="__('Add Star')"
-                  :disabled="isNotificationsDisabled"
+                  class="!py-0"
+                >
+                  <Switch
+                    v-model="automationRules.mark_as_read"
+                    :disabled="isNotificationsDisabled"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  :title="__('Add Star')"
                   :description="__('Automatically star emails when they are moved to this folder.')"
-                  class="!p-0"
-                />
+                  class="!py-0"
+                >
+                  <Switch v-model="automationRules.add_star" :disabled="isNotificationsDisabled" />
+                </SettingsRow>
               </template>
             </template>
           </div>
         </template>
       </Tabs>
+      <!-- Under both tabs, as either one's fields can be what was refused -->
+      <ErrorMessage :message="saveError" class="mt-4" />
     </template>
   </Dialog>
 
@@ -140,7 +144,16 @@
 </template>
 
 <script setup lang="ts">
-import { Alert, Button, Dialog, FormControl, Switch, Tabs } from 'frappe-ui'
+import {
+  Alert,
+  Button,
+  Dialog,
+  ErrorMessage,
+  FormControl,
+  SettingsRow,
+  Switch,
+  Tabs,
+} from 'frappe-ui'
 import { IconPicker } from 'frappe-ui/experimental'
 import { Settings, Zap } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -151,6 +164,7 @@ import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import { failureLine } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -217,7 +231,8 @@ const isNotDirty = computed(() => {
     automationRules.match_if === originalAutomationRules.match_if
   return folderUnchanged && automationUnchanged
 })
-const createFolder = useMutation(api.mail.mailboxes.create)
+// A refused save is said in the form, where the eyes are, so no toast says it too
+const createFolder = useMutation(api.mail.mailboxes.create, { silent: true })
 async function createFolderSubmit() {
   const input: InputOf<typeof api.mail.mailboxes.create> = {
     account: store.accountId,
@@ -232,7 +247,9 @@ async function createFolderSubmit() {
   raiseToast(__('Folder created'))
   show.value = false
 }
-const updateFolder = useMutation(api.mail.mailboxes.update)
+
+const updateFolder = useMutation(api.mail.mailboxes.update, { silent: true })
+const saveError = computed(() => failureLine(createFolder.error ?? updateFolder.error))
 async function updateFolderSubmit() {
   const input: InputOf<typeof api.mail.mailboxes.update> = {
     account: store.accountId,
@@ -251,12 +268,15 @@ async function createAutomationScriptSubmit() {
     active: true,
   }
   await createAutomationScript.run(input)
-  raiseToast(__('Folder automation enabled'))
+  raiseToast(__('Folder automation turned on'))
   showEnableFolderAutomation.value = false
 }
 watch(show, (val) => {
   if (!val) return
   tab.value = 'general'
+  // What the last visit was refused is not said on this one
+  createFolder.reset()
+  updateFolder.reset()
   Object.assign(automationRules, DEFAULT_AUTOMATION_RULES)
   Object.assign(originalAutomationRules, DEFAULT_AUTOMATION_RULES)
   if (!mailbox) {

@@ -1,65 +1,58 @@
 <template>
-  <AppSettingsHeader :title="__('Folders')">
-    <template #actions>
+  <div class="flex flex-col gap-3">
+    <SettingsDialogActions>
       <Button
+        variant="solid"
         icon-left="lucide-plus"
-        :label="__('New')"
-        :size="isMobile ? 'md' : 'sm'"
+        :label="__('New folder')"
+        :size="buttonSize"
         @click="editMailbox()"
       />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
+    </SettingsDialogActions>
     <div v-if="managedMailboxes.length">
       <div
         v-for="mailbox in managedMailboxes"
         :key="mailbox.name"
-        class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
-        @click="editMailbox(mailbox)"
+        class="hover:bg-surface-gray-1 -mx-2 flex items-center rounded-4 px-3 max-sm:-mx-4 max-sm:px-4"
       >
-        <div class="flex items-center gap-2 max-sm:gap-3">
+        <button
+          type="button"
+          class="text-ink-gray-6 flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+          @click="editMailbox(mailbox)"
+        >
           <Icon
             :name="getIcon(mailbox)"
-            class="icon shrink-0"
+            class="size-4 shrink-0"
             :class="mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined"
           />
-          <span class="text-base">{{ mailbox._name }}</span>
-        </div>
-        <div class="flex items-center gap-3 max-sm:-mr-1.5">
-          <EyeOff v-if="!mailbox.subscribed" class="text-ink-gray-5 h-4 w-4" />
-          <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens
-					     via the click bubbling to its own span, so stopping on the Button
-					     itself would keep the sheet from opening. -->
-          <div class="flex" @click.stop>
-            <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-              <Button variant="ghost" :aria-label="__('{0} options', [mailbox._name])">
-                <template #icon>
-                  <Ellipsis class="text-ink-gray-5 h-4 w-4" />
-                </template>
-              </Button>
-            </AdaptiveDropdown>
-          </div>
-        </div>
+          <span class="text-ink-gray-8 truncate text-base">{{ mailbox._name }}</span>
+          <Badge v-if="isHidden(mailbox)" :label="__('Hidden')" size="sm" />
+        </button>
+        <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
+          <Button variant="ghost" :aria-label="__('{0} options', [mailbox._name])">
+            <template #icon>
+              <Ellipsis class="text-ink-gray-5 h-4 w-4" />
+            </template>
+          </Button>
+        </AdaptiveDropdown>
       </div>
     </div>
 
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No folders found.') }}</p>
-
-      <p>
-        {{ __('Folders let you organize your emails into different categories.') }}
-      </p>
-    </div>
+    <SettingsEmptyList
+      v-else
+      :title="__('No folders yet')"
+      :description="__('Folders let you file your mail.')"
+    />
 
     <FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
     <DeleteFolderModal v-model="showDeleteFolderModal" :mailbox="selectedMailbox" />
-  </AppSettingsBody>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { Badge, Button } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { Ellipsis, Eye, EyeOff, Settings, Trash2 } from 'lucide-vue-next'
+import { Edit2, Ellipsis, Eye, EyeOff, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import { api, useMutation } from '@/api'
@@ -71,11 +64,12 @@ import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 
 const { mailboxes } = userStore()
 const { isMobile } = useScreenSize()
+const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 
 const managedMailboxes = computed(() => mailboxes?.data ?? [])
 const showFolderModal = ref(false)
@@ -85,30 +79,41 @@ const editMailbox = (mailbox?: MailboxData) => {
   selectedMailbox.value = mailbox
   showFolderModal.value = true
 }
-const mailboxOptions = (mailbox: MailboxData) => [
-  {
-    label: mailbox.subscribed ? __('Hide') : __('Show'),
-    icon: mailbox.subscribed ? EyeOff : Eye,
-    onClick: () =>
-      updateFolder.run({
-        name: mailbox.name,
-        subscribed: mailbox.subscribed ? 0 : 1,
-      }),
-  },
-  {
-    label: __('Configure'),
-    icon: Settings,
-    onClick: () => editMailbox(mailbox),
-  },
-  {
-    label: __('Delete'),
-    icon: Trash2,
-    theme: 'red' as const,
-    onClick: () => {
-      selectedMailbox.value = mailbox
-      showDeleteFolderModal.value = true
-    },
-  },
-]
 const updateFolder = useMutation(api.mail.mailboxes.subscribe)
+// Hide for a folder that shows in the Mail sidebar, Show for one that is hidden
+function visibilityOption(mailbox: MailboxData) {
+  const { name } = mailbox
+  if (mailbox.subscribed) {
+    return {
+      label: __('Hide'),
+      icon: EyeOff,
+      onClick: () => updateFolder.run({ name, subscribed: 0 }),
+    }
+  }
+
+  return { label: __('Show'), icon: Eye, onClick: () => updateFolder.run({ name, subscribed: 1 }) }
+}
+
+function mailboxOptions(mailbox: MailboxData) {
+  return [
+    { label: __('Edit'), icon: Edit2, onClick: () => editMailbox(mailbox) },
+    visibilityOption(mailbox),
+    {
+      label: __('Delete'),
+      icon: Trash2,
+      theme: 'red' as const,
+      // A built-in folder, such as Inbox or Sent, has a role, and the server keeps it
+      condition: () => !mailbox.role,
+      onClick: () => {
+        selectedMailbox.value = mailbox
+        showDeleteFolderModal.value = true
+      },
+    },
+  ]
+}
+
+// A hidden folder stays out of the Mail sidebar
+function isHidden(mailbox: MailboxData) {
+  return !mailbox.subscribed
+}
 </script>

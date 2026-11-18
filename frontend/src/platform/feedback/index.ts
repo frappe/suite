@@ -125,6 +125,18 @@ export function reportMutationError(error: Error | PlatformError): void {
 }
 
 /**
+ * The line a form shows for its own failed save, in place of the toast: `failureText` once a save
+ * has failed, nothing until then.
+ */
+export function failureLine(error: Error | PlatformError | null): string | undefined {
+  if (!error) {
+    return undefined
+  }
+
+  return failureText(error)
+}
+
+/**
  * What to tell a person about a failed action: the server's own reason when it gave one, a plain
  * sentence for a network or server failure, never the raw status line or a browser's error text.
  */

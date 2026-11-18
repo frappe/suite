@@ -25,7 +25,7 @@ export async function callMethod<T = unknown>(api: APIRequestContext, method: st
 }
 
 /** A whitelisted method answered with an error status. */
-export class MethodRefused extends Error {
+class MethodRefused extends Error {
 	constructor(
 		readonly method: string,
 		readonly status: number,

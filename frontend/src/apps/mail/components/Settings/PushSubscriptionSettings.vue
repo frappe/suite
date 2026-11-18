@@ -1,6 +1,6 @@
 <template>
-  <AppSettingsHeader :title="__('Push Subscriptions')">
-    <template #actions>
+  <div class="flex flex-col gap-3">
+    <SettingsDialogActions>
       <Button
         variant="outline"
         icon="lucide-refresh-cw"
@@ -9,52 +9,43 @@
         :loading="pushSubscriptions.isFetching"
         @click="pushSubscriptions.refetch().catch(() => {})"
       />
-      <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-    </template>
-  </AppSettingsHeader>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden px-[4.4rem] pb-8 pt-6">
+      <Button
+        variant="solid"
+        icon-left="lucide-plus"
+        :label="__('New subscription')"
+        @click="openAddModal"
+      />
+    </SettingsDialogActions>
     <template v-if="rows.length">
-      <div class="relative min-h-0 flex-1">
-        <!-- Force ListView root to full panel height so overflow-x scrollbar is at the bottom -->
-        <div
-          class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
-        >
-          <ListView
-            ref="listView"
-            class="h-full min-h-0"
-            :columns="COLUMNS"
-            :rows="rows"
-            row-key="name"
-          >
-            <ListHeader />
-            <ListRows />
-            <ListSelectBanner>
-              <template #actions>
-                <Button
-                  variant="ghost"
-                  :label="__('Renew')"
-                  :loading="renewing"
-                  @click="renewSelected"
-                />
-                <Button
-                  variant="ghost"
-                  theme="red"
-                  :label="__('Delete')"
-                  @click="showDeleteModal = true"
-                />
-              </template>
-            </ListSelectBanner>
-          </ListView>
-        </div>
+      <!-- A long list scrolls in its own box, so the dialog stays short. -->
+      <div class="flex max-h-80 flex-col">
+        <ListView ref="listView" :columns="COLUMNS" :rows="rows" row-key="name">
+          <ListHeader />
+          <ListRows />
+          <ListSelectBanner>
+            <template #actions>
+              <Button
+                variant="ghost"
+                :label="__('Renew')"
+                :loading="renewing"
+                @click="renewSelected"
+              />
+              <Button
+                variant="ghost"
+                theme="red"
+                :label="__('Delete')"
+                @click="showDeleteModal = true"
+              />
+            </template>
+          </ListSelectBanner>
+        </ListView>
       </div>
     </template>
-    <div
+    <SettingsEmptyList
       v-else-if="!pushSubscriptions.isFetching"
-      class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
-    >
-      <p class="text-base font-medium">{{ __('No push subscriptions.') }}</p>
-      <p>{{ MESSAGE }}</p>
-    </div>
+      :title="__('No push subscriptions yet')"
+      :description="MESSAGE"
+    />
 
     <AddPushSubscriptionModal
       v-model="showAddModal"
@@ -73,7 +64,8 @@ import { api, client, useMutation, useQuery, type InputOf } from '@/api'
 import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubscriptionModal.vue'
 import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const user = inject<import('@/apps/mail/types').UserResource>('$user')
@@ -84,6 +76,9 @@ const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
 const showDeleteModal = ref(false)
 const renewing = ref(false)
+function openAddModal() {
+  showAddModal.value = true
+}
 
 // Push subscriptions are user-scoped (not account-scoped), so they're fetched here rather than from the
 // account store. A high limit keeps this a single request — a user has at most a handful of devices.
@@ -163,11 +158,11 @@ async function deletePushSubscriptionsSubmit() {
   pushSubscriptions.refetch().catch(() => {})
 }
 const deleteModalOptions = computed(() => ({
-  title: __('Delete Push Subscriptions'),
-  message: __('Are you sure you want to delete the selected push subscriptions?'),
+  title: __('Delete the selected push subscriptions?'),
+  message: __('Those devices and apps are no longer told when your mail changes.'),
   actions: [
     {
-      label: __('Confirm'),
+      label: __('Delete subscriptions'),
       variant: 'solid' as const,
       theme: 'red' as const,
       onClick: () => deletePushSubscriptionsSubmit(),

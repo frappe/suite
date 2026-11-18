@@ -62,6 +62,14 @@ export const defaultCalendar = (calendars: CalendarRow[] | undefined): CalendarR
 }
 
 /**
+ * Whether a calendar can be deleted. The default is where new events and invitations land, so it
+ * stays until another takes over.
+ */
+export function isDeletableCalendar(calendar: CalendarRow) {
+  return !calendar.default && !!calendar.may_delete
+}
+
+/**
  * The calendars an event can be put on: those the account can write to. The one it is
  * already on stays offered even when read-only, so the picker still names where it is.
  */

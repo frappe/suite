@@ -127,4 +127,4 @@ export function installEventReminders({
 
 /** Calendar's Settings group. Loads when Settings opens. */
 export const loadCalendarSettings = () =>
-  import('@/apps/calendar/settings').then((module) => module.calendarSettings())
+  import('@/apps/calendar/settings').then((module) => module.calendarSettings)

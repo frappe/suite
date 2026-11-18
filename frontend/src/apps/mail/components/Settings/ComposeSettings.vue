@@ -1,63 +1,57 @@
 <template>
-  <AppSettingsHeader :title="__('Compose')">
-    <template #actions>
-      <Button
-        :label="__('Save')"
-        variant="solid"
-        :size="isMobile ? 'md' : 'sm'"
-        :loading="saveSettings.isPending"
-        :disabled="isNotDirty"
-        @click="save()"
+  <!-- Rows of the Sending page's list, there once the preferences are read. -->
+  <template v-if="preferences">
+    <SettingsRow
+      :title="__('Undo send')"
+      :description="
+        __('How long a sent message waits before delivery, so you can still take it back.')
+      "
+    >
+      <!-- The saved value goes through the fallback the composer uses, so an unset one reads as
+           the default. -->
+      <Select
+        :model-value="String(undoSendPeriodOf(user.data))"
+        :options="UNDO_SEND_OPTIONS"
+        @update:model-value="saveUndoSend"
       />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
-    <div class="flex flex-col gap-5">
-      <SettingsRow
-        class="!py-0"
-        :title="__('Undo Send')"
-        :description="
-          __('How long a sent message waits before delivery, so you can still take it back.')
-        "
-      >
-        <Select v-model="undoSendPeriod" :options="UNDO_SEND_OPTIONS" />
-      </SettingsRow>
-    </div>
-  </AppSettingsBody>
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Add recipients to contacts')"
+      :description="__('Saves anyone you write to as a contact, if they are not one yet.')"
+    >
+      <Switch v-model="createContacts" />
+    </SettingsRow>
+    <SettingsRow
+      :title="__('Keep forwards in the conversation')"
+      :description="__('A message you forward stays in the conversation it came from.')"
+    >
+      <Switch v-model="keepForwardedInThread" />
+    </SettingsRow>
+  </template>
 </template>
 
 <script setup lang="ts">
-import { Button, Select, SettingsRow } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { Select, SettingsRow, Switch } from 'frappe-ui'
 
-import { api, useMutation } from '@/api'
+import { api, client } from '@/api'
+import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
-import { useScreenSize } from '@/apps/mail/utils/composables'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import { translate as __ } from '@/platform/translation'
 
-const user = userStore().userResource
-const { isMobile } = useScreenSize()
-
-// The select speaks the Select field's strings; the saved value is compared through the same
-// fallback the composer uses, so an unset row reads as the default rather than as dirty.
-const savedPeriod = computed(() => String(undoSendPeriodOf(user.data)))
-const undoSendPeriod = ref(savedPeriod.value)
-const isNotDirty = computed(() => undoSendPeriod.value === savedPeriod.value)
-
-const saveSettings = useMutation(api.mail.settings.updatePreferences)
-async function save() {
-  const period = undoSendPeriod.value
-  if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
-  await saveSettings.run({ undo_send_period: period })
-  raiseToast(__('Compose settings updated'))
-}
+const { userResource: user } = userStore()
+const { preferences, flag } = useAccountPreferences()
+const createContacts = flag('create_contacts_after_email_submit')
+const keepForwardedInThread = flag('keep_forwarded_email_in_thread')
 
 const UNDO_SEND_OPTIONS = UNDO_SEND_PERIODS.map((seconds) => ({
   label: __('{0} seconds', [String(seconds)]),
   value: String(seconds),
 }))
+// Not a component's mutation: that one is cancelled when the page goes
+async function saveUndoSend(period: unknown) {
+  if (period !== '5' && period !== '10' && period !== '20' && period !== '30') return
+
+  await client.mutation(api.mail.settings.updatePreferences, { undo_send_period: period })
+}
 </script>

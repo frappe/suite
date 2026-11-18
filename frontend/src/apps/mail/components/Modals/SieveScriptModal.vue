@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: selectedScript ? __('Edit Sieve Script') : __('New Sieve Script'),
+      title,
       size: '3xl' as const,
       actions: [
         {
@@ -16,10 +16,10 @@
   >
     <template #default>
       <div class="space-y-4">
-        <FormControl v-model="script._name" :label="__('Script Name')" required />
+        <FormControl v-model="script._name" :label="__('Name')" required />
         <div class="space-y-1.5">
           <label class="text-ink-gray-5 block text-xs">
-            {{ __('Script Content') }}
+            {{ __('Sieve script') }}
           </label>
           <FormControl
             v-model="script.content"
@@ -33,22 +33,14 @@
         <hr />
         <Switch
           v-model="script.active"
-          :label="__('Activate Script')"
-          :description="__('Activate this script to apply your rules and filters.')"
+          :label="__('Turn on this rule')"
+          :description="__('The rule runs on new mail while it is on.')"
           class="!p-0"
         />
         <Alert
           v-if="script.active && activeScript && activeScript !== original._name"
-          :title="
-            isSystemScript(activeScript)
-              ? __('{0} Enabled', [getScriptName(activeScript)])
-              : __('Active Script {0} Detected', [getScriptName(activeScript)])
-          "
-          :description="
-            isSystemScript(activeScript)
-              ? __('Activating this script will disable {0}.', [getScriptName(activeScript)])
-              : __('Activating this script will deactivate the currently active script.')
-          "
+          :title="__('Only one can be on at a time')"
+          :description="turnsOffLine(activeScript)"
           theme="amber"
           :dismissable="false"
         />
@@ -64,7 +56,7 @@ import { computed, reactive, watch } from 'vue'
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
-import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
+import { raiseToast, turnsOffLine } from '@/apps/mail/utils'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -73,6 +65,13 @@ const { selectedScript } = defineProps<{
 }>()
 const store = userStore()
 const activeScript = computed(() => store.sieveScripts.data?.find((s) => s.active)?._name)
+const title = computed(() => {
+  if (selectedScript) {
+    return __('Edit rule')
+  }
+
+  return __('New rule')
+})
 const DEFAULT_SCRIPT = {
   _name: '',
   content: '',
@@ -97,7 +96,7 @@ async function createScriptSubmit() {
     ...script,
   }
   await createScript.run(input)
-  raiseToast(__('Sieve script created'))
+  raiseToast(__('Rule created'))
   show.value = false
 }
 const updateScript = useMutation(api.mail.sieve.update)
@@ -108,7 +107,7 @@ async function updateScriptSubmit() {
     ...script,
   }
   await updateScript.run(input)
-  raiseToast(__('Sieve script updated'))
+  raiseToast(__('Rule updated'))
   show.value = false
 }
 watch(show, (val) => {

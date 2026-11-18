@@ -72,7 +72,7 @@
                 }}</span>
               </li>
             </ul>
-            <p v-else-if="data" class="py-2 text-p-sm text-ink-gray-5">{{ __('No files') }}</p>
+            <p v-else-if="data" class="py-2 text-p-sm text-ink-gray-5">{{ __('No files yet') }}</p>
             <div v-else-if="!failed" class="flex flex-col" aria-hidden="true">
               <div v-for="n in 3" :key="n" class="flex h-8 items-center gap-2">
                 <Skeleton class="size-4 shrink-0" />
@@ -120,7 +120,7 @@ const largest = computed(() => data.value?.largest ?? [])
 const emptyText = computed(() =>
   (data.value?.used_bytes ?? 0) > 0
     ? __('No active files. Files in the trash and their versions still count towards storage.')
-    : __('No files'),
+    : __('No files yet'),
 )
 
 const percent = computed(() => {

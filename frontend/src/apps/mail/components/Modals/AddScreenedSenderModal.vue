@@ -2,7 +2,7 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Screen a Sender'),
+      title: __('Screen a sender'),
       actions: [
         {
           label: __('Add'),
@@ -20,8 +20,9 @@
           v-model="email"
           type="text"
           variant="outline"
-          :label="__('Email or Domain')"
+          :label="__('Email or domain')"
           :placeholder="__('john@example.com or @example.com')"
+          :error="emailError"
           @keydown.enter="canAdd && screenEmailAddressSubmit()"
         />
         <FormControl
@@ -31,9 +32,6 @@
           :label="__('Action')"
           :options="ACTION_OPTIONS"
         />
-        <p v-if="isAlreadyScreened" class="text-ink-gray-5 text-xs">
-          {{ __('This sender is already screened.') }}
-        </p>
       </div>
     </template>
   </Dialog>
@@ -47,6 +45,7 @@ import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { isEmailOrDomain, raiseToast } from '@/apps/mail/utils'
+import { failureLine } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -79,7 +78,18 @@ const isAlreadyScreened = computed(() =>
   ),
 )
 const canAdd = computed(() => isEmailOrDomain(email.value) && !isAlreadyScreened.value)
-const screenEmailAddress = useMutation(api.mail.screening.setAddress)
+// A refusal is said under the sender it is about, where the eyes are, so no toast says it too
+const screenEmailAddress = useMutation(api.mail.screening.setAddress, { silent: true })
+// What keeps this sender from being added: it is on the list already, or the server refused it
+const emailError = computed(() => {
+  if (isAlreadyScreened.value) {
+    return __('This sender is already screened.')
+  }
+
+  return failureLine(screenEmailAddress.error)
+})
+// A refusal was about the sender as it was typed, so it goes once that changes
+watch(email, () => screenEmailAddress.reset())
 async function screenEmailAddressSubmit() {
   const input: InputOf<typeof api.mail.screening.setAddress> = {
     account: store.accountId,

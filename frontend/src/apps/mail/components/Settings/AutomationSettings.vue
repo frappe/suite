@@ -1,17 +1,15 @@
 <template>
-  <AppSettingsHeader :title="__('Automation')">
-    <template #actions>
+  <div class="flex flex-col gap-3">
+    <SettingsDialogActions>
       <Button
         icon-left="lucide-refresh-cw"
-        :label="__('Rebuild Automation')"
+        :label="__('Rebuild folder automation')"
         :loading="rebuildAutomation.isPending"
-        :tooltip="__('Regenerate the folder automation script from your saved folder rules.')"
+        :tooltip="__('Builds folder automation again from the Automation tab of each folder.')"
         @click="rebuildAutomationSubmit()"
       />
-      <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
+      <Button variant="solid" icon-left="lucide-plus" :label="__('New rule')" @click="addScript" />
+    </SettingsDialogActions>
     <div v-if="filteredScripts.length">
       <div
         v-for="script in filteredScripts"
@@ -21,7 +19,7 @@
       >
         <div class="flex items-center gap-2">
           <span class="text-base">{{ script._name }}</span>
-          <Badge v-if="script.active" :label="__('Active')" theme="blue" size="sm" />
+          <Badge v-if="script.active" :label="__('On')" theme="blue" size="sm" />
         </div>
         <Dropdown :options="scriptOptions(script)">
           <Button variant="ghost" :aria-label="__('{0} options', [script._name])" @click.stop>
@@ -33,21 +31,19 @@
       </div>
     </div>
 
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No sieve scripts found.') }}</p>
-      <div class="space-x-1">
-        <span>
-          {{ __('Sieve scripts let you automatically filter and organize incoming emails.') }}
-        </span>
-        <a
-          class="text-ink-blue-5 hover:underline"
-          href="https://stalw.art/docs/category/sieve-scripting/"
-          target="_blank"
-        >
-          {{ __('Learn more.') }}
-        </a>
-      </div>
-    </div>
+    <SettingsEmptyList
+      v-else
+      :title="__('No rules yet')"
+      :description="__('Rules are Sieve scripts that sort and file incoming mail for you.')"
+    >
+      <a
+        class="text-p-base text-ink-blue-link hover:underline"
+        href="https://stalw.art/docs/category/sieve-scripting/"
+        target="_blank"
+      >
+        {{ __('Learn about Sieve scripts') }}
+      </a>
+    </SettingsEmptyList>
 
     <SieveScriptModal v-model="showSieveScript" :selected-script />
     <SetSieveScriptStateModal
@@ -60,7 +56,7 @@
       v-model="showDeleteScript"
       :script="selectedScript"
     />
-  </AppSettingsBody>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -75,8 +71,8 @@ import SieveScriptModal from '@/apps/mail/components/Modals/SieveScriptModal.vue
 import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
@@ -87,7 +83,7 @@ async function rebuildAutomationSubmit() {
     account: store.accountId,
   }
   await rebuildAutomation.run(input)
-  raiseToast(__('Folder automation rebuilt from your saved rules'))
+  raiseToast(__('Folder automation rebuilt'))
 }
 const showSieveScript = ref(false)
 const selectedScript = ref<SieveScript>()
@@ -105,9 +101,18 @@ const editScript = (script: SieveScript) => {
   selectedScript.value = script
   showSieveScript.value = true
 }
+
+function switchLabel(script: SieveScript) {
+  if (script.active) {
+    return __('Turn off')
+  }
+
+  return __('Turn on')
+}
+
 const scriptOptions = (script: SieveScript) => [
   {
-    label: script.active ? __('Deactivate') : __('Activate'),
+    label: switchLabel(script),
     icon: script.active ? 'eye-off' : 'eye',
     onClick: () => {
       selectedScript.value = script

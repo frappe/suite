@@ -474,7 +474,7 @@ export const mailAccount = defineFlow<Event, BaseScene>({
 		async OPEN_PROFILE(scene) {
 			await scene.goto(`/mail/account/${await personalAccount(scene.api)}/profile`);
 			await expect(scene.page.getByText(identityOf("maya").name, { exact: true }).first()).toBeVisible();
-			await expect(scene.page.getByText("Push Subscriptions")).toBeVisible();
+			await expect(scene.page.getByText("Sending", { exact: true })).toBeVisible();
 			await expect(button(scene.page, "Log Out")).toBeVisible();
 		},
 		async LOG_OUT(scene) {

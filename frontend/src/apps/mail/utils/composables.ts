@@ -18,6 +18,7 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
+import type { SettingsTabIds } from '@/platform/settings'
 import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
 
@@ -450,13 +451,14 @@ export const useFilterBySender = () => {
   }
 }
 
-/** A Mail tab in the Suite Settings list, for example `'mail.screener'`. */
+/** A Mail tab in the Suite Settings list, for example `'mail.inbox'`. */
 export type MailSettingsTabId = (typeof mailSettings.tabs)[number]['id']
 
-// Every Mail entry point opens the Suite Settings dialog on a Mail tab. This is Mail's one
-// import of the shell's Settings [T018].
+// Every Mail entry point opens the Suite Settings dialog on a Mail tab, or on one section of it:
+// Mail's one import of the shell's Settings [T018]
 export const useSettings = () => ({
-  openSettings: (tab: MailSettingsTabId) => openSuiteSettings(tab),
+  openSettings: <Tab extends MailSettingsTabId>(tab: Tab, section?: SettingsTabIds[Tab] & string) =>
+    openSuiteSettings(tab, section),
 })
 const showShortcuts = ref(false)
 export const useShortcuts = () => ({

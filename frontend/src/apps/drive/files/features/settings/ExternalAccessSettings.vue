@@ -5,85 +5,59 @@
 <template>
   <SettingsPage
     :title="__('External access')"
-    :description="__('Connect Drive to desktop, mobile, and other file apps')"
+    :description="__('Open your Drive files in Finder, Windows Explorer and other file apps.')"
   >
-    <div class="flex flex-col gap-6">
-      <SettingsRow
-        v-if="answer.is_admin"
-        :title="__('Enable WebDAV')"
-        :description="
-          __('Let WebDAV clients, such as Finder, Windows Explorer and rclone, connect to Drive')
-        "
-      >
-        <Switch
-          :model-value="siteEnabled"
-          :disabled="saveSite.isPending"
-          :aria-label="__('Enable WebDAV')"
-          @update:model-value="setSiteEnabled"
-        />
-      </SettingsRow>
-
-      <template v-if="connection">
+    <div class="flex flex-col gap-10">
+      <div v-if="connection">
+        <!-- The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`) -->
         <SettingsRow
-          :title="__('Allow WebDAV access to my files')"
-          :description="__('Turn this on before you connect a client')"
+          :title="__('Connect file apps')"
+          :description="
+            __('Uses WebDAV. Shows My files, not {0}.', [locationLabel('organization')])
+          "
         >
           <Switch
             :model-value="userEnabled"
             :disabled="saveUser.isPending"
-            :aria-label="__('Allow WebDAV access to my files')"
+            :aria-label="__('Connect file apps')"
             @update:model-value="setUserEnabled"
           />
         </SettingsRow>
-
-        <section class="flex flex-col gap-4">
-          <div class="space-y-1">
-            <h3 class="text-base font-semibold text-ink-gray-8">
-              {{ __('Client configuration') }}
-            </h3>
-            <!-- The DAV mount is the caller's Personal root only (`suite/drive/webdav/pathmap.py`). -->
-            <p class="text-base text-ink-gray-6">
-              {{
-                __('Connect a WebDAV client with these details. It shows My files, not {0}.', [
-                  locationLabel('organization'),
-                ])
-              }}
-            </p>
-          </div>
+        <!-- No use until the switch is on, so they stay back until then. The row's own space
+             below is all that parts them from it -->
+        <div v-if="userEnabled" class="flex flex-col gap-4">
           <CopyField :label="__('Server URL')" :value="connection.server_url" />
           <CopyField :label="__('Username')" :value="connection.username" />
-          <p class="text-sm text-ink-gray-5">
-            {{
-              __(
-                'Sign in with your password, or use the API key and secret in place of the username and password.',
-              )
-            }}
-          </p>
-          <p v-if="connection.two_factor_blocked" class="text-sm text-ink-amber-3">
-            {{
-              __(
-                'Your account uses two-factor authentication. A WebDAV client cannot sign in with your password, so use an API key and secret.',
-              )
-            }}
-          </p>
-        </section>
-
-        <section class="flex flex-col gap-4 border-t pt-6">
-          <h3 class="text-base font-semibold text-ink-gray-8">{{ __('API access') }}</h3>
           <CopyField v-if="connection.api_key" :label="__('API key')" :value="connection.api_key" />
-          <p v-else class="text-base text-ink-gray-6">
-            {{
-              __('You do not have an API key yet. Generate one to sign in without your password.')
-            }}
-          </p>
-          <Button
-            class="self-start"
-            :label="connection.api_key ? __('Regenerate secret') : __('Generate keys')"
-            :loading="generate.isPending"
-            @click="generateKeys"
+          <div class="flex flex-col gap-1.5">
+            <span class="text-sm text-ink-gray-6">{{ __('Password') }}</span>
+            <div class="flex items-center justify-between gap-3">
+              <p class="text-base text-ink-gray-8">{{ passwordHint }}</p>
+              <Button
+                class="shrink-0"
+                :label="generateLabel"
+                :loading="generate.isPending"
+                @click="generateKeys"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Below a user's own switch: it is set once for the site, and only an admin sees it -->
+      <SettingsSection v-if="answer.is_admin" :title="__('Workspace')">
+        <SettingsRow
+          :title="__('Let everyone connect file apps')"
+          :description="__('Each person then turns it on for their own files.')"
+        >
+          <Switch
+            :model-value="siteEnabled"
+            :disabled="saveSite.isPending"
+            :aria-label="__('Let everyone connect file apps')"
+            @update:model-value="setSiteEnabled"
           />
-        </section>
-      </template>
+        </SettingsRow>
+      </SettingsSection>
     </div>
 
     <Dialog v-model:open="showSecret" :title="__('API access')">
@@ -104,6 +78,7 @@ import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 import { locationLabel } from '../../internal/locations'
@@ -139,6 +114,32 @@ async function setSiteEnabled(value: boolean) {
 async function setUserEnabled(value: boolean) {
   await saveUser.run({ webdav_enabled: value })
 }
+
+// With two-factor on, a WebDAV client can't sign in with the password
+const passwordHint = computed(() => {
+  const hasKey = !!connection.value?.api_key
+
+  if (connection.value?.two_factor_blocked) {
+    if (hasKey) {
+      return __('Use the API key and its secret. Two-factor blocks your password here.')
+    }
+
+    return __('Use an API key. Two-factor blocks your password here.')
+  }
+
+  if (hasKey) {
+    return __('Your Suite password, or the API key and its secret.')
+  }
+
+  return __('Your Suite password, or an API key.')
+})
+const generateLabel = computed(() => {
+  if (connection.value?.api_key) {
+    return __('Regenerate secret')
+  }
+
+  return __('Generate API key')
+})
 
 const keys = ref<{ api_key: string; api_secret: string } | null>(null)
 const showSecret = ref(false)

@@ -17,57 +17,52 @@
     />
     <FormControl
       v-model="mailImport.seen"
-      :label="__('Mark as Read')"
+      :label="__('Mark as read')"
       type="select"
       variant="outline"
       :options="markAsReadOptions"
     />
   </template>
-  <input
-    ref="fileInput"
-    type="file"
-    class="hidden"
+  <SettingsFileField
+    :label="__('File')"
+    :description="fileUploadSubtitle"
     :accept="acceptTypes"
-    @change="onFileSelected"
+    :upload="uploadFile"
+    :progress
   />
-  <Button
-    class="w-full"
-    :label="uploading ? __('Uploading ({0}%)', [progress]) : __('Upload File')"
-    :loading="uploading"
-    @click="fileInput?.click()"
+  <Alert
+    v-if="isImportRunning"
+    :title="__('Import in progress. We’ll email you when it’s ready.')"
   />
-  <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
-
-  <Button
-    class="min-h-7"
-    :label="__('Create Import')"
-    variant="solid"
-    :loading="Boolean(ongoingImport.data?.name) || createMailImport.isPending"
-    :disabled="ongoingImport.isFetching || Boolean(ongoingImport.error) || !mailImport.file"
-    @click="createMailImportSubmit()"
-  />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ importSubtitle }}</span>
-    <a class="hover:underline" :href="importHref" target="_blank">
-      {{ importLinkText }}
-    </a>
-  </div>
-  <ErrorMessage
-    v-if="createMailImport.error"
-    :message="createMailImport.error?.message"
-    class="mb-2.5"
-  />
+  <ErrorMessage :message="importError" />
+  <!-- Both tabs' forms are mounted, and only the shown one's buttons go in the dialog -->
+  <SettingsDialogActions v-if="isActive">
+    <Button :label="importLinkText" :href="importHref" />
+    <Button
+      :label="__('Start import')"
+      variant="solid"
+      :loading="isImporting"
+      :disabled="isImportBlocked"
+      @click="createMailImportSubmit()"
+    />
+  </SettingsDialogActions>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl } from 'frappe-ui'
-import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { Alert, Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { computed, onScopeDispose, reactive, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
-import { raiseError } from '@/apps/mail/utils'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsFileField from '@/platform/settings/SettingsFileField.vue'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
+
+const { isActive } = defineProps<{
+  /** Whether this is the form on show. Its buttons are the dialog's only while it is. */
+  isActive: boolean
+}>()
 
 const store = userStore()
 const { mailboxes } = store
@@ -79,28 +74,15 @@ const mailImport = reactive<Omit<InputOf<typeof api.mail.exchanges.importMail>, 
   mailbox: '',
   seen: true,
 })
-const fileInput = ref<HTMLInputElement | null>(null)
-const { uploading, progress, upload } = useChunkedUpload()
+const { progress, upload, uploading } = useChunkedUpload()
 const acceptTypes = computed(() => (mailImport.format === 'eml' ? '.eml' : '.zip,.tgz,.tar.gz'))
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
-const onFileSelected = async (event: Event) => {
-  const checkedEventTarget = event.target
-  if (!(checkedEventTarget instanceof HTMLInputElement)) return
-
-  const input = checkedEventTarget
-  const file = input.files?.[0]
-  input.value = '' // let the same file be re-selected after an error
-  if (!file) return
-  try {
-    const uploaded = await upload(file, {
-      private: true,
-    })
-    mailImport.file = uploaded.file_url
-  } catch (error) {
-    raiseError(error)
-  }
+async function uploadFile(file: File) {
+  const uploaded = await upload(file, { private: true })
+  mailImport.file = uploaded.file_url
 }
+
 const mailboxOptions = computed(() =>
   (mailboxes.data ?? []).map((m: { id: string; _name: string }) => ({
     label: m._name,
@@ -118,7 +100,6 @@ const markAsReadOptions = computed(() => [
   },
 ])
 const fileUploadSubtitle = computed(() => {
-  if (mailImport.file) return __('File uploaded: {0}', [mailImport.file])
   if (mailImport.format === 'eml') return __('Supported file format: .eml')
   return __('Supported file formats: .zip, .tar, .tgz')
 })
@@ -160,10 +141,14 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 }
 socket.on('mail_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
-const importSubtitle = computed(() => {
-  if (ongoingImport.data?.name) return __("Import in progress. We'll email you when it's ready.")
-  return __('No imports in progress.')
-})
+const isImportRunning = computed(() => Boolean(ongoingImport.data?.name))
+const isImporting = computed(() => isImportRunning.value || createMailImport.isPending)
+// While a file uploads, the form still holds the one picked before it
+const isImportBlocked = computed(
+  () =>
+    ongoingImport.isFetching || Boolean(ongoingImport.error) || uploading.value || !mailImport.file,
+)
+const importError = computed(() => createMailImport.error?.message)
 const importHref = computed(() => {
   if (ongoingImport.data?.name) return `/mail/mail-exchanges/${ongoingImport.data.name}`
   return '/mail/mail-exchanges?operation=Import'
