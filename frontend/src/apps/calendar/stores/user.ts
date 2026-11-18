@@ -1,4 +1,4 @@
-import { useStorage } from '@vueuse/core'
+import { until, useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, reactive, ref, watch } from 'vue'
 
@@ -9,6 +9,8 @@ import { useSession } from '@/platform/session'
 type UserAccount = NonNullable<OutputOf<typeof api.mail.account.get>>['accounts'][number]
 type ParticipantIdentity = OutputOf<typeof api.mail.participantIdentities.list>[number]
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
+// How long a form opened outside Calendar waits for what it reads before it opens on what has come.
+const FORM_LOAD_WAIT_MS = 10_000
 export const userStore = defineStore('calendar-user', () => {
   const accountId = ref('')
   const resolveAccount = (accounts?: readonly UserAccount[], routeAccountId?: string) => {
@@ -143,11 +145,26 @@ export const userStore = defineStore('calendar-user', () => {
     )
     return candidates.find((i) => i.default) ?? candidates[0]
   })
+
+  // What the event form reads, loaded for a form opened outside Calendar, where no route guard has
+  // asked for any of it: the account, then its identities and calendars. Resolves once each has
+  // answered, loaded or not, or has taken too long to wait for.
+  const loadForEventForm = async () => {
+    if (userQuery.data === undefined) await loadUser().catch(() => undefined)
+    resolveAccount(userData.value?.accounts)
+    if (!accountId.value) return
+    await Promise.all(
+      [identities, participantIdentities, calendarQuery].map((query) =>
+        until(() => query.status).not.toBe('pending', { timeout: FORM_LOAD_WAIT_MS }),
+      ),
+    )
+  }
   return {
     accountId,
     resolveAccount,
     userResource,
     loadUser,
+    loadForEventForm,
     identities,
     participantIdentities,
     calendars,

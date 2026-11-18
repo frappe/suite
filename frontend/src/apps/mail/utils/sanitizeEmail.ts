@@ -113,6 +113,8 @@ const DOMPURIFY_CONFIG = {
     'http-equiv',
     'charset',
   ],
+  // The mark a date the reader can pick carries (see markMailDates): only ours, never the mail's.
+  FORBID_ATTR: ['data-mail-date'],
   KEEP_CONTENT: true,
   ALLOW_UNKNOWN_PROTOCOLS: false,
   WHOLE_DOCUMENT: true,

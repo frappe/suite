@@ -2,6 +2,7 @@ import { computed, getCurrentInstance, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { canManage, type DriveBatchResult } from '@/apps/drive/client/types'
+import { presentDialog } from '@/platform/dialog-host'
 import { confirm, toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
@@ -9,7 +10,6 @@ import { TransportError } from '@/platform/transport'
 import { inBatches } from '../batches'
 import type { BatchVerb } from '../batchResult'
 import { announceRestore, subject, type ChangedItem } from '../changeToast'
-import { presentDialog } from '../dialogHost'
 
 const DESTINATION_REQUIRED = 'DriveRestoreDestinationRequired'
 

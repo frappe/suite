@@ -9,11 +9,13 @@ import {
 } from 'vue'
 
 /**
- * Opens Drive dialogs by function call, so other products never render a Drive
- * dialog component or bind its props and events (spec §5.15).
+ * Opens a product's dialogs by function call, so other products never render
+ * that product's dialog component or bind its props and events (Drive's spec
+ * §5.15, STANDARDS "Vue components").
  *
  * One host renders every open dialog inside the caller's app context, so the
- * router, frappe-ui's providers and the server-state cache all apply.
+ * router, frappe-ui's providers and the server-state cache all apply. The host
+ * is not in the document: a dialog teleports what it shows.
  */
 
 type DialogModule = { default: Component }
@@ -44,8 +46,8 @@ function prune(id: number) {
   entries.value = entries.value.filter((candidate) => candidate.id !== id || candidate.open)
 }
 
-const DriveDialogHost = defineComponent({
-  name: 'DriveDialogHost',
+const DialogHost = defineComponent({
+  name: 'DialogHost',
   setup: () => () =>
     h(
       Fragment,
@@ -71,7 +73,7 @@ function mountHost(context: AppContext | undefined) {
   if (mounted) return
   mounted = true
   hostContext = context ?? hostContext
-  const vnode = h(DriveDialogHost)
+  const vnode = h(DialogHost)
   vnode.appContext = hostContext
   render(vnode, document.createElement('div'))
 }

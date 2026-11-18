@@ -1,8 +1,8 @@
 import type { AppContext } from 'vue'
 
 import type { DriveNode } from '@/apps/drive/client/types'
+import { presentDialog } from '@/platform/dialog-host'
 
-import { presentDialog } from '../dialogHost'
 import type { ShareReads } from './opening'
 
 /**
