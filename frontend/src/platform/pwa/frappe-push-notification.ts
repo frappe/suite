@@ -64,6 +64,9 @@ class FrappePushNotification {
     if (this.initialized) return
 
     this.serviceWorkerRegistration = serviceWorkerRegistration
+    // getMessaging starts its own isSupported check and nobody catches its rejection, as on
+    // iPhone Safari outside the home screen. Asking first keeps messaging off there.
+    if (!(await isSupported())) return
     const config = await this.fetchWebConfig()
     this.messaging = getMessaging(initializeApp(config))
     this.onMessage(this.onMessageHandler)
