@@ -15,7 +15,7 @@ def report() -> dict:
     roots = drive.administration_usage()
     fetched_at = cached.get("fetched_at")
     expired = bool(fetched_at and (now_datetime() - get_datetime(fetched_at)).total_seconds() >= 21600)
-    personal_by_user = {}
+    personal_by_user: dict[str, tuple[int, int]] = {}
     for root in roots:
         if root["kind"] == "Personal":
             stored, reserved = personal_by_user.get(root["user"], (0, 0))
