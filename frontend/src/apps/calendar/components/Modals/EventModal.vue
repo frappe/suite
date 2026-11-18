@@ -225,7 +225,7 @@ const getDefaultEventData = () => {
     links: [],
     alerts: [defaultAlert(isAllDay, startDate)],
     followsDefaults: false,
-    description: prefill?.description ?? '',
+    description: '',
     free_busy_status: 'Busy',
     privacy: 'Public',
     participants: identity ? seatOrganizer(guests, organizerParticipant(identity)) : guests,

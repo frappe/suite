@@ -22,7 +22,7 @@ describe('an event from a mail', () => {
   })
 
   it('leaves the description to the reader, with none of the mail in it', () => {
-    expect(eventFromMail(mail).description ?? '').toBe('')
+    expect(eventFromMail(mail)).not.toHaveProperty('description')
   })
 
   it('has everyone on the mail as its people, and nobody who was only Bcc’d', () => {

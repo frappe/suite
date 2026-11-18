@@ -4,7 +4,6 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 /** A new event another area asks for, filled in from what it was looking at — a mail, say. */
 export interface NewEventDraft {
   title?: string
-  description?: string
   participants?: readonly { email: string; name?: string }[]
   /** When it starts. */
   start?: DraftMoment

@@ -14,7 +14,7 @@
         variant="ghost"
         class="-ml-1.5"
         :aria-label="back ? __('Back') : __('Close')"
-        @click="emit('leave')"
+        @click="(event: MouseEvent) => emit('leave', event)"
       >
         <template #icon>
           <ChevronLeft v-if="back" class="size-5 text-ink-gray-7" />
@@ -38,5 +38,6 @@ defineProps<{
   /** A chevron that steps back to the screen before; without it, a cross that leaves. */
   back?: boolean
 }>()
-const emit = defineEmits<{ leave: [] }>()
+// The tap that asked, so a screen can drop the press state it left on the button.
+const emit = defineEmits<{ leave: [event: MouseEvent] }>()
 </script>
