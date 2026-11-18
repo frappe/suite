@@ -1,93 +1,74 @@
 <template>
-  <div class="flex flex-col gap-2.5">
-    <!--
-      frappe-ui's outline input (8px corners), holding Mail's recipient chips (`RecipientInput`):
-      gray, with an avatar, inset an even 3px with 5px corners so the two curves match.
-      frappe-ui's Combobox does the typing and suggestions. People picked show as chips in the
-      field, so the access list below stays in view (§7.8).
-    -->
-    <div
-      data-share-picker
-      class="flex min-h-8 cursor-text flex-wrap items-center gap-1 rounded-4 border border-outline-gray-2 bg-surface-base p-[3px] pl-2.5 transition-colors hover:border-outline-gray-3 focus-within:border-outline-gray-4 focus-within:shadow-sm"
-      :class="{ '!pl-[3px]': staged.length }"
-      @click="focusField"
+  <div class="flex flex-col gap-3">
+    <!-- People picked wait below the field as chips, so the access list stays in view (§7.8). -->
+    <Combobox
+      ref="combobox"
+      v-model:query="query"
+      :model-value="null"
+      class="w-full"
+      size="md"
+      :options="options"
+      :loading="loading && !rows.length"
+      :filterable="false"
+      :disabled="disabled"
+      :placeholder="fieldLabel"
+      :empty-text="__('No people or groups found')"
+      :aria-label="fieldLabel"
+      @update:open="onOpen"
+      @keydown.delete.capture="focusLastChip"
     >
-      <span
-        v-if="!staged.length"
-        class="lucide-search size-4 shrink-0 text-ink-gray-5"
-        aria-hidden="true"
-      />
-      <ul v-if="staged.length" ref="chips" class="contents" :aria-label="__('People to add')">
-        <li v-for="person in staged" :key="person.principal" class="min-w-0 max-w-full">
-          <button
-            type="button"
-            class="flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-2 bg-surface-gray-2 pl-1.5 pr-1 text-base text-ink-gray-8 transition-colors hover:bg-surface-gray-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
-            :aria-label="__('Remove {0}', [person.label])"
-            :title="person.kind === 'user' ? person.principal : undefined"
-            :disabled="disabled"
-            @click.stop="unstage(person.principal)"
-            @keydown.delete.prevent="unstage(person.principal)"
-            @keydown.backspace.prevent="unstage(person.principal)"
+      <template #item-person="{ item }">
+        <div class="flex min-w-0 items-center gap-2.5">
+          <Avatar
+            v-if="item.kind === 'user'"
+            size="lg"
+            :image="item.image ?? undefined"
+            :label="item.label"
+          />
+          <span
+            v-else
+            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
+            aria-hidden="true"
           >
-            <Avatar
-              v-if="person.kind === 'user'"
-              size="xs"
-              :image="images.get(person.principal) ?? undefined"
-              :label="person.label"
-            />
-            <span
-              v-else
-              :class="[
-                person.kind === 'email' ? 'lucide-mail' : 'lucide-users',
-                'size-3.5 shrink-0 text-ink-gray-6',
-              ]"
-              aria-hidden="true"
-            />
-            <span class="max-w-60 truncate">{{ person.label }}</span>
-            <span class="lucide-x size-3.5 shrink-0 text-ink-gray-5" aria-hidden="true" />
-          </button>
-        </li>
-      </ul>
-      <Combobox
-        ref="combobox"
-        v-model:query="query"
-        :model-value="null"
-        class="share-combobox"
-        variant="ghost"
-        :options="options"
-        :loading="loading && !rows.length"
-        :filterable="false"
-        :disabled="disabled"
-        :placeholder="staged.length ? '' : fieldLabel"
-        :empty-text="__('No people or groups found')"
-        :aria-label="fieldLabel"
-        @update:open="onOpen"
-        @keydown.delete.capture="focusLastChip"
-      >
-        <template #suffix><span /></template>
-        <template #item-person="{ item }">
-          <div class="flex min-w-0 items-center gap-2.5">
-            <Avatar
-              v-if="item.kind === 'user'"
-              size="lg"
-              :image="item.image ?? undefined"
-              :label="item.label"
-            />
-            <span
-              v-else
-              class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-gray-2 text-ink-gray-6"
-              aria-hidden="true"
-            >
-              <span :class="[item.kind === 'email' ? 'lucide-mail' : 'lucide-users', 'size-4']" />
-            </span>
-            <span class="min-w-0">
-              <span class="block truncate text-ink-gray-8">{{ item.label }}</span>
-              <span class="block truncate text-p-sm text-ink-gray-5">{{ item.description }}</span>
-            </span>
-          </div>
-        </template>
-      </Combobox>
-    </div>
+            <span :class="[item.kind === 'email' ? 'lucide-mail' : 'lucide-users', 'size-4']" />
+          </span>
+          <span class="min-w-0">
+            <span class="block truncate text-ink-gray-8">{{ item.label }}</span>
+            <span class="block truncate text-p-sm text-ink-gray-5">{{ item.description }}</span>
+          </span>
+        </div>
+      </template>
+    </Combobox>
+
+    <ul
+      v-if="staged.length"
+      ref="chips"
+      class="flex flex-wrap gap-1.5"
+      :aria-label="__('People to add')"
+    >
+      <li v-for="person in staged" :key="person.principal" class="min-w-0 max-w-full">
+        <button
+          type="button"
+          class="flex h-8 min-w-0 max-w-full items-center gap-1.5 rounded-full bg-surface-gray-2 pl-2.5 pr-2 text-base text-ink-gray-8 transition-colors hover:bg-surface-gray-3 focus:outline-none focus-visible:ring-2 focus-visible:ring-outline-gray-3"
+          :aria-label="__('Remove {0}', [person.label])"
+          :title="person.kind === 'user' ? person.principal : undefined"
+          :disabled="disabled"
+          @click="unstage(person.principal)"
+          @keydown.delete.prevent="unstage(person.principal)"
+          @keydown.backspace.prevent="unstage(person.principal)"
+        >
+          <span
+            :class="[
+              { user: 'lucide-user', group: 'lucide-users', email: 'lucide-mail' }[person.kind],
+              'size-4 shrink-0 text-ink-gray-6',
+            ]"
+            aria-hidden="true"
+          />
+          <span class="max-w-60 truncate">{{ person.label }}</span>
+          <span class="lucide-x size-4 shrink-0 text-ink-gray-6" aria-hidden="true" />
+        </button>
+      </li>
+    </ul>
 
     <div v-if="staged.length" class="flex flex-wrap items-center justify-end gap-2">
       <Checkbox
@@ -144,8 +125,6 @@ const picked = defineModel<number>('picked', { default: 0 })
 
 const combobox = useTemplateRef<{ focus: (options?: FocusOptions) => void }>('combobox')
 const chips = useTemplateRef<HTMLElement>('chips')
-/** Photos of the people picked, for their chips. */
-const images = ref(new Map<string, string | null>())
 const query = ref('')
 const rows = ref<Person[]>([])
 const loading = ref(false)
@@ -287,7 +266,6 @@ function pick(value: string | number | null | undefined) {
       : { principal: groupPrincipal(id), kind: 'group', label: id, name: null }
   if (!staged.value.some((entry) => entry.principal === picked.principal)) {
     staged.value = [...staged.value, picked]
-    if (person?.kind === 'user') images.value.set(picked.principal, person.user_image)
   }
   // The list closes so the person picked shows; focus returns to the search for the next one.
   void nextTick(() => {
@@ -299,10 +277,6 @@ function pick(value: string | number | null | undefined) {
 function unstage(principal: string) {
   staged.value = staged.value.filter((person) => person.principal !== principal)
   void nextTick(() => combobox.value?.focus())
-}
-
-function focusField() {
-  combobox.value?.focus()
 }
 
 /** Backspace in an empty search moves to the last chip, as in Mail; another Backspace removes it. */
@@ -325,21 +299,3 @@ async function submit() {
   combobox.value?.focus()
 }
 </script>
-
-<style>
-/* The field draws the box; frappe-ui's Combobox trigger adds its own border, fill and focus
-   ring, which its props don't turn off. Mail's recipient field does the same. */
-[data-share-picker] .share-combobox {
-  flex: 1 1 8rem;
-  min-width: 0;
-}
-[data-share-picker] .share-combobox,
-[data-share-picker] [data-slot='trigger'],
-[data-share-picker] [data-slot='trigger']:focus-within {
-  padding-left: 0;
-  border-color: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-</style>
