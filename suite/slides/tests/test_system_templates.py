@@ -17,8 +17,6 @@ from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite import drive
 from suite.content import checker
-from suite.drive._core.nodes import update
-from suite.drive._core.principals import Principals
 from suite.slides.content import CHECKER_BUILD
 from suite.slides.content.conversion import check_state
 from suite.slides.content.tests.support import (
@@ -30,11 +28,10 @@ from suite.slides.content.tests.support import (
 )
 from suite.slides.doctype.presentation.presentation import get_templates
 from suite.slides.install import _seed, _templates_folder, seed_system_templates
-from suite.slides.tests.utils import make_presentation
+from suite.slides.tests.utils import make_presentation, trash_node
 from suite.tests.utils import ensure_user
 
 READER = "slides-template-reader@example.com"
-SYSTEM = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
 
 # Written from the picker's contract, not from the seed: a shipped deck's
 # layouts are drawn from the asset path keyed by its lowercased title.
@@ -176,8 +173,7 @@ def title_markup(deck: list[dict]) -> str:
 
 
 def trash_folder(folder: str) -> None:
-    frappe.set_user("Administrator")
-    update(SYSTEM, folder, state="Trashed")
+    trash_node(folder)
     frappe.db.commit()
 
 

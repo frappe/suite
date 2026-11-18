@@ -203,6 +203,11 @@ def trash(presentation_name):
     A trashed node is still a row, and its `Presentation` row is untouched, so
     a case can tell "Drive hides it" apart from "it is gone".
     """
+    trash_node(node_of(presentation_name))
+
+
+def trash_node(node: str) -> None:
+    """Put one Drive node, a deck or a folder, in the trash as Administrator."""
     frappe.set_user("Administrator")
     admin = Principals("Administrator", ("Administrator",), (), is_admin=True, is_system=True)
-    update(admin, node_of(presentation_name), state="Trashed")
+    update(admin, node, state="Trashed")
