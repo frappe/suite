@@ -9,9 +9,10 @@ from frappe.database import get_db
 from frappe.tests import IntegrationTestCase, UnitTestCase
 from pydantic import TypeAdapter
 
-from suite.calendar import api, external
+from suite.calendar import api, external, external_store
 from suite.calendar.doctype.external_calendar.external_calendar import ExternalCalendar
-from suite.calendar.external import _differs, _occurrences, yearly_occurrence
+from suite.calendar.external import _occurrences, yearly_occurrence
+from suite.calendar.external_store import _differs
 from suite.calendar.http import routes
 from suite.calendar.tests.fixtures import HOLIDAY
 from suite.tests.utils import ensure_user
@@ -139,14 +140,14 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.user, self.stranger = "holiday-reader@calendar.test", "stranger@calendar.test"
         ensure_user(self.user)
         ensure_user(self.stranger)
-        self.calendar = external.upsert_calendar(
+        self.calendar = external_store.upsert_calendar(
             "Test Source", "holidays:India 2026", "India 2026", color="#123456"
         )
         self.addCleanup(self.forget, self.calendar)
 
     def forget(self, calendar: str) -> None:
         if frappe.db.exists("External Calendar", calendar):
-            external.remove_calendar(calendar)
+            external_store.remove_calendar(calendar)
 
     holiday = HOLIDAY
 
@@ -162,8 +163,8 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         }
 
     def test_a_calendar_is_drawn_for_who_it_is_assigned_to_and_for_nobody_else(self):
-        external.replace_events(self.calendar, [self.holiday])
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_assignments(self.calendar, [self.user])
 
         [row] = external.calendar_rows(self.user)
         self.assertEqual(row["_name"], "India 2026")
@@ -181,25 +182,25 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(external.events_in_window(self.stranger, "2026-10-01", "2026-10-31"), [])
 
     def test_a_second_run_writes_nothing(self):
-        first = external.replace_events(self.calendar, [self.holiday, self.birthday])
+        first = external_store.replace_events(self.calendar, [self.holiday, self.birthday])
         self.assertEqual(first, {"created": 2, "updated": 0, "removed": 0})
-        again = external.replace_events(self.calendar, [self.holiday, self.birthday])
+        again = external_store.replace_events(self.calendar, [self.holiday, self.birthday])
         self.assertEqual(again, {"created": 0, "updated": 0, "removed": 0})
 
     def test_what_the_source_changed_is_rewritten_and_what_it_dropped_is_removed(self):
-        external.replace_events(self.calendar, [self.holiday, self.birthday])
+        external_store.replace_events(self.calendar, [self.holiday, self.birthday])
         moved = {**self.holiday, "starts_on": "2026-10-03 00:00:00", "ends_on": "2026-10-04 00:00:00"}
         self.assertEqual(
-            external.replace_events(self.calendar, [moved]),
+            external_store.replace_events(self.calendar, [moved]),
             {"created": 0, "updated": 1, "removed": 1},
         )
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_assignments(self.calendar, [self.user])
         [event] = external.events_in_window(self.user, "2026-10-01", "2026-10-31")
         self.assertEqual(event["start"], "2026-10-03T00:00:00")
 
     def test_a_yearly_event_is_drawn_in_every_year_it_reaches(self):
-        external.replace_events(self.calendar, [self.birthday])
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_events(self.calendar, [self.birthday])
+        external_store.replace_assignments(self.calendar, [self.user])
 
         # stored once, anchored in 2026
         self.assertEqual(frappe.db.count("External Calendar Event", {"calendar": self.calendar}), 1)
@@ -212,7 +213,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(external.events_in_window(self.user, "2028-08-01", "2028-08-31"), [])
 
     def test_a_yearly_event_entered_by_hand_is_drawn_on_the_day_it_says(self):
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_assignments(self.calendar, [self.user])
         founders_day = frappe.get_doc(
             {
                 "doctype": "External Calendar Event",
@@ -247,8 +248,8 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
             "repeats": "Yearly",
             "month_day": "02-29",
         }
-        external.replace_events(self.calendar, [leap_day])
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_events(self.calendar, [leap_day])
+        external_store.replace_assignments(self.calendar, [self.user])
 
         stored = frappe.get_doc("External Calendar Event", {"calendar": self.calendar})
         stored.title = "Leap day birthday (renamed)"
@@ -260,26 +261,26 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(in_2029["start"], "2029-02-28T00:00:00")
 
     def test_somebody_the_source_no_longer_names_stops_seeing_it(self):
-        external.replace_events(self.calendar, [self.holiday])
-        external.replace_assignments(self.calendar, [self.user, self.stranger])
+        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_assignments(self.calendar, [self.user, self.stranger])
         self.assertEqual(len(external.calendar_rows(self.stranger)), 1)
 
-        self.assertEqual(external.replace_assignments(self.calendar, [self.user]), 1)
+        self.assertEqual(external_store.replace_assignments(self.calendar, [self.user]), 1)
         self.assertEqual(external.calendar_rows(self.stranger), [])
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
 
     def test_a_calendar_the_source_drops_takes_its_events_and_assignments_with_it(self):
-        external.replace_events(self.calendar, [self.holiday])
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_assignments(self.calendar, [self.user])
 
-        external.remove_calendar(self.calendar)
+        external_store.remove_calendar(self.calendar)
         self.assertFalse(frappe.db.exists("External Calendar", self.calendar))
         self.assertEqual(frappe.db.count("External Calendar Event", {"calendar": self.calendar}), 0)
         self.assertEqual(frappe.db.count("External Calendar Assignment", {"calendar": self.calendar}), 0)
         self.assertEqual(external.calendar_rows(self.user), [])
 
     def test_one_calendar_per_thing_the_source_has(self):
-        again = external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026 (renamed)")
+        again = external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026 (renamed)")
         self.assertEqual(again, self.calendar)
         # the name and colour follow the source on every run, not only the day it was made
         self.assertEqual(
@@ -323,13 +324,13 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
 
         with patch.object(ExternalCalendar, "validate_one_per_source_key", the_other_run_wins):
             try:
-                again = external.upsert_calendar("Test Source", key, "Kerala 2026")
+                again = external_store.upsert_calendar("Test Source", key, "Kerala 2026")
             except frappe.QueryDeadlockError:
                 # a server keeping snapshot isolation (MariaDB 11.6 on) refuses to read a row
                 # committed after the snapshot, as a deadlock; a background job is retried on
                 # one, in a fresh transaction, as here
                 frappe.db.rollback()
-                again = external.upsert_calendar("Test Source", key, "Kerala 2026")
+                again = external_store.upsert_calendar("Test Source", key, "Kerala 2026")
 
         self.assertEqual(again, "race-winner")
         # and the one that lost was not stored
@@ -361,27 +362,27 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         return other
 
     def test_a_site_wide_calendar_is_drawn_for_everyone_with_nothing_assigned(self):
-        external.replace_events(self.calendar, [self.holiday])
+        external_store.replace_events(self.calendar, [self.holiday])
         self.assertEqual(external.calendar_rows(self.stranger), [])
 
-        external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
+        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
 
         self.assertEqual([row["_name"] for row in external.calendar_rows(self.stranger)], ["India 2026"])
         [event] = external.events_in_window(self.stranger, "2026-10-01", "2026-10-31")
         self.assertEqual(event["title"], "Gandhi Jayanti")
 
     def test_a_calendar_both_site_wide_and_assigned_is_drawn_once(self):
-        external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
+        external_store.replace_assignments(self.calendar, [self.user])
 
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
 
     def test_a_calendar_no_longer_site_wide_goes_back_to_who_it_is_assigned_to(self):
-        external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
+        external_store.replace_assignments(self.calendar, [self.user])
 
         # the source states it on every run, and one that stops saying so is believed
-        external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
+        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
 
         self.assertEqual(external.calendar_rows(self.stranger), [])
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
@@ -390,8 +391,8 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         """The app validates every answer against the contract and refuses one that strays, so
         a row the store shapes wrongly is a calendar that fails to load."""
 
-        external.replace_events(self.calendar, [self.holiday, self.birthday])
-        external.replace_assignments(self.calendar, [self.user])
+        external_store.replace_events(self.calendar, [self.holiday, self.birthday])
+        external_store.replace_assignments(self.calendar, [self.user])
 
         TypeAdapter(list[routes.CalendarRow]).validate_python(external.calendar_rows(self.user), strict=True)
         events = external.events_in_window(self.user, "2026-07-01", "2026-10-31")
@@ -408,10 +409,10 @@ class IntegrationTestExternalCalendarsInTheApp(IntegrationTestCase):
         self.user, self.stranger = "holiday-reader@calendar.test", "stranger@calendar.test"
         ensure_user(self.user)
         ensure_user(self.stranger)
-        self.calendar = external.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
-        self.addCleanup(external.remove_calendar, self.calendar)
-        external.replace_events(self.calendar, [HOLIDAY])
-        external.replace_assignments(self.calendar, [self.user])
+        self.calendar = external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
+        self.addCleanup(external_store.remove_calendar, self.calendar)
+        external_store.replace_events(self.calendar, [HOLIDAY])
+        external_store.replace_assignments(self.calendar, [self.user])
 
         # no mail server here: the account has no calendars, events or addresses of its own
         for name, answer in (("_with_shared", []), ("ensure_default_alerts", None), ("_own_emails", set())):
