@@ -44,6 +44,7 @@ import {
   type uploadFunction,
 } from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { translate as __ } from '@/platform/translation'
 
 /** The mounted editor, as far as this composable cares about it. */
@@ -148,15 +149,17 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const { accountId: scopeAccountId, identities, mailboxIds } = scope
   const getIdentity = (email: string) =>
     identities.value.data?.find((identity: Identity) => identity.email === email)
-  const viewSentMessage = (threadID: string) =>
-    router.push({
-      name: 'mail-mail',
-      params: {
-        accountId: scopeAccountId.value,
-        mailbox: mailboxIds.value.sent,
-        threadID,
-      },
-    })
+  // The toasts' links go by path rather than route name: the composer also opens over other apps,
+  // and there Mail's routes are not registered until the first visit to /mail. The folder goes by
+  // its slug, as the URL names it: an id would be answered with a redirect that replaces the page
+  // the reader came from, and Back would skip it.
+  const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
+  const viewSentMessage = (threadID: string) => {
+    const sent = mailboxParam(mailboxIds.value.sent, scope.mailboxes.value.data)
+    return router.push(
+      `${accountPath()}/mailbox/${encodeURIComponent(sent)}/${encodeURIComponent(threadID)}`,
+    )
+  }
   const getDefaultFromEmail = () => {
     const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
     const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
@@ -683,13 +686,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
       raiseToast(__('Send scheduled'), 'success', {
         label: __('View'),
-        onClick: () =>
-          router.push({
-            name: 'mail-outbox',
-            params: {
-              accountId: scopeAccountId.value,
-            },
-          }),
+        onClick: () => router.push(`${accountPath()}/outbox`),
       })
     else if (status === 'Submitted')
       raiseToast(

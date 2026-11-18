@@ -225,3 +225,98 @@ describe('the Attach menu', () => {
     expect(chooserOpened).toHaveLength(0)
   })
 })
+
+// Going while a save is out, with the composer still open: Mail's own window when the reader leaves
+// Mail, and a thread's reply when they move to another thread. Both stay as quiet as they always
+// were: the save that was out lands, and nothing more is saved or said. (Only the window over
+// another app's page closes as it goes; see useMailCompose.test.ts.)
+describe('leaving with the composer open while a save is out', () => {
+  const saved = () =>
+    reply({
+      message: {
+        name: 'draft-1',
+        id: 'draft-1',
+        status: 'Drafted',
+        error: null,
+        thread_id: null,
+        submission_id: null,
+        send_at: null,
+        undo_send_period: null,
+      },
+    })
+  const refused = () => reply({ exc_type: 'ValidationError', _server_messages: '[]' }, 417)
+  const saves = () => server.asked.filter((method) => method === 'update_draft_mail')
+
+  /** Mail's own window, or a reply in a thread, open on a saved draft to Dana. */
+  async function openOwn(where: 'window' | 'thread') {
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)*', component: { render: () => null } }],
+    })
+    await router.push('/mail')
+    const mailDetails = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Brief',
+      html_body: '<p>See the brief.</p>',
+      attachments: [],
+    }
+    const ComposeMailEditor = (await import('./ComposeMailEditor.vue')).default
+    const app = createApp({
+      render: () =>
+        where === 'window'
+          ? h(SendMail, { modelValue: true, mailDetails })
+          : h(ComposeMailEditor, {
+              modelValue: true,
+              isInThread: true,
+              reloadMails: () => {},
+              mailDetails,
+            }),
+    })
+    app.config.globalProperties.__ = translate
+    app.provide('$user', { data: { name: 'maya@example.com', undo_send_period: 10 } })
+    app.use(router)
+    app.mount(document.body.appendChild(document.createElement('div')))
+    apps.push(app)
+    const subject = await vi.waitFor(() => {
+      const field = [...document.querySelectorAll('input')].find((input) => input.value === 'Brief')
+      expect(field).toBeDefined()
+      return field!
+    })
+    return { subject, leave: () => app.unmount() }
+  }
+
+  it.each([
+    ['Mail’s own window', 'saved', 'window', saved],
+    ['Mail’s own window', 'refused', 'window', refused],
+    ['a thread’s reply', 'saved', 'thread', saved],
+    ['a thread’s reply', 'refused', 'thread', refused],
+  ] as const)(
+    '%s, its save %s, shows none of the Close’s toasts',
+    async (_, _outcome, where, answer) => {
+      const { subject, leave } = await openOwn(where)
+      let release!: () => void
+      const held = new Promise<void>((resolve) => (release = resolve))
+      server.answer = async (method) => {
+        if (method !== 'update_draft_mail') return reply({ message: [] })
+        await held
+        return answer()
+      }
+      await type(subject, 'Brief, v2')
+      // The autosave goes out, and the server takes its time.
+      await vi.waitFor(() => expect(saves()).toHaveLength(1), { timeout: 5_000 })
+      await type(subject, 'Brief, v3')
+
+      leave()
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 300))
+
+      // Neither the Close's "Draft saved" nor its "Draft not saved" with Reopen.
+      const said = [...toasts.success.mock.calls, ...toasts.error.mock.calls].map(
+        ([message]) => message,
+      )
+      expect(said).not.toContain('Draft saved')
+      expect(said).not.toContain('Draft not saved')
+    },
+  )
+})

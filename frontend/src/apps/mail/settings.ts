@@ -10,7 +10,7 @@ function scoped(load: () => Promise<BodyModule>, options: { socket?: boolean } =
   return async (): Promise<Component> => {
     const [{ default: Body }, { default: Scope }] = await Promise.all([
       load(),
-      import('@/apps/mail/components/Settings/MailSettingsScope.vue'),
+      import('@/apps/mail/components/MailScope.vue'),
     ])
     return defineComponent({
       name: 'MailSettingsTab',

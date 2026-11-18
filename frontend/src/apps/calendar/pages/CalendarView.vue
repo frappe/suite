@@ -26,6 +26,7 @@ import MobileSearch from '@/apps/calendar/components/mobile/MobileSearch.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
+import { useEmailParticipants } from '@/apps/calendar/composables/useEmailParticipants'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { canEditEvent, calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
@@ -906,13 +907,10 @@ watch(selectedCalendarEvent, (open) => {
   if (!open) openRow.value = ''
 })
 
-// The calendar app has no compose surface of its own — hand over to mail's
-// compose window via its deep link (mailto: would depend on the OS having a
-// mail handler; the suite IS the mail client). Path, not route name: mail's
-// routes register lazily on first navigation into /mail.
-const emailParticipants = (emails: string[]) => {
-  router.push({ path: '/mail', query: { compose: '1', to: emails.join(',') } })
-}
+const emailParticipants = useEmailParticipants({
+  closeCard: closeEventDetail,
+  isPhone: () => isMobile.value,
+})
 
 // A deep link can only be built from the ids its author has. The grid's own
 // events come out of a recurrence-expanded query, so each carries a synthetic

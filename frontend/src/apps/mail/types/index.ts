@@ -140,6 +140,8 @@ export interface DraftRecipient {
   display_name?: string
   image?: string
 }
+/** Someone to write to: the address, and the name the chip shows when there is one. */
+export type MailRecipient = Pick<DraftRecipient, 'email' | 'display_name'>
 export interface ComposeMailData {
   name?: string
   id?: string
