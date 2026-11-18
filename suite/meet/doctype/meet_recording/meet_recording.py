@@ -10,9 +10,15 @@ from frappe.model.document import Document
 from frappe.utils import cint, get_datetime, get_system_timezone
 
 ACTIVE_RECORDING_STATUSES = ("Starting", "Recording", "Interrupted", "Stopping")
-TERMINAL_STATUSES = ("Ready", "Partial", "Failed", "Cancelled")
+TERMINAL_STATUSES = ("Ready", "Partial", "Failed", "Cancelled", "Captured")
 IMMUTABLE_FIELDS = ("meet_room", "room_owner", "initiated_by", "recorder_job_id", "request_id")
-IMMUTABLE_CONFIGURATION_FIELDS = ("drive_home_folder",)
+IMMUTABLE_CONFIGURATION_FIELDS = (
+    "drive_home_folder",
+    "video_enabled",
+    "transcription_enabled",
+    "transcription_language",
+    "capture_contract",
+)
 WRITE_ONCE_FIELDS = (
     "recorder_key_thumbprint",
     "grant_jti",
@@ -189,11 +195,13 @@ class MeetRecording(Document):
                     and getattr(self.flags, "recovery_update", False)
                 )
             )
-            if not is_local_transition and self.recorder_event_sequence <= previous.recorder_event_sequence:
+            if not is_local_transition and cint(self.recorder_event_sequence) <= cint(
+                previous.recorder_event_sequence
+            ):
                 frappe.throw(_("A recording state change requires a newer recorder event"))
         elif self.state_revision != previous.state_revision:
             frappe.throw(_("State revision changes only with recording state"))
-        if self.recorder_event_sequence < previous.recorder_event_sequence:
+        if cint(self.recorder_event_sequence) < cint(previous.recorder_event_sequence):
             frappe.throw(_("Recorder event sequence cannot decrease"))
 
     def validate_state(self):

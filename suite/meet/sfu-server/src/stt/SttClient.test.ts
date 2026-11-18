@@ -15,7 +15,11 @@ interface ClientEvent {
 		audio?: {
 			input?: {
 				format?: { type?: string; rate?: number };
-				transcription?: { names?: string[] };
+				transcription?: {
+					names?: string[];
+					vocabulary_version?: string;
+					title?: string;
+				};
 			};
 		};
 	};
@@ -113,6 +117,10 @@ describe('SttClient Realtime protocol', () => {
 				sampleRate: 24000,
 				language: 'en-US',
 				getNames: () => names,
+				getSpeechContext: () => ({
+					vocabulary_version: 'frappe-v1',
+					title: 'Atlas review',
+				}),
 			},
 			(event) => transcripts.push(event),
 		);
@@ -146,6 +154,11 @@ describe('SttClient Realtime protocol', () => {
 				.filter((event) => event.type === 'session.update')
 				.map((event) => event.session?.audio?.input?.transcription?.names),
 		).toEqual([['Siobhan'], ['Zubair']]);
+		expect(
+			clientEvents
+				.filter((event) => event.type === 'session.update')
+				.map((event) => event.session?.audio?.input?.transcription?.title),
+		).toEqual(['Atlas review', 'Atlas review']);
 		expect(append).toMatchObject({
 			audio: Buffer.from([0, 0, 1, 0]).toString('base64'),
 		});

@@ -203,6 +203,7 @@ export function useSFUConnection(deps: {
 	onRoomRejoined?: (sfuClient: SFUClient) => void;
 	onE2EERequired?: () => void;
 	onRecordingState?: (recording: RecordingState | null) => void;
+	onTranscriptionCaptureState?: (value: unknown) => void;
 	onRecordingEnabled?: (enabled: boolean) => void;
 	onCohostPromoted?: () => Promise<void>;
 	meetingDoc: WaitingRoomDocument;
@@ -223,6 +224,7 @@ export function useSFUConnection(deps: {
 		onRoomRejoined,
 		onE2EERequired,
 		onRecordingState,
+		onTranscriptionCaptureState,
 		onRecordingEnabled,
 		onCohostPromoted,
 		meetingDoc,
@@ -237,6 +239,9 @@ export function useSFUConnection(deps: {
 
 	const signalChannel = new SocketIOSignalChannel();
 	const sfuClient = new SFUClient(signalChannel);
+	const handleTranscriptionCaptureState = (value: unknown) => onTranscriptionCaptureState?.(value);
+	sfuClient.on("transcription:state", handleTranscriptionCaptureState);
+	onUnmounted(() => sfuClient.off("transcription:state", handleTranscriptionCaptureState));
 	const videoManager = new VideoElementManager();
 	const clientTelemetry = getClientTelemetry(sfuClient);
 	const sfuManager = shallowRef<SFUMeetingManager | null>(null);
@@ -788,6 +793,7 @@ export function useSFUConnection(deps: {
 
 				if (sfuResult) {
 					onRecordingEnabled?.(!!sfuResult.recording_enabled);
+					if (sfuResult.recording !== undefined) onRecordingState?.(sfuResult.recording);
 					const prefetched = connectionDetailsFromJoinPayload(sfuResult, {
 						expectedMeetingId: meetingId,
 					});
@@ -1003,6 +1009,7 @@ export function useSFUConnection(deps: {
 				chatStore.hostOnlyChat = !!joinResult.host_only_chat;
 			}
 			onRecordingEnabled?.(!!joinResult.recording_enabled);
+			if (joinResult.recording !== undefined) onRecordingState?.(joinResult.recording);
 
 			const prefetched = connectionDetailsFromJoinPayload(joinResult, {
 				expectedMeetingId: meetingId,

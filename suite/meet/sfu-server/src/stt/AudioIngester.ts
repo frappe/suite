@@ -11,6 +11,7 @@ import type {
 	Router,
 	RtpCapabilities,
 } from 'mediasoup/types';
+import type { SpeechScope } from '../speechHints';
 import { loggers } from '../utils/logger';
 import {
 	createSpeechDetector,
@@ -26,6 +27,8 @@ import {
 import { SttDiagnostics } from './SttDiagnostics';
 
 interface AudioIngesterOptions {
+	/** Independent durable capture consumes decoded source PCM without an ASR connection. */
+	onPcm?: (pcm: Buffer) => void;
 	speechDetector?: SpeechDetector;
 	roomId: string;
 	participantId: string;
@@ -33,6 +36,7 @@ interface AudioIngesterOptions {
 	router: Router;
 	sttClient: ISttClient;
 	getNames?: () => string[];
+	getSpeechContext?: () => SpeechScope | undefined;
 	onAudioSent?: (seconds: number) => void;
 	onUnexpectedStreamClose: () => void;
 	onTranscript: (text: string, isFinal: boolean, durationMs: number) => void;
@@ -77,12 +81,14 @@ const SHORT_UTTERANCE_SILENCE_CHECKS = Math.max(
 
 /** Captures one producer, decodes its audio, and streams VAD-delimited speech to STT. */
 export class AudioIngester {
+	private readonly onPcm?: (pcm: Buffer) => void;
 	private roomId: string;
 	private participantId: string;
 	private producer: Producer;
 	private router: Router;
 	private sttClient: ISttClient;
 	private getNames?: () => string[];
+	private getSpeechContext?: () => SpeechScope | undefined;
 	private onAudioSent?: (seconds: number) => void;
 	private sttStream: ISttStream | null = null;
 	private sessionId = randomUUID();
@@ -96,6 +102,7 @@ export class AudioIngester {
 	private plainTransport: PlainTransport | null = null;
 	private consumer: Consumer | null = null;
 	private ffmpeg: ChildProcess | null = null;
+	private drainingFfmpeg: ChildProcess | null = null;
 	private ffmpegPort = 0;
 	private sdpPath = '';
 	private running = false;
@@ -122,6 +129,7 @@ export class AudioIngester {
 	private readonly configuredPreRollChecks: number | undefined;
 
 	constructor(options: AudioIngesterOptions) {
+		this.onPcm = options.onPcm;
 		this.speechDetector = options.speechDetector;
 		const configuredPreRoll = process.env.STT_PRE_ROLL_MS;
 		if (configuredPreRoll !== undefined) {
@@ -141,6 +149,7 @@ export class AudioIngester {
 		this.router = options.router;
 		this.sttClient = options.sttClient;
 		this.getNames = options.getNames;
+		this.getSpeechContext = options.getSpeechContext;
 		this.onAudioSent = options.onAudioSent;
 		this.onUnexpectedStreamClose = options.onUnexpectedStreamClose;
 		this.onTranscript = options.onTranscript;
@@ -172,17 +181,19 @@ export class AudioIngester {
 		});
 
 		try {
-			const detector = this.speechDetector ?? (await createSpeechDetector());
+			const detector = this.onPcm
+				? undefined
+				: (this.speechDetector ?? (await createSpeechDetector()));
 			if (generation !== this.vadGeneration || !this.running) return;
 			this.speechDetector = detector;
-			detector.reset();
+			detector?.reset();
 			this.diagnostics?.event('vad.configuration', {
-				mode: this.speechDetector.mode,
+				mode: this.speechDetector?.mode,
 				preRollMs: this.preRollChecks * VAD_CHECK_MS,
 				revision:
-					this.speechDetector.mode === 'silero' ? SILERO_REVISION : undefined,
+					this.speechDetector?.mode === 'silero' ? SILERO_REVISION : undefined,
 				sha256:
-					this.speechDetector.mode === 'silero' ? SILERO_SHA256 : undefined,
+					this.speechDetector?.mode === 'silero' ? SILERO_SHA256 : undefined,
 			});
 			if (!this.running || generation !== this.vadGeneration) {
 				if (!this.running) await this.stop();
@@ -211,12 +222,14 @@ export class AudioIngester {
 				if (!this.running) await this.stop();
 				return;
 			}
+			if (this.onPcm) return;
 			const stream = await this.sttClient.createStream(
 				{
 					sessionId: this.sessionId,
 					sampleRate: SAMPLE_RATE,
 					language: process.env.NEMOTRON_LANGUAGE || 'en-US',
 					getNames: this.getNames,
+					getSpeechContext: this.getSpeechContext,
 					diagnostics: this.diagnostics,
 				},
 				(event) => {
@@ -248,7 +261,7 @@ export class AudioIngester {
 				this.producer.id,
 				this.sessionId,
 				this.ffmpegPort,
-				this.speechDetector.mode,
+				this.speechDetector?.mode,
 				this.preRollChecks * VAD_CHECK_MS,
 			);
 		} catch (error) {
@@ -278,6 +291,7 @@ export class AudioIngester {
 		this.closingTranscriptGeneration = this.sttStream
 			? this.vadGeneration
 			: null;
+		this.drainingFfmpeg = this.onPcm ? this.ffmpeg : null;
 		this.running = false;
 		this.vadGeneration++;
 		this.speechDetector?.reset();
@@ -327,13 +341,25 @@ export class AudioIngester {
 		const ffmpeg = this.ffmpeg;
 		this.ffmpeg = null;
 		if (ffmpeg && !ffmpeg.killed) {
+			const drained =
+				this.onPcm && ffmpeg.pid
+					? new Promise<void>((resolve) => {
+							const timeout = setTimeout(resolve, 1200);
+							ffmpeg.once('close', () => {
+								clearTimeout(timeout);
+								resolve();
+							});
+						})
+					: Promise.resolve();
 			ffmpeg.kill('SIGTERM');
 			setTimeout(() => {
 				if (ffmpeg.exitCode === null && ffmpeg.signalCode === null) {
 					ffmpeg.kill('SIGKILL');
 				}
 			}, 1000);
+			await drained;
 		}
+		this.drainingFfmpeg = null;
 		const sdpPath = this.sdpPath;
 		this.sdpPath = '';
 		if (sdpPath) {
@@ -427,9 +453,10 @@ export class AudioIngester {
 		this.ffmpeg = ffmpeg;
 		ffmpeg.stdout!.on('data', (data: Buffer) => {
 			if (
-				this.running &&
-				this.ffmpeg === ffmpeg &&
-				generation === this.vadGeneration
+				(this.running &&
+					this.ffmpeg === ffmpeg &&
+					generation === this.vadGeneration) ||
+				this.drainingFfmpeg === ffmpeg
 			)
 				this.handleDecodedAudio(data);
 		});
@@ -446,6 +473,10 @@ export class AudioIngester {
 
 	private handleDecodedAudio(data: Buffer): void {
 		if (!data.length) return;
+		if (this.onPcm) {
+			this.onPcm(data);
+			return;
+		}
 		this.lastDecodedAudioAt = performance.now();
 		this.diagnostics?.pcm('before-vad', data);
 		if (this.vadQueueBytes + data.length > MAX_UTTERANCE_BYTES) {

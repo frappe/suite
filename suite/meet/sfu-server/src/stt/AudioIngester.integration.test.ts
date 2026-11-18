@@ -152,3 +152,87 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 	},
 	70_000,
 );
+
+it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
+	'decodes real RTP into durable-capture PCM with no inference connection or speech detector',
+	async () => {
+		let destination = 0;
+		let received = 0;
+		let sender: ChildProcess | undefined;
+		let senderFailure: Error | undefined;
+		const createStream = vi.fn(async () => {
+			throw new Error('ASR must not be used');
+		});
+		const ingester = new AudioIngester({
+			roomId: `source-${randomUUID()}`,
+			participantId: 'speaker',
+			producer: { id: 'producer' } as Producer,
+			router: {
+				createPlainTransport: async () => ({
+					consume: async () => ({
+						rtpParameters: { codecs: [{ payloadType: 111 }] },
+						close() {},
+					}),
+					connect: async ({ port }: { port: number }) => {
+						destination = port;
+					},
+					close() {},
+				}),
+			} as unknown as Router,
+			sttClient: { createStream, isAvailable: () => false, onAvailable() {} },
+			onPcm: (pcm) => {
+				received += pcm.length;
+			},
+			onUnexpectedStreamClose: () => {},
+			onTranscript: () => {},
+		});
+		try {
+			await ingester.start();
+			sender = spawn(
+				'ffmpeg',
+				[
+					'-hide_banner',
+					'-loglevel',
+					'error',
+					'-re',
+					'-f',
+					'lavfi',
+					'-i',
+					'sine=frequency=440:sample_rate=48000',
+					'-ac',
+					'2',
+					'-c:a',
+					'libopus',
+					'-payload_type',
+					'111',
+					'-f',
+					'rtp',
+					`rtp://127.0.0.1:${destination}?pkt_size=1200`,
+				],
+				{ stdio: 'ignore' },
+			);
+			sender.on('error', (error) => {
+				senderFailure = error;
+			});
+			await vi.waitFor(
+				() => {
+					if (senderFailure) throw senderFailure;
+					expect(received).toBeGreaterThan(48000);
+				},
+				{ timeout: 10000, interval: 100 },
+			);
+			expect(createStream).not.toHaveBeenCalled();
+			expect(ingester.hasRealtimeStream()).toBe(false);
+		} finally {
+			if (sender && sender.exitCode === null) {
+				const exited = new Promise<void>((resolve) =>
+					sender!.once('exit', () => resolve()),
+				);
+				sender.kill('SIGKILL');
+				await exited;
+			}
+			await ingester.stop();
+		}
+	},
+	15000,
+);

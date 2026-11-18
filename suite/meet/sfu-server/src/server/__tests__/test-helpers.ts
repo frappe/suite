@@ -182,6 +182,7 @@ function createMockMediasoupManager(): MediasoupManager {
 		onProducerClosed: vi.fn((listener) => {
 			producerClosedListener = listener;
 		}),
+		pinRoomSpeechHints: vi.fn(),
 		createRoom: vi.fn().mockResolvedValue({
 			peers: new Map(),
 			activeSpeakerObserver: null,

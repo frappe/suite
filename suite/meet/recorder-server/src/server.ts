@@ -9,6 +9,8 @@ import { JobManager } from './JobManager.js';
 import { JobStore } from './JobStore.js';
 import { logger } from './logger.js';
 import { ChromiumRendererBridge } from './RendererBridge.js';
+import { transcriptionRoutes } from './TranscriptionRoutes.js';
+import { TranscriptionStore } from './TranscriptionStore.js';
 
 async function main(): Promise<void> {
 	const config = loadConfig();
@@ -123,11 +125,39 @@ async function main(): Promise<void> {
 		config.origin,
 		store,
 	);
-	const server = createApp(config, auth, jobs, logger).listen(config.port);
+	const sources = new TranscriptionStore(
+		`${config.dataRoot}/.transcription-sources`,
+		config.minimumFreeBytes,
+		Number(process.env.RECORDER_TRANSCRIPTION_MAX_CONCURRENT ?? 16),
+		Number(process.env.RECORDER_TRANSCRIPTION_STORAGE_BYTES ?? 10 * 1024 ** 3),
+	);
+	try {
+		await sources.initialize();
+		await sources.sweep();
+	} catch {
+		logger.error({
+			event: 'transcription_storage_unavailable',
+			reason: 'initialization_failed',
+		});
+	}
+	const sourceSweep = setInterval(() => {
+		if (sources.ready)
+			void sources.sweep().catch(() =>
+				logger.error({
+					event: 'transcription_retention_failed',
+					reason: 'storage_unavailable',
+				}),
+			);
+	}, 60000);
+	sourceSweep.unref();
+	const app = createApp(config, auth, jobs, logger);
+	transcriptionRoutes(app, config, sources);
+	const server = app.listen(config.port);
 	let shuttingDown = false;
 	const shutdown = async () => {
 		if (shuttingDown) return;
 		shuttingDown = true;
+		clearInterval(sourceSweep);
 		await new Promise<void>((resolve) => server.close(() => resolve()));
 		await capture.close();
 	};

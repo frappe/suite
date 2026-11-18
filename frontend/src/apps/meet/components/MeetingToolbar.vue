@@ -273,12 +273,12 @@ const moreOptions = computed(() => [
 						? "lucide-circle-stop"
 						: "lucide-disc",
 					label: props.recordingStatus === "Pending"
-						? "Starting recording..."
+						? "Starting capture..."
 						: ["Recording", "Interrupted", "Stopping"].includes(
 						props.recordingStatus || "",
 					)
-						? "Stop recording"
-						: "Start recording",
+						? "Stop capture"
+						: "Capture",
 					disabled:
 						props.recordingLoading ||
 						["Pending", "Stopping"].includes(props.recordingStatus || ""),

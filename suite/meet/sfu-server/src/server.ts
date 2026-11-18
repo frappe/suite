@@ -16,6 +16,8 @@ import { RouteManager } from './server/RouteManager';
 import { SocketHandlerManager } from './server/SocketHandlerManager';
 import { SttManager } from './stt/SttManager';
 import { Telemetry } from './telemetry/Telemetry';
+import { transcriptionRoutes } from './transcription/routes';
+import { TranscriptionManager } from './transcription/TranscriptionManager';
 import { configureLogging, loggers } from './utils/logger';
 import { captureException, flushSentry, initSentry } from './utils/sentry';
 
@@ -30,6 +32,7 @@ export class SFUServer {
 	private routeManager: RouteManager;
 	private socketHandlerManager: SocketHandlerManager;
 	private sttManager: SttManager;
+	private transcriptionManager: TranscriptionManager;
 	private config: SFUConfig['server'];
 	private telemetry: Telemetry;
 	private recordingGrantPersistence?: RecordingGrantPersistenceFile;
@@ -74,6 +77,12 @@ export class SFUServer {
 			onAudioSent: (seconds) => this.telemetry.sttAudioSeconds.inc(seconds),
 		});
 		this.mediasoup.setSttManager(this.sttManager);
+		this.transcriptionManager = new TranscriptionManager(
+			this.mediasoup,
+			(room, event) => {
+				this.io.to(room).emit('transcription:state', event);
+			},
+		);
 		const recordingPersistencePath = config.persistence.recordingGrantFile;
 		this.recordingGrantPersistence = recordingPersistencePath
 			? new RecordingGrantPersistenceFile(recordingPersistencePath)
@@ -117,6 +126,13 @@ export class SFUServer {
 
 		this.setupMiddleware();
 		this.routeManager.setupRoutes();
+		transcriptionRoutes(
+			this.app,
+			this.io,
+			this.transcriptionManager,
+			this.config.jwtSecret,
+			process.env.TRANSCRIPTION_RECORDER_ORIGIN,
+		);
 		this.socketHandlerManager.setupSocketHandlers();
 	}
 
@@ -195,6 +211,7 @@ export class SFUServer {
 
 		try {
 			this.socketHandlerManager.stop();
+			await this.transcriptionManager.close();
 			await this.mediasoup.cleanup();
 			this.sttManager.destroy();
 
@@ -207,6 +224,7 @@ export class SFUServer {
 				(error as Error).message,
 			);
 			this.socketHandlerManager.stop();
+			await this.transcriptionManager.close();
 			this.sttManager.destroy();
 			this.server.close(() => {
 				loggers.server.info('SFU Server force stopped');
