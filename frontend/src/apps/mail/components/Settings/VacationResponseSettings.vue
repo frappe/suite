@@ -7,41 +7,43 @@
     >
       <Switch v-model="draft.enabled" />
     </SettingsRow>
-    <!-- Off, the reply's fields stay where they are, dimmed and out of reach, so the dialog keeps
-         its size and the switch stays under the pointer -->
-    <div class="flex flex-col gap-5 transition-opacity" v-bind="fieldsOff">
-      <div class="grid gap-4 sm:grid-cols-2">
-        <FormControl
-          v-model="draft.from_date"
-          type="datetime"
-          :label="__('Starts')"
-          :format="SHOWN_FORMAT"
-          :placeholder="__('Select date and time')"
-          variant="outline"
-        />
-        <FormControl
-          v-model="draft.to_date"
-          type="datetime"
-          :label="__('Ends (optional)')"
-          :format="SHOWN_FORMAT"
-          :placeholder="__('Select date and time')"
-          variant="outline"
-        />
-      </div>
+    <!-- Off, the reply's fields stay where they are, disabled, so the dialog keeps its size and
+         the switch stays under the pointer -->
+    <div class="grid gap-4 sm:grid-cols-2">
       <FormControl
-        v-model="draft.subject"
-        :label="__('Subject')"
-        :placeholder="__('Out of office')"
+        v-model="draft.from_date"
+        type="datetime"
+        :label="__('Starts')"
+        :format="SHOWN_FORMAT"
+        :placeholder="__('Select date and time')"
         variant="outline"
+        :disabled="isOff"
       />
-      <div class="space-y-1.5">
-        <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
-        <MailRichTextField
-          v-model="draft.html_body"
-          :placeholder="__('Write your reply…')"
-          :div-paragraphs="false"
-        />
-      </div>
+      <FormControl
+        v-model="draft.to_date"
+        type="datetime"
+        :label="__('Ends (optional)')"
+        :format="SHOWN_FORMAT"
+        :placeholder="__('Select date and time')"
+        variant="outline"
+        :disabled="isOff"
+      />
+    </div>
+    <FormControl
+      v-model="draft.subject"
+      :label="__('Subject')"
+      :placeholder="__('Out of office')"
+      variant="outline"
+      :disabled="isOff"
+    />
+    <div class="space-y-1.5">
+      <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
+      <MailRichTextField
+        v-model="draft.html_body"
+        :placeholder="__('Write your reply…')"
+        :div-paragraphs="false"
+        :disabled="isOff"
+      />
     </div>
     <ErrorMessage :message="saveError" />
     <SettingsDialogActions>
@@ -139,9 +141,7 @@ const draft = reactive({
   subject: '',
   html_body: '',
 })
-// How the fields are held while the reply is off: dimmed, and out of reach of pointer and keys
-const OFF = { inert: true, class: 'opacity-50' }
-const fieldsOff = computed(() => (draft.enabled ? undefined : OFF))
+const isOff = computed(() => !draft.enabled)
 const original = ref('')
 const vacationResponse = useQuery(api.mail.vacation.get, () =>
   store.accountId

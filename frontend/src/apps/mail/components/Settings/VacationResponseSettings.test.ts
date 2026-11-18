@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick } from 'vue'
 
 import { requireTestElement } from '@/platform/testing/dom'
 
@@ -64,6 +64,7 @@ vi.mock('frappe-ui', async () => {
           h('input', {
             'data-label': attrs.label,
             value: attrs.modelValue,
+            disabled: attrs.disabled,
             onInput: (event: Event) =>
               emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
           })
@@ -95,7 +96,10 @@ vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: { value: false } }),
 }))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
-  default: { render: () => h('div', { 'data-message': '' }) },
+  default: defineComponent({
+    props: { disabled: Boolean },
+    setup: (props) => () => h('div', { 'data-message': '', 'data-disabled': props.disabled }),
+  }),
 }))
 
 const LONG_AGO = { from: '2020-06-01T09:00:00Z', to: '2020-06-14T09:00:00Z' }
@@ -155,18 +159,21 @@ it('keeps the dates while the responder is on, over or not', async () => {
   expect(field('Ends (optional)')!.value).toContain('2020-06')
 })
 
-it('keeps the dates, subject and message in place, out of reach, while the responder is off', async () => {
+it('keeps the dates, subject and message in place, disabled, while the responder is off', async () => {
   const { root, field, turnOn } = await mount(0, AHEAD)
-  const unreachable = requireTestElement(root.querySelector('[inert]'), HTMLElement)
-  expect(unreachable.contains(field('Subject'))).toBe(true)
-  expect(unreachable.contains(field('Ends (optional)'))).toBe(true)
-  expect(unreachable.querySelector('[data-message]')).not.toBeNull()
-  // The switch itself stays in reach
-  expect(unreachable.querySelector('[data-switch]')).toBeNull()
+  function message() {
+    return requireTestElement(root.querySelector('[data-message]'), HTMLElement)
+  }
+
+  expect(field('Starts')!.disabled).toBe(true)
+  expect(field('Ends (optional)')!.disabled).toBe(true)
+  expect(field('Subject')!.disabled).toBe(true)
+  expect(message().dataset.disabled).toBe('true')
 
   await turnOn()
-  expect(root.querySelector('[inert]')).toBeNull()
-  expect(field('Subject')).not.toBeNull()
+  expect(field('Starts')!.disabled).toBe(false)
+  expect(field('Subject')!.disabled).toBe(false)
+  expect(message().dataset.disabled).toBe('false')
 })
 it('hands a refused save to the app, where failed saves are reported', async () => {
   const refusal = new Error('The dates are the wrong way round')
