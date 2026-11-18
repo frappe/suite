@@ -63,6 +63,7 @@
         <FormControl
           v-model="nameDraft.first_name"
           :label="__('First name')"
+          variant="outline"
           class="w-full"
           autocomplete="given-name"
           :disabled="updateUser.isPending"
@@ -71,6 +72,7 @@
         <FormControl
           v-model="nameDraft.last_name"
           :label="__('Last name')"
+          variant="outline"
           class="w-full"
           autocomplete="family-name"
           :disabled="updateUser.isPending"
@@ -104,6 +106,7 @@
           name="current-password"
           autocomplete="current-password"
           :label="__('Current password')"
+          variant="outline"
           placeholder="••••••••"
         />
         <FormControl
@@ -112,6 +115,7 @@
           name="new-password"
           autocomplete="new-password"
           :label="__('New password')"
+          variant="outline"
           placeholder="••••••••"
         />
         <FormControl
@@ -120,6 +124,7 @@
           name="confirm-password"
           autocomplete="new-password"
           :label="__('Confirm new password')"
+          variant="outline"
           placeholder="••••••••"
         />
         <ErrorMessage :message="passwordError" />
