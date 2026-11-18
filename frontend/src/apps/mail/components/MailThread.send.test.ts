@@ -296,6 +296,25 @@ it('puts the sent reply where its composer was', async () => {
   expect(isOpen('reply')).toBe(true)
 })
 
+it('puts a message that arrives while a reply is being written above the reply', async () => {
+  query.current = reactive({
+    data: [message('bob'), draftOfReply],
+    status: 'success',
+    refetch: async () => {},
+  })
+  await openThread()
+
+  // Carol answers while the reply is still open at the bottom.
+  query.current.data = [
+    message('bob'),
+    message('carol', { from_email: 'carol@example.com', received_at: '2026-10-30T09:45:00Z' }),
+    draftOfReply,
+  ]
+  await settle()
+
+  expect(cards()).toEqual(['bob', 'carol', 'draft'])
+})
+
 it('puts the sent reply last when a draft left earlier in the thread is still there', async () => {
   // A draft put aside before Carol wrote: it stays where it was written, above her mail.
   const earlier = message('earlier', {

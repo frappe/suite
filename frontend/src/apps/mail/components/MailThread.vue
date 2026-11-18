@@ -1373,7 +1373,7 @@ const handleSyncUnseen = (ids: string[]) => {
 
 // A reply that arrives while the thread is open (picked up by a background list reload) is appended
 // in place. Re-deriving would clobber unsaved inline drafts, so only the genuinely new messages are
-// added — before any trailing draft so the in-progress reply stays at the bottom.
+// added — after the last message, so the in-progress reply stays at the bottom.
 const syncWithSource = (source = sourceMessages()) => {
   if (!source?.length) return
 
