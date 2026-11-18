@@ -26,7 +26,7 @@
             :class="mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined"
           />
           <span class="text-ink-gray-8 truncate text-base">{{ mailbox._name }}</span>
-          <Badge v-if="isHidden(mailbox)" :label="__('Hidden')" />
+          <Badge v-if="isHidden(mailbox)" :label="__('Hidden')" size="sm" />
         </button>
         <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
           <Button variant="ghost" :aria-label="__('Folder options')">

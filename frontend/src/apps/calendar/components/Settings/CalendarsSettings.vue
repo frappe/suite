@@ -12,7 +12,7 @@
           />
         </template>
         <div v-if="calendars.data?.length" class="mt-2">
-          <!-- A row holding only a badge stands as tall as one with a button -->
+          <!-- A row with no button stands as tall as one with a button -->
           <div
             v-for="calendar in calendars.data"
             :key="calendar.name"
@@ -24,10 +24,16 @@
                 :style="{ background: eventColor(calendarColor(calendars.data, calendar.name)) }"
               />
               <span class="truncate text-base text-ink-gray-8">{{ calendar._name }}</span>
+              <!-- Beside the name, where every list in Settings keeps what it says of a row -->
+              <Badge v-if="calendar.default" :label="__('Default')" size="sm" class="shrink-0" />
+              <Badge
+                v-if="isReadOnly(calendar)"
+                :label="__('Read-only')"
+                size="sm"
+                class="shrink-0"
+              />
             </div>
             <div class="flex shrink-0 items-center gap-3">
-              <Badge v-if="calendar.default" :label="__('Default')" />
-              <Badge v-if="!canEdit(calendar)" :label="__('Read-only')" />
               <!-- Ahead of Edit, so every Edit button ends on the line New and Manage end on. -->
               <AdaptiveDropdown
                 v-if="hasMoreOptions(calendar)"
@@ -79,7 +85,7 @@ import DeleteCalendarModal from '@/apps/calendar/components/Modals/DeleteCalenda
 import ParticipantIdentitySettings from '@/apps/calendar/components/Settings/ParticipantIdentitySettings.vue'
 import { useCalendarActions } from '@/apps/calendar/composables/useCalendarActions'
 import { userStore } from '@/apps/calendar/stores/user'
-import { calendarColor } from '@/apps/calendar/utils/calendars'
+import { calendarColor, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
@@ -93,4 +99,9 @@ const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const { selected, showEdit, showDelete, create, edit, canEdit, moreOptions, hasMoreOptions } =
   useCalendarActions()
+
+// A calendar shared for reading only: it shows, and nothing about it can be changed
+function isReadOnly(calendar: CalendarRow) {
+  return !canEdit(calendar)
+}
 </script>
