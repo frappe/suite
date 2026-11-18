@@ -11,3 +11,13 @@ HOLIDAY = {
     "ends_on": "2026-10-03 00:00:00",
     "all_day": True,
 }
+
+# A birthday, which a source states once and the calendar draws in every year from its first.
+BIRTHDAY = {
+    "uid": "birthday-EMP-1",
+    "title": "Akash Tom's birthday",
+    "starts_on": "2026-07-09 00:00:00",
+    "ends_on": "2026-07-10 00:00:00",
+    "all_day": True,
+    "repeats": "Yearly",
+}

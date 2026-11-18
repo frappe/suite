@@ -14,7 +14,7 @@ from suite.calendar.doctype.external_calendar.external_calendar import ExternalC
 from suite.calendar.external import occurrences, yearly_occurrence
 from suite.calendar.external_store import _differs
 from suite.calendar.http import routes
-from suite.calendar.tests.fixtures import HOLIDAY
+from suite.calendar.tests.fixtures import BIRTHDAY, HOLIDAY
 from suite.tests.utils import ensure_user
 
 STORED = frappe._dict(
@@ -126,21 +126,8 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         if frappe.db.exists("External Calendar", calendar):
             external_store.remove_calendar(calendar)
 
-    holiday = HOLIDAY
-
-    @property
-    def birthday(self) -> dict:
-        return {
-            "uid": "birthday-EMP-1",
-            "title": "Akash Tom's birthday",
-            "starts_on": "2026-07-09 00:00:00",
-            "ends_on": "2026-07-10 00:00:00",
-            "all_day": True,
-            "repeats": "Yearly",
-        }
-
     def test_a_calendar_is_drawn_for_who_it_is_assigned_to_and_for_nobody_else(self):
-        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_events(self.calendar, [HOLIDAY])
         external_store.replace_assignments(self.calendar, [self.user])
 
         [row] = external.calendar_rows(self.user)
@@ -161,14 +148,14 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(external.events_in_window(self.stranger, "2026-10-01", "2026-10-31"), [])
 
     def test_a_second_run_writes_nothing(self):
-        first = external_store.replace_events(self.calendar, [self.holiday, self.birthday])
+        first = external_store.replace_events(self.calendar, [HOLIDAY, BIRTHDAY])
         self.assertEqual(first, {"created": 2, "updated": 0, "removed": 0})
-        again = external_store.replace_events(self.calendar, [self.holiday, self.birthday])
+        again = external_store.replace_events(self.calendar, [HOLIDAY, BIRTHDAY])
         self.assertEqual(again, {"created": 0, "updated": 0, "removed": 0})
 
     def test_what_the_source_changed_is_rewritten_and_what_it_dropped_is_removed(self):
-        external_store.replace_events(self.calendar, [self.holiday, self.birthday])
-        moved = {**self.holiday, "starts_on": "2026-10-03 00:00:00", "ends_on": "2026-10-04 00:00:00"}
+        external_store.replace_events(self.calendar, [HOLIDAY, BIRTHDAY])
+        moved = {**HOLIDAY, "starts_on": "2026-10-03 00:00:00", "ends_on": "2026-10-04 00:00:00"}
         self.assertEqual(
             external_store.replace_events(self.calendar, [moved]),
             {"created": 0, "updated": 1, "removed": 1},
@@ -178,7 +165,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(event["start"], "2026-10-03T00:00:00")
 
     def test_a_yearly_event_is_drawn_in_every_year_it_reaches(self):
-        external_store.replace_events(self.calendar, [self.birthday])
+        external_store.replace_events(self.calendar, [BIRTHDAY])
         external_store.replace_assignments(self.calendar, [self.user])
 
         # stored once, anchored in 2026
@@ -240,7 +227,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(in_2029["start"], "2029-02-28T00:00:00")
 
     def test_somebody_the_source_no_longer_names_stops_seeing_it(self):
-        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_events(self.calendar, [HOLIDAY])
         external_store.replace_assignments(self.calendar, [self.user, self.stranger])
         self.assertEqual(len(external.calendar_rows(self.stranger)), 1)
 
@@ -249,7 +236,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
 
     def test_a_calendar_the_source_drops_takes_its_events_and_assignments_with_it(self):
-        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_events(self.calendar, [HOLIDAY])
         external_store.replace_assignments(self.calendar, [self.user])
 
         external_store.remove_calendar(self.calendar)
@@ -341,7 +328,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         return other
 
     def test_a_site_wide_calendar_is_drawn_for_everyone_with_nothing_assigned(self):
-        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_events(self.calendar, [HOLIDAY])
         self.assertEqual(external.calendar_rows(self.stranger), [])
 
         external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
@@ -370,7 +357,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         """The app validates every answer against the contract and refuses one that strays, so
         a row the store shapes wrongly is a calendar that fails to load."""
 
-        external_store.replace_events(self.calendar, [self.holiday, self.birthday])
+        external_store.replace_events(self.calendar, [HOLIDAY, BIRTHDAY])
         external_store.replace_assignments(self.calendar, [self.user])
 
         TypeAdapter(list[routes.CalendarRow]).validate_python(external.calendar_rows(self.user), strict=True)

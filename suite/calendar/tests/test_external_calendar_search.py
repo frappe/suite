@@ -11,7 +11,7 @@ from suite.calendar import api as calendar_api
 from suite.calendar import external, external_store
 from suite.calendar.external import yearly_occurrence
 from suite.calendar.external_search import search_events
-from suite.calendar.tests.fixtures import HOLIDAY
+from suite.calendar.tests.fixtures import BIRTHDAY, HOLIDAY
 from suite.tests.utils import ensure_user
 
 
@@ -26,19 +26,6 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         ensure_user(self.stranger)
         self.calendar = external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
         self.addCleanup(external_store.remove_calendar, self.calendar)
-
-    holiday = HOLIDAY
-
-    @property
-    def birthday(self) -> dict:
-        return {
-            "uid": "birthday-EMP-1",
-            "title": "Akash Tom's birthday",
-            "starts_on": "2026-07-09 00:00:00",
-            "ends_on": "2026-07-10 00:00:00",
-            "all_day": True,
-            "repeats": "Yearly",
-        }
 
     def search(self, user: str, words: list[str], limit: int = 10, **narrowed) -> list[dict]:
         return search_events(user, words, limit, **narrowed)
@@ -66,7 +53,7 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         }
 
     def test_a_search_finds_what_carries_every_word(self):
-        external_store.replace_events(self.calendar, [self.holiday, self.birthday])
+        external_store.replace_events(self.calendar, [HOLIDAY, BIRTHDAY])
         external_store.replace_assignments(self.calendar, [self.user])
 
         self.assertEqual(self.titles(["gandhi"]), ["Gandhi Jayanti"])
@@ -80,9 +67,7 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         self.assertEqual(self.titles(["gandhi"], calendars=[self.calendar]), ["Gandhi Jayanti"])
 
     def test_the_notes_are_searched_unless_the_title_alone_is_asked(self):
-        external_store.replace_events(
-            self.calendar, [{**self.holiday, "description": "The office is closed"}]
-        )
+        external_store.replace_events(self.calendar, [{**HOLIDAY, "description": "The office is closed"}])
         external_store.replace_assignments(self.calendar, [self.user])
 
         self.assertEqual(self.titles(["closed"]), ["Gandhi Jayanti"])
@@ -115,7 +100,7 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         today = date.today()
         month_day = f"{today:%m-%d}"
         external_store.replace_events(
-            self.calendar, [self.yearly(yearly_occurrence(month_day, today.year - 30)), self.holiday]
+            self.calendar, [self.yearly(yearly_occurrence(month_day, today.year - 30)), HOLIDAY]
         )
         external_store.replace_assignments(self.calendar, [self.user])
         next_year = datetime(today.year + 1, 1, 1)
@@ -137,7 +122,7 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
 
     def test_an_event_with_no_repeat_recorded_happens_once_in_a_range(self):
         # a row written past the event's validate, with nothing in the column at all
-        external_store.replace_events(self.calendar, [self.holiday])
+        external_store.replace_events(self.calendar, [HOLIDAY])
         external_store.replace_assignments(self.calendar, [self.user])
         frappe.db.set_value("External Calendar Event", {"calendar": self.calendar}, "repeats", None)
 
@@ -152,7 +137,7 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         today = date.today()
         elsewhere = yearly_occurrence(f"{today:%m-%d}", today.year - 30)
         crowd = [self.yearly(elsewhere, f"Person {n}'s birthday", uid=f"birthday-EMP-{n}") for n in range(5)]
-        external_store.replace_events(self.calendar, [*crowd, self.holiday])
+        external_store.replace_events(self.calendar, [*crowd, HOLIDAY])
         external_store.replace_assignments(self.calendar, [self.user])
 
         found = self.search(
