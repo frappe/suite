@@ -39,6 +39,27 @@ export const mailSettings = {
       ],
     },
     {
+      id: 'mail.inbox',
+      label: () => __('Inbox'),
+      icon: 'lucide-inbox',
+      body: scoped(() => import('@/apps/mail/components/Settings/MailInboxSettings.vue')),
+      sections: [
+        { id: 'screening', label: () => __('Screen new senders'), keywords: () => __('screener') },
+        { id: 'on-block', label: () => __('When blocking a sender'), keywords: () => __('junk') },
+        {
+          id: 'screened-senders',
+          label: () => __('Screened senders'),
+          keywords: () => __('block list, blocked, accepted'),
+        },
+        {
+          id: 'categories',
+          label: () => __('Split Inbox into categories'),
+          keywords: () => __('tabs'),
+        },
+        { id: 'folders', label: () => __('Folders') },
+      ],
+    },
+    {
       id: 'mail.sending',
       label: () => __('Sending'),
       icon: 'lucide-send',
@@ -58,27 +79,6 @@ export const mailSettings = {
           label: () => __('Auto-reply'),
           keywords: () => __('vacation, out of office, away'),
         },
-      ],
-    },
-    {
-      id: 'mail.inbox',
-      label: () => __('Inbox'),
-      icon: 'lucide-inbox',
-      body: scoped(() => import('@/apps/mail/components/Settings/MailInboxSettings.vue')),
-      sections: [
-        { id: 'screening', label: () => __('Screen new senders'), keywords: () => __('screener') },
-        { id: 'on-block', label: () => __('When blocking a sender'), keywords: () => __('junk') },
-        {
-          id: 'screened-senders',
-          label: () => __('Screened senders'),
-          keywords: () => __('block list, blocked, accepted'),
-        },
-        {
-          id: 'categories',
-          label: () => __('Split Inbox into categories'),
-          keywords: () => __('tabs'),
-        },
-        { id: 'folders', label: () => __('Folders') },
       ],
     },
     {

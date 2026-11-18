@@ -313,7 +313,7 @@ test.describe("phone", () => {
 		// A settings heading: a named section holding its rows.
 		const profileSections = page.locator(SETTINGS_SECTION);
 		const mail = page.getByRole("region", { name: "Mail", exact: true });
-		for (const tab of ["General", "Sending", "Inbox", "Import and export", "Advanced"]) {
+		for (const tab of ["General", "Inbox", "Sending", "Import and export", "Advanced"]) {
 			await expect(mail.getByRole("button", { name: tab, exact: true })).toBeVisible();
 		}
 		const profileHeadings = await profileSections.evaluateAll((sections) =>
