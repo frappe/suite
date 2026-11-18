@@ -638,7 +638,9 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const share = useShare('doc', {
       client: testClient(server.transport),
       me: ME,
-      personalRoot,
+      roots: personalRoot
+        ? { personal: { node: personalRoot, title: 'My files' }, organization: null }
+        : null,
       confirmLoss: async (after) => {
         asked.push(after)
         return answer

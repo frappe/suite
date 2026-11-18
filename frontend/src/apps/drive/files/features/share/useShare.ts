@@ -19,11 +19,13 @@ import {
   DRIVE_ROLES,
   type DriveNode,
   type DrivePerson,
+  type DriveRoots,
 } from '@/apps/drive/client/types'
 import type { ImperativeClient } from '@/platform/server-state/types'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
+import { locationOf } from '../../internal/locations'
 import { readShare, type ShareReads } from './opening'
 import {
   organizationLabel,
@@ -48,8 +50,8 @@ export interface ShareOptions {
   me?: string
   /** Asks the caller to confirm a write that lowers their own role to `after`. Resolves true to go on. */
   confirmLoss?: (after: number) => Promise<boolean>
-  /** The caller's Personal root. Drive keeps them at Manage on a node inside it whoever else it is shared with. */
-  personalRoot?: string
+  /** The caller's roots. Drive keeps them at Manage in their Personal root whoever else a node there is shared with. */
+  roots?: MaybeRefOrGetter<DriveRoots | null>
   /** The workspace name, which names everyone at the org. Empty while unknown. */
   workspace?: MaybeRefOrGetter<string>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
@@ -179,12 +181,12 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
    * nothing on a removal.
    */
   async function mayChange(change: GrantChange): Promise<boolean> {
-    const { me, confirmLoss, personalRoot } = options
+    const { me, confirmLoss } = options
     if (!me || !confirmLoss) return true
     const kind = principalKind(change.principal)
     if (kind === 'link' || kind === 'public' || (kind === 'user' && change.principal !== me))
       return true
-    const inMyRoot = personalRoot !== undefined && node.value?.root === personalRoot
+    const inMyRoot = !!node.value && locationOf(node.value, toValue(options.roots)) === 'personal'
     if (inMyRoot && change.role !== null && (kind === 'general' || kind === 'group')) return true
     const explanation = await grants.explain(me).catch(() => null)
     if (!explanation) return true

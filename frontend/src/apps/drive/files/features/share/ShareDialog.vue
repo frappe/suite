@@ -53,14 +53,13 @@ import { BottomSheet, Dialog } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { driveNodeRoute } from '@/apps/drive'
-import { bootRoots } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { useWorkspace } from '@/platform/workspace'
 
-import { useLocationTitle } from '../../internal/locations'
+import { useLocationTitle, useRoots } from '../../internal/locations'
 import type { ShareReads } from './opening'
 import ShareBody from './ShareBody.vue'
 import ShareDialogFooter from './ShareDialogFooter.vue'
@@ -97,7 +96,7 @@ const state = useShare(props.node, {
       destructive: true,
     })
   },
-  personalRoot: bootRoots()?.personal.node,
+  roots: useRoots(),
   workspace: workspaceName,
   placeTitle: useLocationTitle(),
   known: props.known,
