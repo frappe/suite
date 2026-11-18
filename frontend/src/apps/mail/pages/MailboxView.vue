@@ -57,8 +57,8 @@
     class="relative flex max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto"
     :class="showDeleteBanner ? 'h-[calc(100dvh-6.125rem)]' : 'h-[calc(100dvh-3.0625rem)]'"
   >
-    <!-- The list in its frame; the frame shows its own empty, loading and refused states (see
-         usePaginatedThreads). Without the frame, they fill the view below. -->
+    <!-- The list in its frame, which is up while the list loads too. It shows its own empty and
+         refused states (see usePaginatedThreads); without the frame, those fill the view below. -->
     <template v-if="listFramed">
       <ThreadPane
         :thread-open="!!threadID"
@@ -179,16 +179,24 @@
             </template>
           </MailListToolbar>
 
+          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. -->
+          <MailListSkeleton
+            v-if="listState === 'loading'"
+            class="min-h-0 flex-1 overflow-hidden"
+            :selectable="!isAllAccountsSearch"
+            :date-headers="headersVisible"
+          />
+
           <!-- Mail list -->
           <div
-            v-if="threadRows.length"
+            v-else-if="threadRows.length"
             ref="mailList"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
             @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
-                v-if="groupedByDate && !isMobile"
+                v-if="headersVisible"
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
@@ -287,14 +295,8 @@
             </div>
           </div>
           <div v-else class="flex h-full items-center justify-center">
-            <!-- While the (still-mounted) search header's new query loads, this area is the
-						     loading surface — the empty message must not flash first. -->
-            <LoaderCircle
-              v-if="listState === 'loading'"
-              class="text-ink-gray-5 h-5 w-5 animate-spin"
-            />
             <LoadError
-              v-else-if="listState === 'error'"
+              v-if="listState === 'error'"
               :title="__('Could not load the list.')"
               :error="activeThreads.error"
               @retry="retryList"
@@ -319,6 +321,7 @@
           :mailbox
           :thread-i-d
           :threads="threadIDs"
+          :threads-loading="listState === 'loading'"
           :messages="currentThread?.messages"
           :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
           :can-go-next="canGoNext"
@@ -367,11 +370,6 @@
         />
       </ThreadPane>
     </template>
-
-    <!-- Loading: the list's rows in outline, in the list's own column. -->
-    <ThreadPane v-else-if="listState === 'loading'" :thread-open="false">
-      <template #list><MailListSkeleton :selectable="!isAllAccountsSearch" /></template>
-    </ThreadPane>
 
     <!-- Refused, or no mails. A phone keeps the title row above either: where you are, and the way
          to the folders. -->
@@ -536,8 +534,6 @@ const {
   // Deferred reads too. The search view's header is its frame: it mounts at once and stays put
   // across query changes, loading inline in the list area below it.
   framed: () => mailbox === 'search' || !!inboxTab.value || !!filter.value || filterChanged.value,
-  switching: () =>
-    mailbox === 'search' || filterChanged.value || (tabSwitched.value && !!inboxTab.value),
   busy: () => emptyMailbox.isPending || refillPending.value,
   asked: () => mailbox !== 'search' || hasSearchQuery.value,
 })
@@ -565,7 +561,7 @@ const pinnable = computed(() => takesPins(mailboxes.data?.find((m) => m.id === m
 // The date groups, the stacks and the keyboard cursor that walks them — all shared with the merged All
 // Inboxes list (see useListRows).
 const {
-  groupedByDate,
+  headersVisible,
   groupedThreads,
   getGroupThreads,
   isLastGroup,
@@ -958,7 +954,6 @@ const {
   tabs: inboxTabs,
   active: inboxTab,
   routeFor: routeForTab,
-  switched: tabSwitched,
 } = useInboxTabs(
   () => mailbox === mailboxIds.inbox && 'account',
   () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
@@ -1106,7 +1101,6 @@ watch(
     // loads the thread from the right account) while the mailbox stays 'search'. The merged list spans
     // every account, so a mere account switch mustn't reset it — keep the results and scroll position.
     if (isAllAccountsSearch.value && mailbox === 'search' && old?.[0] === 'search') return
-    tabSwitched.value = false
     reloadFilter()
     focusedRowKey.value = undefined
     collapsedGroups.value = []

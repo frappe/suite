@@ -1,4 +1,4 @@
-import { computed, ref, shallowRef, watch } from 'vue'
+import { computed, shallowRef, watch } from 'vue'
 import { useRoute, type RouteLocationNamedRaw } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
@@ -66,15 +66,11 @@ export const useInboxTabs = (
     query: category === 'primary' ? {} : { category },
   })
 
-  // Whether the open tab was switched to from another: the tabs stay up while it loads, the list
-  // loading inline rather than the whole view giving way to the spinner.
-  const switched = ref(false)
   watch(active, (tab, previous) => {
-    switched.value = !!(tab && previous && tab !== previous)
-    if (switched.value) onSwitch?.()
+    if (tab && previous && tab !== previous) onSwitch?.()
   })
 
-  return { tabs, active, routeFor, switched }
+  return { tabs, active, routeFor }
 }
 
 /** The categories a person can give a tab or not: all but Primary, which is the Inbox's own. */

@@ -375,7 +375,7 @@ export const useListRows = ({
   }
 
   return {
-    groupedByDate,
+    headersVisible,
     groupedThreads,
     getGroupThreads,
     isLastGroup,

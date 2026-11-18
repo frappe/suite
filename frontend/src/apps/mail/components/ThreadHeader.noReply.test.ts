@@ -19,6 +19,8 @@ const BOXES = { inbox: 'in', archive: 'ar', sent: 'se', snoozed: 'sn', drafts: '
 const screen = vi.hoisted(() => ({
   mobile: false,
   route: { name: '', params: { mailbox: '', folder: '', threadID: 't' }, query: {} },
+  // The account's folders have come in.
+  mailboxesIn: true,
 }))
 
 type Row = {
@@ -118,10 +120,18 @@ vi.mock('@/apps/mail/stores/user', () => ({ takesPins: () => false }))
 vi.mock('@/apps/mail/utils/accountScope', async () => {
   const { ref: reference } = await import('vue')
   return {
-    injectAccountScope: () => ({
-      mailboxes: reference({ data: [{ id: 'se', slug: 'sent', name: 'Sent', role: 'sent' }] }),
-      mailboxIds: reference(BOXES),
-    }),
+    injectAccountScope: () =>
+      screen.mailboxesIn
+        ? {
+            mailboxes: reference({
+              data: [{ id: 'se', slug: 'sent', name: 'Sent', role: 'sent' }],
+            }),
+            mailboxIds: reference(BOXES),
+          }
+        : {
+            mailboxes: reference({ data: undefined }),
+            mailboxIds: reference(Object.fromEntries(Object.keys(BOXES).map((box) => [box, '']))),
+          },
   }
 })
 vi.mock('@/apps/mail/utils/composables', async () => {
@@ -137,16 +147,21 @@ let root: HTMLElement
 const onSnooze = vi.fn()
 const onRemind = vi.fn()
 const onPrint = vi.fn()
+const onMoveThread = vi.fn()
+const onDeleteThread = vi.fn()
 
 beforeEach(() => {
   window.__ = (text: string) => text
   screen.mobile = false
+  screen.mailboxesIn = true
   viewing('in')
   root = document.createElement('div')
   document.body.append(root)
   onSnooze.mockClear()
   onRemind.mockClear()
   onPrint.mockClear()
+  onMoveThread.mockClear()
+  onDeleteThread.mockClear()
 })
 afterEach(() => {
   app?.unmount()
@@ -158,11 +173,25 @@ const viewing = (mailbox: string) => {
   screen.route.params.mailbox = mailbox
 }
 
-const show = async (thread: Mail[], remindable: boolean) => {
+// `list`: what the header is told of the list the thread was opened from.
+const show = async (
+  thread: Mail[],
+  remindable: boolean,
+  list: { threads: string[]; threadsLoading?: boolean } = { threads: ['t'] },
+) => {
   app = createApp(
     defineComponent({
       setup: () => () =>
-        h(ThreadHeader, { thread, threads: ['t'], remindable, onSnooze, onRemind, onPrint }),
+        h(ThreadHeader, {
+          thread,
+          ...list,
+          remindable,
+          onSnooze,
+          onRemind,
+          onPrint,
+          onMoveThread,
+          onDeleteThread,
+        }),
     }),
   )
   app.config.globalProperties.__ = (text: string) => text
@@ -350,5 +379,82 @@ describe('Print', () => {
     screen.mobile = true
     await show([mail('a', ['dr'])], false)
     expect(root.querySelector('[aria-label="More"]')).toBeNull()
+  })
+})
+
+describe('a thread on its way', () => {
+  const outline = () => root.querySelector('[data-outline="thread-actions"]')
+  // The buttons that say what they do; Back alone has no tooltip.
+  const tooltips = () =>
+    Array.from(
+      root.querySelectorAll<HTMLElement>('button[data-tooltip]:not([data-tooltip=""])'),
+      (button) => button.dataset.tooltip,
+    )
+
+  it('outlines its buttons, and offers only the step to the next thread', async () => {
+    await show([], false)
+
+    expect(outline()).not.toBeNull()
+    expect(tooltips()).toEqual(['Previous Thread (↑/K)', 'Next Thread (↓/J)'])
+  })
+
+  const steps = () => root.querySelector('[data-outline="thread-steps"]')
+
+  it("holds the arrows' places while the list it was opened from is on its way too", async () => {
+    await show([], false, { threads: [], threadsLoading: true })
+
+    expect(steps()).not.toBeNull()
+    expect(tooltips()).toEqual([])
+  })
+
+  it('holds no place for arrows a thread outside the list will never get', async () => {
+    await show([], false, { threads: ['another'] })
+
+    expect(steps()).toBeNull()
+    expect(tooltips()).toEqual([])
+  })
+
+  const dots = () => outline()?.querySelectorAll('.rounded-full').length ?? 0
+  const inAllInboxes = (folder: string) => {
+    screen.route.name = UNIFIED_THREAD_ROUTE
+    screen.route.params.folder = folder
+  }
+
+  it("outlines an Inbox thread's buttons in All Inboxes before the account's folders are in", async () => {
+    screen.mailboxesIn = false
+    inAllInboxes('drafts')
+    await show([], false)
+    const inDrafts = dots()
+    app?.unmount()
+
+    inAllInboxes('inbox')
+    await show([], false)
+    expect(dots()).toBeGreaterThan(inDrafts)
+  })
+
+  it("offers to move a thread to Trash, not to discard it, before the account's folders are in", async () => {
+    screen.mailboxesIn = false
+    inAllInboxes('inbox')
+    await show(THEIR_LAST_WORD, false)
+
+    expect(tooltips()).toContain('Move to Trash (Delete)')
+    expect(tooltips()).not.toContain('Discard (Delete)')
+  })
+
+  it("trashes it by the row's own Trash before the account's folders are in", async () => {
+    screen.mailboxesIn = false
+    inAllInboxes('inbox')
+    await show(THEIR_LAST_WORD, false)
+
+    root.querySelector<HTMLElement>('[data-tooltip="Move to Trash (Delete)"]')!.click()
+    expect(onDeleteThread).toHaveBeenCalledTimes(1)
+    expect(onMoveThread).not.toHaveBeenCalled()
+  })
+
+  it("shows its buttons in the outline's place once it is in", async () => {
+    await show(THEIR_LAST_WORD, false)
+
+    expect(outline()).toBeNull()
+    expect(tooltips()).toContain('Mark as Unread (U)')
   })
 })
