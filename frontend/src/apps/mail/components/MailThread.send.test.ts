@@ -24,6 +24,7 @@ vi.mock('@/apps/mail/components/MailActions.vue', async () => {
     default: defineComponent({
       props: { mail: { type: Object, required: true } },
       setup(props) {
+        // SAFETY: MailThread hands every message's actions one of the thread's mails.
         watchEffect(() => actedOn.set(props.mail.name, props.mail as Mail))
         return () => null
       },
@@ -43,6 +44,7 @@ vi.mock('@/apps/mail/components/ComposeMailEditor.vue', async () => {
       setup(props) {
         watchEffect(() => {
           if (props.mailDetails && props.showSent)
+            // SAFETY: MailThread passes showSent as an async function of no arguments.
             composers.set(props.mailDetails.name, props.showSent as () => Promise<void>)
         })
         return () => h('div', { 'data-composer': '' })
@@ -70,6 +72,7 @@ vi.mock('@/apps/mail/components/EmailContent.vue', async () => {
 // The thread's own fetch, which the pane falls back on when no list holds the thread.
 const query = vi.hoisted(() => ({
   current: {
+    // SAFETY: widens the empty start; each test sets the rows it answers with.
     data: undefined as unknown,
     status: 'success',
     refetch: async () => {},
