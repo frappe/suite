@@ -7,8 +7,9 @@
     >
       <Switch v-model="draft.enabled" />
     </SettingsRow>
-    <!-- Off, the reply has nothing to set: the dialog is its one switch. What was typed is kept -->
-    <template v-if="draft.enabled">
+    <!-- Off, the reply's fields stay where they are, dimmed and out of reach, so the dialog keeps
+         its size and the switch stays under the pointer -->
+    <div class="flex flex-col gap-5 transition-opacity" v-bind="fieldsOff">
       <div class="grid gap-4 sm:grid-cols-2">
         <FormControl
           v-model="draft.from_date"
@@ -41,7 +42,7 @@
           :div-paragraphs="false"
         />
       </div>
-    </template>
+    </div>
     <ErrorMessage :message="saveError" />
     <SettingsDialogActions>
       <Button
@@ -138,6 +139,9 @@ const draft = reactive({
   subject: '',
   html_body: '',
 })
+// How the fields are held while the reply is off: dimmed, and out of reach of pointer and keys
+const OFF = { inert: true, class: 'opacity-50' }
+const fieldsOff = computed(() => (draft.enabled ? undefined : OFF))
 const original = ref('')
 const vacationResponse = useQuery(api.mail.vacation.get, () =>
   store.accountId

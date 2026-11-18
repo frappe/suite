@@ -155,15 +155,18 @@ it('keeps the dates while the responder is on, over or not', async () => {
   expect(field('Ends (optional)')!.value).toContain('2020-06')
 })
 
-it('shows the dates, subject and message only while the responder is on', async () => {
-  const off = await mount(0, AHEAD)
-  expect(off.field('Subject')).toBeNull()
-  expect(off.field('Ends (optional)')).toBeNull()
-  expect(off.root.querySelector('[data-message]')).toBeNull()
+it('keeps the dates, subject and message in place, out of reach, while the responder is off', async () => {
+  const { root, field, turnOn } = await mount(0, AHEAD)
+  const unreachable = requireTestElement(root.querySelector('[inert]'), HTMLElement)
+  expect(unreachable.contains(field('Subject'))).toBe(true)
+  expect(unreachable.contains(field('Ends (optional)'))).toBe(true)
+  expect(unreachable.querySelector('[data-message]')).not.toBeNull()
+  // The switch itself stays in reach
+  expect(unreachable.querySelector('[data-switch]')).toBeNull()
 
-  const on = await mount(1, AHEAD)
-  expect(on.field('Subject')).not.toBeNull()
-  expect(on.root.querySelector('[data-message]')).not.toBeNull()
+  await turnOn()
+  expect(root.querySelector('[inert]')).toBeNull()
+  expect(field('Subject')).not.toBeNull()
 })
 it('hands a refused save to the app, where failed saves are reported', async () => {
   const refusal = new Error('The dates are the wrong way round')
