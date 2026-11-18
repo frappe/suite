@@ -141,15 +141,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const { accountId: scopeAccountId, identities, mailboxIds } = scope
   const getIdentity = (email: string) =>
     identities.value.data?.find((identity: Identity) => identity.email === email)
+  // The toasts' links go by path rather than route name: the composer also opens over other apps,
+  // and there Mail's routes are not registered until the first visit to /mail. A folder's id opens
+  // it as its slug does (see router.ts).
+  const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
   const viewSentMessage = (threadID: string) =>
-    router.push({
-      name: 'mail-mail',
-      params: {
-        accountId: scopeAccountId.value,
-        mailbox: mailboxIds.value.sent,
-        threadID,
-      },
-    })
+    router.push(
+      `${accountPath()}/mailbox/${encodeURIComponent(mailboxIds.value.sent)}/${encodeURIComponent(threadID)}`,
+    )
   const getDefaultFromEmail = () => {
     const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
     const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
@@ -667,13 +666,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
       raiseToast(__('Send scheduled'), 'success', {
         label: __('View'),
-        onClick: () =>
-          router.push({
-            name: 'mail-outbox',
-            params: {
-              accountId: scopeAccountId.value,
-            },
-          }),
+        onClick: () => router.push(`${accountPath()}/outbox`),
       })
     else if (status === 'Submitted')
       raiseToast(

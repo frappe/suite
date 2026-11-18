@@ -1,6 +1,7 @@
 import type { Router } from 'vue-router'
 
 import type { ComposeMailData } from '@/apps/mail/types'
+import { pageLoadNeededFor } from '@/platform/pwa'
 
 /**
  * The draft a `/compose` navigation is carrying — a reply, a forward, a `mailto:` link, or a draft
@@ -17,12 +18,42 @@ import type { ComposeMailData } from '@/apps/mail/types'
  */
 let pending: ComposeMailData | undefined
 
-const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
+/*
+ * One move loads the page afresh, which takes what is in memory with it: an iPhone's browser reloads
+ * on going from another app into Mail (see `pageLoadNeededFor`), and another app writing to someone
+ * is exactly that move. For that move alone the draft is also left in sessionStorage, for the page
+ * that loads next to take. The page being left still mounts the composer before it reloads, and
+ * takes the copy in memory — so it leaves the stored one where it is.
+ */
+const STORAGE_KEY = 'suite.mail.pending-compose'
+
+const isDraft = (value: unknown): value is ComposeMailData =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+const store = (draft?: ComposeMailData) => {
+  try {
+    if (draft) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(draft))
+    else sessionStorage.removeItem(STORAGE_KEY)
+  } catch {
+    /* No storage, or a draft too big for it: the page opens empty, as it did before this copy. */
+  }
+}
+
+const takeStored = (): ComposeMailData | undefined => {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    sessionStorage.removeItem(STORAGE_KEY)
+    const stored: unknown = raw ? JSON.parse(raw) : undefined
+    return isDraft(stored) ? stored : undefined
+  } catch {
+    return undefined
+  }
+}
 
 export const takePendingCompose = () => {
   const draft = pending
   pending = undefined
-  return draft
+  return draft ?? takeStored()
 }
 
 /**
@@ -34,6 +65,10 @@ export const takePendingCompose = () => {
  * happened left behind.
  */
 export const openComposePage = (router: Router, accountId: string, draft?: ComposeMailData) => {
-  setPendingCompose(draft)
-  return router.push({ name: 'mail-compose', params: { accountId } })
+  // By path rather than name: from another app, Mail's routes are not registered until the first
+  // visit to /mail, which this may be.
+  const path = `/mail/account/${encodeURIComponent(accountId)}/compose`
+  pending = draft
+  store(pageLoadNeededFor(path) ? draft : undefined)
+  return router.push(path)
 }
