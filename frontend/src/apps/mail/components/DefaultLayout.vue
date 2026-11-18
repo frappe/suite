@@ -34,18 +34,8 @@
           @email-participants="emailEventParticipants"
         />
       </EventPopover>
-      <!-- Compose prefilled with the event's participants; keyed so each
-			     open starts a fresh draft rather than resuming the last one.
-			     Desktop only — mobile composes on its own page, which openCompose
-			     navigates to instead. -->
-      <SendMail
-        v-if="!isMobile"
-        :key="composeKey"
-        v-model="showCompose"
-        :mail-details="composeDetails"
-        :account="composeDetails?.account"
-        @reload-mails="requestListReload()"
-      />
+      <!-- Mail's composer: the window over the page on a desktop, the compose page on a phone. -->
+      <ComposeHost />
     </div>
 
     <!-- Compose, floating above the shell's bottom nav in the right thumb zone.
@@ -67,18 +57,17 @@
 </template>
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { computed, provide, ref, watch } from 'vue'
+import { computed, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import EventDetail from '@/apps/calendar/components/EventDetail.vue'
 import EventPopover from '@/apps/calendar/components/EventPopover.vue'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
-import SendMail from '@/apps/mail/components/SendMail.vue'
+import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { userStore } from '@/apps/mail/stores/user'
-import type { ComposeMailData } from '@/apps/mail/types'
 import {
   useComposeMail,
   useDiscardingDrafts,
@@ -147,44 +136,13 @@ const openEventInCalendar = () => {
   router.push({ ...target, query: { ...query, edit: event, editRecurrence: recurrence } })
 }
 
-// The panel's "email participants" opens mail's own compose window (the
-// calendar app host falls back to mailto).
-const showCompose = ref(false)
-const composeKey = ref(0)
-const composeDetails = ref<ComposeMailData>()
-
-const openCompose = (details: ComposeMailData) => {
-  // Mobile has no composer window to open — compose is a page there, and the draft
-  // travels to it through the handoff.
-  if (isMobile.value) {
-    openComposePage(router, details.account ?? store.accountId, details)
-    return
-  }
-  composeDetails.value = details
-  // Remount, so a second request replaces the draft on screen instead of being
-  // swallowed by the composer already holding one.
-  composeKey.value++
-  showCompose.value = true
-}
-
-const emailParticipants = (emails: string[]) =>
-  openCompose({ to: emails.map((email) => ({ email })) })
-
 // From the event's popover: writing to everyone is where attention goes next, so the popover
 // steps aside rather than sitting over the page beside the composer.
+const { requestCompose } = useComposeMail()
 const emailEventParticipants = (emails: string[]) => {
   selectedEvent.value = null
-  emailParticipants(emails)
+  requestCompose({ to: emails.map((email) => ({ email })) })
 }
-
-// A `mailto:` link clicked inside a message. It comes through shared state because the
-// message body is an iframe — several components deep, and across a document boundary.
-const { composeRequest, clearComposeRequest } = useComposeMail()
-watch(composeRequest, (details) => {
-  if (!details) return
-  openCompose(details)
-  clearComposeRequest()
-})
 
 // Compose deep link (?compose=1&to=a,b): how other apps (calendar's "email
 // participants") open mail's compose window. Consumed on arrival — the query
@@ -196,7 +154,7 @@ watch(
     const to = String(route.query.to || '')
       .split(',')
       .filter(Boolean)
-    emailParticipants(to)
+    requestCompose({ to: to.map((email) => ({ email })) })
     const { compose: _compose, to: _to, ...query } = route.query
     router.replace({ query })
   },
