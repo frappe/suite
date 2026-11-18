@@ -130,8 +130,8 @@ export function findMailDates(
   ]
   const within = (result: ParsedResult) =>
     attributions.some(([from, to]) => result.index < to && result.index + result.text.length > from)
-  return chrono.parse(text, reference, { forwardDate: true }).flatMap((result) => {
-    if (!namesADate(result) || within(result) || dayReadAsHour(result, text)) return []
+  return chrono.parse(withDaysAsDays(text), reference, { forwardDate: true }).flatMap((result) => {
+    if (!namesADate(result) || within(result)) return []
     const date = toNamedDate(result, timeZone, sent)
     const { start } = result
     if (start.isCertain('month') && !start.isCertain('year')) {
@@ -142,20 +142,12 @@ export function findMailDates(
   })
 }
 
-// A month's name, after the day it follows.
-const MONTH_AFTER = String.raw`(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b`
-
-/**
- * Whether chrono took the day of a date for an hour: "from 20 Oct" read as October at 20:00, or
- * "from 1" at 1pm in "from 1 Oct to 5 Oct". The number is followed by a month, in the reading or
- * just after it. Whatever chrono made of the rest, no part of that date is a time on another day.
- */
-const dayReadAsHour = (result: ParsedResult, text: string) => {
-  const { start } = result
-  if (!start.isCertain('hour') || start.isCertain('day') || start.isCertain('weekday')) return false
-  const words = text.slice(result.index, result.index + result.text.length + 16)
-  return new RegExp(String.raw`(?:^|\D)0?${start.get('hour')}${MONTH_AFTER}`, 'i').test(words)
-}
+// "from" before a day and a short month's name: chrono takes "from 20" for 8pm and leaves "Dec"
+// behind, when it means 20 December. Blanked to as many spaces, the day reads as a day ("from 20
+// Dec to 5 Jan" as a range) and every date keeps its place in the text.
+const FROM_DAY =
+  /\bfrom(?=\s+\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b)/gi
+const withDaysAsDays = (text: string) => text.replace(FROM_DAY, (word) => ' '.repeat(word.length))
 
 // How long a day without a year stays one gone by, before it reads as next year's.
 const RECENT_MONTHS = 2

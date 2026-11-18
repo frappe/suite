@@ -252,6 +252,27 @@ describe('dates in a mail', () => {
     expect(read('5 Jun 2027', 'en-GB')).toEqual(['2027-06-05'])
   })
 
+  it('reads "from" and a day of a month as that day, and "to" another as the end of it', () => {
+    for (const locale of ['en-GB', 'en-US']) {
+      const read = (text: string) =>
+        findMailDates(text, '2026-11-18T10:00:00Z', { timeZone: ZONE, locale }).map((date) => ({
+          text: text.slice(date.index, date.index + date.length),
+          start: date.start,
+          end: date.end,
+        }))
+      expect(read('Off from 20 Dec'), locale).toEqual([
+        { text: '20 Dec', start: { date: '2026-12-20' }, end: undefined },
+      ])
+      expect(read('from 1 Dec')[0]?.start, locale).toEqual({ date: '2026-12-01' })
+      expect(read('Away from 20 Dec to 5 Jan'), locale).toEqual([
+        { text: '20 Dec to 5 Jan', start: { date: '2026-12-20' }, end: { date: '2027-01-05' } },
+      ])
+      // Gone by: the past rule drops it whole.
+      expect(read('Thanks for the notes from 20 Oct.'), locale).toEqual([])
+      expect(read('from 1 Oct to 5 Oct'), locale).toEqual([])
+    }
+  })
+
   it('offers nothing in the line that opens a quoted trail, however it wraps', () => {
     const text =
       'Thursday at 3pm suits me.\n\nOn Tue, Nov 17, 2026 at 10:00 AM Lena Park <lena@example.com>\nwrote:'
