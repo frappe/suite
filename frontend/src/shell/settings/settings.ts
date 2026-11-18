@@ -9,6 +9,8 @@ export interface SettingsSection {
   readonly id: string
   /** The part's title on the page. */
   readonly label: () => string
+  /** The line under its title on the page, to be found by its words too. */
+  readonly description?: () => string
   /** Other words people look for it by, for example `'vacation'`. */
   readonly keywords?: () => string
 }
@@ -25,6 +27,8 @@ export interface SettingsTab {
   readonly label: () => string
   /** A lucide class, for example `'lucide-key-round'`. */
   readonly icon: string
+  /** The line under the page's title, to be found by its words too. */
+  readonly description?: () => string
   /** Other words people look for the tab by, for example `'WebDAV'`. */
   readonly keywords?: () => string
   /** Cheap and synchronous. It must not load a product store. */

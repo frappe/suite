@@ -26,13 +26,16 @@ function findIn(
   tab: SettingsTab,
   words: readonly string[],
 ): FoundSettingsTab[] {
-  const tabText = searchable(group.label, tab.label(), tab.keywords?.())
+  const tabText = searchable(group.label, tab.label(), tab.description?.(), tab.keywords?.())
   const sections = (tab.sections ?? []).filter((section) => {
-    const own = searchable(section.label(), section.keywords?.())
-    return (
-      words.some((word) => own.includes(word)) &&
-      words.every((word) => own.includes(word) || tabText.includes(word))
-    )
+    const name = searchable(section.label(), section.keywords?.())
+    const description = searchable(section.description?.())
+    // A word the tab answers too, such as `'mail'`, is in many descriptions under it
+    function isOwn(word: string) {
+      return name.includes(word) || (description.includes(word) && !tabText.includes(word))
+    }
+
+    return words.some(isOwn) && words.every((word) => isOwn(word) || tabText.includes(word))
   })
   if (sections.length > 0 || words.every((word) => tabText.includes(word))) {
     return [{ tab, sections }]
@@ -45,9 +48,10 @@ function findIn(
  * The tabs and sections a search finds, in the order Settings lists them. Every word searched for
  * must be found, in any order, as part of a word: `'mail imp'` finds Mail's Import.
  *
- * A tab is found by its group's name, its own and its keywords. A section is found by those names with its own
- * label and keywords, and at least one word must be the section's own: `'mail'` finds Mail's tabs,
- * not every section under them. Nothing searched for finds every tab and no section.
+ * A tab is found by its group's name, its own, its description and its keywords. A section is found
+ * by those with its own label, description and keywords, and at least one word must be the section's
+ * own: `'mail'` finds Mail's tabs, not every section under them that says mail in its description.
+ * Nothing searched for finds every tab and no section.
  */
 export function searchSettings(
   groups: readonly VisibleSettingsGroup[],

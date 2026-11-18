@@ -31,7 +31,11 @@ export const calendarSettings = {
       body: scoped(() => import('@/apps/calendar/components/Settings/CalendarsSettings.vue')),
       sections: [
         { id: 'your-calendars', label: () => __('Your calendars') },
-        { id: 'invite-addresses', label: () => __('Invite addresses') },
+        {
+          id: 'invite-addresses',
+          label: () => __('Invite addresses'),
+          description: () => __('The addresses you organize and attend events as.'),
+        },
       ],
     },
     {
@@ -40,11 +44,21 @@ export const calendarSettings = {
       icon: 'lucide-wrench',
       body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
       sections: [
-        { id: 'import', label: () => __('Import') },
-        { id: 'export', label: () => __('Export'), keywords: () => __('download, backup') },
+        {
+          id: 'import',
+          label: () => __('Import'),
+          description: () => __('Bring events in from a file.'),
+        },
+        {
+          id: 'export',
+          label: () => __('Export'),
+          description: () => __('Download a copy of your events.'),
+          keywords: () => __('download, backup'),
+        },
         {
           id: 'client-setup',
           label: () => __('Calendar client setup'),
+          description: () => __('Server details for apps such as Thunderbird or Apple Calendar.'),
           keywords: () => __('CalDAV'),
         },
       ],

@@ -19,6 +19,7 @@ const groups: VisibleSettingsGroup[] = [
         id: 'drive.external-access',
         label: () => 'External access',
         icon: '',
+        description: () => 'Open your Drive files in Finder and other file apps.',
         keywords: () => 'WebDAV, API key',
         body,
       },
@@ -33,7 +34,11 @@ const groups: VisibleSettingsGroup[] = [
         icon: '',
         body,
         sections: [
-          { id: 'signatures', label: () => 'Signatures' },
+          {
+            id: 'signatures',
+            label: () => 'Signatures',
+            description: () => 'Text added to the end of the messages you send.',
+          },
           { id: 'auto-reply', label: () => 'Auto-reply', keywords: () => 'vacation, away' },
         ],
       },
@@ -43,7 +48,11 @@ const groups: VisibleSettingsGroup[] = [
         icon: '',
         body,
         sections: [
-          { id: 'import', label: () => 'Import' },
+          {
+            id: 'import',
+            label: () => 'Import',
+            description: () => 'Bring in mail or contacts from a file.',
+          },
           { id: 'export', label: () => 'Export', keywords: () => 'download, backup' },
         ],
       },
@@ -91,6 +100,13 @@ it('finds a section by a keyword that is not on the page', () => {
 })
 it('finds a tab by a keyword that is not its name', () => {
   expect(found('webdav')).toEqual(['Drive > External access: '])
+})
+it('finds a section by a word of the line under its title', () => {
+  expect(found('messages')).toEqual(['Mail > Sending: Signatures'])
+  expect(found('contacts mail')).toEqual(['Mail > Advanced: Import'])
+})
+it('finds a tab by a word of the line under its page title', () => {
+  expect(found('finder')).toEqual(['Drive > External access: '])
 })
 it('narrows a section to one app when the app is named too, in any order', () => {
   expect(found('import mail')).toEqual(['Mail > Advanced: Import'])
