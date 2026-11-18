@@ -16,7 +16,8 @@
         <div v-if="$slots.uploads" class="grid size-7 place-items-center">
           <slot name="uploads" />
         </div>
-        <Button :label="__('Sign in')" @click="signIn" />
+        <!-- The Sign-in screen has its own Sign in button, so the header does not repeat it. -->
+        <Button v-if="!showSignIn" :label="__('Sign in')" @click="signIn" />
       </div>
     </header>
 

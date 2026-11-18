@@ -1186,8 +1186,10 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   `DriveRestoreDestinationRequired` (409), a `DriveConflict` subtype
   (ask D14) [T007, Drive §8.8].
 - In a batch, the client collects the items that need a destination. One
-  prompt ("8 items' folders are gone") opens the folder picker limited to
-  the same root and to folders with UPLOAD [T007].
+  prompt opens the folder picker limited to the same root and to folders
+  with UPLOAD [T007]. It names one item ("“Budget.pdf” was in a folder that
+  is in Trash. Choose where to restore it.") and counts several ("These 8
+  items were in folders that are in Trash. Choose where to restore them.").
 - A second batch sends `{state: Active, parent}` for those items only
   [T007].
 - Cancel leaves them in Trash. An access change before submit returns as a
@@ -1202,6 +1204,8 @@ behavior comes from [Drive §5], [Drive §8], [Drive §9.5] and [Drive §11].
   [T007].
 - The Empty trash confirm reads: "Delete everything in Trash forever?"
   [T007]
+- The Delete forever confirm names one item, "Delete “Budget.pdf”
+  forever?", and counts several, "Delete 3 items forever?".
 
 ### 6.11 Batch outcomes and retry
 
@@ -1718,6 +1722,8 @@ Each app's later migration owns these. They are named and baselined
   rail, no area sidebar, one slim header [T011].
 - The header holds the Suite mark, the **Uploads** button with its
   progress dot (section 10.6) and Sign in. On `/d/` it holds only the Suite mark and Sign in [T011].
+- While the frame shows its "Sign in to open this" screen, the header leaves
+  out its Sign in, since the screen has its own.
 - The same `FilesPage` and `DocumentHost` render for guests. Actions hide
   by role (section 5.6). There is no second folder list [T011].
 - On folder routes the trail is `FilesPage`'s own breadcrumbs through
@@ -1767,6 +1773,12 @@ Each app's later migration owns these. They are named and baselined
 - With access through the link only: no sidebar location is selected; the
   trail starts at the shared item; the item is not in Shared with me,
   Recent or Starred [T011].
+- On a wide screen the header says "Opened from a link" beside that trail,
+  since no sidebar place names where the item is.
+- "Through the link only" means the caller holds no role of their own on the
+  item (`access.own_role` is 0). A link that only raises a role they already
+  hold, such as an edit link to a folder shared with them as Viewer, changes
+  neither the sidebar nor the header: the folder stays in Shared with me.
 - Star is hidden and no visit is recorded. Those lists send no link codes
   and could never show the item [T011].
 - Not verified: that Recent and Starred drop link-only items. It follows
@@ -1807,8 +1819,10 @@ Each app's later migration owns these. They are named and baselined
 ### 10.11 Dead-link page
 
 The dead-link page is server-rendered. It has the correct HTTP status,
-`no_cache`, the Suite mark, no node details and no Sign in (ask S2)
-[T011].
+`no_cache`, and no node details (ask S2) [T011]. It draws the guest
+frame's dead end with the same measurements: the slim header with the
+Suite mark and, for a guest, Sign in, which lands on Home; a 48px icon
+circle; a text-2xl-semibold title; and a text-p-base line.
 
 | Status | Copy |
 |---|---|

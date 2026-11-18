@@ -53,11 +53,18 @@ const net = vi.hoisted(() => {
 interface ShownToast {
   kind: 'success' | 'error'
   message: string
+  description?: string
   action?: { label: string; onClick: () => void }
 }
-const feedback = vi.hoisted(() => ({ toasts: fromPartial<ShownToast[]>([]) }))
+const feedback = vi.hoisted(() => ({
+  toasts: fromPartial<ShownToast[]>([]),
+  questions: new Array<string>(),
+}))
 vi.mock('@/platform/feedback', () => ({
-  confirm: async () => true,
+  confirm: async ({ title }: { title: string }) => {
+    feedback.questions.push(title)
+    return true
+  },
   toast: {
     success: (message: string, options?: Omit<ShownToast, 'kind' | 'message'>) =>
       feedback.toasts.push({ kind: 'success', message, ...options }),
@@ -70,6 +77,7 @@ let unmount: (() => void) | undefined
 afterEach(() => {
   unmount?.()
   feedback.toasts.length = 0
+  feedback.questions.length = 0
   net.states.clear()
   net.purges = 0
 })
@@ -111,11 +119,23 @@ describe('Trash actions', () => {
     })
   })
 
+  it('names the item in the Delete forever question, and counts several', async () => {
+    const actions = mountActions()
+
+    await actions.purge(items('Budget <draft>.xlsx'))
+    await actions.purge(items('a', 'b', 'c'))
+    expect(feedback.questions).toEqual([
+      'Delete “Budget <draft>.xlsx” forever?',
+      'Delete 3 items forever?',
+    ])
+  })
+
   it('reports Delete forever in a toast with no Undo', async () => {
     const actions = mountActions()
 
     await actions.purge(items('a', 'b'))
-    expect(feedback.toasts).toEqual([{ kind: 'success', message: 'Deleted 2 items forever' }])
+    expect(feedback.toasts).toMatchObject([{ kind: 'success', message: 'Deleted 2 items forever' }])
+    expect(feedback.toasts[0]?.action).toBeUndefined()
   })
 
   it('deletes 250 items forever in two requests, as the server takes at most 200', async () => {
@@ -125,7 +145,9 @@ describe('Trash actions', () => {
     await actions.purge(items(...names))
     expect(net.purges).toBe(2)
     expect(actions.outcome.value?.ok).toHaveLength(250)
-    expect(feedback.toasts).toEqual([{ kind: 'success', message: 'Deleted 250 items forever' }])
+    expect(feedback.toasts).toMatchObject([
+      { kind: 'success', message: 'Deleted 250 items forever' },
+    ])
   })
 
   it('offers Retry when a whole request fails, and Retry sends the same request without asking again', async () => {
@@ -134,7 +156,12 @@ describe('Trash actions', () => {
 
     expect(await actions.purge(items('a', 'b'))).toBeNull()
     expect(feedback.toasts).toMatchObject([
-      { kind: 'error', message: 'Drive is busy', action: { label: 'Retry' } },
+      {
+        kind: 'error',
+        message: 'Could not delete 2 items forever',
+        description: 'Drive is busy',
+        action: { label: 'Retry' },
+      },
     ])
 
     feedback.toasts[0]!.action!.onClick()

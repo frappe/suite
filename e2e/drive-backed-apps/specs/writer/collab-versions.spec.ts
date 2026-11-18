@@ -396,13 +396,10 @@ test.describe("Writer collaboration", () => {
 		const commentsHeading = (await comments
 			.getByRole("heading", { name: "Comments" })
 			.boundingBox())!;
-		expect(
-			await comments.getByRole("button", { name: "Add a comment" }).evaluate((button) => {
-				const range = document.createRange();
-				range.selectNodeContents(button);
-				return range.getBoundingClientRect().x;
-			}),
-		).toBe(commentsHeading.x);
+		// The comment field's edge, not its placeholder, sits on the title's inset.
+		expect((await comments.getByRole("button", { name: "Add a comment" }).boundingBox())!.x).toBe(
+			commentsHeading.x,
+		);
 
 		const closing = sampleMotion();
 		await page.getByRole("button", { name: "Close panel" }).click();

@@ -4,6 +4,7 @@ import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 export type NodeCreateCreateFolderOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -39,6 +40,7 @@ export type NodeCreateCreateFolderOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -82,6 +84,7 @@ const operationNodeCreateCreateFolder: MutationRef<
 export type NodeCreateCreateFileOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -125,6 +128,7 @@ export type NodeCreateCreateFileOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -168,6 +172,7 @@ const operationNodeCreateCreateFile: MutationRef<
 export type NodeCreateCreateLinkOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -208,6 +213,7 @@ export type NodeCreateCreateLinkOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -251,6 +257,7 @@ const operationNodeCreateCreateLink: MutationRef<
 export type NodeCreateCreateDocumentOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -294,6 +301,7 @@ export type NodeCreateCreateDocumentOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -398,6 +406,7 @@ const operationNodeBatchPurge: MutationRef<
 export type NodeGetOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -429,6 +438,7 @@ export type NodeGetOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -468,6 +478,7 @@ const operationNodeGet: QueryRef<NodeGetInput, NodeGetOutput, NodeGetError> = {
 export type NodePatchRenameOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -503,6 +514,7 @@ export type NodePatchRenameOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -563,6 +575,7 @@ const operationNodePatchRename: MutationRef<
 export type NodePatchMoveOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -594,6 +607,7 @@ export type NodePatchMoveOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -654,6 +668,7 @@ const operationNodePatchMove: MutationRef<
 export type NodePatchTrashOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -689,6 +704,7 @@ export type NodePatchTrashOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -749,6 +765,7 @@ const operationNodePatchTrash: MutationRef<
 export type NodePatchRestoreOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -784,6 +801,7 @@ export type NodePatchRestoreOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -844,6 +862,7 @@ const operationNodePatchRestore: MutationRef<
 export type NodePatchStampOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -879,6 +898,7 @@ export type NodePatchStampOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1003,6 +1023,7 @@ const operationNodePurge: MutationRef<NodePurgeInput, NodePurgeOutput, NodePurge
 export type NodeChildrenOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1028,6 +1049,7 @@ export type NodeChildrenOutputNodeShape = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1093,6 +1115,7 @@ const operationNodeChildren: PageRef<
 export type NodeCopyOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1124,6 +1147,7 @@ export type NodeCopyOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1176,6 +1200,7 @@ const operationNodeCopy: MutationRef<NodeCopyInput, NodeCopyOutput, NodeCopyErro
 export type NodePutContentOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1216,6 +1241,7 @@ export type NodePutContentOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1450,6 +1476,7 @@ const operationUploadChunk: MutationRef<UploadChunkInput, UploadChunkOutput, Upl
 export type UploadFinishOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1488,6 +1515,7 @@ export type UploadFinishOutput = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null
@@ -1947,6 +1975,7 @@ const operationViewClearRecents: MutationRef<
 export type ViewListOutputAccessShape = {
   role?: number
   via_link?: string | null
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   can_manage?: boolean
@@ -1979,6 +2008,7 @@ export type ViewListOutputNodeShape = {
   root: string
   state: string
   trash_root: string | null
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null

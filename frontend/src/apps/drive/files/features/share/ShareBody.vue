@@ -663,6 +663,7 @@ async function rotate(row: LocalRow) {
       title: __('Get a new URL?'),
       message: __('The old URL stops working.'),
       confirmLabel: __('Get new URL'),
+      destructive: true,
     }))
   )
     return

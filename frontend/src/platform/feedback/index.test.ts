@@ -31,11 +31,17 @@ vi.mock('frappe-ui', async () => {
 beforeEach(() => vi.clearAllMocks())
 
 describe('feedback', () => {
-  it('turns confirm callbacks into a boolean result', async () => {
-    mocks.confirm.mockImplementationOnce((options) => options.onConfirm())
-    await expect(confirm({ title: 'Continue?' })).resolves.toBe(true)
-    mocks.danger.mockImplementationOnce((options) => options.onCancel())
+  it('answers yes from the confirm button and no from Cancel or Esc', async () => {
+    type Action = { label: string; onClick: () => void }
+    const press = (label: string) => (options: { actions: Action[] }) =>
+      options.actions.find((action) => action.label === label)?.onClick()
+
+    mocks.confirm.mockImplementationOnce(press('Move'))
+    await expect(confirm({ title: 'Move?', confirmLabel: 'Move' })).resolves.toBe(true)
+    mocks.danger.mockImplementationOnce(press('Cancel'))
     await expect(confirm({ title: 'Delete?', destructive: true })).resolves.toBe(false)
+    mocks.confirm.mockImplementationOnce((options) => options.onCancel())
+    await expect(confirm({ title: 'Continue?' })).resolves.toBe(false)
   })
 
   it('returns prompt values and reports mutation errors as toasts', async () => {

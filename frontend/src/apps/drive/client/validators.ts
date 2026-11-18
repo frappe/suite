@@ -171,6 +171,7 @@ export const operationNodeCreateCreateFolder: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -234,6 +235,7 @@ export const operationNodeCreateCreateFolder: Validators<
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -273,6 +275,7 @@ export const operationNodeCreateCreateFolder: Validators<
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -326,6 +329,7 @@ export const operationNodeCreateCreateFile: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -389,6 +393,7 @@ export const operationNodeCreateCreateFile: Validators<
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -428,6 +433,7 @@ export const operationNodeCreateCreateFile: Validators<
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -478,6 +484,7 @@ export const operationNodeCreateCreateLink: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -541,6 +548,7 @@ export const operationNodeCreateCreateLink: Validators<
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -580,6 +588,7 @@ export const operationNodeCreateCreateLink: Validators<
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -633,6 +642,7 @@ export const operationNodeCreateCreateDocument: Validators<
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -696,6 +706,7 @@ export const operationNodeCreateCreateDocument: Validators<
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -735,6 +746,7 @@ export const operationNodeCreateCreateDocument: Validators<
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -878,6 +890,7 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -941,6 +954,7 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -980,6 +994,7 @@ export const operationNodeGet: Validators<NodeGetInput, NodeGetOutput> = {
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -1022,6 +1037,7 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1085,6 +1101,7 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -1124,6 +1141,7 @@ export const operationNodePatchRename: Validators<NodePatchRenameInput, NodePatc
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -1170,6 +1188,7 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1233,6 +1252,7 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -1272,6 +1292,7 @@ export const operationNodePatchMove: Validators<NodePatchMoveInput, NodePatchMov
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -1317,6 +1338,7 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1380,6 +1402,7 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -1419,6 +1442,7 @@ export const operationNodePatchTrash: Validators<NodePatchTrashInput, NodePatchT
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -1466,6 +1490,7 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
               properties: {
                 role: { title: 'Role', type: 'integer' },
                 via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+                own_role: { title: 'Own Role', type: 'integer' },
                 source_node: {
                   anyOf: [{ type: 'string' }, { type: 'null' }],
                   title: 'Source Node',
@@ -1533,6 +1558,7 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
             root: { title: 'Root', type: 'string' },
             state: { title: 'State', type: 'string' },
             trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+            trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
             size: { title: 'Size', type: 'integer' },
             mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
             url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -1572,6 +1598,7 @@ export const operationNodePatchRestore: Validators<NodePatchRestoreInput, NodePa
             'root',
             'state',
             'trash_root',
+            'trashed_at',
             'size',
             'mime',
             'url',
@@ -1617,6 +1644,7 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1680,6 +1708,7 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -1719,6 +1748,7 @@ export const operationNodePatchStamp: Validators<NodePatchStampInput, NodePatchS
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -1857,6 +1887,7 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -1901,6 +1932,7 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
               root: { title: 'Root', type: 'string' },
               state: { title: 'State', type: 'string' },
               trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+              trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
               size: { title: 'Size', type: 'integer' },
               mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
               url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -1940,6 +1972,7 @@ export const operationNodeChildren: Validators<NodeChildrenInput, NodeChildrenOu
               'root',
               'state',
               'trash_root',
+              'trashed_at',
               'size',
               'mime',
               'url',
@@ -2014,6 +2047,7 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -2077,6 +2111,7 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -2116,6 +2151,7 @@ export const operationNodeCopy: Validators<NodeCopyInput, NodeCopyOutput> = {
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -2163,6 +2199,7 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -2226,6 +2263,7 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -2265,6 +2303,7 @@ export const operationNodePutContent: Validators<NodePutContentInput, NodePutCon
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -2548,6 +2587,7 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -2611,6 +2651,7 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
           root: { title: 'Root', type: 'string' },
           state: { title: 'State', type: 'string' },
           trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
           size: { title: 'Size', type: 'integer' },
           mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
           url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -2650,6 +2691,7 @@ export const operationUploadFinish: Validators<UploadFinishInput, UploadFinishOu
           'root',
           'state',
           'trash_root',
+          'trashed_at',
           'size',
           'mime',
           'url',
@@ -3296,6 +3338,7 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
             properties: {
               role: { title: 'Role', type: 'integer' },
               via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              own_role: { title: 'Own Role', type: 'integer' },
               source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
               source_principal: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
@@ -3351,6 +3394,7 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
               root: { title: 'Root', type: 'string' },
               state: { title: 'State', type: 'string' },
               trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+              trashed_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trashed At' },
               size: { title: 'Size', type: 'integer' },
               mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
               url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
@@ -3390,6 +3434,7 @@ export const operationViewList: Validators<ViewListInput, ViewListOutput> = {
               'root',
               'state',
               'trash_root',
+              'trashed_at',
               'size',
               'mime',
               'url',

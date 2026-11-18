@@ -16,6 +16,7 @@ const documentNode = (name: string) => ({
   root: 'r',
   state: 'Active',
   trash_root: null,
+  trashed_at: null,
   size: 0,
   mime: null,
   url: null,

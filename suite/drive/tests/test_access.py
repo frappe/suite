@@ -189,12 +189,19 @@ class TestGeneralDenyAcrossSurfaces(UnitTestCase):
             {
                 "role": COMMENT,
                 "via_link": self.LINK,
+                "own_role": NONE,
                 "source_node": "near",
                 "source_principal": self.LINK,
                 "can_manage": False,
             },
         )
         self.assertFalse(is_blocked(self.node, self.principals))
+
+    def test_a_link_above_the_callers_own_role_is_named_beside_that_role(self):
+        self.patched_rows(self.row("far", self.USER, READ), self.row("near", self.LINK, EDIT))
+
+        access = describe(self.node, self.principals)
+        self.assertEqual((access["role"], access["via_link"], access["own_role"]), (EDIT, self.LINK, READ))
 
     def test_explain_marks_the_link_and_not_the_deny_it_passed(self):
         self.patched_rows(self.row("far", "$GENERAL", NONE), self.row("near", self.LINK, COMMENT))

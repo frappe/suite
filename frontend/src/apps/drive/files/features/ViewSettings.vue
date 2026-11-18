@@ -49,9 +49,7 @@
             "
             @click="emit('toggle-column', column, !shown(column))"
           >
-            {{
-              column === 'modified' && dateColumn === 'opened' ? 'Opened' : COLUMN_LABELS[column]
-            }}
+            {{ column === 'modified' ? dateLabel : COLUMN_LABELS[column] }}
           </button>
         </div>
       </div>
@@ -62,6 +60,8 @@
 <script setup lang="ts">
 import { Button, Popover, Select, TabButtons, type SelectOption } from 'frappe-ui'
 import { computed, useId } from 'vue'
+
+import { translate as __ } from '@/platform/translation'
 
 import {
   nextSort,
@@ -111,6 +111,15 @@ const COLUMN_LABELS: Record<FilesColumn, string> = {
   kind: 'Type',
   size: 'Size',
 }
+/** The date column's pill, named as the list heads it. Translated as it shows. */
+const dateLabel = computed(() => {
+  const labels: Record<FilesDateColumn, string> = {
+    modified: __('Modified'),
+    opened: __('Opened'),
+    trashed: __('Trashed'),
+  }
+  return labels[props.dateColumn ?? 'modified']
+})
 
 /** Each direction in the words of its field: `A to Z`, `Newest first`. */
 function orderLabel(sort: FilesSort, dir: FilesDirection): string {

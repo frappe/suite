@@ -2,7 +2,13 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import { useWorkspace } from '@/platform/workspace'
 
-import { locationLabel, locationOf, locationTitle, trashLocation } from './locations'
+import {
+  locationLabel,
+  locationOf,
+  locationTitle,
+  openedFromLink,
+  trashLocation,
+} from './locations'
 
 const discovered = {
   personal: { node: 'p-root', title: 'Administrator' },
@@ -15,6 +21,25 @@ const nameWorkspace = (workspace_name: string) =>
 beforeEach(() => nameWorkspace(''))
 
 describe('locations', () => {
+  it('counts a folder as opened from a link only when a link, not a share, opens it', () => {
+    const viaLink = {
+      root: 'other-root',
+      access: { role: 10, via_link: '$LINK:abc', own_role: 0 },
+    }
+    const shared = { root: 'other-root', access: { role: 10, via_link: null, own_role: 10 } }
+    // Shared with them as Viewer, and opened through an edit link: it is in Shared with me.
+    const sharedAndLinked = {
+      root: 'other-root',
+      access: { role: 30, via_link: '$LINK:abc', own_role: 10 },
+    }
+    const own = { root: 'p-root', access: { role: 50, via_link: '$LINK:abc', own_role: 50 } }
+
+    expect(openedFromLink(viaLink, discovered)).toBe(true)
+    expect(openedFromLink(shared, discovered)).toBe(false)
+    expect(openedFromLink(sharedAndLinked, discovered)).toBe(false)
+    expect(openedFromLink(own, discovered)).toBe(false)
+  })
+
   it('names the caller’s own roots by their place, and other nodes by title', () => {
     expect(locationTitle({ name: 'p-root', title: 'Administrator' }, discovered)).toBe('My files')
     expect(locationTitle({ name: 'o-root', title: 'Frappe' }, discovered)).toBe(

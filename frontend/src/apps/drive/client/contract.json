@@ -55,6 +55,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -230,6 +234,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -369,6 +384,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -470,6 +486,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -645,6 +665,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -784,6 +815,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -870,6 +902,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -1045,6 +1081,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -1184,6 +1231,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -1283,6 +1331,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -1458,6 +1510,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -1597,6 +1660,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -1864,6 +1928,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -2039,6 +2107,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -2178,6 +2257,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -2252,6 +2332,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -2427,6 +2511,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -2566,6 +2661,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -2649,6 +2745,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -2824,6 +2924,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -2963,6 +3074,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -3043,6 +3155,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -3218,6 +3334,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -3357,6 +3484,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -3441,6 +3569,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -3616,6 +3748,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -3755,6 +3898,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -3834,6 +3978,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -4009,6 +4157,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -4148,6 +4307,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -4407,6 +4567,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -4533,6 +4697,17 @@
                   }
                 ],
                 "title": "Trash Root"
+              },
+              "trashed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Trashed At"
               },
               "size": {
                 "title": "Size",
@@ -4673,6 +4848,7 @@
               "root",
               "state",
               "trash_root",
+              "trashed_at",
               "size",
               "mime",
               "url",
@@ -4828,6 +5004,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -5003,6 +5183,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -5142,6 +5333,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -5228,6 +5420,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -5403,6 +5599,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -5542,6 +5749,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -6074,6 +6282,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -6249,6 +6461,17 @@
             ],
             "title": "Trash Root"
           },
+          "trashed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trashed At"
+          },
           "size": {
             "title": "Size",
             "type": "integer"
@@ -6388,6 +6611,7 @@
           "root",
           "state",
           "trash_root",
+          "trashed_at",
           "size",
           "mime",
           "url",
@@ -7736,6 +7960,10 @@
                 ],
                 "title": "Via Link"
               },
+              "own_role": {
+                "title": "Own Role",
+                "type": "integer"
+              },
               "source_node": {
                 "anyOf": [
                   {
@@ -7898,6 +8126,17 @@
                 ],
                 "title": "Trash Root"
               },
+              "trashed_at": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Trashed At"
+              },
               "size": {
                 "title": "Size",
                 "type": "integer"
@@ -8037,6 +8276,7 @@
               "root",
               "state",
               "trash_root",
+              "trashed_at",
               "size",
               "mime",
               "url",

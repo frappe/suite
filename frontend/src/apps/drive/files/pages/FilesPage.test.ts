@@ -8,7 +8,7 @@ import {
   type Router,
 } from 'vue-router'
 
-import type { DriveNode } from '@/apps/drive/client/types'
+import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { DOCUMENT_TYPES_KEY, type DocumentTypeDefinition } from '@/platform/contracts'
 import { TransportError, type Operation } from '@/platform/transport'
 
@@ -373,6 +373,7 @@ function node(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
     root: 'root',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 10,
     mime: 'image/png',
     url: null,
@@ -796,6 +797,25 @@ describe('Folder size', () => {
     await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
 
     expect(expansions('view_list')).toEqual(['access'])
+  })
+})
+
+describe('A row menu in Trash', () => {
+  it('starts with Restore and ends with Delete forever', async () => {
+    await mount('/drive/trash')
+    await vi.waitFor(() => expect(listing.menu).not.toBeNull())
+    const trashed = node('t', 'Old.png', {
+      state: 'Trashed',
+      trash_root: 't',
+      trashed_at: '2026-01-02T03:04:05Z',
+      access: { role: DRIVE_ROLES.manage },
+    })
+
+    const labels = (listing.menu?.(trashed) ?? []).flatMap((group) =>
+      group.options.map((option) => option.label),
+    )
+    expect(labels[0]).toBe('Restore')
+    expect(labels.at(-1)).toBe('Delete forever')
   })
 })
 

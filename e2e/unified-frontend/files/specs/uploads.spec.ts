@@ -350,7 +350,7 @@ test("a batch larger than the free space offers to upload what fits", async ({ p
 	await expect(page.getByRole("dialog", { name: "Not enough space" })).toHaveCount(0);
 });
 
-test("a restore whose folder is gone asks for a destination in the same root", async ({ page }) => {
+test("a restore whose folder is in Trash asks for a destination in the same root", async ({ page }) => {
 	const gone = await createFolder(api, home.name, "gone");
 	const orphan = await uploadFile(api, gone.name, runTag("orphan"), Buffer.from("x"));
 	await patchNode(api, orphan.name, { state: "Trashed" });
@@ -362,7 +362,9 @@ test("a restore whose folder is gone asks for a destination in the same root", a
 
 	const dialog = page.getByRole("dialog", { name: "Restore to" });
 	await expect(dialog).toBeVisible();
-	await expect(dialog.getByText("The folder this item was in is gone.", { exact: false })).toBeVisible();
+	await expect(
+		dialog.getByText(`“${orphan.title}” was in a folder that is in Trash. Choose where to restore it.`),
+	).toBeVisible();
 	await dialog.getByRole("button", { name: home.title }).click();
 	await dialog.getByRole("button", { name: "Restore here", exact: true }).click();
 

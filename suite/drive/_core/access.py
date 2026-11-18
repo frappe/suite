@@ -527,6 +527,9 @@ def _describe_rows(
     return {
         "role": role,
         "via_link": _authorizing_link(rows, depth, principals, role, ticket_results) if role else None,
+        # The role the caller holds without any link, so a page can tell a link that only
+        # raises their access from one that is their only way in.
+        "own_role": acc.own or NONE,
         "source_node": winner.node if winner else None,
         "source_principal": winner.principal if winner else None,
         "can_manage": role >= MANAGE or holds_without_grant(MANAGE, principals),
@@ -537,6 +540,7 @@ def _system_description() -> dict:
     return {
         "role": MANAGE,
         "via_link": None,
+        "own_role": MANAGE,
         "source_node": None,
         "source_principal": None,
         "can_manage": True,
@@ -547,6 +551,7 @@ def _empty_description() -> dict:
     return {
         "role": NONE,
         "via_link": None,
+        "own_role": NONE,
         "source_node": None,
         "source_principal": None,
         "can_manage": False,

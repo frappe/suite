@@ -51,6 +51,7 @@ async function take() {
     title: __('Upload new version?'),
     message: __('This replaces {0}. The current file is not kept.', [props.title]),
     confirmLabel: __('Replace'),
+    destructive: true,
   })
   if (!agreed) return
   entry.value = uploadQueue().replaceFile(

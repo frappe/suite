@@ -78,6 +78,7 @@ describe('the guest frame', () => {
     const { root, router } = await mountFrame('/d/doc-1?view=comments')
     await nextTick()
     const refused = root.textContent
+    const header = root.querySelector('header')?.textContent
     const assign = vi.fn()
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
     root.querySelector<HTMLButtonElement>('main button')?.click()
@@ -87,6 +88,8 @@ describe('the guest frame', () => {
 
     expect(refused).toContain('Sign in to open this')
     expect(refused).toContain('If someone sent you a share link, open that link.')
+    // One Sign in: the screen's own button, none in the header.
+    expect(header).toBe('Frappe Suite')
     expect(refused).not.toContain('Quarterly plan')
     expect(assign).toHaveBeenCalledWith('/login?redirect-to=%2Fd%2Fdoc-1%3Fview%3Dcomments')
     expect(root.textContent).toContain('Shared folder')
@@ -98,7 +101,7 @@ describe('the guest frame', () => {
     const assign = vi.fn()
     vi.spyOn(window, 'location', 'get').mockReturnValue({ ...window.location, assign })
 
-    root.querySelector<HTMLButtonElement>('header button')?.click()
+    root.querySelector<HTMLButtonElement>('main button')?.click()
 
     expect(assign).toHaveBeenCalledWith('/login?redirect-to=%2Fd%2Fdoc-1%3Fview%3Dcomments')
   })

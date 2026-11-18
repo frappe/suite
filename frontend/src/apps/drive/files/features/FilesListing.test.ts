@@ -8,7 +8,12 @@ import { requireTestElement } from '@/platform/testing/dom'
 import { useWorkspace } from '@/platform/workspace'
 
 import FilesListing from './FilesListing.vue'
-import { DEFAULT_PRESENTATION, type FilesColumn, type PresentationState } from './presentation'
+import {
+  DEFAULT_PRESENTATION,
+  type FilesColumn,
+  type FilesDateColumn,
+  type PresentationState,
+} from './presentation'
 import {
   useListingShortcuts,
   type ListingCommands,
@@ -67,6 +72,7 @@ function file(name: string, title: string, extra: Partial<DriveNode> = {}): Driv
     root: 'root',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 10,
     mime: 'image/png',
     url: null,
@@ -91,6 +97,9 @@ function mount(options: {
   drag?: boolean
   canShare?: (node: DriveNode) => boolean
   nodeHref?: (node: DriveNode) => string | undefined
+  /** Trash passes `trashed` with `sortable: false`, as the page does. */
+  dateColumn?: FilesDateColumn
+  sortable?: boolean
   /** The page's shortcuts, registered as the page registers them. */
   shortcuts?: { commands: ListingCommands; open: (view: ListingView) => unknown }
 }) {
@@ -158,6 +167,8 @@ function mount(options: {
           drag,
           canShare: options.canShare,
           nodeHref: options.nodeHref,
+          dateColumn: options.dateColumn,
+          sortable: options.sortable,
           onShare: (node: DriveNode) => {
             events.shared.push(node.name)
           },
@@ -185,6 +196,25 @@ function mount(options: {
 }
 
 const rows = [file('a', 'Alpha.png'), file('b', 'Beta.png')]
+
+describe('The date column in Trash', () => {
+  it('is headed Trashed, shows when each item was trashed, and marks the order newest first', async () => {
+    const trashed = file('a', 'Old.png', {
+      state: 'Trashed',
+      trash_root: 'a',
+      trashed_at: new Date(Date.now() - 10_000).toISOString(),
+      modified: '2020-01-01T00:00:00Z',
+    })
+    const { root } = mount({ rows: [trashed], dateColumn: 'trashed', sortable: false })
+    await nextTick()
+
+    const heading = [...root.querySelectorAll('[role="columnheader"]')].find(
+      (cell) => cell.textContent?.trim() === 'Trashed',
+    )
+    expect(heading?.getAttribute('aria-sort')).toBe('descending')
+    expect(root.querySelector('[data-node="a"]')?.textContent).toContain('Just now')
+  })
+})
 
 describe('FilesListing paging', () => {
   it('replaces a failed first read with a named failure and a retry', async () => {

@@ -623,7 +623,8 @@ function rowClass(thread: DocumentThread) {
 
 <template>
   <div class="space-y-3" @keydown.esc="closeThread">
-    <template v-if="canComment">
+    <!-- The fields sit on the panel title's inset, as the thread text and the empty text do. -->
+    <div v-if="canComment" class="space-y-3 px-2">
       <TextInput
         v-if="showGuestName"
         v-model="guestName"
@@ -651,7 +652,7 @@ function rowClass(thread: DocumentThread) {
       >
         {{ __('Add a comment') }}
       </button>
-    </template>
+    </div>
     <CommentDraftCard
       v-for="draft in textDrafts"
       :key="draft.clientId"

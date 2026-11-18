@@ -8,7 +8,7 @@ import { TransportError } from '@/platform/transport'
 
 import { inBatches } from '../batches'
 import type { BatchVerb } from '../batchResult'
-import { announceRestore, subject, type ChangedItem } from '../changeToast'
+import { announceRestore, ONE_LINE, subject, type ChangedItem } from '../changeToast'
 import { presentDialog } from '../dialogHost'
 
 const DESTINATION_REQUIRED = 'DriveRestoreDestinationRequired'
@@ -66,7 +66,9 @@ export function useTrashActions(root: () => string | null) {
         () => import('./RestoreDestinationDialog.vue'),
         {
           root: rootId,
-          count: homeless.length,
+          titles: items.flatMap((item) =>
+            homeless.some((failure) => failure.node === item.node) ? [item.title] : [],
+          ),
         },
         'choose',
       )
@@ -79,7 +81,9 @@ export function useTrashActions(root: () => string | null) {
         parent,
       )
     } catch {
-      offerRetry(restoring.error, () => restore(items))
+      offerRetry(__('Could not restore {0}', [subject(items)]), restoring.error, () =>
+        restore(items),
+      )
       return null
     }
   }
@@ -103,7 +107,10 @@ export function useTrashActions(root: () => string | null) {
         ],
       })
     } catch {
-      offerRetry(restoring.error, () => restoreInto(items, first, nodes, parent))
+      const homeless = items.filter((item) => nodes.includes(item.node))
+      offerRetry(__('Could not restore {0}', [subject(homeless)]), restoring.error, () =>
+        restoreInto(items, first, nodes, parent),
+      )
       return null
     }
   }
@@ -118,10 +125,15 @@ export function useTrashActions(root: () => string | null) {
     return result
   }
   async function purge(items: readonly ChangedItem[]): Promise<DriveBatchResult | null> {
+    const [only] = items
     const agreed = await confirm({
-      title: items.length === 1 ? 'Delete forever?' : `Delete ${items.length} items forever?`,
-      message: 'You cannot undo this.',
-      confirmLabel: 'Delete forever',
+      // The dialog title is plain text, so the name is not escaped as `subject` does for toasts.
+      title:
+        items.length === 1 && only
+          ? __('Delete “{0}” forever?', [only.title])
+          : __('Delete {0} items forever?', [items.length]),
+      message: __('You cannot undo this.'),
+      confirmLabel: __('Delete forever'),
       destructive: true,
     })
     if (!agreed) return null
@@ -136,11 +148,13 @@ export function useTrashActions(root: () => string | null) {
         (nodes) => purging.run({ nodes }),
       )
       const deleted = items.filter((item) => result.ok.includes(item.node))
-      if (deleted.length) toast.success(__('Deleted {0} forever', [subject(deleted)]))
+      if (deleted.length) toast.success(__('Deleted {0} forever', [subject(deleted)]), ONE_LINE)
       show(result, 'deleted forever')
       return result
     } catch {
-      offerRetry(purging.error, () => runPurge(items))
+      offerRetry(__('Could not delete {0} forever', [subject(items)]), purging.error, () =>
+        runPurge(items),
+      )
       return null
     }
   }
@@ -169,25 +183,27 @@ export function useTrashActions(root: () => string | null) {
       )
       return result.count
     } catch {
-      offerRetry(emptying.error, () => runEmpty(rootId))
+      offerRetry(__('Could not empty Trash'), emptying.error, () => runEmpty(rootId))
       return null
     }
   }
 
-  /** A whole request failed. Retry sends the same request, with no new questions. */
-  function offerRetry(error: Error | null, again: () => unknown) {
-    toast.error(
-      (error instanceof TransportError && error.type !== 'NetworkError'
-        ? __(error.message)
-        : null) ?? __('Could not complete the action'),
-      {
-        duration: 10_000,
-        action: {
-          label: __('Retry'),
-          onClick: () => void again(),
-        },
+  /**
+   * A whole request failed. The title says what failed and the server's reason, when it gave
+   * one, is the description. Retry sends the same request, with no new questions.
+   */
+  function offerRetry(title: string, error: Error | null, again: () => unknown) {
+    toast.error(title, {
+      description:
+        error instanceof TransportError && error.type !== 'NetworkError'
+          ? __(error.message)
+          : undefined,
+      duration: 10_000,
+      action: {
+        label: __('Retry'),
+        onClick: () => void again(),
       },
-    )
+    })
   }
   function show(result: DriveBatchResult, nextVerb: BatchVerb) {
     outcome.value = result

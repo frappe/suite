@@ -23,6 +23,7 @@ function node(name: string, extra: Partial<DriveNode> = {}): DriveNode {
     root: 'root',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 1,
     mime: null,
     url: null,

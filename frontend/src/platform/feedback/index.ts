@@ -3,6 +3,7 @@ import {
   toast as frappeToast,
   FrappeUIProvider,
   type PromptField as FrappePromptField,
+  type ImperativeDialogAction,
 } from 'frappe-ui'
 import { defineComponent, h } from 'vue'
 
@@ -41,6 +42,9 @@ export const FeedbackProvider = defineComponent({
 export const toast = frappeToast
 export type { ToastId } from 'frappe-ui'
 
+/** Button passes attributes it does not declare to its `<button>`, and the Dialog focuses an `[autofocus]` one on open. */
+type FocusableAction = ImperativeDialogAction & { autofocus?: boolean }
+
 export function confirm(options: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
     let settled = false
@@ -49,14 +53,31 @@ export function confirm(options: ConfirmOptions): Promise<boolean> {
       settled = true
       resolve(value)
     }
-    const open = options.destructive ? dialog.danger : dialog.confirm
+    // The dialog opens with focus on a button, never on the close ×: the confirm
+    // button, or Cancel when the action destroys something, so Enter is safe.
+    const destructive = options.destructive === true
+    const actions: FocusableAction[] = [
+      {
+        label: options.cancelLabel ?? __('Cancel'),
+        variant: 'outline',
+        autofocus: destructive,
+        onClick: () => finish(false),
+      },
+      {
+        label: options.confirmLabel ?? (destructive ? __('Delete') : __('Confirm')),
+        variant: 'solid',
+        theme: destructive ? 'red' : undefined,
+        autofocus: !destructive,
+        onClick: () => finish(true),
+      },
+    ]
+    const open = destructive ? dialog.danger : dialog.confirm
     open({
       title: options.title,
       message: options.message,
-      confirmLabel: options.confirmLabel,
-      cancelLabel: options.cancelLabel,
       dismissible: options.dismissible,
-      onConfirm: () => finish(true),
+      actions,
+      // Esc and the close × still answer no.
       onCancel: () => finish(false),
     })
   })

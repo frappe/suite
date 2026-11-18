@@ -25,6 +25,8 @@ export type DocumentPanel = 'comments' | 'versions'
 export interface DriveAccess {
   role?: number
   via_link?: string | null
+  /** The role the caller holds without any link: 0 when a link is their only way in. */
+  own_role?: number
   source_node?: string | null
   source_principal?: string | null
   /** Manage checks pass here: the role is MANAGE, or the caller is a Suite Admin (Drive ADR 0001). */
@@ -70,6 +72,8 @@ export interface DriveNode {
   state: string
   /** The node whose trashing trashed this one: its own name on a trash root, null while Active. */
   trash_root: string | null
+  /** When the trash root was trashed, on every node trashed with it; null while Active. */
+  trashed_at: string | null
   size: number
   mime: string | null
   url: string | null

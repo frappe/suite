@@ -8,25 +8,33 @@
     >
       <FilesPanel :drag="dragOn" />
     </AreaSidebar>
-    <PageHeader class="hidden md:flex">
+    <!-- A locked folder shows only the unlock screen, as the other dead ends do, with no empty
+         bar above it. A signed-in phone keeps its header, which opens the Drive panel. -->
+    <PageHeader v-if="!locked" class="hidden md:flex">
       <div class="flex w-full items-center justify-between gap-3">
-        <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
-        <Breadcrumbs
-          :items="breadcrumbs"
-          :data-drop-crumbs="dragOn ? '' : undefined"
-          :class="
-            dragOn &&
-            '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
-          "
-        >
-          <template v-if="dragOn" #prefix="{ item }">
-            <span
-              v-if="typeof item.node === 'string'"
-              :data-drop-target="item.node"
-              :data-drop-over="dragOn.accepts(item.node) || undefined"
-            />
-          </template>
-        </Breadcrumbs>
+        <div class="flex min-w-0 items-center gap-2">
+          <!-- While dragging items, each crumb's link carries a marker of its folder; the link lights up while it takes the drop. -->
+          <Breadcrumbs
+            :items="breadcrumbs"
+            :data-drop-crumbs="dragOn ? '' : undefined"
+            :class="
+              dragOn &&
+              '[&_a:has([data-drop-over])]:!bg-surface-blue-2 [&_a:has([data-drop-over])]:ring-1 [&_a:has([data-drop-over])]:ring-inset [&_a:has([data-drop-over])]:ring-outline-blue-3'
+            "
+          >
+            <template v-if="dragOn" #prefix="{ item }">
+              <span
+                v-if="typeof item.node === 'string'"
+                :data-drop-target="item.node"
+                :data-drop-over="dragOn.accepts(item.node) || undefined"
+              />
+            </template>
+          </Breadcrumbs>
+          <!-- No sidebar place holds a folder opened only from a link, so the header says how it was reached. -->
+          <span v-if="fromLink" class="shrink-0 text-sm text-ink-gray-5">{{
+            __('Opened from a link')
+          }}</span>
+        </div>
         <Dropdown v-if="canCreate || newPending" :options="newOptions" align="end">
           <Button
             variant="subtle"
@@ -37,7 +45,7 @@
         </Dropdown>
       </div>
     </PageHeader>
-    <PageHeaderMobile class="md:hidden">
+    <PageHeaderMobile v-if="!locked || signedIn" class="md:hidden">
       <template #prefix>
         <PageHeaderBackButton v-if="folderParent" :route="folderParent" />
       </template>
@@ -407,6 +415,7 @@ import {
   LOCATION_LABELS,
   locationLabel,
   locationTitle,
+  openedFromLink,
   rootPath,
   trashLocation,
 } from '../internal/locations'
@@ -524,6 +533,14 @@ const detail = useQuery(api.drive.nodes.get, () =>
   parentId.value && concreteDestination.value
     ? { node: parentId.value, expand: 'access,breadcrumbs' }
     : false,
+)
+/** A signed-in member's folder that only a share link opens. A guest reaches everything that way. */
+const fromLink = computed(
+  () =>
+    signedIn.value &&
+    props.destination === 'folder' &&
+    !!detail.data &&
+    openedFromLink(detail.data, discovered.data),
 )
 // A password link shows the unlock screen in place of the folder (spec §10.2),
 // also when its ticket expires and the next listing refresh is refused.
@@ -967,9 +984,12 @@ watch(
 // their own order, so they offer no sort.
 const arrangeable = computed(() => concreteDestination.value && !isSearching.value)
 /** The listing hides Owner in the user's own space, so View settings does not offer it there. */
-const dateColumn = computed<FilesDateColumn>(() =>
-  props.destination === 'recent' && !isSearching.value ? 'opened' : 'modified',
-)
+const dateColumn = computed<FilesDateColumn>(() => {
+  if (isSearching.value) return 'modified'
+  if (props.destination === 'recent') return 'opened'
+  if (props.destination === 'trash') return 'trashed'
+  return 'modified'
+})
 const offeredColumns = computed(() => FILES_COLUMNS.filter(isOfferedColumn))
 /**
  * Owner says nothing in the user's own space, and Access nothing in Trash.
@@ -1578,6 +1598,21 @@ function itemContextOptions(row: DriveNode): DropdownItem[] {
 function rowMenuOptions(row: DriveNode): DropdownItem[] {
   const can = nodeActions(row, signedIn.value)
   const groups: { group: string; hideLabel: true; options: DropdownActionOption[] }[] = [
+    // In Trash, Restore is the main action, so it comes first; Delete forever stays last.
+    {
+      group: 'Restore',
+      hideLabel: true,
+      options: can.restore
+        ? [
+            {
+              key: 'restore',
+              label: __('Restore'),
+              icon: 'lucide-undo-2',
+              onClick: () => trash.restore([itemOf(row)]),
+            },
+          ]
+        : [],
+    },
     {
       group: 'Open',
       hideLabel: true,
@@ -1695,16 +1730,6 @@ function rowMenuOptions(row: DriveNode): DropdownItem[] {
                 icon: 'lucide-trash-2',
                 theme: 'red' as const,
                 onClick: () => trashRow(row),
-              },
-            ]
-          : []),
-        ...(can.restore
-          ? [
-              {
-                key: 'restore',
-                label: 'Restore',
-                icon: 'lucide-undo-2',
-                onClick: () => trash.restore([itemOf(row)]),
               },
             ]
           : []),

@@ -51,6 +51,7 @@ import { TRASH_TARGET, type DragMove } from '@/apps/drive/files/features/useDrag
 import {
   locationLabel,
   locationOf,
+  openedFromLink,
   type FilesLocation,
 } from '@/apps/drive/files/internal/locations'
 import { AreaSidebarFooter } from '@/platform/area-sidebar'
@@ -77,6 +78,7 @@ const current = computed<FilesLocation | 'trash' | null>(() => {
   if (route.name === 'files-shared-with-me') return 'shared'
   if (!folderId.value || !folder.data) return null
   if (folder.data.state === 'Trashed') return 'trash'
+  if (openedFromLink(folder.data, discovered.data)) return null
   return locationOf(folder.data, discovered.data)
 })
 

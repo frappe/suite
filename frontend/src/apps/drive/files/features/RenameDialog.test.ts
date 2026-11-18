@@ -160,6 +160,7 @@ describe('Rename dialog', () => {
             root: 'root',
             state: 'Active',
             trash_root: null,
+            trashed_at: null,
             size: 0,
             mime: 'application/pdf',
             url: null,

@@ -44,6 +44,7 @@ const net = vi.hoisted(() => {
     root: 'mine',
     state: 'Active',
     trash_root: null,
+    trashed_at: null,
     size: 0,
     mime: fromPartial<string | null>(null),
     url: null,
