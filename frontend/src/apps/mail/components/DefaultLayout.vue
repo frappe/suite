@@ -66,9 +66,10 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
 import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { useComposeLinkArrival } from '@/apps/mail/composables/composeLink'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { userStore } from '@/apps/mail/stores/user'
-import type { DraftRecipient } from '@/apps/mail/types'
+import type { MailRecipient } from '@/apps/mail/types'
 import {
   useComposeMail,
   useDiscardingDrafts,
@@ -140,26 +141,11 @@ const openEventInCalendar = () => {
 // From the event's popover: writing to everyone is where attention goes next, so the popover
 // steps aside rather than sitting over the page beside the composer.
 const { requestCompose } = useComposeMail()
-const emailEventParticipants = (people: DraftRecipient[]) => {
+const emailEventParticipants = (people: MailRecipient[]) => {
   selectedEvent.value = null
   requestCompose({ to: people })
 }
 
-// Compose deep link (?compose=1&to=a,b): how other apps on a phone (calendar's "email
-// participants") open mail's composer. Consumed on arrival — the query is cleared so reload/back
-// don't reopen the draft. Cleared first: on a phone the composer is a page, and the clearing,
-// started after it, would cancel the move to it.
-watch(
-  () => route.query.compose,
-  async (compose) => {
-    if (!compose) return
-    const to = String(route.query.to || '')
-      .split(',')
-      .filter(Boolean)
-    const { compose: _compose, to: _to, ...query } = route.query
-    await router.replace({ query })
-    requestCompose({ to: to.map((email) => ({ email })) })
-  },
-  { immediate: true },
-)
+// How other apps on a phone (calendar's "email participants") open mail's composer.
+useComposeLinkArrival()
 </script>

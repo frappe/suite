@@ -13,11 +13,10 @@ import '@/apps/mail/styles.css'
  * did on <body>. It exists from the caller's setup on, before any child mounts a Teleport, and
  * leaves with the caller. Call it in a component's setup.
  */
-export function provideMailOverlayLayer(): HTMLElement {
+export function provideMailOverlayLayer(): void {
   const overlayLayer = document.createElement('div')
   overlayLayer.className = 'mail-app'
   document.body.append(overlayLayer)
   providePortalTarget(overlayLayer)
   onScopeDispose(() => overlayLayer.remove())
-  return overlayLayer
 }

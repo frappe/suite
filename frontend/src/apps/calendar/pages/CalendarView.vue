@@ -26,6 +26,7 @@ import MobileSearch from '@/apps/calendar/components/mobile/MobileSearch.vue'
 import EventModal from '@/apps/calendar/components/Modals/EventModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalendarSearchFilters'
+import { useEmailParticipants } from '@/apps/calendar/composables/useEmailParticipants'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
 import { canEditEvent, calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
@@ -51,7 +52,6 @@ import {
   scopeOptions,
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
-import { useMailCompose, type MailRecipient } from '@/apps/mail'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
@@ -907,15 +907,10 @@ watch(selectedCalendarEvent, (open) => {
   if (!open) openRow.value = ''
 })
 
-// The calendar has no composer of its own; Mail lends its own (mailto: would depend on the OS
-// having a mail handler, and the suite IS the mail client). On a desktop it opens over the
-// calendar, and writing to everyone is where attention goes next, so the card steps aside first,
-// as it does in Mail, rather than sitting over the window. On a phone it is Mail's compose page.
-const mailCompose = useMailCompose({ phone: () => isMobile.value })
-const emailParticipants = async (people: MailRecipient[]) => {
-  if (!isMobile.value) await closeEventDetail()
-  await mailCompose.compose(people)
-}
+const emailParticipants = useEmailParticipants({
+  closeCard: closeEventDetail,
+  isCard: () => !isMobile.value,
+})
 
 // A deep link can only be built from the ids its author has. The grid's own
 // events come out of a recurrence-expanded query, so each carries a synthetic

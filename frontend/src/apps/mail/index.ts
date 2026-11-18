@@ -1,11 +1,10 @@
 import { defineAsyncComponent, getCurrentInstance, onScopeDispose, watch } from 'vue'
-import { useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
 import type { MountedComposeHost } from '@/apps/mail/composables/mountComposeHost'
 import { showMailReminder } from '@/apps/mail/reminders'
-import type { DraftRecipient } from '@/apps/mail/types'
+import type { MailRecipient } from '@/apps/mail/types'
 import type { AreaDefinition } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { realtime } from '@/platform/realtime'
@@ -68,44 +67,37 @@ export function useInboxSummary(enabled: () => boolean = () => true) {
   return useQuery(api.mail.inbox.summary, () => (enabled() ? {} : false))
 }
 
-/** Someone to write to: the address, and the name the chip shows when there is one. */
-export type MailRecipient = Pick<DraftRecipient, 'email' | 'display_name'>
+export type { MailRecipient } from '@/apps/mail/types'
 
-export interface MailCompose {
+interface MailCompose {
   /**
-   * Opens Mail's composer addressed to `to`: on a desktop, less the reader's own addresses, and
-   * resolved once it has been asked to open or the failure to load Mail's code has been said; on a
-   * phone, once Mail's compose link has been reached.
+   * Opens Mail's composer addressed to `to`, less the reader's own addresses. Resolves once it has
+   * been asked to open, or once the failure to load Mail's code has been said.
    */
   compose(to: readonly MailRecipient[]): Promise<void>
-}
-
-export interface MailComposeOptions {
-  /**
-   * Whether the page is a phone's. There Mail's composer is a page of its own: `compose` goes to
-   * Mail by its compose link (`/mail?compose=1&to=`), which Mail's layout opens.
-   */
-  phone?: () => boolean
 }
 
 /**
  * Writes to people from another app. On a desktop it does so without leaving the page: Mail's
  * compose window opens over it, writing as Mail's active account, to everyone but the reader; with
- * no Mail account, the device's mail app gets the same people. Mail's composer loads on the first
- * `compose`, not before. On a phone it goes to Mail's compose page (see `phone`). Call it in a
+ * no Mail account, the device's mail app gets the same people. On a phone it goes to Mail's compose
+ * page by Mail's compose link. Mail's code loads on the first `compose`, not before. Call it in a
  * component's setup.
  */
-export function useMailCompose({ phone = () => false }: MailComposeOptions = {}): MailCompose {
+export function useMailCompose(): MailCompose {
   const context = getCurrentInstance()?.appContext
   if (!context) throw new Error('useMailCompose() must be called in a component setup')
-  const router = useRouter()
   let host: Promise<MountedComposeHost> | undefined
   let disposed = false
   // The window belongs to the page that opened it, as Mail's belongs to Mail: leaving the page
-  // closes it, and a draft in it is kept, as closing it would keep it.
+  // closes it, and a draft in it is kept, as closing it would keep it. A load still going when the
+  // page goes is let go, whether it lands or fails: the press that started it has said a failure.
   onScopeDispose(() => {
     disposed = true
-    void host?.then((mounted) => mounted.unmount())
+    void host?.then(
+      (mounted) => mounted.unmount(),
+      () => {},
+    )
   })
   const mount = () =>
     import('@/apps/mail/composables/mountComposeHost').then((module) =>
@@ -113,13 +105,6 @@ export function useMailCompose({ phone = () => false }: MailComposeOptions = {})
     )
   return {
     compose: async (to) => {
-      if (phone()) {
-        await router.push({
-          path: '/mail',
-          query: { compose: '1', to: to.map(({ email }) => email).join(',') },
-        })
-        return
-      }
       // A load that failed (a dropped connection, or a deploy since the page loaded) is not kept:
       // the next press tries again.
       host ??= mount().catch((error: unknown) => {

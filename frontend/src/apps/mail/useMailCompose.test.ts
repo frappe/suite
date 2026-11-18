@@ -1,9 +1,13 @@
+import { useKeyboardShortcut } from 'frappe-ui'
 import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 
-import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
+import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
+import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
+import { useComposeLinkArrival } from '@/apps/mail/composables/composeLink'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
 import { useMailCompose, type MailRecipient } from '.'
@@ -14,8 +18,14 @@ import { useMailCompose, type MailRecipient } from '.'
 const server = vi.hoisted<{
   asked: string[]
   mailAccounts: boolean
-  userAnswered: Promise<void>
-}>(() => ({ asked: [], mailAccounts: true, userAnswered: Promise.resolve() }))
+  identitiesAsked: number
+  identitiesAnswered: Promise<void>
+}>(() => ({
+  asked: [],
+  mailAccounts: true,
+  identitiesAsked: 0,
+  identitiesAnswered: Promise.resolve(),
+}))
 vi.hoisted(() => {
   const account = {
     account: 'acc',
@@ -77,7 +87,11 @@ vi.hoisted(() => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
     const method = url.pathname.split('.').at(-1) ?? ''
     server.asked.push(method)
-    if (method === 'get_user_info') await server.userAnswered
+    // The reader's user and own addresses: what Mail waits on before it asks for a window.
+    if (method === 'get_user_info' || method === 'get_identities') {
+      server.identitiesAsked++
+      await server.identitiesAnswered
+    }
     const message =
       method === 'get_user_info'
         ? { ...user, accounts: server.mailAccounts ? [account] : [] }
@@ -132,6 +146,7 @@ vi.mock('frappe-ui', async () => {
     ...(await import('../../../../node_modules/frappe-ui/src/components/Tooltip')),
     ...(await import('../../../../node_modules/frappe-ui/src/composables/usePortalTarget')),
     ...(await import('../../../../node_modules/frappe-ui/src/utils/useFileUpload')),
+    ...(await import('../../../../node_modules/frappe-ui/src/composables/useKeyboardShortcut')),
     Dialog: shut,
     ErrorMessage: shut,
     FormControl: shut,
@@ -154,13 +169,14 @@ beforeEach(() => {
   signIn.as(`maya+${++signIns}@example.com`)
   server.asked = []
   server.mailAccounts = true
-  server.userAnswered = Promise.resolve()
+  server.identitiesAnswered = Promise.resolve()
   isMobile.value = false
   toasts.error.mockReset()
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
+  takePendingCompose()
 })
 
 const PAGE = '/calendar/week/2026-11-18?event=standup'
@@ -173,30 +189,65 @@ const ADDRESSES = PARTICIPANTS.map(({ email }) => email)
 // What the To field's chips say: the name where there is one, else the address.
 const CHIPS = ['Dana Whitfield', 'lee@northwind.example']
 
-/** Another app's page, open on an event, with an "Email participants" button. */
+// Calendar's own single-key shortcuts, as it registers them: one that keeps out of dialogs, and its
+// shortcuts list, which opens from inside one.
+const shortcuts = vi.hoisted(() => ({ dayView: vi.fn(), showShortcuts: vi.fn() }))
+// The last press's work, done once Mail has opened the composer or decided against it.
+let pressed: Promise<void> | undefined
+
+/**
+ * Another app's page, open on an event, with an "Email participants" button and the app's
+ * shortcuts; beside it, Mail as a phone reaches it: its layout, on the compose link, and its
+ * compose page.
+ */
 async function openPage(
   participants: MailRecipient[] = PARTICIPANTS,
-): Promise<{ router: Router; leave: () => void }> {
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/:any(.*)*', component: { render: () => null } }],
-  })
-  await router.push(PAGE)
+): Promise<{ router: Router; leave: () => void; app: ReturnType<typeof createApp> }> {
   const Page = defineComponent({
     setup() {
-      // As the calendar asks: a phone's page is the phone's layout.
-      const mail = useMailCompose({ phone: () => isMobile.value })
+      const mail = useMailCompose()
+      useKeyboardShortcut([
+        { combo: 'D', description: 'Day View', handler: shortcuts.dayView },
+        {
+          combo: 'Shift+Slash',
+          description: 'View Shortcuts',
+          allowInDialog: true,
+          handler: shortcuts.showShortcuts,
+        },
+      ])
       return () =>
-        h('button', { onClick: () => void mail.compose(participants) }, 'Email participants')
+        h('button', { onClick: () => (pressed = mail.compose(participants)) }, 'Email participants')
     },
   })
-  const app = createApp(Page)
+  const MailHome = defineComponent({
+    setup() {
+      useComposeLinkArrival()
+      return () => h(ComposeHost)
+    },
+  })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [
+      { path: '/mail', component: MailHome },
+      {
+        path: '/mail/account/:accountId/compose',
+        name: 'mail-compose',
+        component: { render: () => null },
+      },
+      { path: '/:any(.*)*', component: Page },
+    ],
+  })
+  // Mail's guard, which answers after a wait of its own.
+  router.beforeEach(() => new Promise<void>((resolve) => setTimeout(resolve, 5)))
+  await router.push(PAGE)
+  const app = createApp({ render: () => h(RouterView) })
   app.config.globalProperties.__ = translate
   app.use(createPinia())
   app.use(router)
   app.mount(document.body.appendChild(document.createElement('div')))
   apps.push(app)
-  return { router, leave: () => app.unmount() }
+  await vi.waitFor(() => expect(button('Email participants')).not.toBeNull())
+  return { router, leave: () => app.unmount(), app }
 }
 
 const button = (name: string) =>
@@ -212,6 +263,24 @@ const recipients = () =>
 
 // The first press loads Mail's composer, which takes a while under the test transform.
 describe('writing to people from another app', { timeout: 30_000 }, () => {
+  // Before any load of Mail's composer has landed: a failed load is tried afresh, a landed one is
+  // kept for the file.
+  it('lets go of a load that fails after the page has gone', async () => {
+    const unhandled = vi.fn()
+    process.on('unhandledRejection', unhandled)
+    const { leave } = await openPage()
+    composerModule.failNext = true
+
+    button('Email participants')!.click()
+    leave()
+    await pressed
+    await new Promise((resolve) => setTimeout(resolve, 50))
+
+    process.off('unhandledRejection', unhandled)
+    expect(unhandled).not.toHaveBeenCalled()
+    expect(composerModule.failNext).toBe(false)
+  })
+
   // One test, in order: the composer is evaluated once per test file, and these are the first
   // loads of it.
   it('loads Mail on the press, not before, and tries again after a load that failed', async () => {
@@ -240,6 +309,42 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     expect(router.currentRoute.value.fullPath).toBe(PAGE)
   })
 
+  it("leaves the page's own shortcuts alone while the reader types in the composer", async () => {
+    await openPage()
+    button('Email participants')!.click()
+    await vi.waitFor(() => expect(composer()).not.toBeNull(), { timeout: 15_000 })
+    const subject = composer()!.querySelector('input[aria-label="Subject"]')!
+    const body = await vi.waitFor(() => {
+      const editable = composer()!.querySelector<HTMLElement>('[contenteditable="true"]')
+      expect(editable).not.toBeNull()
+      return editable!
+    })
+    // As a keyboard sends them: the key's place on it (which shortcuts go by), and what it types.
+    const press = (target: Element, key: 'd' | '?') =>
+      target.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key,
+          code: key === 'd' ? 'KeyD' : 'Slash',
+          shiftKey: key === '?',
+          bubbles: true,
+        }),
+      )
+    shortcuts.dayView.mockReset()
+    shortcuts.showShortcuts.mockReset()
+
+    press(subject, 'd')
+    press(body, 'd')
+    press(subject, '?')
+
+    expect(shortcuts.dayView).not.toHaveBeenCalled()
+    expect(shortcuts.showShortcuts).not.toHaveBeenCalled()
+    // The same keys on the page itself are its shortcuts.
+    press(document.body, 'd')
+    press(document.body, '?')
+    expect(shortcuts.dayView).toHaveBeenCalledOnce()
+    expect(shortcuts.showShortcuts).toHaveBeenCalledOnce()
+  })
+
   it('leaves out every address that is the reader’s own in Mail', async () => {
     await openPage([
       { email: 'Maya@Example.com' },
@@ -264,19 +369,20 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     expect(router.currentRoute.value.fullPath).toBe(PAGE)
   })
 
-  it('on a phone, goes to Mail by its compose link, carrying their addresses', async () => {
+  it("on a phone, opens Mail's compose page for them, by Mail's compose link", async () => {
     isMobile.value = true
     const { router } = await openPage()
 
     button('Email participants')!.click()
 
-    // Mail's layout opens its compose page from the link, as it does for any app.
-    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/mail'))
-    expect(router.currentRoute.value.query).toEqual({ compose: '1', to: ADDRESSES.join(',') })
-    // Nothing of the desktop window on the calendar's page: no composer, and none asked for.
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    expect(composer()).toBeNull()
-    expect(useComposeMail().composeRequest.value).toBeUndefined()
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('mail-compose'), {
+      timeout: 15_000,
+    })
+    expect(router.currentRoute.value.params.accountId).toBe('acc')
+    expect(takePendingCompose()?.to).toEqual(ADDRESSES.map((email) => ({ email })))
+    // The link is gone from the page behind it, so Back does not open the composer again.
+    router.back()
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/mail'))
   })
 
   it('on a desktop, with no Mail account, hands them to the device’s mail app', async () => {
@@ -295,18 +401,31 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
 
   it('opens nothing later for a page left while Mail was still loading', async () => {
     let answer!: () => void
-    server.userAnswered = new Promise((resolve) => (answer = resolve))
     const { leave } = await openPage()
+    // A reader Mail has yet to load: the page goes while Mail is still asking who they are, the
+    // step before it asks for a window. (Signed in again with the answers held, as the Mail
+    // already loaded by earlier tests asks at once.)
+    server.identitiesAnswered = new Promise((resolve) => (answer = resolve))
+    signIn.as(`maya+${++signIns}@example.com`)
+    const asked = server.identitiesAsked
 
     button('Email participants')!.click()
-    await vi.waitFor(() => expect(server.asked).toContain('get_user_info'), { timeout: 15_000 })
+    await vi.waitFor(() => expect(server.identitiesAsked).toBeGreaterThan(asked), {
+      timeout: 15_000,
+    })
     leave()
     answer()
-    // Mail has its user, and has looked up the reader's own addresses: the last step before asking.
-    await vi.waitFor(() => expect(server.asked).toContain('get_identities'), { timeout: 15_000 })
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    // Mail has its user, and the press has done all it was going to.
+    await pressed
 
-    // Nothing is left asking for a window, which Mail would open the next time it is.
-    expect(useComposeMail().composeRequest.value).toBeUndefined()
+    // Nothing is left asking for a window: the next composer host to mount, as Mail's layout
+    // mounts one, opens none.
+    const { app } = await openPage()
+    const { mountComposeHost } = await import('./composables/mountComposeHost')
+    const host = mountComposeHost(app._context)
+    // A request left behind opens its window in under half a second here: given three times that.
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+    expect(composer()).toBeNull()
+    host.unmount()
   })
 })
