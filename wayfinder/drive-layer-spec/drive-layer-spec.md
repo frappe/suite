@@ -1310,6 +1310,16 @@ What it does when nothing refuses:
    With `notify`, queue one share email to the user with `node_url(node)`
    (§9.5). Neither is stored as a flag, and a role 0 write sends none.
 
+In the same transaction as step 3, a write to `$GENERAL` or a `$GROUP:`
+principal on a node inside a Personal root, the root itself excepted, keeps
+that root's `user` at MANAGE on the node. Such a row is nearer than the
+anchor grant and would otherwise lower them (§5.1). When their role there is
+below MANAGE after the write, their own row on the node is raised to MANAGE
+with no expiry, or a new row at MANAGE is inserted when they have none.
+Administrator's root, which holds the shipped templates (§8.10), is skipped,
+because Administrator holds every right without a row. This row writes no
+activity row: the owner's own access is not news (§5.12).
+
 One outsider address means one link: two sends to the same address mint two
 rows [unified frontend spec §7.8].
 
@@ -1426,7 +1436,9 @@ never undoes the write.
 ### 5.12 The activity row a grant write produces
 
 Every insert, update, or delete of a `Drive Grant` writes exactly one
-activity row [007 §7].
+activity row [007 §7]. The one exception is the Personal root user's own
+MANAGE row that `grant` writes or raises after an Everyone or group write
+inside their root (§5.9); it writes none.
 
 | Grant write | `action` | `detail` |
 |---|---|---|
