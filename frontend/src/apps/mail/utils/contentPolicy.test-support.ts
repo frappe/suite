@@ -34,14 +34,37 @@ export const headPolicy = (doc: Document): Map<string, string[]> | undefined => 
 const sourcesFor = (policy: Map<string, string[]>, fetch: Fetch) =>
   DIRECTIVES[fetch].map((name) => policy.get(name)).find((sources) => sources !== undefined)
 
+const DEFAULT_PORT = new Map([
+  ['http:', '80'],
+  ['https:', '443'],
+  ['ws:', '80'],
+  ['wss:', '443'],
+])
+const portOf = (url: URL) => url.port || (DEFAULT_PORT.get(url.protocol) ?? '')
+
+// A host source: an optional scheme, a host (`*.` for any subdomain), an optional port, and an
+// optional path, matched exactly or, ending in `/`, as a prefix. The query never counts.
+const HOST_SOURCE = /^(?:([a-z][a-z0-9+.-]*):\/\/)?(\*|(?:\*\.)?[^/:]+)(?::(\d+|\*))?(\/.*)?$/
+
+const matchesHost = (source: string, url: URL) => {
+  const parts = HOST_SOURCE.exec(source)
+  if (!parts) return false
+  const [, scheme, host, port, path] = parts
+  if (scheme ? url.protocol !== `${scheme}:` : !/^https?:$/.test(url.protocol)) return false
+  if (host.startsWith('*.') ? !url.hostname.endsWith(host.slice(1)) : host !== url.hostname)
+    return false
+  if (port !== '*' && (port ?? DEFAULT_PORT.get(url.protocol)) !== portOf(url)) return false
+  if (!path) return true
+  return path.endsWith('/') ? url.pathname.startsWith(path) : url.pathname === path
+}
+
 const matches = (source: string, url: URL, self: string) => {
   const lower = source.toLowerCase()
   if (lower === "'self'") return url.origin === self
   if (lower === '*') return /^(https?|wss?):$/.test(url.protocol)
   if (/^[a-z][a-z0-9+.-]*:$/.test(lower)) return url.protocol === lower
   if (lower.startsWith("'")) return false
-  const host = lower.replace(/^[a-z][a-z0-9+.-]*:\/\//, '').replace(/[:/].*$/, '')
-  return host.startsWith('*.') ? url.hostname.endsWith(host.slice(1)) : url.hostname === host
+  return matchesHost(source, url)
 }
 
 /** Whether a document at origin `self` under `policy` may fetch `url` for `fetch`. */

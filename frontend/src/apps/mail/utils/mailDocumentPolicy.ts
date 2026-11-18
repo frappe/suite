@@ -3,8 +3,10 @@
 // more ways to name a URL than any pattern keeps up with (escapes, image-set(), constructs left
 // open at the end of a sheet), so while remote content is withheld it is the browser that refuses
 // every load from another host. Only what a mail needs to render with nothing remote is allowed:
-// its inline styles and stylesheets, data: and blob: images and fonts, and same-origin images,
-// which is where the server points inline (cid:) images. Shown, no load is restricted, so remote
+// its inline styles and stylesheets, data: and blob: images and fonts, and the one same-origin
+// endpoint the server points inline (cid:) images at. Not the whole origin: the app has endpoints
+// that fetch a URL they are given (a link preview), and an <img> naming one would have the server
+// fetch the sender's URL the moment the mail opens. Shown, no load is restricted, so remote
 // content loads as it did before there was a policy. Either way the document runs no script but
 // the one carrying `scriptNonce`, and nothing in it can embed a plugin, set a base URL or submit a
 // form.
@@ -13,9 +15,14 @@
 // browser enforces a meta policy, the attribute only Chromium, and a meta policy governs
 // everything the parser meets after it, which is the whole mail.
 
-const WITHHELD = [
+// Where format_message points each `cid:` image, its blob named in the query. A source with a path
+// matches that path exactly, whatever the query; the endpoint answers with the image itself, no
+// redirect, so the match holds for the response too.
+const INLINE_PARTS = '/api/method/suite.mail.api.mail.get_attachment'
+
+const withheld = () => [
   "default-src 'none'",
-  "img-src 'self' data: blob:",
+  `img-src ${window.location.origin}${INLINE_PARTS} data: blob:`,
   'font-src data: blob:',
   "style-src 'unsafe-inline'",
 ]
@@ -26,7 +33,7 @@ const WITHHELD = [
  */
 export const mailDocumentPolicy = (withholdRemote: boolean, nonce?: string): string => {
   const policy = [
-    ...(withholdRemote ? WITHHELD : []),
+    ...(withholdRemote ? withheld() : []),
     `script-src ${nonce ? `'nonce-${nonce}'` : "'none'"}`,
     "object-src 'none'",
     "base-uri 'none'",

@@ -748,8 +748,16 @@ describe('EmailContent renders mail as it was sent', () => {
 
 // A srcdoc frame takes the app's origin, which is where the server points a mail's inline (cid:)
 // images.
-const APP = 'https://suite.example'
+const APP = window.location.origin
 const INLINE_IMAGE = '/api/method/suite.mail.api.mail.get_attachment?account=a&blob_id=b'
+// The app's own endpoints that fetch a URL they are given, or act on a GET: an <img> naming one
+// reaches the sender, or the reader's session, with no remote URL of its own.
+const SAME_ORIGIN = [
+  '/api/method/suite.sheets.link_preview.get_link_preview?url=https://tracker.example/open/1',
+  '/api/method/logout',
+  '/api/method/suite.mail.api.mail.get_attachment_preview?blob_id=b',
+  '/files/logo.png',
+]
 const PIXEL = 'data:image/gif;base64,R0lGODlhAQABAAAAACw='
 // Every kind of load a message's markup or CSS could make of the sender's servers.
 const FETCHES: Fetch[] = ['img', 'font', 'style', 'media', 'connect', 'frame', 'object', 'prefetch']
@@ -767,6 +775,14 @@ describe("EmailContent's frame loads nothing remote until the reader shows it", 
 
     for (const fetch of FETCHES)
       for (const url of REMOTE)
+        expect(allowsLoad(policy, fetch, url, APP), `${fetch} ${url}`).toBe(false)
+  })
+
+  it("refuses the app's own URLs while withheld, all but the one that serves the mail's inline images", async () => {
+    const policy = await policyOf({ blockImages: true })
+
+    for (const fetch of FETCHES)
+      for (const url of SAME_ORIGIN)
         expect(allowsLoad(policy, fetch, url, APP), `${fetch} ${url}`).toBe(false)
   })
 
@@ -818,5 +834,16 @@ describe("EmailContent's frame loads nothing remote until the reader shows it", 
       (meta) => meta.getAttribute('http-equiv')!.toLowerCase() === 'refresh',
     )
     expect(refresh).toEqual([])
+  })
+
+  // The mail's only word on its language, which picks its glyphs and hyphenation.
+  it('keeps the language a message declares', async () => {
+    const root = mount(
+      '<html><head><meta http-equiv="Content-Language" content="ja"></head><body><p>直</p></body></html>',
+    )
+    await nextTick()
+
+    const language = rendered(root).querySelector('meta[http-equiv="Content-Language"]')
+    expect(language?.getAttribute('content')).toBe('ja')
   })
 })

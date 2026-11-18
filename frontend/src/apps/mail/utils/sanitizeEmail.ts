@@ -29,11 +29,14 @@ const unwrapStyleSheet: UponSanitizeElementHook = (node, { tagName }) => {
   })
 }
 
-// A <meta http-equiv> is a response header the sender writes. Only Content-Type means anything to
-// a mail; the rest act on the reader's frame, and `refresh` navigates it to any page the sender
-// names, a load no Content-Security-Policy refuses.
-const keepContentTypeOnly: UponSanitizeAttributeHook = (_node, data) => {
-  if (data.attrName === 'http-equiv' && data.attrValue.trim().toLowerCase() !== 'content-type')
+// A <meta http-equiv> is a response header the sender writes. Only Content-Type and
+// Content-Language mean anything to a mail (the language picks its glyphs and hyphenation, and
+// the allow-list keeps no `lang`); the rest act on the reader's frame, and `refresh` navigates it
+// to any page the sender names, a load no Content-Security-Policy refuses.
+const MAIL_HEADERS = new Set(['content-type', 'content-language'])
+
+const keepMailHeadersOnly: UponSanitizeAttributeHook = (_node, data) => {
+  if (data.attrName === 'http-equiv' && !MAIL_HEADERS.has(data.attrValue.trim().toLowerCase()))
     data.keepAttr = false
 }
 
@@ -134,7 +137,7 @@ const DOMPURIFY_CONFIG = {
 // Mail's own instance, so the hook stays out of the HTML other code cleans with the shared one.
 const mailPurifier = DOMPurify(window)
 mailPurifier.addHook('uponSanitizeElement', unwrapStyleSheet)
-mailPurifier.addHook('uponSanitizeAttribute', keepContentTypeOnly)
+mailPurifier.addHook('uponSanitizeAttribute', keepMailHeadersOnly)
 
 /**
  * `html` cleaned for display, as a whole document. Remote images and CSS urls are held back when
