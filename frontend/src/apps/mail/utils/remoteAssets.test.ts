@@ -52,6 +52,15 @@ describe('remote content in a message’s CSS', () => {
     expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
   })
 
+  // At the end of a stylesheet, the browser drops a lone backslash and closes the string there,
+  // so the import still loads.
+  it('withholds an import whose string ends the stylesheet with a backslash', () => {
+    const html = '<style>@import "https://evil.example/x.css\\</style><p>Hello</p>'
+
+    expect(stylesheets(blockRemoteAssets(html))).not.toContain('evil.example')
+    expect(analyzeRemoteAssets(html).hasRemote).toBe(true)
+  })
+
   // The browser drops a comment inside a bracket, quotes and all, so the rule below it still
   // fetches. A quote there must not read as a string that runs past the bracket and hides it.
   it.each([
