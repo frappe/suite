@@ -97,7 +97,7 @@ export const mailSettings = {
     {
       id: 'mail.advanced',
       label: () => __('Advanced'),
-      icon: 'lucide-code',
+      icon: 'lucide-wrench',
       body: scoped(() => import('@/apps/mail/components/Settings/MailAdvancedSettings.vue')),
       sections: [
         { id: 'rules', label: () => __('Rules'), keywords: () => __('filters, sieve') },
