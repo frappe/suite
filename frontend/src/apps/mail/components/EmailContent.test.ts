@@ -805,4 +805,18 @@ describe("EmailContent's frame loads nothing remote until the reader shows it", 
       expect(handlers).toEqual([])
     }
   })
+
+  it('never lets a message send its frame to a page of the sender', async () => {
+    const root = mount(
+      '<html><head><meta http-equiv="refresh" content="0;url=https://tracker.example/"></head>' +
+        '<body><p>Hi</p><meta http-equiv="Refresh" content="0;url=https://tracker.example/b"></body></html>',
+      { blockImages: false },
+    )
+    await nextTick()
+
+    const refresh = [...rendered(root).querySelectorAll('meta[http-equiv]')].filter(
+      (meta) => meta.getAttribute('http-equiv')!.toLowerCase() === 'refresh',
+    )
+    expect(refresh).toEqual([])
+  })
 })
