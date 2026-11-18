@@ -2,25 +2,8 @@
   <!-- A thread before its messages arrive, in the shape an open one takes (see MailThread): the
        subject, then one message with its sender row and a few lines of body. The paddings and the
        line boxes are the thread's own, so the subject and the sender land where their outlines
-       stood. With `toolbar`, the whole pane: the thread's toolbar row in outline above it, for a
-       list that mounts the pane only once the open thread's row is in. -->
-  <div
-    class="animate-pulse"
-    :class="{ 'flex h-full flex-col overflow-hidden': toolbar }"
-    role="status"
-    :aria-label="__('Loading thread')"
-  >
-    <div v-if="toolbar" :class="THREAD_TOOLBAR_BOX_CLASS" aria-hidden="true">
-      <!-- Back's place, then the buttons, then the arrows' corner on a desktop. -->
-      <ThreadButtonOutline class="mr-2 max-sm:-ml-2" />
-      <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
-        <ThreadActionsOutline :drafts />
-        <div v-if="!isMobile" class="!ml-auto flex space-x-2">
-          <ThreadButtonOutline v-for="n in 2" :key="n" />
-        </div>
-      </div>
-    </div>
-
+       stood. -->
+  <div class="animate-pulse" role="status" :aria-label="__('Loading thread')">
     <div class="sm:px-5 sm:pt-5">
       <!-- Subject: the heading's one line. -->
       <div class="flex h-7 items-center box-content max-sm:px-3.5 max-sm:py-3 sm:pb-2">
@@ -67,14 +50,8 @@
 </template>
 
 <script setup lang="ts">
-import ThreadActionsOutline from '@/apps/mail/components/ThreadActionsOutline.vue'
-import ThreadButtonOutline from '@/apps/mail/components/ThreadButtonOutline.vue'
-import { THREAD_TOOLBAR_BOX_CLASS } from '@/apps/mail/constants'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 
-// `toolbar`: stand in for the whole reading pane, its toolbar row too. `drafts`: the thread is
-// opened from Drafts, whose toolbar has one button.
-const { toolbar = false, drafts = false } = defineProps<{ toolbar?: boolean; drafts?: boolean }>()
 const { isMobile } = useScreenSize()
 
 // Fixed, so the lines don't shuffle on each render.

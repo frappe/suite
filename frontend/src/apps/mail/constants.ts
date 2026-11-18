@@ -91,13 +91,6 @@ export const GROUP_HEADER_BOX_CLASS =
   'flex h-9 items-center border-b bg-surface-gray-1 px-3.5 sm:px-5'
 
 /**
- * The thread toolbar's row: its padding, its phone height and the line under it. ThreadHeader and the
- * pane's loading outline (MailThreadSkeleton) share it, so the outline's row is the toolbar's height.
- */
-export const THREAD_TOOLBAR_BOX_CLASS =
-  'bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b'
-
-/**
  * The mail list's "you are here": a dark bar down a row's left side. 1.5px for the keyboard's
  * cursor (a row or a date header); 3px for the thread open in the pane, so the one being read
  * stands out from a ticked row the cursor is on.

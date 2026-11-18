@@ -56,7 +56,9 @@
   </DefineLater>
   <!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
 	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
-  <div :class="THREAD_TOOLBAR_BOX_CLASS">
+  <div
+    class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b"
+  >
     <Button
       variant="ghost"
       class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
@@ -232,11 +234,7 @@ import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import ThreadActionsOutline from '@/apps/mail/components/ThreadActionsOutline.vue'
 import ThreadButtonOutline from '@/apps/mail/components/ThreadButtonOutline.vue'
-import {
-  FOLDER_ICON_COLOR_MAP,
-  PINNED_PIN_STYLE,
-  THREAD_TOOLBAR_BOX_CLASS,
-} from '@/apps/mail/constants'
+import { FOLDER_ICON_COLOR_MAP, PINNED_PIN_STYLE } from '@/apps/mail/constants'
 import { takesPins } from '@/apps/mail/stores/user'
 import type { Mail, MailboxData } from '@/apps/mail/types'
 import { getIcon, getMailboxName, isMac } from '@/apps/mail/utils'

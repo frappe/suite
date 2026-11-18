@@ -292,12 +292,12 @@
           @next-thread="stepOpenThread(1)"
         />
         <!-- The open thread's row is on its way with the list: the pane stands in outline until
-             it lands, not a blank half. -->
-        <MailThreadSkeleton
-          v-else-if="listState === 'loading'"
-          toolbar
-          :drafts="folder === 'drafts'"
-        />
+             it lands, not a blank half. Its toolbar is the thread's own, which outlines its buttons
+             while it has no thread. -->
+        <div v-else-if="listState === 'loading'" class="flex h-full flex-col overflow-hidden">
+          <ThreadHeader :thread="[]" :threads="[]" threads-loading />
+          <MailThreadSkeleton />
+        </div>
       </ThreadPane>
     </template>
 
@@ -364,6 +364,7 @@ import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
+import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'

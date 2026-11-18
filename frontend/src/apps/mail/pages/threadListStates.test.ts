@@ -262,8 +262,8 @@ describe('a thread opened in an "All accounts" folder whose list is on its way',
     await vi.waitFor(() =>
       expect(element.querySelector('[role="status"][aria-label="Loading thread"]')).not.toBeNull(),
     )
-    const pane = element.querySelector('[role="status"][aria-label="Loading thread"]')!
-    expect(pane.querySelector('[data-outline="thread-actions"]')).not.toBeNull()
+    // Above it, the thread's toolbar with its buttons in outline: the list has none of its own.
+    expect(element.querySelector('[data-outline="thread-actions"]')).not.toBeNull()
     // The pane itself waits for the row: what its buttons do is read off it.
     expect(element.querySelector('[data-reading-pane]')).toBeNull()
     expect(errors).toEqual([])
