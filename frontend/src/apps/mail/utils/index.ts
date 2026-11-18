@@ -200,8 +200,10 @@ export const raisePerAccountToast = <T>(
 /**
  * A removal the server cannot take back, offered with an Undo all the same: the caller has already
  * taken the rows off screen, and the request waits out the toast. Undo puts them back and nothing is
- * sent; the toast going sends it. The removal is written down meanwhile, so a page closed inside the
- * window has it sent on the next start rather than silently kept (see pendingRemovals).
+ * sent; the toast going sends it. A page that goes takes its Undo with it, so the removal stands and
+ * is sent as it goes, in a request that outlives the page: the phone's compose page, closed by its
+ * Discard, leaves at once. It is written down all the same, so one that did not get out is sent on
+ * the next start rather than silently kept (see pendingRemovals).
  */
 export const commitAfterUndo = ({
   message,
@@ -223,9 +225,21 @@ export const commitAfterUndo = ({
 }) => {
   const remembered = rememberRemoval(removal)
   let settled = false
+  const leave = () => {
+    if (settled) return
+    settled = true
+    window.removeEventListener('pagehide', leave)
+    undoSlot?.retire(undo)
+    toast.dismiss(shown)
+    void sendRemoval(removal, { keepalive: true }).then(
+      () => forgetRemoval(remembered),
+      () => {},
+    )
+  }
   const settle = (keep: boolean) => {
     if (settled) return
     settled = true
+    window.removeEventListener('pagehide', leave)
     undoSlot?.retire(undo)
     if (keep) {
       forgetRemoval(remembered)
@@ -248,6 +262,7 @@ export const commitAfterUndo = ({
     onAutoClose: () => settle(false),
     onDismiss: () => settle(false),
   })
+  window.addEventListener('pagehide', leave)
 }
 
 export const copyToClipBoard = async (text: string) => {

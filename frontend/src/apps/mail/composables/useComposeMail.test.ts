@@ -6,6 +6,7 @@ import { createApp, defineComponent, h, nextTick, onMounted, useTemplateRef } fr
 import type { ComposeMailData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { CustomImageExtension, mailEditorKit } from '@/apps/mail/utils/text-editor'
+import { TransportError } from '@/platform/transport'
 
 import { useComposeMail } from './useComposeMail'
 
@@ -621,6 +622,42 @@ describe('leaving a page that leaves its document', () => {
     expect(server.create).toHaveBeenCalledOnce()
     expect(server.updateDraft).not.toHaveBeenCalled()
     first.settle(saved('draft-9'))
+  })
+
+  it('makes no second draft when the first save went out and the page dropped its answer', async () => {
+    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
+    // The browser drops the request as the page goes: no answer, though the server may have made
+    // the draft.
+    server.create.mockRejectedValueOnce(
+      new TransportError({ type: 'NetworkError', message: 'Load request cancelled', status: 0 }),
+    )
+    composer.mail.subject = 'Planning'
+    await composer.saveDraft()
+    expect(server.create).toHaveBeenCalledOnce()
+
+    // Then the page goes: pagehide, and Close on the way out.
+    composer.flushDraft()
+    await composer.settleDraft()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(server.create).toHaveBeenCalledOnce()
+    expect(server.updateDraft).not.toHaveBeenCalled()
+  })
+
+  it('still saves a draft refused by the server on the way out', async () => {
+    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
+    // An answer: the server made nothing.
+    server.create
+      .mockRejectedValueOnce(
+        new TransportError({ type: 'ValidationError', message: 'Try again', status: 417 }),
+      )
+      .mockResolvedValue(saved('draft-1'))
+    composer.mail.subject = 'Planning'
+    await composer.saveDraft()
+
+    await composer.settleDraft()
+
+    expect(server.create).toHaveBeenCalledTimes(2)
   })
 
   it('on Close, lets a save that is going land, then saves what came since to that draft', async () => {

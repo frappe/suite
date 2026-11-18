@@ -46,6 +46,7 @@ import {
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
 
 /** The mounted editor, as far as this composable cares about it. */
 interface EditorHost {
@@ -374,8 +375,17 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // after that (autosave, Close, the page going, the editor unmounting) would turn it back into a
   // draft. Undo send brings it back as a draft of its own, in Drafts, not in this composer.
   let submitted = false
+  // A draft's first save went out and no answer came back: the browser drops a page's requests as
+  // the page goes, and the server may well have made the draft all the same. A save on the way out
+  // then makes no second one; the draft the server made, if it did, stands. A composer that stays
+  // (a dropped connection) goes on saving as before.
+  let createUnanswered = false
   // `keepalive`: the page is going (see flushDraft), and the request has to outlive it.
-  const saveDraft = async ({ keepalive = false }: { keepalive?: boolean } = {}) => {
+  // `leaving`: the save of a composer on its way out (see settleDraft and flushDraft).
+  const saveDraft = async ({
+    keepalive = false,
+    leaving = keepalive,
+  }: { keepalive?: boolean; leaving?: boolean } = {}) => {
     if (
       pendingSave ||
       isSending ||
@@ -383,7 +393,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       discarded ||
       !isDraftUpdated.value ||
       isLoading.value ||
-      isDiscarding.value
+      isDiscarding.value ||
+      (leaving && !mail.id && createUnanswered)
     )
       return
     isSavingDraft.value = true
@@ -418,7 +429,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
    */
   const settleDraft = async () => {
     while (pendingSave) await pendingSave.catch(() => {})
-    await saveDraft()
+    await saveDraft({ leaving: true })
   }
 
   /**
@@ -541,8 +552,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // signature still saves) goes quietly.
     if (isUntouched.value) {
       if (draft.id)
+        // In a request that outlives the page, which the phone's compose page leaves at once.
         void client
-          .mutation(api.mail.messages.deleteDraft, { account, id: draft.id })
+          .mutation(api.mail.messages.deleteDraft, { account, id: draft.id }, { keepalive: true })
           .then(requestListReload, () => {})
       return
     }
@@ -763,7 +775,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     // A draft is saved as it stood when it went, so what is typed meanwhile is still owed a save.
     // A send owes nothing more (see `submitted`).
     const asSaved = save_as_draft ? snapshot() : undefined
-    const result = await (keepalive ? createMailOnLeave : createMail).run(input)
+    let result: OutputOf<typeof api.mail.messages.create>
+    try {
+      result = await (keepalive ? createMailOnLeave : createMail).run(input)
+      createUnanswered = false
+    } catch (error) {
+      // Status 0: no answer at all, so whether the server made the draft is not known.
+      if (save_as_draft && error instanceof TransportError && error.status === 0)
+        createUnanswered = true
+      throw error
+    }
     await onMailUpdateSuccess(result, asSaved)
   }
   const updateDraft = useMutation(api.mail.messages.updateDraft)

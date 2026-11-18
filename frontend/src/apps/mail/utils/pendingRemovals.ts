@@ -95,20 +95,26 @@ const write = (stored: Stored) => {
   }
 }
 
-export const sendRemoval = (removal: PendingRemoval): Promise<unknown> => {
+/** `keepalive`: sent as the page goes, in a request that outlives it (see commitAfterUndo). */
+export const sendRemoval = (
+  removal: PendingRemoval,
+  options: { keepalive?: boolean } = {},
+): Promise<unknown> => {
   if (removal.kind === 'unsubscribe')
-    return client.mutation(api.mail.messages.unsubscribe, {
-      account: removal.account,
-      id: removal.id,
-    })
+    return client.mutation(
+      api.mail.messages.unsubscribe,
+      { account: removal.account, id: removal.id },
+      options,
+    )
   if (removal.kind === 'draft')
-    return client.mutation(api.mail.messages.deleteDraft, {
-      account: removal.account,
-      id: removal.id,
-    })
+    return client.mutation(
+      api.mail.messages.deleteDraft,
+      { account: removal.account, id: removal.id },
+      options,
+    )
   // Nothing on the server to remove — a draft never saved.
   if (!removal.names.length) return Promise.resolve()
-  return client.mutation(api.mail.messages.delete, { names: removal.names })
+  return client.mutation(api.mail.messages.delete, { names: removal.names }, options)
 }
 
 /** Writes the removal down; returns the key to forget it by. */
