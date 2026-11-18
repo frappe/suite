@@ -542,7 +542,7 @@ export const compose = defineFlow<Event, BaseScene>({
 		},
 		async UNDO_SEND(scene) {
 			await scene.page.getByRole("button", { name: "Undo", exact: true }).click();
-			await expect(scene.toast(/Sending undone/)).toBeVisible({ timeout: 15_000 });
+			await expect(scene.toast(/Message unsent/)).toBeVisible({ timeout: 15_000 });
 		},
 		async OPEN_SEND_MENU(scene) {
 			await composer(scene.page).getByRole("button", { name: "Schedule send" }).click();

@@ -610,7 +610,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     await undoSend.run(input)
     reloadMails()
-    raiseToast(__('Sending undone. The message is back in your drafts.'))
+    raiseToast(__('Message unsent. It is back in your drafts.'))
   }
   const { setUndoAction, retireUndoAction } = useUndo()
 
