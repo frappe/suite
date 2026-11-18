@@ -1402,7 +1402,7 @@ const syncWithSource = (source = sourceMessages()) => {
     mail.duplicates = copiesBeside(fresh, mail.id)
   })
 
-  // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
+  // Append any newly-arrived messages, before the drafts at the bottom. Drafts are excluded: the only draft
   // that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
   // saved id isn't known here), so a draft returning from a background reload would otherwise be
   // mistaken for a new message and spawn a duplicate, blank compose editor.
@@ -1411,12 +1411,14 @@ const syncWithSource = (source = sourceMessages()) => {
     (mail) => !existing.has(mail.id) && !mail.draft,
   )
   if (!additions.length) return
-  const draftIndex = thread.value.findIndex((mail) => mail.draft)
+  // After the last message, not before the first draft: a draft put aside earlier in the
+  // conversation keeps its place, and what came after it goes after it. Placed before it, a reply
+  // just sent landed above the messages it answered.
+  const lastMessage = thread.value.findLastIndex((mail) => !mail.draft)
   // Arrivals leave the reader's place alone: the message being read stays open under them, and
   // the fold hides what it hid — still open, if it was opened.
   holdNewestOpen(thread.value)
-  if (draftIndex === -1) thread.value.push(...additions)
-  else thread.value.splice(draftIndex, 0, ...additions)
+  thread.value.splice(lastMessage + 1, 0, ...additions)
   if (landsPending && scrollToLanding(thread.value)) landsPending = false
 }
 // Fresh rows for the open thread without a rebuild: the list's, when it holds the thread, or else

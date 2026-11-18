@@ -296,6 +296,32 @@ it('puts the sent reply where its composer was', async () => {
   expect(isOpen('reply')).toBe(true)
 })
 
+it('puts the sent reply last when a draft left earlier in the thread is still there', async () => {
+  // A draft put aside before Carol wrote: it stays where it was written, above her mail.
+  const earlier = message('earlier', {
+    from_email: 'alice@example.com',
+    draft: 1,
+    mailboxes: [{ mailbox_id: 'drafts', mailbox_name: 'Drafts' }],
+    received_at: '2026-10-30T08:30:00Z',
+  })
+  const carol = message('carol', {
+    from_email: 'carol@example.com',
+    received_at: '2026-10-30T09:00:00Z',
+  })
+  query.current = reactive({
+    data: [message('bob'), earlier, carol, draftOfReply],
+    status: 'success',
+    refetch: async () => {},
+  })
+  await openThread()
+
+  threadAsked.answer = async () => [message('bob'), earlier, carol, reply]
+  await composers.get('draft')!()
+  await settle()
+
+  expect(cards()).toEqual(['bob', 'earlier', 'carol', 'reply'])
+})
+
 it('leaves the messages above the reply open as the reader had them', async () => {
   query.current = reactive({
     data: [message('first'), message('bob', { received_at: '2026-10-30T09:00:00Z' }), draftOfReply],
