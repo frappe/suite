@@ -336,8 +336,8 @@ const visibleParticipants = computed(() =>
     : orderedParticipants.value.slice(0, VISIBLE_PARTICIPANT_COUNT),
 )
 
-// Everyone except the viewer; the host decides what "email them" means (mail
-// opens its compose window, the calendar app falls back to mailto).
+// Everyone except the viewer; the host decides what "email them" means (in mail
+// and in the calendar alike, Mail's composer opens on the page).
 const participantEmails = computed(() =>
   calendarEvent.participants
     .map((p) => p.email)

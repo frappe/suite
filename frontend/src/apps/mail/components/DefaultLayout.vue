@@ -143,21 +143,4 @@ const emailEventParticipants = (emails: string[]) => {
   selectedEvent.value = null
   requestCompose({ to: emails.map((email) => ({ email })) })
 }
-
-// Compose deep link (?compose=1&to=a,b): how other apps (calendar's "email
-// participants") open mail's compose window. Consumed on arrival — the query
-// is cleared so reload/back don't reopen the draft.
-watch(
-  () => route.query.compose,
-  (compose) => {
-    if (!compose) return
-    const to = String(route.query.to || '')
-      .split(',')
-      .filter(Boolean)
-    requestCompose({ to: to.map((email) => ({ email })) })
-    const { compose: _compose, to: _to, ...query } = route.query
-    router.replace({ query })
-  },
-  { immediate: true },
-)
 </script>

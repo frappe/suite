@@ -51,6 +51,7 @@ import {
   scopeOptions,
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
+import { useMailCompose } from '@/apps/mail'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
@@ -906,13 +907,11 @@ watch(selectedCalendarEvent, (open) => {
   if (!open) openRow.value = ''
 })
 
-// The calendar app has no compose surface of its own — hand over to mail's
-// compose window via its deep link (mailto: would depend on the OS having a
-// mail handler; the suite IS the mail client). Path, not route name: mail's
-// routes register lazily on first navigation into /mail.
-const emailParticipants = (emails: string[]) => {
-  router.push({ path: '/mail', query: { compose: '1', to: emails.join(',') } })
-}
+// The calendar has no composer of its own; Mail lends its own, over the calendar (mailto:
+// would depend on the OS having a mail handler, and the suite IS the mail client). The card
+// stays: it is the URL's, and the first click into the composer puts it away.
+const mailCompose = useMailCompose()
+const emailParticipants = (emails: string[]) => void mailCompose.compose(emails)
 
 // A deep link can only be built from the ids its author has. The grid's own
 // events come out of a recurrence-expanded query, so each carries a synthetic
