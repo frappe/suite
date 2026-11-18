@@ -193,8 +193,11 @@ test("an outsider gets a link of their own", async ({ page }) => {
 	const outsider = `${runTag("outsider")}@example.com`;
 	const dialog = await openShare(page, file.name);
 
+	// An address waits with the people picked; its link is made and sent on Share.
 	await peopleField(dialog).fill(outsider);
-	await page.getByRole("option", { name: `Send a link to ${outsider}` }).click();
+	await page.getByRole("option", { name: outsider }).click();
+	await expect(dialog.getByRole("list", { name: "People to add" }).getByRole("listitem")).toContainText([outsider]);
+	await dialog.getByRole("button", { name: "Share", exact: true }).click();
 
 	await expect(rowFor(dialog, `Sent to ${outsider}`)).toBeVisible();
 	const sent = (await grants(file.name)).filter((grant) => grant.sent_to === outsider);
@@ -227,8 +230,7 @@ test("a document surface places Share; a new share link is created from the dial
 	const deck = await createDocument(api, home.name, runTag("uf9-deck"), "Presentation");
 	const dialog = await openShare(page, deck.name);
 
-	await dialog.getByRole("button", { name: "Sharing options" }).click();
-	await page.getByRole("menuitem", { name: "Create share link" }).click();
+	await whoHasAccess(dialog).getByRole("button", { name: "Create link" }).click();
 	const create = page.getByRole("dialog", { name: "Create share link" });
 	await create.getByRole("button", { name: "Create link" }).click();
 	const created = page.getByRole("dialog", { name: "Link created" });
@@ -241,8 +243,8 @@ test("a document surface places Share; a new share link is created from the dial
 
 	await expect(accessButton(rowFor(dialog, "Anyone with this link"))).toHaveAccessibleName(/: View$/);
 	// The footer copies the item's own address, and Done closes the dialog.
-	await expect(dialog.getByRole("button", { name: "Copy link" })).toBeVisible();
-	await expect(dialog.getByText("For people with access")).toBeVisible();
+	await expect(dialog.getByRole("button", { name: "Copy link", exact: true })).toBeVisible();
+	await expect(dialog.getByText("Opens for people with access")).toBeVisible();
 	await dialog.getByRole("button", { name: "Done" }).click();
 	await expect(dialog).toBeHidden();
 });
