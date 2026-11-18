@@ -52,7 +52,10 @@ vi.mock('@/components/AdaptiveDropdown.vue', () => ({
     },
   }),
 }))
-vi.mock('@/apps/mail/utils', () => ({ raiseToast: state.toast }))
+vi.mock('@/apps/mail/utils', async (original) => ({
+  ...(await original()),
+  raiseToast: state.toast,
+}))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => ({ isMobile: { value: false } }),
 }))
@@ -65,9 +68,6 @@ vi.mock('@/apps/mail/stores/user', () => ({
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   default: { render: () => null },
 }))
-vi.mock('@/apps/mail/components/IdentitySettingsListView.vue', () => ({
-  default: { render: () => null },
-}))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
   return {
@@ -78,6 +78,7 @@ vi.mock('@/api', async () => {
   }
 })
 vi.mock('frappe-ui', () => ({
+  toast: vi.fn(),
   Badge: defineComponent({
     props: { label: { type: String, default: '' } },
     setup(props) {
@@ -179,6 +180,23 @@ async function type(label: string, value: string) {
   const input = requireTestElement(field(label), HTMLInputElement)
   input.value = value
   input.dispatchEvent(new Event('input'))
+  await nextTick()
+}
+
+/** The box of addresses under this label. */
+function addressBox(label: string) {
+  const name = Array.from(root.querySelectorAll('p')).find((part) => part.textContent === label)
+
+  return name?.parentElement?.querySelector('input') ?? null
+}
+
+/** Types an address into a box and leaves the box, which is when it joins the list. */
+async function addAddress(label: string, value: string) {
+  const box = requireTestElement(addressBox(label), HTMLInputElement)
+  box.value = value
+  box.dispatchEvent(new Event('input'))
+  await nextTick()
+  box.dispatchEvent(new Event('blur'))
   await nextTick()
 }
 
@@ -288,6 +306,45 @@ it('keeps the address open, with what was typed, when the save is refused', asyn
   await press('Save')
   expect(field('Display name')?.value).toBe('Maya')
   expect(state.toast).not.toHaveBeenCalled()
+})
+it('keeps Reply-to and Bcc behind a button until the address uses one', async () => {
+  const support = { ...sales, bcc: [{ email: 'log@example.com', display_name: '' }] }
+  mount([me, support])
+  await openAddress('me@example.com')
+  expect(addressBox('Reply-to')).toBeNull()
+
+  await press('Add reply-to or Bcc')
+  expect(addressBox('Reply-to')).not.toBeNull()
+  expect(addressBox('Bcc')).not.toBeNull()
+
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(root.textContent).toContain('log@example.com')
+})
+it('saves the addresses of each box, one saved with a display name keeping it', async () => {
+  const support = { ...sales, reply_to: [{ email: 'help@example.com', display_name: 'Help desk' }] }
+  mount([support])
+  await openAddress('sales@example.com')
+  await addAddress('Reply-to', 'desk@example.com')
+  await addAddress('Bcc', 'log@example.com')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({
+      reply_to: [
+        { email: 'help@example.com', display_name: 'Help desk' },
+        { email: 'desk@example.com', display_name: '' },
+      ],
+      bcc: [{ email: 'log@example.com', display_name: '' }],
+    }),
+  )
+})
+it('keeps Save off while a box holds something that is not an email address', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await press('Add reply-to or Bcc')
+  await addAddress('Reply-to', 'not an address')
+  expect(findButton('Save')?.disabled).toBe(true)
 })
 it('creates an address on this account from New address, then shows the list', async () => {
   mount([me])

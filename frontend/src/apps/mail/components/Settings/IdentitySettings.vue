@@ -1,37 +1,36 @@
 <template>
   <!-- One address, edited in place of the list: the arrow goes back to it -->
   <div v-if="draft" class="flex flex-col gap-4">
-    <SettingsDialogBack :title="draft.email" :label="__('Back to addresses')" @back="showList" />
-    <FormControl v-model="draft._name" :label="__('Display name')" variant="outline" />
-
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs"> {{ __('Reply-to') }} </label>
-      <IdentitySettingsListView
-        :data="draft.reply_to"
-        :empty-state-description="__('No reply-to addresses yet')"
-        @delete="(index: number) => draft?.reply_to?.splice(index, 1)"
-      />
-    </div>
-    <Button
-      :label="__('Add reply-to')"
-      class="min-h-7 self-start"
-      variant="outline"
-      @click="() => showAddEmailAddress(true)"
+    <SettingsDialogBack
+      :title="draft.identity.email"
+      :label="__('Back to addresses')"
+      @back="showList"
     />
+    <FormControl v-model="draft.name" :label="__('Display name')" variant="outline" />
 
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs"> {{ __('Bcc') }} </label>
-      <IdentitySettingsListView
-        :data="draft.bcc"
-        :empty-state-description="__('No Bcc addresses yet')"
-        @delete="(index: number) => draft?.bcc?.splice(index, 1)"
+    <template v-if="showsReplyAndBcc">
+      <EmailListInput
+        v-model="draft.replyTo"
+        v-model:draft="typed.replyTo"
+        :label="__('Reply-to')"
+        :description="__('Replies to your mail go to these addresses.')"
+        placeholder="name@example.com"
       />
-    </div>
+      <EmailListInput
+        v-model="draft.bcc"
+        v-model:draft="typed.bcc"
+        :label="__('Bcc')"
+        :description="__('These addresses get a hidden copy of each message you send.')"
+        placeholder="name@example.com"
+      />
+    </template>
     <Button
-      :label="__('Add Bcc')"
-      class="min-h-7 self-start"
-      variant="outline"
-      @click="() => showAddEmailAddress(false)"
+      v-else
+      variant="ghost"
+      icon-left="lucide-plus"
+      :label="__('Add reply-to or Bcc')"
+      class="self-start"
+      @click="showReplyAndBcc"
     />
 
     <FormControl
@@ -55,30 +54,12 @@
         {{ __('Default signature') }}
       </label>
       <MailRichTextField
-        :model-value="draft.html_signature"
+        :model-value="draft.signature"
         :placeholder="__('Write your signature here')"
         @update:model-value="setSignature"
       />
     </div>
 
-    <Dialog v-model:open="showDialog" v-bind="addEmailDialog">
-      <template #default>
-        <FormControl
-          v-model="email"
-          :label="__('Email address')"
-          placeholder="johndoe@example.com"
-          type="email"
-          class="mb-4 w-full"
-          :required="true"
-        />
-        <FormControl
-          v-model="displayName"
-          :label="__('Display name')"
-          placeholder="John Doe"
-          class="w-full"
-        />
-      </template>
-    </Dialog>
     <SettingsDialogActions>
       <Button
         :label="__('Save')"
@@ -183,15 +164,15 @@
 <script setup lang="ts">
 import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
+import EmailListInput from '@/apps/mail/components/Controls/EmailListInput.vue'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
-import IdentitySettingsListView from '@/apps/mail/components/IdentitySettingsListView.vue'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
-import { raiseToast } from '@/apps/mail/utils'
+import { isEmail, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
@@ -204,16 +185,43 @@ const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const signatures = useQuery(api.mail.signatures.list)
 
-// The address being edited: a copy, so the list keeps what is saved. Unset, the list shows
-const draft = ref<Identity>()
+type Address = Identity['reply_to'][number]
+
+/** The address that is open, and what its form holds. */
+interface Draft {
+  identity: Identity
+  name: string
+  replyTo: string[]
+  bcc: string[]
+  signature: string
+}
+
+// Unset, the list shows
+const draft = ref<Draft>()
 const original = ref('')
+// What is typed in each box and not yet an address of its list
+const typed = reactive({ replyTo: '', bcc: '' })
+// Few addresses have a reply-to or a Bcc, so the two boxes wait behind a button until one is used
+const showsReplyAndBcc = ref(false)
+function showReplyAndBcc() {
+  showsReplyAndBcc.value = true
+}
+
+function emailsOf(addresses?: Address[]) {
+  return (addresses ?? []).map((address) => address.email)
+}
+
 function editAddress(identity: Identity) {
   draft.value = {
-    ...identity,
-    reply_to: identity.reply_to?.map((address) => ({ ...address })) ?? [],
-    bcc: identity.bcc?.map((address) => ({ ...address })) ?? [],
+    identity,
+    name: identity._name ?? '',
+    replyTo: emailsOf(identity.reply_to),
+    bcc: emailsOf(identity.bcc),
+    signature: identity.html_signature ?? '',
   }
   original.value = JSON.stringify(draft.value)
+  Object.assign(typed, { replyTo: '', bcc: '' })
+  showsReplyAndBcc.value = draft.value.replyTo.length + draft.value.bcc.length > 0
 }
 
 const newAddress = ref<{ email: string; name: string }>()
@@ -231,71 +239,54 @@ function showList() {
   newAddress.value = undefined
 }
 
-// Nothing to save until the form differs from the address as it was read
-const isSaveBlocked = computed(
-  () => identities.isFetching || JSON.stringify(draft.value) === original.value,
-)
+// Nothing to save until the form differs from the address as it was read, and nothing that is
+// not an address is sent
+const isSaveBlocked = computed(() => {
+  const form = draft.value
+  if (!form || identities.isFetching) {
+    return true
+  }
+
+  const isUnchanged = JSON.stringify(form) === original.value && !typed.replyTo && !typed.bcc
+
+  return isUnchanged || ![...form.replyTo, ...form.bcc].every(isEmail)
+})
+
+// The boxes hold addresses alone, so one that was saved with a display name keeps it
+function withNames(emails: string[], saved?: Address[]) {
+  return emails.map((email) => {
+    const kept = saved?.find((address) => address.email === email)
+
+    return { email, display_name: kept?.display_name ?? '' }
+  })
+}
+
 const saveIdentity = useMutation(api.mail.identities.save)
 async function save() {
-  const identity = draft.value
-  if (!identity) return
+  const form = draft.value
+  if (!form) {
+    return
+  }
+
   await saveIdentity.run({
-    account: identity.account,
-    id: identity.id,
-    name: identity._name,
-    reply_to: identity.reply_to ?? [],
-    bcc: identity.bcc ?? [],
-    html_signature: identity.html_signature,
+    account: form.identity.account,
+    id: form.identity.id,
+    name: form.name,
+    reply_to: withNames(form.replyTo, form.identity.reply_to),
+    bcc: withNames(form.bcc, form.identity.bcc),
+    html_signature: form.signature,
   })
   raiseToast(__('Address updated'))
   showList()
 }
+
 function setSignature(value: string) {
-  if (draft.value) draft.value.html_signature = value
-}
-const savedSignature = ref('')
-const showDialog = ref(false)
-const isAddReplyTo = ref(true)
-const email = ref('')
-const displayName = ref('')
-const showAddEmailAddress = (isReplyTo: boolean) => {
-  email.value = ''
-  displayName.value = ''
-  isAddReplyTo.value = isReplyTo
-  showDialog.value = true
-}
-const addEmailAddress = () => {
-  if (isAddReplyTo.value)
-    draft.value!.reply_to!.push({
-      email: email.value,
-      display_name: displayName.value,
-    })
-  else
-    draft.value!.bcc!.push({
-      email: email.value,
-      display_name: displayName.value,
-    })
-  showDialog.value = false
-}
-
-const addEmailTitle = computed(() => {
-  if (isAddReplyTo.value) {
-    return __('New reply-to')
+  if (draft.value) {
+    draft.value.signature = value
   }
+}
 
-  return __('New Bcc')
-})
-const addEmailDialog = computed(() => ({
-  title: addEmailTitle.value,
-  actions: [
-    {
-      label: __('Save'),
-      variant: 'solid' as const,
-      disabled: !email.value,
-      onClick: addEmailAddress,
-    },
-  ],
-}))
+const savedSignature = ref('')
 const addIdentity = useMutation(api.mail.identities.create)
 const isCreateBlocked = computed(() => !newAddress.value?.email)
 async function createAddress() {
