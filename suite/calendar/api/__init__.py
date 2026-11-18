@@ -380,26 +380,23 @@ def search_calendar_events_with_shared(
     # calendar-shaped argument in this app is. One this site keeps is nobody's mail account,
     # and is asked here alone.
     calendar_account, _sep, calendar_id = filters.calendar.partition("|")
+    user = frappe.session.user
     if calendar_account == EXTERNAL_ACCOUNT:
         events = []
-        external = external_search.search(frappe.session.user, text, limit, filters, time_zone, [calendar_id])
+        external = external_search.search(user, text, limit, filters, time_zone, [calendar_id])
+    elif filters.calendar:
+        events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
+        external = []
     else:
-        if filters.calendar:
-            events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
-        else:
-            events = _with_shared(
-                account,
-                lambda each, calendar_ids: _search_calendar_events(
-                    each, text, limit, time_zone, calendar_ids, filters
-                ),
-            )
+        events = _with_shared(
+            account,
+            lambda each, calendar_ids: _search_calendar_events(
+                each, text, limit, time_zone, calendar_ids, filters
+            ),
+        )
         # The site's own calendars are drawn beside the mail server's, so a search of what the
         # reader can see answers for them too.
-        external = (
-            []
-            if filters.calendar
-            else external_search.search(frappe.session.user, text, limit, filters, time_zone)
-        )
+        external = external_search.search(user, text, limit, filters, time_zone)
 
     # Without a range the server answered with masters, and a master's date is the least useful
     # date a series has: the standup shows once, dated the week it was first entered. Each is
