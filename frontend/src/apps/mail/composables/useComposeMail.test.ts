@@ -38,8 +38,9 @@ vi.mock('@/api', () => ({
     },
   },
   client: { mutation: vi.fn() },
-  useMutation: (reference: 'create' | 'updateDraft') => ({
-    run: (input: unknown) => server[reference](input),
+  // A save's options (keepalive) reach the server beside its input.
+  useMutation: (reference: 'create' | 'updateDraft', options?: { keepalive?: boolean }) => ({
+    run: (input: unknown) => server[reference](input, options),
     isPending: false,
   }),
 }))
@@ -107,7 +108,9 @@ function compose({
   host = () => null,
   upload = vi.fn(),
   maxAttachmentSize,
+  mailDetails = draft,
 }: {
+  mailDetails?: ComposeMailData
   signedInAs?: string
   host?: () => ComposerHost
   upload?: Upload
@@ -118,7 +121,7 @@ function compose({
     defineComponent({
       setup() {
         composer = useComposeMail({
-          mailDetails: draft,
+          mailDetails,
           reloadMails: vi.fn(),
           close: () => (open = false),
           isOpen: () => open,
@@ -141,6 +144,7 @@ beforeEach(() => {
   open = true
   scope.identities = mayaIdentities
   server.updateDraft.mockReset()
+  server.create.mockReset()
   requestCompose.mockReset()
   toastError.mockReset()
   vi.mocked(raiseToast).mockReset()
@@ -558,5 +562,83 @@ describe('a reminder if nobody replies', () => {
     // By path, which opens from another app before Mail's routes load; by slug, which the guard
     // leaves alone, so the page the reader sent from stays in the history behind it.
     expect(routerPush).toHaveBeenCalledWith('/mail/account/account/mailbox/sent/thread-1')
+  })
+})
+
+describe('leaving a page that leaves its document', () => {
+  const saved = (id: string) => ({ id, status: 'Drafted', error: null })
+  const held = () => {
+    let settle!: (value: unknown) => void
+    return { promise: new Promise((resolve) => (settle = resolve)), settle }
+  }
+
+  it('saves what was typed since the last save as the page goes, to the same draft', async () => {
+    const composer = compose()
+    server.updateDraft.mockResolvedValue(saved('draft-1'))
+    composer.mail.subject = 'Fwd: Brief, with the dates'
+
+    composer.flushDraft()
+
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
+    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({
+      id: 'draft-1',
+      subject: 'Fwd: Brief, with the dates',
+      submit: false,
+    })
+    // In a request the browser lets outlive the page.
+    expect(server.updateDraft.mock.calls[0][1]).toEqual({ keepalive: true })
+    expect(server.create).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing for a composer left as it opened', async () => {
+    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
+
+    composer.flushDraft()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(server.create).not.toHaveBeenCalled()
+    expect(server.updateDraft).not.toHaveBeenCalled()
+  })
+
+  it('makes no second draft while the first save is still going', async () => {
+    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
+    const first = held()
+    server.create.mockReturnValueOnce(first.promise)
+    composer.mail.subject = 'Planning'
+    void composer.saveDraft()
+    await vi.waitFor(() => expect(server.create).toHaveBeenCalledOnce())
+
+    composer.mail.subject = 'Planning, Thursday'
+    composer.flushDraft()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(server.create).toHaveBeenCalledOnce()
+    expect(server.updateDraft).not.toHaveBeenCalled()
+    first.settle(saved('draft-9'))
+  })
+
+  it('on Close, lets a save that is going land, then saves what came since to that draft', async () => {
+    const composer = compose()
+    const first = held()
+    server.updateDraft.mockReturnValueOnce(first.promise).mockResolvedValue(saved('draft-3'))
+    composer.mail.subject = 'Fwd: Brief, v2'
+    void composer.saveDraft()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
+    composer.mail.subject = 'Fwd: Brief, v3'
+
+    let closed = false
+    const closing = composer.settleDraft().then(() => (closed = true))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(closed).toBe(false)
+    // Saved as a new version, which the server names afresh.
+    first.settle(saved('draft-2'))
+    await closing
+
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(server.updateDraft.mock.calls[1][0]).toMatchObject({
+      id: 'draft-2',
+      subject: 'Fwd: Brief, v3',
+    })
+    expect(server.create).not.toHaveBeenCalled()
   })
 })

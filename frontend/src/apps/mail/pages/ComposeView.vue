@@ -283,6 +283,7 @@
 </template>
 
 <script setup lang="ts">
+import { useEventListener } from '@vueuse/core'
 import { Button, Combobox } from 'frappe-ui'
 import { Editor, EditorContent, EditorFixedMenu } from 'frappe-ui/editor'
 import {
@@ -344,12 +345,18 @@ const mailDetails = takePendingCompose()
 
 // Leaving the page IS closing the composer, so both the header's close button and the system back
 // gesture land in the same place. `leaving` stops the guard from bouncing the programmatic pop.
+//
+// When the page is the first of its document (another app opened it with a page load: see
+// composeHandoff), going back leaves the document, which runs no route guard and unmounts nothing.
+// So the draft is kept before going, and on `pagehide` for the Back gesture.
 let leaving = false
-const closeCompose = () => {
+const closeCompose = async () => {
   if (leaving) return
   leaving = true
+  if (router.options.history.state.back == null) await settleDraft()
   router.back()
 }
+useEventListener(window, 'pagehide', () => flushDraft())
 
 const {
   mail,
@@ -357,6 +364,8 @@ const {
   isRecipientsEmpty,
   moveRecipient,
   saveDraft,
+  settleDraft,
+  flushDraft,
   isSaveFailed,
   sendMail,
   discardMail,
