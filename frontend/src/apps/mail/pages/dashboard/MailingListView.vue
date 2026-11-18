@@ -121,7 +121,12 @@
                 </template>
               </FormControl>
             </div>
-            <div v-if="recipients.rows.length" class="divide-y">
+            <DashboardRowsSkeleton
+              v-if="recipients.status === 'pending'"
+              :rows="3"
+              row-class="border-b px-5 py-3 text-base last:border-b-0"
+            />
+            <div v-else-if="recipients.rows.length" class="divide-y">
               <div
                 v-for="recipient in recipients.rows"
                 :key="recipient.email"

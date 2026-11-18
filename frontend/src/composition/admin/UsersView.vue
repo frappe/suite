@@ -21,14 +21,8 @@
     :title="__('Could not load users')"
     :retry="() => storage.refetch()"
   />
-  <DashboardLayout v-else area="admin" :breadcrumbs="[{ label: __('Users') }]">
-    <!-- Mount the directory once the instance-specific layout is ready. -->
-    <template v-if="onInvitations">
-      <UsersTabs />
-      <DashboardListSkeleton :columns="3" />
-    </template>
-    <DashboardListSkeleton v-else :columns="4" />
-  </DashboardLayout>
+  <!-- Mount the directory once the instance-specific layout is ready. -->
+  <UsersLoading v-else />
 </template>
 
 <script setup lang="ts">
@@ -48,24 +42,29 @@ const route = useRoute()
 const onInvitations = computed(() => route.path.endsWith('/invitations'))
 // Keep the directory request alive as the cloud layout replaces its loading view.
 useQuery(api.suite.users.list, () => (onInvitations.value ? false : {}))
-// Keep the dashboard header mounted while the cloud-only chunk loads: its
-// teleported header reserves space in the shell outside this component.
+// Every loading state renders the dashboard header: it is teleported into the
+// shell, so a frame without it shifts the whole page.
+const UsersLoading = {
+  render: () =>
+    h(
+      DashboardLayout,
+      { area: 'admin', breadcrumbs: [{ label: __('Users') }] },
+      {
+        default: () =>
+          onInvitations.value
+            ? [h(UsersTabs), h(DashboardListSkeleton, { columns: 3 })]
+            : h(DashboardListSkeleton, { columns: 4 }),
+      },
+    ),
+}
 const MailUsers = defineAsyncComponent({
   loader: loadMailAdminUsers,
   delay: 0,
-  loadingComponent: {
-    render: () =>
-      h(
-        DashboardLayout,
-        { area: 'admin', breadcrumbs: [{ label: __('Users') }] },
-        {
-          default: () =>
-            onInvitations.value
-              ? [h(UsersTabs), h(DashboardListSkeleton, { columns: 3 })]
-              : h(DashboardListSkeleton, { columns: 4 }),
-        },
-      ),
-  },
+  loadingComponent: UsersLoading,
 })
-const LocalUsers = defineAsyncComponent(() => import('./LocalUsersView.vue'))
+const LocalUsers = defineAsyncComponent({
+  loader: () => import('./LocalUsersView.vue'),
+  delay: 0,
+  loadingComponent: UsersLoading,
+})
 </script>
