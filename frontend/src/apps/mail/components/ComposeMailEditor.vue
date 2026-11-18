@@ -395,7 +395,17 @@
 import { Button, Combobox, Dropdown, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
 import { Editor, EditorContent } from 'frappe-ui/editor'
 import { ExternalLink, Forward, Reply, ReplyAll, UploadCloud } from 'lucide-vue-next'
-import { computed, inject, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  inject,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  onUnmounted,
+  ref,
+  useTemplateRef,
+  watch,
+} from 'vue'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import ComposeMailToolbar from '@/apps/mail/components/ComposeMailToolbar.vue'
@@ -493,6 +503,14 @@ const uploadInlineImage = async (file: File) => {
 // What the composition *is* — draft state, autosave, send, schedule, discard, attachments, mentions
 // — lives in the composable, shared with the phone composer (ComposeView). Only what is particular
 // to this dialog stays here: the contact picker, drag-and-drop, and the in-thread draft actions.
+// Going without a Close: the window unmounted while still open, by the page it is on going (another
+// app's, or Mail's layout) or by a second request replacing it. It is closed all the same, so a save
+// still out when it goes catches up on what was typed meanwhile, and one refused is kept for Reopen,
+// as after a Close. Not on a hand-off (see popOut), which the window it went to saves.
+let leaving = false
+onBeforeUnmount(() => {
+  if (!handedOff) leaving = true
+})
 const {
   mail,
   identities,
@@ -526,7 +544,7 @@ const {
   isInThread,
   reloadMails,
   close: () => (show.value = false),
-  isOpen: () => !!show.value,
+  isOpen: () => !!show.value && !leaving,
   onDiscardUnsaved: () => emit('discardMail'),
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,

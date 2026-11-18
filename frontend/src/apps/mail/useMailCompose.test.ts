@@ -17,11 +17,16 @@ const server = vi.hoisted<{
   mailAccounts: boolean
   identitiesAsked: number
   identitiesAnswered: Promise<void>
+  // The drafts saved, as the server got them, and when it answers one.
+  saves: { method: string; body: Record<string, unknown> }[]
+  saveAnswered: Promise<void>
 }>(() => ({
   asked: [],
   mailAccounts: true,
   identitiesAsked: 0,
   identitiesAnswered: Promise.resolve(),
+  saves: [],
+  saveAnswered: Promise.resolve(),
 }))
 vi.hoisted(() => {
   const account = {
@@ -80,7 +85,7 @@ vi.hoisted(() => {
     creation: '2026-01-01 00:00:00',
     modified: '2026-01-01 00:00:00',
   }
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
     const method = url.pathname.split('.').at(-1) ?? ''
     server.asked.push(method)
@@ -88,6 +93,13 @@ vi.hoisted(() => {
     if (method === 'get_user_info' || method === 'get_identities') {
       server.identitiesAsked++
       await server.identitiesAnswered
+    }
+    if (method === 'create_mail' || method === 'update_draft_mail') {
+      server.saves.push({ method, body: JSON.parse(String(init?.body ?? '{}')) })
+      await server.saveAnswered
+      const draft = { name: 'draft-1', id: 'draft-1', status: 'Drafted', error: null }
+      const sent = { thread_id: null, submission_id: null, send_at: null, undo_send_period: null }
+      return Response.json({ message: { ...draft, ...sent } })
     }
     const message =
       method === 'get_user_info'
@@ -167,6 +179,8 @@ beforeEach(() => {
   server.asked = []
   server.mailAccounts = true
   server.identitiesAnswered = Promise.resolve()
+  server.saves = []
+  server.saveAnswered = Promise.resolve()
   isMobile.value = false
   toasts.error.mockReset()
 })
@@ -322,6 +336,32 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     press(document.body, '?')
     expect(shortcuts.dayView).toHaveBeenCalledOnce()
     expect(shortcuts.showShortcuts).toHaveBeenCalledOnce()
+  })
+
+  it('keeps what was typed while a save was out when the page is left with the window open', async () => {
+    const { leave } = await openPage()
+    button('Email participants')!.click()
+    await vi.waitFor(() => expect(composer()).not.toBeNull(), { timeout: 15_000 })
+    const subject = composer()!.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!
+    const type = (text: string) => {
+      subject.value = text
+      subject.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    let answer!: () => void
+    server.saveAnswered = new Promise((resolve) => (answer = resolve))
+    type('Planning')
+    // The autosave goes out, and the server takes its time.
+    await vi.waitFor(() => expect(server.saves).toHaveLength(1), { timeout: 5_000 })
+    type('Planning, Thursday at ten')
+
+    leave()
+    answer()
+
+    await vi.waitFor(() => expect(server.saves).toHaveLength(2), { timeout: 5_000 })
+    expect(server.saves[1]).toMatchObject({
+      method: 'update_draft_mail',
+      body: { id: 'draft-1', subject: 'Planning, Thursday at ten' },
+    })
   })
 
   it('leaves out every address that is the reader’s own in Mail', async () => {
