@@ -469,6 +469,36 @@ class TestGrantWorkflows(_GrantFixture):
                 # And the owner can still change it.
                 grant(file, principal, READ, owner)
 
+    def test_the_personal_root_owner_keeps_manage_while_changing_the_level_for_everyone(self):
+        owner = principals_for(TARGET)
+        colleague = principals_for(MANAGER)
+        file = create_empty_file(owner, self.folder.name, "video-plan.sheet")
+        node = frappe.db.get_value("Drive Node", file, ["name", "root", "path", "kind"], as_dict=True)
+
+        # The share dialog's "Everyone at <org>" menu: each pick rewrites one row.
+        for role in (EDIT, COMMENT, READ, NONE, COMMENT):
+            with self.subTest(role=role):
+                grant(file, "$GENERAL", role, owner)
+                self.assertEqual(effective_role(node, owner), MANAGE)
+                self.assertEqual(effective_role(node, colleague), role)
+
+        revoke(file, "$GENERAL", owner)
+        self.assertEqual(effective_role(node, owner), MANAGE)
+
+    def test_changing_the_level_for_everyone_gives_a_lowered_owner_manage_back(self):
+        owner = principals_for(TARGET)
+        file = create_empty_file(owner, self.folder.name, "build-vs-buy.doc")
+        node = frappe.db.get_value("Drive Node", file, ["name", "root", "path", "kind"], as_dict=True)
+        # A row written before the fix: it lowered the owner to Comment.
+        frappe.get_doc(
+            {"doctype": "Drive Grant", "node": file, "principal": "$GENERAL", "role": COMMENT}
+        ).insert(ignore_permissions=True)
+        self.assertEqual(effective_role(node, owner), COMMENT)
+
+        grant(file, "$GENERAL", READ, self.admin)
+
+        self.assertEqual(effective_role(node, owner), MANAGE)
+
     def test_explain_is_authorized_ordered_fresh_and_includes_unheld_rows(self):
         for principal, role in (
             ("$GROUP:manage", MANAGE),
