@@ -1,46 +1,24 @@
 <template>
-  <!-- `invisible`, never `v-show`, and the skeleton laid over the frame rather than standing in
-	     for it. iframe-resizer sizes the frame by asking the document inside it how tall it is, so
-	     the frame has to have a box the whole time it is being measured. Under `display: none` the
-	     document answers with the child's starting 1px; the parent writes that back as the frame's
-	     height, and the child's own visibility observer then reads a 1px frame as off-screen and
-	     stops reporting size at all. The message is blank from then on however tall its content is,
-	     and nothing recovers it — not a resize, not content changing inside the frame, not even
-	     being handed a real height. Only reloading the frame does, which is why re-selecting the
-	     mail was the one thing that worked. The frame also waits for the date reader, so the dates
-	     are in the first document it loads rather than reloading it under the reader; the skeleton
-	     holds the space until then. -->
-  <div class="relative w-full">
-    <IframeResizer
+  <!-- Hidden, and taking no room, until the frame first says how tall its message is: it shows
+	     at its full height or not at all. Hidden with `invisible`, never `v-show`: the frame is made
+	     as tall as its own document says it is, and a document that is not laid out has no height
+	     to report. Under `display: none` the frame would never be measured, so never shown. The
+	     frame also waits for the date reader, so the dates are in the first document it loads
+	     rather than reloading it under the reader. -->
+  <div class="w-full">
+    <iframe
       v-if="srcdoc"
       ref="frame"
       class="w-full"
-      :class="{ invisible: !isIframeReady }"
-      license="GPLv3"
-      :scrolling="true"
+      :class="{ invisible: !isMeasured }"
+      :style="{ height: `${height ?? 0}px` }"
+      scrolling="yes"
       :srcdoc
-      @on-ready="isIframeReady = true"
     />
-    <div
-      v-if="!isIframeReady"
-      class="animate-pulse space-y-2 py-4"
-      :class="{ 'absolute inset-0': srcdoc }"
-    >
-      <div
-        v-for="i in 5"
-        :key="i"
-        class="bg-surface-gray-3 h-2"
-        :style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
-      />
-    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
-// The package maps `./sfc` only via its (non-honored) `browser` field under
-// Vite 8/Rolldown, so import the concrete SFC file directly.
-import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
 import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'
@@ -86,12 +64,23 @@ const mailDates = useMailDates()
 const { dataTheme } = useTheme()
 const { isMobile } = useScreenSize()
 const { requestCompose } = useComposeMail()
-const frame = useTemplateRef<{ $el: HTMLIFrameElement }>('frame')
+const frame = useTemplateRef<HTMLIFrameElement>('frame')
 
-const isIframeReady = ref(false)
+// How tall the message is, in pixels, as its frame last reported it; nothing until it first does.
+const height = ref<number>()
+const isMeasured = computed(() => height.value !== undefined)
 
-// Listen for keyboard/swipe events from iframe
+// What the frame's own script tells the page: it cannot reach the page any other way.
 const handleMessage = (event: MessageEvent) => {
+  // Only this message's own frame says how tall it is: any window that can reach the page can
+  // post to it, and every expanded message hears every frame.
+  if (event.data?.type === 'height') {
+    if (event.source !== frame.value?.contentWindow) return
+    const reported: unknown = event.data.height
+    if (typeof reported === 'number' && Number.isFinite(reported) && reported >= 0)
+      height.value = reported
+    return
+  }
   // Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
   // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
   if (event.data?.type === 'swipe') {
@@ -100,7 +89,7 @@ const handleMessage = (event: MessageEvent) => {
   }
   // A date in the message the reader picked (see markMailDates), by its place in this render's list.
   if (event.data?.type === 'mail-date') {
-    if (event.source !== frame.value?.$el?.contentWindow) return
+    if (event.source !== frame.value?.contentWindow) return
     const date = body.value.dates[Number(event.data.index)]
     if (date) emit('pickDate', date)
     return
@@ -110,7 +99,7 @@ const handleMessage = (event: MessageEvent) => {
   // can reach us (an attachment rendered in a frame, an embedder), and this one puts
   // a stranger's address and body in front of the user as a ready-to-send draft.
   if (event.data?.type === 'mailto') {
-    if (event.source !== frame.value?.$el?.contentWindow) return
+    if (event.source !== frame.value?.contentWindow) return
 
     const draft = parseMailto(String(event.data.href ?? ''))
     if (draft) requestCompose(draft)
@@ -120,14 +109,14 @@ const handleMessage = (event: MessageEvent) => {
   // handlers (reka's dismissable layers) see it land outside whatever popover is open. As a mouse
   // press: reka waits for a touch's click, and that click stays in the frame.
   if (event.data?.type === 'pointerdown') {
-    const iframe = frame.value?.$el
+    const iframe = frame.value
     if (!iframe || event.source !== iframe.contentWindow) return
     iframe.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
     return
   }
   // Only this message's own keys: every expanded message hears every frame's, and replaying them
   // all would press each key once per message.
-  if (event.data?.type !== 'keyboard' || event.source !== frame.value?.$el?.contentWindow) return
+  if (event.data?.type !== 'keyboard' || event.source !== frame.value?.contentWindow) return
 
   // Create a synthetic keyboard event in the parent
   const keyboardEvent = new KeyboardEvent(event.data.eventType, {
@@ -354,7 +343,6 @@ const srcdoc = computed(() => {
 					white-space: pre-wrap;
 				}
 			</style>
-			<script> ${iframeResizerChildScript} <\/script>
 		</head>
 		<body>
 			${transformedContent}
@@ -519,6 +507,49 @@ const srcdoc = computed(() => {
 					img.addEventListener('error', refit);
 				});
 				window.addEventListener('load', refit);
+
+				// The frame is as tall as the page makes it, and the page only knows what it is told
+				// here: the height of the message, each time it changes. A sheet that fills its window
+				// (html, body { height: 100% }) would make the message as tall as the frame, which
+				// could then never shrink to it, so both take their height from their content.
+				root.style.setProperty('height', 'auto', 'important');
+				bodyStyle.setProperty('height', 'auto', 'important');
+				// The message is as tall as its root's box, unless something is drawn below that box:
+				// positioned content, a negative margin. scrollHeight says how far down that reaches,
+				// but never less than the frame's own height, so in a frame taller than the box it
+				// says nothing, and only the elements themselves can tell. Their answer is held to
+				// scrollHeight, which content clipped by its own container would otherwise pass.
+				const messageHeight = () => {
+					const box = Math.ceil(root.getBoundingClientRect().height);
+					const reach = root.scrollHeight;
+					if (reach <= box || reach > root.clientHeight) return Math.max(box, reach);
+					let lowest = box;
+					document.body.querySelectorAll('*').forEach((el) => {
+						lowest = Math.max(lowest, el.getBoundingClientRect().bottom + window.scrollY);
+					});
+					return Math.min(Math.ceil(lowest), reach);
+				};
+				// Collapsed, the message is not laid out and has no height: the frame keeps the one
+				// it had, and hears again when the message is opened.
+				let reported;
+				const reportHeight = () => {
+					// Not clientWidth: a hidden frame keeps its window's width, but its root has no box.
+					if (!root.getBoundingClientRect().width) return;
+					const height = messageHeight();
+					if (height === reported) return;
+					reported = height;
+					window.parent.postMessage({ type: 'height', height }, '*');
+				};
+				// Whatever changes the root's box is seen here: an image or a font arriving, the
+				// quoted trail opening, the pane changing width. What is drawn below the box can
+				// change without it, when an image there arrives or the frame is resized.
+				new ResizeObserver(reportHeight).observe(root);
+				window.addEventListener('resize', reportHeight);
+				window.addEventListener('load', reportHeight);
+				document.querySelectorAll('img').forEach((img) => {
+					img.addEventListener('load', reportHeight);
+					img.addEventListener('error', reportHeight);
+				});
 
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {

@@ -83,6 +83,14 @@ export const SPLIT_PANE_CLASS = 'min-w-56 flex-1 lg:min-w-64'
 export const ROW_BOX_CLASS = 'flex space-x-2.5 border-b px-3.5 py-2.5 sm:space-x-5 sm:px-5 sm:py-2'
 
 /**
+ * A date header's box in a mail list: its height, tint and the line under it. MailGroupHeader and
+ * the loading list's outline (MailListSkeleton) share it, so the outline's header is the height the
+ * real one will be.
+ */
+export const GROUP_HEADER_BOX_CLASS =
+  'flex h-9 items-center border-b bg-surface-gray-1 px-3.5 sm:px-5'
+
+/**
  * The mail list's "you are here": a dark bar down a row's left side. 1.5px for the keyboard's
  * cursor (a row or a date header); 3px for the thread open in the pane, so the one being read
  * stands out from a ticked row the cursor is on.

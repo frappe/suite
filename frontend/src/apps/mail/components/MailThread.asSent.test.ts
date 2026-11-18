@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, ref, type App } from 'vue'
+import { createApp, h, nextTick, reactive, ref, type App } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import MailThread from '@/apps/mail/components/MailThread.vue'
@@ -48,13 +48,6 @@ vi.mock('@/apps/mail/components/SenderCard.vue', empty)
 vi.mock('@/apps/mail/components/MessageReactions.vue', empty)
 vi.mock('@/apps/mail/components/MailDate.vue', empty)
 vi.mock('@/apps/mail/components/AttachmentViewer.vue', empty)
-
-// The message's frame, as EmailContent's own tests stub it.
-vi.mock('@iframe-resizer/vue/iframe-resizer.vue', async () => {
-  const { defineComponent, h } = await import('vue')
-  return { default: defineComponent({ setup: () => () => h('iframe', { 'data-frame': '' }) }) }
-})
-vi.mock('@iframe-resizer/child/index.umd.js?raw', () => ({ default: '' }))
 
 const query = vi.hoisted(() => ({
   current: {
@@ -113,14 +106,33 @@ afterEach(() => {
   root.remove()
 })
 
+// Opens thread `one` in an Inbox pane, as a list does, its messages whatever `query` holds.
+const openThread = async () => {
+  window.__ = (text: string) => text
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
+  })
+  app = createApp({
+    setup: () => () =>
+      h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
+  })
+  app.config.globalProperties.__ = window.__
+  app.use(router)
+  app.provide('$user', { data: {} })
+  app.provide('$dayjs', dayjs)
+  document.body.appendChild(root)
+  app.mount(root)
+  await nextTick()
+}
+
 const colorScheme = () =>
   new DOMParser()
-    .parseFromString(root.querySelector('[data-frame]')!.getAttribute('srcdoc')!, 'text/html')
+    .parseFromString(root.querySelector('iframe')!.getAttribute('srcdoc')!, 'text/html')
     .querySelector('meta[name="color-scheme"]')!
     .getAttribute('content')
 
 it('offers a recoloured message as sent, shows it so, and drops the offer when the theme turns light', async () => {
-  window.__ = (text: string) => text
   query.current.data = [
     {
       id: 'one',
@@ -138,20 +150,7 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
       html_body: '<div><p>This week in the project.</p></div>',
     },
   ]
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
-  })
-  app = createApp({
-    setup: () => () =>
-      h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
-  })
-  app.use(router)
-  app.provide('$user', { data: {} })
-  app.provide('$dayjs', dayjs)
-  document.body.appendChild(root)
-  app.mount(root)
-  await nextTick()
+  await openThread()
   await nextTick()
 
   expect(menu.bodyView).toBe('adapted')
@@ -169,4 +168,41 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
   await nextTick()
   await nextTick()
   expect(menu.bodyView).toBeUndefined()
+})
+
+it('stands in outline until its messages arrive, then shows them in its place', async () => {
+  // Opened by its link: not in any list, so the pane fetches it, and the answer is still out.
+  query.current = reactive({
+    data: fromPartial<Partial<Mail>[] | undefined>(undefined),
+    status: 'pending',
+    refetch: async () => {},
+  })
+  await openThread()
+
+  expect(root.querySelector('[role="status"]')).not.toBeNull()
+  expect(root.querySelector('h1')).toBeNull()
+
+  query.current.data = [
+    {
+      id: 'one',
+      name: 'one',
+      thread_id: 'one',
+      subject: 'Trail map for Saturday',
+      seen: 1,
+      draft: 0,
+      from_email: 'sam@home.example',
+      recipients: [],
+      reply_to: [],
+      attachments: [],
+      mailboxes: [],
+      received_at: '2026-10-30T08:00:00Z',
+      html_body: '<p>Here is the map.</p>',
+    },
+  ]
+  query.current.status = 'success'
+  await nextTick()
+  await nextTick()
+
+  expect(root.querySelector('[role="status"]')).toBeNull()
+  expect(root.querySelector('h1')?.textContent).toContain('Trail map for Saturday')
 })

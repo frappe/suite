@@ -727,6 +727,27 @@ class MailQueue(OwnerFromUser, Document):
                 raise ValueError(destroyed.result.not_destroyed[self.id])
         except Exception:
             log_mail_error(f"Mail Queue: could not destroy replaced draft {self.id}", frappe.get_traceback())
+        else:
+            self._forget_cached(self.id)
+
+    def _forget_cached(self, id: str) -> None:
+        """Drops the cache's copy of a message this row has changed on the server.
+
+        The cache keeps a message until it is told otherwise, and nothing else tells it of these
+        two: a draft that was replaced is gone, and a mail that was sent was a draft on the server
+        until its submission was taken - a read of its thread in that moment cached it as one, and
+        the thread went on showing a composer over a mail that had gone out. A read still on its
+        way with the draft does not cache it either (see `_note_written`).
+
+        A failure here is logged, and never the reason a mail that was sent reads as failed.
+        """
+
+        from suite.mail.doctype.mail_message.mail_message import _remove_cached_messages
+
+        try:
+            _remove_cached_messages(self.account, [id])
+        except Exception:
+            log_mail_error(f"Mail Queue: could not drop the cached copy of {id}", frappe.get_traceback())
 
     def _process(self) -> None:
         """Create, Update or Submit the Email."""
@@ -964,6 +985,9 @@ class MailQueue(OwnerFromUser, Document):
 
             if self.id and draft_created:
                 self._destroy_replaced_draft(client)
+
+            if submit_created and draft_created:
+                self._forget_cached(draft_created["id"])
         except Exception as e:
             kwargs.update({"status": "Failed", "error_log": frappe.get_traceback(with_context=True)})
             if answered:
