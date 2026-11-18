@@ -37,7 +37,7 @@
   "frontend/src/apps/mail/components/Modals/EditDomainModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/EditGroupModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/EditMailingListModal.vue": 1,
-  "frontend/src/apps/mail/components/Modals/FolderModal.vue": 2,
+  "frontend/src/apps/mail/components/Modals/FolderModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/ScheduleSendModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/SetSieveScriptStateModal.vue": 1,
   "frontend/src/apps/mail/components/StackListItem.vue": 1,

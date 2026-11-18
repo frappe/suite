@@ -61,18 +61,14 @@
             <template v-else>
               <Alert
                 v-if="activeScript !== 'frappe_mail_automation'"
-                :title="__('Folder Automation Disabled')"
-                :description="
-                  __(`Please enable it to ensure that your rules function properly.`, [
-                    activeScript,
-                  ])
-                "
+                :title="__('Folder automation is off')"
+                :description="__('Nothing on this tab runs until you turn it on.')"
                 theme="amber"
                 :dismissable="false"
               >
                 <template #actions>
                   <Button
-                    :label="__('Enable')"
+                    :label="__('Turn on')"
                     variant="outline"
                     @click="showEnableFolderAutomation = true"
                   />
@@ -272,7 +268,7 @@ async function createAutomationScriptSubmit() {
     active: true,
   }
   await createAutomationScript.run(input)
-  raiseToast(__('Folder automation enabled'))
+  raiseToast(__('Folder automation turned on'))
   showEnableFolderAutomation.value = false
 }
 watch(show, (val) => {

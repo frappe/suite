@@ -3,9 +3,9 @@
     <SettingsDialogActions>
       <Button
         icon-left="lucide-refresh-cw"
-        :label="__('Rebuild folder rules')"
+        :label="__('Rebuild folder automation')"
         :loading="rebuildAutomation.isPending"
-        :tooltip="__('Regenerate the folder automation script from your saved folder rules.')"
+        :tooltip="__('Builds folder automation again from the Automation tab of each folder.')"
         @click="rebuildAutomationSubmit()"
       />
       <Button variant="solid" icon-left="lucide-plus" :label="__('New rule')" @click="addScript" />
@@ -19,7 +19,7 @@
       >
         <div class="flex items-center gap-2">
           <span class="text-base">{{ script._name }}</span>
-          <Badge v-if="script.active" :label="__('Active')" theme="blue" size="sm" />
+          <Badge v-if="script.active" :label="__('On')" theme="blue" size="sm" />
         </div>
         <Dropdown :options="scriptOptions(script)">
           <Button variant="ghost" @click.stop>
@@ -83,7 +83,7 @@ async function rebuildAutomationSubmit() {
     account: store.accountId,
   }
   await rebuildAutomation.run(input)
-  raiseToast(__('Folder rules rebuilt'))
+  raiseToast(__('Folder automation rebuilt'))
 }
 const showSieveScript = ref(false)
 const selectedScript = ref<SieveScript>()
@@ -101,9 +101,18 @@ const editScript = (script: SieveScript) => {
   selectedScript.value = script
   showSieveScript.value = true
 }
+
+function switchLabel(script: SieveScript) {
+  if (script.active) {
+    return __('Turn off')
+  }
+
+  return __('Turn on')
+}
+
 const scriptOptions = (script: SieveScript) => [
   {
-    label: script.active ? __('Deactivate') : __('Activate'),
+    label: switchLabel(script),
     icon: script.active ? 'eye-off' : 'eye',
     onClick: () => {
       selectedScript.value = script
