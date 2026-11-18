@@ -53,21 +53,38 @@
         @click="handleSave"
       />
     </SettingsDialogActions>
-    <SetSieveScriptStateModal
-      v-model="showConfirmDialog"
-      :script="{ _name: 'vacation', active: 0 }"
-      :action="updateVacationResponseSubmit"
+    <!-- The mail server runs one script at a time, and the reply is one: on, it stops the rules -->
+    <Dialog
+      v-model:open="showConfirmDialog"
+      v-bind="{
+        title: __('Turn on auto-reply?'),
+        message: __(
+          'Your rules stop sorting mail while auto-reply is on. They start again when you turn it off.',
+        ),
+        actions: [
+          {
+            label: __('Cancel'),
+            variant: 'outline' as const,
+            onClick: () => closeConfirm(),
+          },
+          {
+            label: __('Turn on auto-reply'),
+            variant: 'solid' as const,
+            loading: updateVacationResponse.isPending,
+            onClick: () => updateVacationResponseSubmit(),
+          },
+        ],
+      }"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, Dialog, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
-import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -83,6 +100,10 @@ const store = userStore()
 const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const showConfirmDialog = ref(false)
+function closeConfirm() {
+  showConfirmDialog.value = false
+}
+
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )

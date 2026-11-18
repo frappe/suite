@@ -29,9 +29,6 @@ vi.mock('./SignatureSettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   default: { render: () => null },
 }))
-vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({
-  default: { render: () => null },
-}))
 vi.mock('@/platform/feedback', () => ({
   failureLine: (error: Error | null) => error?.message,
 }))
