@@ -37,6 +37,7 @@ import {
   type uploadFunction,
 } from '@/apps/mail/utils/text-editor'
 import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { translate as __ } from '@/platform/translation'
 
 /** The mounted editor, as far as this composable cares about it. */
@@ -142,13 +143,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const getIdentity = (email: string) =>
     identities.value.data?.find((identity: Identity) => identity.email === email)
   // The toasts' links go by path rather than route name: the composer also opens over other apps,
-  // and there Mail's routes are not registered until the first visit to /mail. A folder's id opens
-  // it as its slug does (see router.ts).
+  // and there Mail's routes are not registered until the first visit to /mail. The folder goes by
+  // its slug, as the URL names it: an id would be answered with a redirect that replaces the page
+  // the reader came from, and Back would skip it.
   const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
-  const viewSentMessage = (threadID: string) =>
-    router.push(
-      `${accountPath()}/mailbox/${encodeURIComponent(mailboxIds.value.sent)}/${encodeURIComponent(threadID)}`,
+  const viewSentMessage = (threadID: string) => {
+    const sent = mailboxParam(mailboxIds.value.sent, scope.mailboxes.value.data)
+    return router.push(
+      `${accountPath()}/mailbox/${encodeURIComponent(sent)}/${encodeURIComponent(threadID)}`,
     )
+  }
   const getDefaultFromEmail = () => {
     const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
     const defaultOutgoingEmail = scope.account.value?.default_outgoing_email

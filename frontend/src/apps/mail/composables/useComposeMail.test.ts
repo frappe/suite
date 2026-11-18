@@ -12,12 +12,13 @@ import { useComposeMail } from './useComposeMail'
 const server = vi.hoisted(() => ({ updateDraft: vi.fn(), create: vi.fn() }))
 const requestCompose = vi.hoisted(() => vi.fn())
 const toastError = vi.hoisted(() => vi.fn())
+const routerPush = vi.hoisted(() => vi.fn())
 
 vi.stubGlobal('__', (text: string) => text)
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 vi.mock('vue-router', () => ({
-  useRouter: () => ({ push: vi.fn(), currentRoute: { value: { fullPath: '/' } } }),
+  useRouter: () => ({ push: routerPush, currentRoute: { value: { fullPath: '/' } } }),
   useRoute: () => ({ params: {} }),
 }))
 vi.mock('frappe-ui', () => ({ toast: { error: toastError, success: vi.fn(), dismiss: vi.fn() } }))
@@ -27,6 +28,8 @@ vi.mock('frappe-ui/editor', async (importOriginal) => ({
 }))
 vi.mock('@/apps/mail/utils/mentionSuggestion', () => ({ createMentionSuggestion: () => ({}) }))
 vi.mock('@/apps/mail/resources', () => ({ getAttachmentUrl: vi.fn() }))
+// The suite router, which Mail's store imports.
+vi.mock('@/apps/mail/router', () => ({ default: {} }))
 vi.mock('@/api', () => ({
   api: {
     mail: {
@@ -73,7 +76,8 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
         accountId: ref('account'),
         account: ref({ default_outgoing_email: 'maya@example.com' }),
         identities,
-        mailboxIds: ref({}),
+        mailboxes: ref({ data: [{ id: 'mbx-sent', slug: 'sent', role: 'sent' }] }),
+        mailboxIds: ref({ sent: 'mbx-sent' }),
       }
     },
   }
@@ -133,6 +137,7 @@ function compose({
 }
 
 beforeEach(() => {
+  routerPush.mockReset()
   open = true
   scope.identities = mayaIdentities
   server.updateDraft.mockReset()
@@ -535,5 +540,23 @@ describe('a reminder if nobody replies', () => {
     server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
     await composer.sendMail()
     expect(server.updateDraft.mock.calls.at(-1)![0].remind_at).toBeUndefined()
+  })
+
+  it('links its toast to the thread in Sent, naming the folder as the URL does', async () => {
+    const composer = compose()
+    server.updateDraft.mockResolvedValueOnce({
+      id: 'sent-1',
+      status: 'Submitted',
+      error: null,
+      thread_id: 'thread-1',
+    })
+    await composer.sendMail()
+
+    const sent = vi.mocked(raiseToast).mock.calls.find(([message]) => message === 'Message sent')
+    sent?.[2]?.onClick()
+
+    // By path, which opens from another app before Mail's routes load; by slug, which the guard
+    // leaves alone, so the page the reader sent from stays in the history behind it.
+    expect(routerPush).toHaveBeenCalledWith('/mail/account/account/mailbox/sent/thread-1')
   })
 })
