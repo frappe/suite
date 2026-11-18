@@ -10,7 +10,7 @@ from frappe.tests import IntegrationTestCase
 from suite.calendar import api as calendar_api
 from suite.calendar import external, external_store
 from suite.calendar.external import yearly_occurrence
-from suite.calendar.external_search import search_events
+from suite.calendar.external_search import _matching_events
 from suite.calendar.tests.fixtures import BIRTHDAY, HOLIDAY
 from suite.tests.utils import ensure_user
 
@@ -28,7 +28,7 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         self.addCleanup(external_store.remove_calendar, self.calendar)
 
     def search(self, user: str, words: list[str], limit: int = 10, **narrowed) -> list[dict]:
-        return search_events(user, words, limit, **narrowed)
+        return _matching_events(user, words, limit, **narrowed)
 
     def titles(self, words: list[str], **narrowed) -> list[str]:
         return sorted({event["title"] for event in self.search(self.user, words, **narrowed)})

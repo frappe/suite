@@ -34,7 +34,7 @@ def search(
     calendars: list[str] | None = None,
 ) -> list[dict]:
     """The matches for the calendar app's search among the calendars this site keeps for `user`,
-    as `search_events` answers them.
+    as `_matching_events` answers them.
 
     Nobody is on these events, so a search by attendee or organizer finds none here. The range
     arrives as UTC instants bounding the reader's days, and these events are days with no time,
@@ -56,7 +56,7 @@ def search(
         instant = datetime.fromisoformat(normalize_utc_z(value).replace("Z", "+00:00"))
         return instant.astimezone(zone).replace(tzinfo=None)
 
-    return search_events(
+    return _matching_events(
         user,
         (text or "").split(),
         limit,
@@ -67,7 +67,7 @@ def search(
     )
 
 
-def search_events(
+def _matching_events(
     user: str,
     words: list[str],
     limit: int,
