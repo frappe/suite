@@ -173,9 +173,10 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   /**
    * Whether a write may go ahead. A change that would lower the caller's own
    * role asks first (§7.4), whatever row carries it: their own row, a group
-   * they are in, or everyone at the org. In the caller's Personal root only
-   * their own row can: Drive keeps them at Manage through any group or
-   * everyone-at-the-org share there.
+   * they are in, or everyone at the org. In the caller's Personal root a
+   * group or everyone-at-the-org share written there cannot: Drive keeps them
+   * at Manage through it. Removing one still can, since Drive restores
+   * nothing on a removal.
    */
   async function mayChange(change: GrantChange): Promise<boolean> {
     const { me, confirmLoss, personalRoot } = options
@@ -184,7 +185,7 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     if (kind === 'link' || kind === 'public' || (kind === 'user' && change.principal !== me))
       return true
     const inMyRoot = personalRoot !== undefined && node.value?.root === personalRoot
-    if (inMyRoot && (kind === 'general' || kind === 'group')) return true
+    if (inMyRoot && change.role !== null && (kind === 'general' || kind === 'group')) return true
     const explanation = await grants.explain(me).catch(() => null)
     if (!explanation) return true
     // Drive's own account holds every right, whatever the grants say.

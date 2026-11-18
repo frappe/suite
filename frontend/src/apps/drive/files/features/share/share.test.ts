@@ -738,6 +738,23 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     expect(writes()).toHaveLength(2)
   })
 
+  it('still asks before removing the group that gives the caller Manage in their own Drive', async () => {
+    // A group the caller is in holds Manage here and everyone at the org holds
+    // View; Drive does not restore the caller's Manage when a row is removed.
+    const { share, asked, writes } = setup(
+      [grant('$GROUP:Leads', 50), grant('$GENERAL', 10)],
+      [row('doc', 2, '$GROUP:Leads', 50), row('doc', 2, '$GENERAL', 10)],
+      50,
+      'grant',
+      'root',
+    )
+    await share.load()
+
+    await share.remove(share.sections.value!.people[0]!)
+    expect(asked).toEqual([10])
+    expect(writes()).toEqual([])
+  })
+
   it('still asks when everyone at the org would lower the caller outside their own Drive', async () => {
     const { share, asked } = setup([], [row('root', 0, ME, 50)], 50, 'grant', 'elsewhere')
     await share.load()
