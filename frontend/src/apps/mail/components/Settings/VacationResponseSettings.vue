@@ -61,9 +61,7 @@
       v-model:open="showConfirmDialog"
       v-bind="{
         title: __('Turn on auto-reply?'),
-        message: __(
-          'Your rules stop sorting mail while auto-reply is on. They start again when you turn it off.',
-        ),
+        message: confirmMessage,
         actions: [
           {
             label: __('Cancel'),
@@ -110,6 +108,20 @@ function closeConfirm() {
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )
+// Names what the reply stops as the app names it: folder automation, or a rule of the user's own
+const confirmMessage = computed(() => {
+  if (activeSieveScript.value === 'frappe_mail_automation') {
+    return __(
+      'Folder automation stops sorting mail while auto-reply is on. It starts again when you turn auto-reply off.',
+    )
+  }
+
+  return __(
+    'Your rule “{0}” stops running while auto-reply is on. It starts again when you turn auto-reply off.',
+    [activeSieveScript.value ?? ''],
+  )
+})
+
 // Awaited, so a refused save is no stray error
 async function handleSave() {
   if (activeSieveScript.value && draft.enabled) {

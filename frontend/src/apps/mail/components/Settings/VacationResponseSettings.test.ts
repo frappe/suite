@@ -102,6 +102,11 @@ vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
   }),
 }))
 
+/** The words as they are shown, with what they name filled in. */
+function shown(message: string, named: unknown[] = []) {
+  return message.replace(/\{(\d+)\}/g, (_, index) => String(named[Number(index)]))
+}
+
 const LONG_AGO = { from: '2020-06-01T09:00:00Z', to: '2020-06-14T09:00:00Z' }
 const AHEAD = { from: '2099-06-01T09:00:00Z', to: '2099-06-14T09:00:00Z' }
 
@@ -115,7 +120,7 @@ const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
   }
   const root = document.createElement('div')
   const app = createApp(VacationResponseSettings)
-  app.config.globalProperties.__ = (message: string) => message
+  app.config.globalProperties.__ = shown
   app.config.errorHandler = reported
   app.mount(root)
   await nextTick()
@@ -132,7 +137,7 @@ const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
 }
 
 beforeEach(() => {
-  window.__ = (message: string) => message
+  window.__ = shown
   run.mockReset()
   reported.mockReset()
   failureToast.mockReset()
@@ -211,7 +216,7 @@ it('reads a saved time to the minute, as the picker hands times back', async () 
   const { field } = await mount(1, { from: '2099-06-01T09:00:45Z', to: AHEAD.to })
   expect(field('Starts')!.value).toBe('2099-06-01 14:30:00')
 })
-it('asks before turning on, in its own words, when that stops the rules', async () => {
+it('asks before turning on, in its own words, when that stops folder automation', async () => {
   scripts.value = [{ _name: 'frappe_mail_automation', active: 1 }]
   const { root, turnOn } = await mount(0, AHEAD)
   await turnOn()
@@ -219,7 +224,7 @@ it('asks before turning on, in its own words, when that stops the rules', async 
   await nextTick()
   const question = requireTestElement(root.querySelector('[role="dialog"]'), HTMLElement)
   expect(question.querySelector('h2')?.textContent).toBe('Turn on auto-reply?')
-  expect(question.querySelector('p')?.textContent).toContain('rules stop sorting mail')
+  expect(question.querySelector('p')?.textContent).toContain('Folder automation stops sorting mail')
   expect(run).not.toHaveBeenCalled()
 
   const [cancel, confirm] = Array.from(question.querySelectorAll('button'))
@@ -229,6 +234,16 @@ it('asks before turning on, in its own words, when that stops the rules', async 
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(run).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }))
   expect(root.querySelector('[role="dialog"]')).toBeNull()
+})
+it('names the rule of the user’s own that turning on would stop', async () => {
+  scripts.value = [{ _name: 'Newsletters', active: 1 }]
+  const { root, turnOn } = await mount(0, AHEAD)
+  await turnOn()
+  root.querySelector<HTMLElement>('[label="Save"]')!.click()
+  await nextTick()
+  const warning = root.querySelector('[role="dialog"] p')?.textContent
+  expect(warning).toContain('Your rule “Newsletters” stops running')
+  expect(warning).not.toContain('Folder automation')
 })
 it('saves nothing when the question is cancelled', async () => {
   scripts.value = [{ _name: 'frappe_mail_automation', active: 1 }]
