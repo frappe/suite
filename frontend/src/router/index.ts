@@ -210,9 +210,8 @@ export function preloadPage(path: string): void {
   import('@/shell/AppContainer.vue').catch(() => {})
   const area = findArea(areaPlaceholderId(router.resolve(path)) ?? '')
   if (!area) return
-  area
-    .loadRoutes()
-    .then(({ routes: children }) => {
+  void area.loadRoutes().then(
+    ({ routes: children }) => {
       const matcher = createRouter({
         history: createMemoryHistory(),
         routes: [{ path: area.to, children }],
@@ -225,8 +224,9 @@ export function preloadPage(path: string): void {
           load().catch(() => {})
         }
       }
-    })
-    .catch(() => {})
+    },
+    () => {},
+  )
 }
 
 function areaPlaceholderId(to: Pick<RouteLocationNormalizedLoaded, 'matched'>): string | null {

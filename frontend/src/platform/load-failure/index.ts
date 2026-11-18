@@ -18,8 +18,10 @@ export interface LoadFailureOptions {
 /** Set before the one automatic reload; cleared once a navigation succeeds. */
 const RELOAD_KEY = 'suite:load-failure-reload'
 
-// Chromium, Safari, Firefox and webpack-style loaders word a missing chunk differently.
+// Chromium, Safari, Firefox and webpack-style loaders word a missing chunk differently. Vite loads
+// a chunk's stylesheets first and words a missing one itself.
 const STALE_CHUNK_MESSAGES = [
+  'Unable to preload CSS',
   'Failed to fetch dynamically imported module',
   'Importing a module script failed',
   'error loading dynamically imported module',
@@ -85,12 +87,16 @@ const PassThrough = defineComponent(
  * A lazily loaded component that wraps the page, such as the shell's frame. If
  * its code fails to load, the page inside it still shows without it, so the
  * error route can say what happened; a component with no default slot shows
- * nothing.
+ * nothing. `onFailure` is for a part the page cannot work without.
  */
-export function defineAsyncWrapper(load: () => Promise<Component>): Component {
+export function defineAsyncWrapper(
+  load: () => Promise<Component>,
+  onFailure?: () => void,
+): Component {
   return defineAsyncComponent(() =>
     load().catch((error: unknown) => {
       console.error('Could not load a part of the page', error)
+      onFailure?.()
       return PassThrough
     }),
   )

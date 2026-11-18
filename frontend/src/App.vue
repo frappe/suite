@@ -15,7 +15,7 @@
 
 <script setup lang="ts">
 import { computed, provide } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import { drivePaletteSearch, DriveUploadTracker } from '@/apps/drive'
 import { findArea, useAppRegistry, useAreaWork } from '@/composition/appRegistry'
@@ -25,10 +25,19 @@ import { defineAsyncWrapper } from '@/platform/load-failure'
 import { AREA_PROGRESS_KEY } from '@/shell/areaProgress'
 import { SETTINGS_GROUPS_KEY } from '@/shell/settings/settings'
 
+const route = useRoute()
+const router = useRouter()
+
 // Each wraps the page or sits beside it: one that fails to load leaves the page showing, the load
 // error page included.
-const FeedbackProvider = defineAsyncWrapper(() =>
-  import('@/platform/feedback').then(({ FeedbackProvider }) => FeedbackProvider),
+// Toasts and dialogs show inside FeedbackProvider, so without it a confirmation never appears: the
+// page that says it did not load takes over.
+const FeedbackProvider = defineAsyncWrapper(
+  () => import('@/platform/feedback').then(({ FeedbackProvider }) => FeedbackProvider),
+  () => {
+    if (route.name === 'app-load-error') return
+    void router.replace({ name: 'app-load-error', query: { redirect: route.fullPath } })
+  },
 )
 const ShellLayout = defineAsyncWrapper(() => import('@/shell/ShellLayout.vue'))
 const NotificationsBell = defineAsyncWrapper(
@@ -38,7 +47,6 @@ const NotificationsTab = defineAsyncWrapper(
   () => import('@/composition/notifications/NotificationsTab.vue'),
 )
 const registry = useAppRegistry()
-const route = useRoute()
 const activeArea = computed(() => findArea(String(route.meta.area ?? '')))
 provide(SETTINGS_GROUPS_KEY, settingsGroups)
 provide(PALETTE_SEARCH_KEY, drivePaletteSearch)
