@@ -666,4 +666,30 @@ describe('a sent message', () => {
     expect(server.updateDraft.mock.calls[0][0]).toMatchObject({ id: 'draft-1', submit: true })
     expect(server.create).not.toHaveBeenCalled()
   })
+
+  it.each([
+    [
+      'refused',
+      () => Promise.resolve({ id: 'draft-1', status: 'Drafted', error: 'Relay refused' }),
+    ],
+    ['cut off', () => Promise.reject(new Error('Network error'))],
+  ])('is still a draft to save when its send was %s', async (_, answer) => {
+    const composer = compose()
+    server.updateDraft.mockImplementationOnce(answer).mockResolvedValue({
+      id: 'draft-2',
+      status: 'Drafted',
+      error: null,
+    })
+    await composer.sendMail()
+
+    composer.mail.html_body = '<p>Fixed the address.</p>'
+    await composer.settleDraft()
+
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(server.updateDraft.mock.calls[1][0]).toMatchObject({
+      id: 'draft-1',
+      submit: false,
+      html_body: expect.stringContaining('Fixed the address.'),
+    })
+  })
 })
