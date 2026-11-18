@@ -9,8 +9,6 @@ vi.mock('@/apps/mail/stores/user', () => ({
   SECONDARY_MAILBOX_ROLES: [],
   userStore: () => ({ accountId: 'alice', mailboxes: { data: [] } }),
 }))
-vi.mock('@/shell/settings/useSettingsDialog', () => ({ openSettings: () => {} }))
-vi.mock('@/stores/root', () => ({ useRootStore: () => ({}) }))
 
 const page = { render: () => null }
 const routes = [
