@@ -447,9 +447,14 @@ const moreActions = computed((): Action[] => [
     icon: CircleCheck,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.junk),
   },
+  // In All Inboxes the button shows before the account's folders are in, so the Trash id may not be
+  // known yet: the merged list trashes the thread by the row's own Trash, as its Delete key does.
   {
     label: __('Move to Trash (Delete)'),
-    onClick: () => emit('moveThread', mailboxIds.value.trash),
+    onClick: () =>
+      route.name === UNIFIED_THREAD_ROUTE
+        ? emit('deleteThread')
+        : emit('moveThread', mailboxIds.value.trash),
     icon: Trash2,
     condition: () => !inDrafts.value && !threadMailboxes.value.includes(mailboxIds.value.trash),
   },

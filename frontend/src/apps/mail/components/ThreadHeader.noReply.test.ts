@@ -147,6 +147,8 @@ let root: HTMLElement
 const onSnooze = vi.fn()
 const onRemind = vi.fn()
 const onPrint = vi.fn()
+const onMoveThread = vi.fn()
+const onDeleteThread = vi.fn()
 
 beforeEach(() => {
   window.__ = (text: string) => text
@@ -158,6 +160,8 @@ beforeEach(() => {
   onSnooze.mockClear()
   onRemind.mockClear()
   onPrint.mockClear()
+  onMoveThread.mockClear()
+  onDeleteThread.mockClear()
 })
 afterEach(() => {
   app?.unmount()
@@ -178,7 +182,16 @@ const show = async (
   app = createApp(
     defineComponent({
       setup: () => () =>
-        h(ThreadHeader, { thread, ...list, remindable, onSnooze, onRemind, onPrint }),
+        h(ThreadHeader, {
+          thread,
+          ...list,
+          remindable,
+          onSnooze,
+          onRemind,
+          onPrint,
+          onMoveThread,
+          onDeleteThread,
+        }),
     }),
   )
   app.config.globalProperties.__ = (text: string) => text
@@ -426,6 +439,16 @@ describe('a thread on its way', () => {
 
     expect(tooltips()).toContain('Move to Trash (Delete)')
     expect(tooltips()).not.toContain('Discard (Delete)')
+  })
+
+  it("trashes it by the row's own Trash before the account's folders are in", async () => {
+    screen.mailboxesIn = false
+    inAllInboxes('inbox')
+    await show(THEIR_LAST_WORD, false)
+
+    root.querySelector<HTMLElement>('[data-tooltip="Move to Trash (Delete)"]')!.click()
+    expect(onDeleteThread).toHaveBeenCalledTimes(1)
+    expect(onMoveThread).not.toHaveBeenCalled()
   })
 
   it("shows its buttons in the outline's place once it is in", async () => {
