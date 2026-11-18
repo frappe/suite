@@ -12,7 +12,7 @@ from icalendar.prop import vRecur
 from jmap import MethodError
 from pydantic import BaseModel
 
-from suite.calendar import jmap_events
+from suite.calendar import external_search, jmap_events
 from suite.calendar.api.rsvp import record_rsvp
 from suite.calendar.doctype.calendar.calendar import (
     add_calendar,
@@ -35,7 +35,6 @@ from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_re
 from suite.calendar.external import EXTERNAL_ACCOUNT
 from suite.calendar.external import calendar_rows as external_calendar_rows
 from suite.calendar.external import events_in_window as external_events
-from suite.calendar.external_search import search_events as external_search
 from suite.mail.jmap import (
     format_method_error,
     get_account_client,
@@ -383,7 +382,7 @@ def search_calendar_events_with_shared(
     calendar_account, _sep, calendar_id = filters.calendar.partition("|")
     if calendar_account == EXTERNAL_ACCOUNT:
         events = []
-        external = _external_search(text, limit, filters, time_zone, [calendar_id])
+        external = external_search.search(frappe.session.user, text, limit, filters, time_zone, [calendar_id])
     else:
         if filters.calendar:
             events = _search_calendar_events(calendar_account, text, limit, time_zone, [calendar_id], filters)
@@ -396,7 +395,11 @@ def search_calendar_events_with_shared(
             )
         # The site's own calendars are drawn beside the mail server's, so a search of what the
         # reader can see answers for them too.
-        external = [] if filters.calendar else _external_search(text, limit, filters, time_zone)
+        external = (
+            []
+            if filters.calendar
+            else external_search.search(frappe.session.user, text, limit, filters, time_zone)
+        )
 
     # Without a range the server answered with masters, and a master's date is the least useful
     # date a series has: the standup shows once, dated the week it was first entered. Each is
@@ -418,46 +421,6 @@ def search_calendar_events_with_shared(
     events.sort(key=lambda event: _distance(event, now))
 
     return _first_events(events, limit)
-
-
-def _external_search(
-    text: str | None,
-    limit: int,
-    filters: EventSearchFilters,
-    time_zone: str | None,
-    calendars: list[str] | None = None,
-) -> list[dict]:
-    """The matches among the calendars this site keeps for the reader.
-
-    Nobody is on these events, so a search by attendee or organizer finds none here. The range
-    arrives as UTC instants bounding the reader's days, and these events are days with no time,
-    so each end is read back as the reader's wall clock first: compared as an instant, a reader
-    east of UTC asking for one day would also be answered the day before.
-    """
-
-    if filters.attendee.strip() or filters.organizer.strip():
-        return []
-
-    try:
-        zone = ZoneInfo(time_zone or "UTC")
-    except (ZoneInfoNotFoundError, ValueError):
-        zone = ZoneInfo("UTC")
-
-    def wall_clock(value: str) -> datetime | None:
-        if not value:
-            return None
-        instant = datetime.fromisoformat(normalize_utc_z(value).replace("Z", "+00:00"))
-        return instant.astimezone(zone).replace(tzinfo=None)
-
-    return external_search(
-        frappe.session.user,
-        (text or "").split(),
-        limit,
-        title_only=filters.scope == "title",
-        calendars=calendars,
-        start=wall_clock(filters.after),
-        end=wall_clock(filters.before),
-    )
 
 
 def _utc_start(event: dict) -> str:
