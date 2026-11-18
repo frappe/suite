@@ -25,14 +25,6 @@ export const EXTERNAL_ACCOUNT = 'external'
 export type SharedVisibility = Record<string, 0 | 1>
 
 /**
- * Whether a calendar shared read-only is drawn in this browser: as the reader last set it,
- * and until they have, not at all. A calendar somebody else keeps is drawn over the reader's
- * own week only once they ask.
- */
-export const sharedCalendarVisible = (calendar: CalendarRow, chosen: SharedVisibility): boolean =>
-  !!chosen[calendar.name]
-
-/**
  * The choices an earlier build kept as a list of the shared calendars hidden, carried into the
  * map. Every shared calendar that list did not hide was being drawn, so it stays drawn. The
  * site's own calendars are new to this reader whatever the list says, and start unticked.

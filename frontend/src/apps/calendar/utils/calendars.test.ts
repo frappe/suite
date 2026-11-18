@@ -7,7 +7,6 @@ import {
   defaultCalendar,
   destinationOptions,
   onShownCalendar,
-  sharedCalendarVisible,
   type CalendarRow,
 } from '@/apps/calendar/utils/calendars'
 
@@ -85,20 +84,6 @@ describe('canEditEvent', () => {
   it('is true on a calendar the list does not know', () => {
     expect(canEditEvent(on('elsewhere'), calendars)).toBe(true)
     expect(canEditEvent(on('shared'), undefined)).toBe(true)
-  })
-})
-
-describe('sharedCalendarVisible', () => {
-  const holidays = cal('holidays', { may_write_all: 0 })
-
-  it('leaves a shared calendar undrawn until the reader switches it on', () => {
-    expect(sharedCalendarVisible(holidays, {})).toBe(false)
-    expect(sharedCalendarVisible(holidays, { 'acc|holidays': 1 })).toBe(true)
-  })
-
-  it("is the reader's last word, and about that calendar alone", () => {
-    expect(sharedCalendarVisible(holidays, { 'acc|holidays': 0 })).toBe(false)
-    expect(sharedCalendarVisible(holidays, { 'acc|other': 1 })).toBe(false)
   })
 })
 

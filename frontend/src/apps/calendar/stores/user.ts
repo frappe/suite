@@ -6,7 +6,6 @@ import { api, useQuery, type OutputOf } from '@/api'
 import {
   calendarColor,
   carriedVisibility,
-  sharedCalendarVisible,
   type SharedVisibility,
 } from '@/apps/calendar/utils/calendars'
 import { useSession } from '@/platform/session'
@@ -90,9 +89,8 @@ export const userStore = defineStore('calendar-user', () => {
         ? cal
         : {
             ...cal,
-            visible: sharedCalendarVisible(cal, sharedVisibility.value)
-              ? (1 as const)
-              : (0 as const),
+            // Drawn once the reader ticks it: a shared calendar starts unticked.
+            visible: sharedVisibility.value[cal.name] ?? 0,
           },
     ),
   )
