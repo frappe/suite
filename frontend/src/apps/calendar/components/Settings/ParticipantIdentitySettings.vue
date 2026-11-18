@@ -1,6 +1,14 @@
 <template>
   <div class="flex flex-col gap-5">
     <SettingsDialogActions>
+      <!-- At the dialog's other end from Save, so neither is pressed for the other -->
+      <Button
+        v-if="form"
+        :label="__('Delete')"
+        theme="red"
+        class="me-auto"
+        @click="openDeleteDialog"
+      />
       <Button icon-left="lucide-plus" :label="__('New')" @click="showAddDialog" />
       <Button
         v-if="form"
@@ -45,16 +53,6 @@
             />
 
             <ErrorMessage :message="saveError" />
-
-            <div>
-              <Button
-                :label="__('Delete')"
-                class="min-h-7"
-                variant="outline"
-                theme="red"
-                @click="openDeleteDialog"
-              />
-            </div>
           </template>
         </div>
       </div>
