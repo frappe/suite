@@ -291,30 +291,32 @@ describe('leaving with the composer open while a save is out', () => {
     ['Mail’s own window', 'refused', 'window', refused],
     ['a thread’s reply', 'saved', 'thread', saved],
     ['a thread’s reply', 'refused', 'thread', refused],
-  ] as const)('%s, its save %s, saves nothing more', async (_, _outcome, where, answer) => {
-    const { subject, leave } = await openOwn(where)
-    let release!: () => void
-    const held = new Promise<void>((resolve) => (release = resolve))
-    server.answer = async (method) => {
-      if (method !== 'update_draft_mail') return reply({ message: [] })
-      await held
-      return answer()
-    }
-    await type(subject, 'Brief, v2')
-    // The autosave goes out, and the server takes its time.
-    await vi.waitFor(() => expect(saves()).toHaveLength(1), { timeout: 5_000 })
-    await type(subject, 'Brief, v3')
+  ] as const)(
+    '%s, its save %s, shows none of the Close’s toasts',
+    async (_, _outcome, where, answer) => {
+      const { subject, leave } = await openOwn(where)
+      let release!: () => void
+      const held = new Promise<void>((resolve) => (release = resolve))
+      server.answer = async (method) => {
+        if (method !== 'update_draft_mail') return reply({ message: [] })
+        await held
+        return answer()
+      }
+      await type(subject, 'Brief, v2')
+      // The autosave goes out, and the server takes its time.
+      await vi.waitFor(() => expect(saves()).toHaveLength(1), { timeout: 5_000 })
+      await type(subject, 'Brief, v3')
 
-    leave()
-    release()
-    await new Promise((resolve) => setTimeout(resolve, 300))
+      leave()
+      release()
+      await new Promise((resolve) => setTimeout(resolve, 300))
 
-    expect(saves()).toHaveLength(1)
-    // Neither the Close's "Draft saved" nor its "Draft not saved" with Reopen.
-    const said = [...toasts.success.mock.calls, ...toasts.error.mock.calls].map(
-      ([message]) => message,
-    )
-    expect(said).not.toContain('Draft saved')
-    expect(said).not.toContain('Draft not saved')
-  })
+      // Neither the Close's "Draft saved" nor its "Draft not saved" with Reopen.
+      const said = [...toasts.success.mock.calls, ...toasts.error.mock.calls].map(
+        ([message]) => message,
+      )
+      expect(said).not.toContain('Draft saved')
+      expect(said).not.toContain('Draft not saved')
+    },
+  )
 })
