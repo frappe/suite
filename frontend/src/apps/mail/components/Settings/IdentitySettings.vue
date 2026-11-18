@@ -47,6 +47,15 @@
       :placeholder="__('Write your signature here')"
     />
     <SettingsDialogActions>
+      <!-- At the dialog's other end from Save, so neither is pressed for the other -->
+      <Button
+        v-if="draft.identity.may_delete"
+        :label="__('Delete')"
+        theme="red"
+        :size="buttonSize"
+        class="me-auto"
+        @click="askToDelete(draft.identity)"
+      />
       <Button
         :label="__('Save')"
         variant="solid"
@@ -128,23 +137,24 @@
         {{ __('Send-as addresses are the addresses you send mail as. Create one to get started.') }}
       </p>
     </div>
-    <Dialog
-      v-model:open="showDeleteDialog"
-      v-bind="{
-        title: __('Delete this address?'),
-        message: __('This cannot be undone.'),
-        actions: [
-          {
-            label: __('Delete address'),
-            variant: 'solid' as const,
-            theme: 'red' as const,
-            loading: deleteIdentity.isPending,
-            onClick: () => deleteIdentitySubmit(),
-          },
-        ],
-      }"
-    />
   </div>
+  <!-- Outside the pages above: the list and an open address both ask it -->
+  <Dialog
+    v-model:open="showDeleteDialog"
+    v-bind="{
+      title: __('Delete this address?'),
+      message: __('This cannot be undone.'),
+      actions: [
+        {
+          label: __('Delete address'),
+          variant: 'solid' as const,
+          theme: 'red' as const,
+          loading: deleteIdentity.isPending,
+          onClick: () => deleteIdentitySubmit(),
+        },
+      ],
+    }"
+  />
 </template>
 
 <script setup lang="ts">
@@ -370,6 +380,8 @@ async function deleteIdentitySubmit() {
   await deleteIdentity.run({ names: [deleting.value.name] })
   raiseToast(__('Address deleted'))
   showDeleteDialog.value = false
+  // Deleted from its own page, the address has no page left to show
+  showList()
 }
 
 function addressOptions(identity: Identity) {

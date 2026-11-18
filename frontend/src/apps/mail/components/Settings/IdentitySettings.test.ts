@@ -515,3 +515,32 @@ it('keeps the question open when the delete is refused', async () => {
   expect(root.querySelector('dialog')?.getAttribute('aria-label')).toBe('Delete this address?')
   expect(state.toast).not.toHaveBeenCalled()
 })
+it('offers Delete on an open address only when the server lets it go', async () => {
+  mount([me, sales])
+  await openAddress('me@example.com')
+  expect(findButton('Delete')).toBeUndefined()
+
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(findButton('Delete')).toBeDefined()
+})
+it('deletes the open address once the question is answered, then shows the list', async () => {
+  mount([me, sales])
+  await openAddress('sales@example.com')
+  await press('Delete')
+  expect(root.querySelector('dialog')?.textContent).toContain('This cannot be undone.')
+  expect(state.run).not.toHaveBeenCalled()
+
+  await press('Delete address')
+  expect(state.run).toHaveBeenCalledWith('delete_identity_names', { names: ['oa|b'] })
+  expect(field('Display name')).toBeNull()
+  expect(lines()).toHaveLength(2)
+})
+it('keeps the address open when its delete is refused', async () => {
+  state.run.mockRejectedValue(new Error('In use'))
+  mount([me, sales])
+  await openAddress('sales@example.com')
+  await press('Delete')
+  await press('Delete address')
+  expect(field('Display name')?.value).toBe('Sales')
+})
