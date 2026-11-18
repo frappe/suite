@@ -106,7 +106,9 @@ const headerBlocks = (text: string): [number, number][] => {
 /**
  * The dates and times in `text`, read as the mail's writer meant them: "tomorrow" and "Thursday"
  * from `sentAt` (a UTC timestamp) on, in the reader's zone, and "05/06" in the order the reader's
- * locale writes a day and month. A date before the day it was sent is the past, and not offered.
+ * locale writes a day and month. A date before the day it was sent is the past, and not offered;
+ * so is a day without a year that went by in the two months before it ("20 Oct" in a November
+ * mail). One further back is next year's ("5 Jun" in a November mail).
  * An hour without am or pm is a working hour (1–7 the afternoon, 8–11 the morning), and a part of
  * the day is the hour a meeting in it starts ("tomorrow evening" at 18:00). A time with a zone of
  * its own ("3pm EST") is moved into the reader's.
@@ -122,9 +124,6 @@ export function findMailDates(
   const reference = { instant: sentUtc.toDate(), timezone: sent.utcOffset() }
   const sentDay = sent.format('YYYY-MM-DD')
   const chrono = monthFirst(locale) ? casual : GB
-  // Read again without looking forward, to tell "20 Oct" in a November mail (last month's) from a
-  // date to come: looking forward moves the first to next year.
-  const asWritten = new Map(chrono.parse(text, reference).map((result) => [result.index, result]))
   const attributions = [
     ...[...text.matchAll(ATTRIBUTION)].map((match) => [match.index, match.index + match[0].length]),
     ...headerBlocks(text),
@@ -133,13 +132,37 @@ export function findMailDates(
     attributions.some(([from, to]) => result.index < to && result.index + result.text.length > from)
   return chrono.parse(text, reference, { forwardDate: true }).flatMap((result) => {
     if (!namesADate(result) || within(result)) return []
-    const { start } = result
-    const written = asWritten.get(result.index)?.start
-    if (start.isCertain('month') && !start.isCertain('year') && written)
-      if (written.get('year') !== start.get('year')) return []
     const date = toNamedDate(result, timeZone, sent)
+    const { start } = result
+    if (start.isCertain('month') && !start.isCertain('year')) {
+      const dated = inItsYear(date, sent)
+      return dated ? [dated] : []
+    }
     return date.start.date >= sentDay ? [date] : []
   })
+}
+
+// How long a day without a year stays one gone by, before it reads as next year's.
+const RECENT_MONTHS = 2
+
+/**
+ * `date`, a day and month without a year, in the year it falls in: the next time it comes round
+ * from the day the mail was sent, unless it came round in the two months before that, when it is
+ * the past (undefined). One rule, whatever the format or the parser's own guess at the year.
+ */
+const inItsYear = (date: NamedDate, sent: Dayjs): NamedDate | undefined => {
+  const sentDay = sent.format('YYYY-MM-DD')
+  const monthDay = date.start.date.slice(5)
+  let year = sent.year()
+  if (`${year}-${monthDay}` < sentDay) year++
+  if (`${year - 1}-${monthDay}` >= sent.subtract(RECENT_MONTHS, 'month').format('YYYY-MM-DD'))
+    return undefined
+  const years = year - Number(date.start.date.slice(0, 4))
+  const shift = (moment: MailMoment): MailMoment => ({
+    ...moment,
+    date: dayjs(moment.date).add(years, 'year').format('YYYY-MM-DD'),
+  })
+  return { ...date, start: shift(date.start), ...(date.end && { end: shift(date.end) }) }
 }
 
 // Whether chrono's reading names a day or a time surely enough to offer: not a phrase that only

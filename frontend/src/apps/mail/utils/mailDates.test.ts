@@ -217,6 +217,32 @@ describe('dates in a mail', () => {
     expect(dates('Due 20 Dec')[0].start).toEqual({ date: '2026-12-20' })
   })
 
+  it('reads a day without a year from the last two months as gone by, and an older one as next year’s', () => {
+    // Sent on Wednesday 18 November 2026, to readers who write the day or the month first.
+    const read = (text: string, locale: string) =>
+      findMailDates(text, '2026-11-18T10:00:00Z', { timeZone: ZONE, locale }).map(
+        (date) => date.start.date,
+      )
+    for (const locale of ['en-GB', 'en-US']) {
+      for (const text of ['The deadline was 20 Oct.', 'since 1 Oct', 'on 18 Sep at 3pm'])
+        expect(read(text, locale)).toEqual([])
+      expect(read('17 Sep at 3pm', locale)).toEqual(['2027-09-17'])
+      expect(read('5 Jun', locale)).toEqual(['2027-06-05'])
+      expect(read('15 Aug', locale)).toEqual(['2027-08-15'])
+      expect(read('19/05 at 3pm', locale)).toEqual(['2027-05-19'])
+      expect(read('Saturday, 19/05', locale)).toEqual(['2027-05-19'])
+    }
+    // 2 October, written as each reader writes it.
+    expect(read('02/10 at 3pm', 'en-GB')).toEqual([])
+    expect(read('10/02 at 3pm', 'en-US')).toEqual([])
+    // 5 June and 6 May: both long gone, so next year's.
+    expect(read('05/06 at 3pm', 'en-GB')).toEqual(['2027-06-05'])
+    expect(read('05/06 at 3pm', 'en-US')).toEqual(['2027-05-06'])
+    // With a year, as written: a past one is not offered.
+    expect(read('5 Jun 2026', 'en-GB')).toEqual([])
+    expect(read('5 Jun 2027', 'en-GB')).toEqual(['2027-06-05'])
+  })
+
   it('offers nothing in the line that opens a quoted trail, however it wraps', () => {
     const text =
       'Thursday at 3pm suits me.\n\nOn Tue, Nov 17, 2026 at 10:00 AM Lena Park <lena@example.com>\nwrote:'
