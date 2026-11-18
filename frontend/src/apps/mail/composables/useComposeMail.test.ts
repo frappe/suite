@@ -79,8 +79,9 @@ const mayaIdentities: TestIdentity[] = [{ email: 'maya@example.com', _name: 'May
 // The account's identities as a composer opens (undefined: not loaded yet), and a way to load them.
 const scope = vi.hoisted<{
   identities?: TestIdentity[]
+  mailboxIds: Record<string, string>
   load: (identities: TestIdentity[]) => void
-}>(() => ({ load: () => {} }))
+}>(() => ({ load: () => {}, mailboxIds: {} }))
 vi.mock('@/apps/mail/utils/accountScope', async () => {
   const { ref } = await import('vue')
   return {
@@ -92,7 +93,7 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
         account: ref({ default_outgoing_email: 'maya@example.com' }),
         identities,
         mailboxes: ref({ data: [{ id: 'mbx-sent', slug: 'sent', role: 'sent' }] }),
-        mailboxIds: ref({ sent: 'mbx-sent' }),
+        mailboxIds: ref(scope.mailboxIds),
       }
     },
   }
@@ -155,6 +156,7 @@ beforeEach(() => {
   routerPush.mockReset()
   open = true
   scope.identities = mayaIdentities
+  scope.mailboxIds = { sent: 'mbx-sent' }
   draft.attachments = []
   server.updateDraft.mockReset()
   server.mutation.mockReset()
@@ -631,6 +633,22 @@ describe('a reminder if nobody replies', () => {
     // By path, which opens from another app before Mail's routes load; by slug, which the guard
     // leaves alone, so the page the reader sent from stays in the history behind it.
     expect(routerPush).toHaveBeenCalledWith('/mail/account/account/mailbox/sent/thread-1')
+  })
+
+  it('offers no View when the account has no Sent mailbox to open it in', async () => {
+    scope.mailboxIds = { inbox: 'mbx-inbox', sent: '' }
+    const composer = compose()
+    server.updateDraft.mockResolvedValueOnce({
+      id: 'sent-1',
+      status: 'Submitted',
+      error: null,
+      thread_id: 'thread-1',
+    })
+    await composer.sendMail()
+
+    const sent = vi.mocked(raiseToast).mock.calls.find(([message]) => message === 'Message sent')
+    expect(sent).toBeDefined()
+    expect(sent![2]).toBeUndefined()
   })
 })
 

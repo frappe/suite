@@ -154,11 +154,21 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // its slug, as the URL names it: an id would be answered with a redirect that replaces the page
   // the reader came from, and Back would skip it.
   const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
-  const viewSentMessage = (threadID: string) => {
-    const sent = mailboxParam(mailboxIds.value.sent, scope.mailboxes.value.data)
-    return router.push(
-      `${accountPath()}/mailbox/${encodeURIComponent(sent)}/${encodeURIComponent(threadID)}`,
-    )
+  // The sent toast's View, opening the thread in Sent. Not offered while the thread is already open,
+  // nor when the account has no Sent mailbox to open it in (none has that role, or the mailboxes
+  // have not loaded): the link needs one.
+  const viewSentAction = (threadID: string | null | undefined) => {
+    const sentId = mailboxIds.value.sent
+    if (!threadID || !sentId || route.params.threadID === threadID) return undefined
+    return {
+      label: __('View'),
+      onClick: () => {
+        const sent = mailboxParam(sentId, scope.mailboxes.value.data)
+        return router.push(
+          `${accountPath()}/mailbox/${encodeURIComponent(sent)}/${encodeURIComponent(threadID)}`,
+        )
+      },
+    }
   }
   const getDefaultFromEmail = () => {
     const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
@@ -616,8 +626,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     setTimeout(() => retireUndoAction(undoSendNow), windowMs)
 
     // Two buttons, and they are not equals: Undo expires with the toast, so it takes the urgent
-    // slot; View is an aside you could reach any time from Sent, offered only when the thread
-    // isn't already the one in front of you.
+    // slot; View is an aside you could reach any time from Sent, offered only where it can open.
     const sentToast = raiseToast(
       __('Message sent'),
       'success',
@@ -626,12 +635,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         onClick: undoSendNow,
       },
       windowMs,
-      threadId && route.params.threadID !== threadId
-        ? {
-            label: __('View'),
-            onClick: () => viewSentMessage(threadId),
-          }
-        : undefined,
+      viewSentAction(threadId),
     )
   }
   const onMailUpdateSuccess = (
@@ -689,17 +693,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         onClick: () => router.push(`${accountPath()}/outbox`),
       })
     else if (status === 'Submitted')
-      raiseToast(
-        __('Message sent'),
-        'success',
-        // No View action when the sent mail's thread is already open in front of the user.
-        thread_id && route.params.threadID !== thread_id
-          ? {
-              label: __('View'),
-              onClick: () => viewSentMessage(thread_id),
-            }
-          : undefined,
-      )
+      raiseToast(__('Message sent'), 'success', viewSentAction(thread_id))
   }
 
   // ── Resources ───────────────────────────────────────────────────────────────────────────────
