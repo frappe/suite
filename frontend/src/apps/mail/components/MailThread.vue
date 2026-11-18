@@ -1142,10 +1142,11 @@ usePageTitle(() =>
     : '',
 )
 // Asked only once the list is in and holds no row for the thread: while it loads, the row may be on
-// its way, and a thread fetched and marked read beside it leaves that row unread when it lands. Read
-// once the props have settled, not as each is set: a landing list hands over `threadsLoading` and
-// the thread's `messages` in one update, as does a list that starts loading again, and between the
-// two the pane would ask all the same.
+// its way, and a thread fetched and marked read beside it leaves that row unread when it lands. The
+// query reacts to its input at once (a sync watch), so its input is copied once all props of an
+// update are set: a landing list hands over `threadsLoading` and the thread's `messages` in one
+// update, as does a list that starts loading again, and read straight off the props, the input
+// would see one set and not the other, and the pane would fetch the thread anyway.
 const fallbackInput = (): InputOf<typeof api.mail.threads.get> | false =>
   !messages?.length && !threadsLoading && threadID
     ? { account: scopeAccountId.value, thread_id: threadID }
