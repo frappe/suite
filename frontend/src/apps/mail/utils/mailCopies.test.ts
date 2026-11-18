@@ -3,7 +3,16 @@ import { describe, expect, it } from 'vitest'
 
 import type { Mail, MailCopy, Thread } from '@/apps/mail/types'
 
-import { mailCopies, mailCopyIds, mailCopyNames, rowMailIds, threadStarIds } from './mailCopies'
+import {
+  byCopyId,
+  copiesBeside,
+  isMailSeen,
+  mailCopies,
+  mailCopyIds,
+  mailCopyNames,
+  rowMailIds,
+  threadStarIds,
+} from './mailCopies'
 
 const mail = (overrides: Partial<Mail> = {}): Mail =>
   fromPartial<Mail>({ name: 'message-d1', id: 'd1', ...overrides })
@@ -67,5 +76,33 @@ describe('threadStarIds', () => {
 
   it('unstars every starred message, so the thread leaves Starred', () => {
     expect(threadStarIds(row('b', [older, newest]), false).sort()).toEqual(['a', 'b'])
+  })
+})
+
+describe('isMailSeen', () => {
+  it('counts a reply you sent yourself as read, though its delivered copy is unread', () => {
+    const delivered = mail({ seen: 0, duplicates: [{ ...sentCopy, seen: 1 }] })
+    expect(isMailSeen(delivered)).toBe(true)
+  })
+
+  it('leaves a message unread while no copy of it has been read', () => {
+    expect(isMailSeen(mail({ seen: 0 }))).toBe(false)
+    expect(isMailSeen(mail({ seen: 0, duplicates: [{ ...sentCopy, seen: 0 }] }))).toBe(false)
+  })
+})
+
+// A reply to yourself: the thread shows its Sent copy until it is delivered, and the server leads
+// with the delivered copy from then on.
+describe('a message whose leading copy changed', () => {
+  const delivered = mail({ duplicates: [sentCopy] })
+
+  it('is found under the copy the thread already shows', () => {
+    expect(byCopyId([delivered]).get('s1')).toBe(delivered)
+    expect(byCopyId([delivered]).get('d1')).toBe(delivered)
+  })
+
+  it('gives the shown copy the delivered one to act on, and not itself twice', () => {
+    expect(copiesBeside(delivered, 's1').map((copy) => copy.id)).toEqual(['d1'])
+    expect(copiesBeside(delivered, 'd1').map((copy) => copy.id)).toEqual(['s1'])
   })
 })

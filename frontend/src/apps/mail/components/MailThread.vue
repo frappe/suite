@@ -864,6 +864,7 @@ import type {
   Mail,
   Mailbox,
   MailboxData,
+  MailCopy,
   Recipient,
   ScreenedAddress,
 } from '@/apps/mail/types'
@@ -896,7 +897,13 @@ import {
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
 import { eventFromMail } from '@/apps/mail/utils/eventFromMail'
-import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
+import {
+  byCopyId,
+  copiesBeside,
+  isMailSeen,
+  mailCopies,
+  mailCopyIds,
+} from '@/apps/mail/utils/mailCopies'
 import type { NamedDate } from '@/apps/mail/utils/mailDates'
 import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
@@ -1099,12 +1106,14 @@ const mailBeforeUnseenMarker = computed(() => {
   const idx = data.findIndex((m) => m.id === firstUnseenMail.value)
   return idx > 0 ? data[idx - 1].name : null
 })
-const isSomeSeen = computed(() => (thread.value || []).some((m) => m.seen))
-const unseenCount = computed(() => (thread.value || []).filter((m) => !m.seen && !m.draft).length)
+const isSomeSeen = computed(() => (thread.value || []).some(isMailSeen))
+const unseenCount = computed(
+  () => (thread.value || []).filter((m) => !isMailSeen(m) && !m.draft).length,
+)
 
 // A draft that is the whole thread — opened from Drafts, nothing above it to read.
 const isDraftAlone = computed(() => thread.value.length === 1 && !!thread.value[0]?.draft)
-const firstUnseenMail = computed(() => thread.value?.find((m) => !m.seen && !m.draft)?.id)
+const firstUnseenMail = computed(() => thread.value?.find((m) => !isMailSeen(m) && !m.draft)?.id)
 const unseenMessage = computed(() =>
   unseenCount.value === 1
     ? __('1 new message')
@@ -1212,7 +1221,7 @@ const transformThreadMails = (mails: Mail[]) =>
             {
               ...mail,
               groupedRecipients: getGroupedRecipients(mail.recipients, false),
-              collapsed: !!mail.seen,
+              collapsed: isMailSeen(mail),
               show: true,
             },
           ]
@@ -1353,11 +1362,11 @@ const setThreadSeen = (seen: boolean) => {
 // cache, so the unread-from-here marker appears immediately and survives reopening a fallback thread
 // (whose source is the cache, not the parent's list data).
 const handleSyncUnseen = (ids: string[]) => {
-  const markUnseen = (mail: Mail) => {
-    if (ids.includes(mail.id)) mail.seen = 0
+  // Every copy, or the one in Sent would still count the message read (see isMailSeen).
+  const markUnseen = (copy: MailCopy) => {
+    if (ids.includes(copy.id)) copy.seen = 0
   }
-  thread.value.forEach(markUnseen)
-  thread.value.forEach(markUnseen)
+  thread.value.flatMap(mailCopies).forEach(markUnseen)
   emit('syncUnseen', ids)
 }
 
@@ -1371,9 +1380,12 @@ const syncWithSource = () => {
   // Refresh existing mails' mailbox membership, screening and star from the list (e.g. after a move,
   // a sender accepted or a row starred from the list, or an undo), in place so unsaved inline drafts
   // and collapse state survive.
-  const sourceById = new Map(source.map((mail) => [mail.id, mail]))
+  // Found by any of its copies: a reply to yourself is shown as its Sent copy until it is delivered,
+  // and the list leads with the delivered one from then on. It is the same message, kept as the
+  // one card it has, not added as a second.
+  const freshByCopy = byCopyId(source)
   thread.value.forEach((mail) => {
-    const fresh = sourceById.get(mail.id)
+    const fresh = freshByCopy.get(mail.id)
     if (!fresh) return
     mail.mailboxes = fresh.mailboxes
     // Waiting again after an undo: a decision made here no longer holds, so the banner returns.
@@ -1383,14 +1395,14 @@ const syncWithSource = () => {
     mail.pinned_in = fresh.pinned_in
     // A reaction landing on a message already open. It comes with the copy actions have to reach.
     mail.reactions = fresh.reactions
-    mail.duplicates = fresh.duplicates
+    mail.duplicates = copiesBeside(fresh, mail.id)
   })
 
   // Append any newly-arrived messages, before a trailing draft. Drafts are excluded: the only draft
   // that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
   // saved id isn't known here), so a draft returning from a background reload would otherwise be
   // mistaken for a new message and spawn a duplicate, blank compose editor.
-  const existing = new Set(thread.value.map((mail) => mail.id))
+  const existing = new Set(thread.value.flatMap(mailCopyIds))
   const additions = transformThreadMails(source).filter(
     (mail) => !existing.has(mail.id) && !mail.draft,
   )
