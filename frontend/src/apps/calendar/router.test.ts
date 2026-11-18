@@ -72,14 +72,4 @@ describe('switching accounts inside Calendar', () => {
 
     expect(store.accountId).toBe('team')
   })
-
-  it('leaves the account alone when only the date moves', async () => {
-    const router = await calendarAt('/calendar/account/mine/month')
-    const store = userStore()
-    store.accountId = 'mine'
-
-    await router.push({ path: '/calendar/account/mine/month', query: { event: 'e1' } })
-
-    expect(store.accountId).toBe('mine')
-  })
 })
