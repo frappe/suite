@@ -21,7 +21,8 @@ server, so no CalDAV client shows them.
   that source knows it by. One source keeps at most one calendar per key.
 - **External Calendar Event** has a `uid` from the source, a title, notes, a start and an end,
   whether it is all-day, and whether it repeats yearly.
-- **External Calendar Assignment** assigns a calendar to one user.
+- **External Calendar Assignment** assigns a calendar to one user. A calendar holds at most one
+  assignment per user and one event per `uid`.
 - A **site-wide** calendar is drawn for every user of the site. Its assignments are kept but
   make no difference while it is site-wide.
 
@@ -46,7 +47,8 @@ replaces what was there, so a run is repeatable and what the source drops is rem
 - **Shared calendars start unticked**, these and the mail server's alike: a calendar someone
   else keeps is drawn over the reader's own week only once they switch it on. The choice is
   kept per browser, since the mail server lets only a writer change a calendar's visibility.
-  It is made in the sidebar, in the calendar's menu, or in the phone's calendar sheet. A
+  It is made with a tap in the sidebar or the phone's calendar sheet, or with Show/Hide in a
+  calendar's menu on the settings page. A
   shared calendar a reader could already see before this change stays drawn.
 - A calendar that is switched off is not drawn in the grid and its days are not ticked in the
   mini month. Nothing is drawn until the calendar list has loaded, so a hidden calendar's
