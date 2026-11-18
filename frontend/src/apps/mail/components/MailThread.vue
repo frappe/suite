@@ -1419,6 +1419,13 @@ const syncWithSource = (source = sourceMessages()) => {
   else thread.value.splice(draftIndex, 0, ...additions)
   if (landsPending && scrollToLanding(thread.value)) landsPending = false
 }
+// Fresh rows for the open thread without a rebuild: the list's, when it holds the thread, or else
+// the thread's own fetch. They are synced in place when they land (see rederive), so a message the
+// reader opened stays open. With no thread open, there is only the list to ask.
+const refreshInPlace = () => {
+  if (messages?.length || !threadID) emit('reloadMails')
+  else void threadFallback.refetch().catch(() => {})
+}
 // A reply sent from the pane, shown as sent while the composer is still up (see `showSent` in
 // useComposeMail): the thread is asked for on its own, which is one short call where the list's
 // reload is the whole folder, and the reply takes the composer's place the moment the send is done.
@@ -1430,14 +1437,12 @@ const showSent = async (draft: string) => {
         .query(api.mail.threads.get, { account: scopeAccountId.value, thread_id: opened })
         .catch(() => undefined)
     : undefined
-  // The list catches up behind, and is synced in place when it lands.
-  if (messages?.length || !threadID) emit('reloadMails')
-  else void threadFallback.refetch().catch(() => {})
+  // The list catches up behind.
+  refreshInPlace()
   // The reader has moved on, while the send was out or since: the pane is another thread's now,
   // and the reply's card went with the thread it was written in.
   if (!thread.value.some((mail: Mail) => mail.name === draft)) return
-  delete draftMails[draft]
-  thread.value = thread.value.filter((mail: Mail) => mail.name !== draft)
+  dropDraftCard(draft)
   if (rows?.length) syncWithSource(rows.map(mailRow))
   // A forward leaves for a thread of its own: sent from a draft that was the whole pane, it leaves
   // nothing here to show.
@@ -1715,19 +1720,16 @@ const handleReload = (isUndo = false) => {
   }
   reload()
 }
-// Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
-// added to it out of sight. The fresh rows sync in place (see syncWithSource).
 // The conversation's account, which in All Inboxes need not be the active one.
 const ownEmails = computed(
   () => new Set((identities.value.data ?? []).map((identity) => identity.email.toLowerCase())),
 )
+// Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
+// added to it out of sight.
 const { reactionsOn, react } = useMessageReactions(
   () => scopeAccountId.value,
   ownEmails,
-  () => {
-    if (messages?.length) emit('reloadMails')
-    else void threadFallback.refetch().catch(() => {})
-  },
+  refreshInPlace,
 )
 const replyForwardActions = computed(() =>
   [
@@ -1923,9 +1925,13 @@ const createLocalDraft = (mail: Mail, draftDetails: ComposeMailData) => {
     )
   })
 }
+// A reply's card out of the thread, and its composer with it.
+const dropDraftCard = (name: string) => {
+  delete draftMails[name]
+  thread.value = thread.value.filter((mail: Mail) => mail.name !== name)
+}
 const discardLocalDraft = (mail: string) => {
-  delete draftMails[mail]
-  thread.value = thread.value.filter((m: Mail) => m.name !== mail)
+  dropDraftCard(mail)
   // Opened from Drafts, the thread was there for its draft: with the last one gone it has left the
   // folder, and the list has already let it go, so the pane goes with it. Undo puts it back in the list.
   if (mailbox === mailboxIds.value.drafts && !thread.value.some((m: Mail) => m.draft)) goToMailbox()

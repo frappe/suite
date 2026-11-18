@@ -572,8 +572,8 @@ const identityOptions = computed(() =>
   })),
 )
 
-// From Send until the mail is out of this composer: sent, and the thread's reload on its way to
-// replace it, or refused, and open again with the reason.
+// From Send until the mail is out of this composer: sent, and in a thread shown in its place (see
+// `showSent` in MailThread), or refused, and open again with the reason.
 const isLocked = computed(() => isSending.value || !show.value)
 // The composer stays mounted when it closes, so the in-flight flags have to be cleared on the way out.
 watch(show, (open) => !open && onClosed())
