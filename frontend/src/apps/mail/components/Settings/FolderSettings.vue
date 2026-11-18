@@ -13,9 +13,13 @@
       <div
         v-for="mailbox in managedMailboxes"
         :key="mailbox.name"
-        class="flex min-h-9 items-center justify-between gap-3 py-1 max-sm:min-h-12 max-sm:py-2"
+        class="hover:bg-surface-gray-1 -mx-2 flex items-center rounded-4 px-3 max-sm:-mx-4 max-sm:px-4"
       >
-        <div class="text-ink-gray-6 flex min-w-0 items-center gap-2">
+        <button
+          type="button"
+          class="text-ink-gray-6 flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+          @click="editMailbox(mailbox)"
+        >
           <Icon
             :name="getIcon(mailbox)"
             class="size-4 shrink-0"
@@ -23,17 +27,14 @@
           />
           <span class="text-ink-gray-8 truncate text-base">{{ mailbox._name }}</span>
           <Badge v-if="isHidden(mailbox)" :label="__('Hidden')" />
-        </div>
-        <div class="flex shrink-0 items-center gap-2">
-          <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
-            <Button variant="ghost" :aria-label="__('Folder options')">
-              <template #icon>
-                <Ellipsis class="text-ink-gray-5 h-4 w-4" />
-              </template>
-            </Button>
-          </AdaptiveDropdown>
-          <Button :label="__('Edit')" :size="buttonSize" @click="editMailbox(mailbox)" />
-        </div>
+        </button>
+        <AdaptiveDropdown :options="mailboxOptions(mailbox)" :title="mailbox._name">
+          <Button variant="ghost" :aria-label="__('Folder options')">
+            <template #icon>
+              <Ellipsis class="text-ink-gray-5 h-4 w-4" />
+            </template>
+          </Button>
+        </AdaptiveDropdown>
       </div>
     </div>
 
@@ -53,7 +54,7 @@
 <script setup lang="ts">
 import { Badge, Button } from 'frappe-ui'
 import { Icon } from 'frappe-ui/experimental'
-import { Ellipsis, Eye, EyeOff, Trash2 } from 'lucide-vue-next'
+import { Edit2, Ellipsis, Eye, EyeOff, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import { api, useMutation } from '@/api'
@@ -79,29 +80,38 @@ const editMailbox = (mailbox?: MailboxData) => {
   selectedMailbox.value = mailbox
   showFolderModal.value = true
 }
-const mailboxOptions = (mailbox: MailboxData) => [
-  {
-    label: mailbox.subscribed ? __('Hide') : __('Show'),
-    icon: mailbox.subscribed ? EyeOff : Eye,
-    onClick: () =>
-      updateFolder.run({
-        name: mailbox.name,
-        subscribed: mailbox.subscribed ? 0 : 1,
-      }),
-  },
-  {
-    label: __('Delete'),
-    icon: Trash2,
-    theme: 'red' as const,
-    // A built-in folder, such as Inbox or Sent, has a role, and the server keeps it
-    condition: () => !mailbox.role,
-    onClick: () => {
-      selectedMailbox.value = mailbox
-      showDeleteFolderModal.value = true
-    },
-  },
-]
 const updateFolder = useMutation(api.mail.mailboxes.subscribe)
+// Hide for a folder that shows in the Mail sidebar, Show for one that is hidden
+function visibilityOption(mailbox: MailboxData) {
+  const { name } = mailbox
+  if (mailbox.subscribed) {
+    return {
+      label: __('Hide'),
+      icon: EyeOff,
+      onClick: () => updateFolder.run({ name, subscribed: 0 }),
+    }
+  }
+
+  return { label: __('Show'), icon: Eye, onClick: () => updateFolder.run({ name, subscribed: 1 }) }
+}
+
+function mailboxOptions(mailbox: MailboxData) {
+  return [
+    { label: __('Edit'), icon: Edit2, onClick: () => editMailbox(mailbox) },
+    visibilityOption(mailbox),
+    {
+      label: __('Delete'),
+      icon: Trash2,
+      theme: 'red' as const,
+      // A built-in folder, such as Inbox or Sent, has a role, and the server keeps it
+      condition: () => !mailbox.role,
+      onClick: () => {
+        selectedMailbox.value = mailbox
+        showDeleteFolderModal.value = true
+      },
+    },
+  ]
+}
 
 // A hidden folder stays out of the Mail sidebar
 function isHidden(mailbox: MailboxData) {
