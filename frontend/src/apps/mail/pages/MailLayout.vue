@@ -78,6 +78,8 @@ const { undo } = useUndo()
 const handleGlobalShortcuts = (e: KeyboardEvent) => {
   // The listener sits on window, so it only acts while a Mail route is active.
   if (!isMailRoute(route)) return
+  // Chrome fires a keydown with no key when it autofills a field.
+  if (!e.key) return
 
   const key = e.key.toLowerCase()
 

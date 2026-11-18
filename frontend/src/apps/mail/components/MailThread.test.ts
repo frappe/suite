@@ -353,6 +353,22 @@ describe('printing the conversation', () => {
     expect(printedMessages()?.map((message) => message.blockRemote)).toEqual([true, false])
   })
 
+  // Chrome sends a keydown with no key when it autofills a field.
+  it('passes over a keydown with no key, and still prints on the next Ctrl+P', async () => {
+    await open()
+    const errors: unknown[] = []
+    const onError = (event: ErrorEvent) => {
+      errors.push(event.error)
+      event.preventDefault()
+    }
+    window.addEventListener('error', onError)
+    window.dispatchEvent(new Event('keydown'))
+    window.removeEventListener('error', onError)
+
+    expect(errors).toEqual([])
+    expect(press({ ctrlKey: true })).toBe(true)
+  })
+
   it('leaves Ctrl+P to the browser in a read-only thread', async () => {
     await open({ readonly: true })
 

@@ -649,6 +649,8 @@ const folderSelectionOptions = computed(() => [
 const gPrefix = useGPrefix()
 const reloadInterval = ref<ReturnType<typeof setInterval>>()
 const handleKeyDown = (e: KeyboardEvent) => {
+  // Chrome fires a keydown with no key when it autofills a field.
+  if (!e.key) return
   const key = e.key.toLowerCase()
 
   // Handle Ctrl/Cmd+A (Select All)
