@@ -38,15 +38,16 @@
         />
       </div>
     </template>
-    <Button
-      class="self-end"
-      :label="__('Save')"
-      variant="solid"
-      :size="buttonSize"
-      :disabled="isSaveBlocked"
-      :loading="updateVacationResponse.isPending"
-      @click="handleSave"
-    />
+    <SettingsDialogActions>
+      <Button
+        :label="__('Save')"
+        variant="solid"
+        :size="buttonSize"
+        :disabled="isSaveBlocked"
+        :loading="updateVacationResponse.isPending"
+        @click="handleSave"
+      />
+    </SettingsDialogActions>
     <SetSieveScriptStateModal
       v-model="showConfirmDialog"
       :script="{ _name: 'vacation', active: 0 }"
@@ -67,6 +68,7 @@ import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
 const emit = defineEmits<{ saved: [] }>()
