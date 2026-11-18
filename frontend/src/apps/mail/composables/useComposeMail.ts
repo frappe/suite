@@ -363,11 +363,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // outgoingBody), and a save starting in between would create a second draft beside it, or race it
   // to the same one.
   let isSending = false
+  // From a send's answer on: the message is the server's to deliver, and a draft save made for it
+  // after that (autosave, Close, the page going, the editor unmounting) would turn it back into a
+  // draft. Undo send brings it back as a draft of its own, in Drafts, not in this composer.
+  let submitted = false
   // `keepalive`: the page is going (see flushDraft), and the request has to outlive it.
   const saveDraft = async ({ keepalive = false }: { keepalive?: boolean } = {}) => {
     if (
       pendingSave ||
       isSending ||
+      submitted ||
       discarded ||
       !isDraftUpdated.value ||
       isLoading.value ||
@@ -480,6 +485,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
           send_at: sendAt,
           undo_send: !sendAt,
         })
+      submitted = true
       close()
     } catch (error) {
       if (sendAt) throw error /* Keep the composer open after refusal. */
@@ -747,7 +753,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: save_as_draft ? undefined : remindAt.value,
     }
-    const asSaved = snapshot()
+    // A draft is saved as it stood when it went, so what is typed meanwhile is still owed a save.
+    // A send owes nothing more (see `submitted`).
+    const asSaved = save_as_draft ? snapshot() : undefined
     const result = await (keepalive ? createMailOnLeave : createMail).run(input)
     await onMailUpdateSuccess(result, asSaved)
   }
@@ -835,7 +843,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: submit ? remindAt.value : undefined,
     }
-    const asSaved = snapshot()
+    const asSaved = submit ? undefined : snapshot()
     const result = await (keepalive ? updateDraftOnLeave : updateDraft).run(input)
     await onMailUpdateSuccess(result, asSaved)
   }

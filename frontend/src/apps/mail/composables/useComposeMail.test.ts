@@ -642,3 +642,28 @@ describe('leaving a page that leaves its document', () => {
     expect(server.create).not.toHaveBeenCalled()
   })
 })
+
+describe('a sent message', () => {
+  it('is not saved again for what was typed while it went, however the composer closes', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    const sending = composer.sendMail()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalledOnce())
+
+    composer.mail.html_body = '<p>Typed after Send.</p>'
+    answer({ id: 'sent-1', status: 'Submitted', error: null })
+    await sending
+    // Every way the composer goes after a send: Close on the phone page, the page going, and the
+    // editor unmounting with the window.
+    await composer.settleDraft()
+    composer.flushDraft()
+    await composer.saveDraft()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // Only the send: a draft save on the sent message makes it a draft again.
+    expect(server.updateDraft).toHaveBeenCalledOnce()
+    expect(server.updateDraft.mock.calls[0][0]).toMatchObject({ id: 'draft-1', submit: true })
+    expect(server.create).not.toHaveBeenCalled()
+  })
+})
