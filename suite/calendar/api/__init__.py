@@ -32,7 +32,7 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
 )
 from suite.calendar.doctype.calendar_event.fields import KNOWN_TRIGGERS, EventFields, Lower
 from suite.calendar.doctype.calendar_exchange.calendar_exchange import _build_recurrence_rule
-from suite.calendar.external import NAMESPACE as EXTERNAL
+from suite.calendar.external import EXTERNAL_ACCOUNT
 from suite.calendar.external import calendar_rows as external_calendar_rows
 from suite.calendar.external import events_in_window as external_events
 from suite.calendar.external_search import search_events as external_search
@@ -381,7 +381,7 @@ def search_calendar_events_with_shared(
     # calendar-shaped argument in this app is. One this site keeps is nobody's mail account,
     # and is asked here alone.
     calendar_account, _sep, calendar_id = filters.calendar.partition("|")
-    if calendar_account == EXTERNAL:
+    if calendar_account == EXTERNAL_ACCOUNT:
         events = []
         external = _external_search(text, limit, filters, time_zone, [calendar_id])
     else:

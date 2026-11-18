@@ -28,7 +28,7 @@ from suite.utils.dt import utcnow
 
 # What an external calendar's `account` is called where the app expects one. Calendars and events
 # are addressed as `account|id` throughout the app; these have no mail account, so they say so.
-NAMESPACE = "external"
+EXTERNAL_ACCOUNT = "external"
 
 # The fields a source states an event in, and so what a difference is measured on.
 EVENT_FIELDS = ("title", "description", "starts_on", "ends_on", "all_day", "repeats", "month_day")
@@ -47,8 +47,8 @@ def calendar_rows(user: str) -> list[dict]:
 
     return [
         {
-            "name": f"{NAMESPACE}|{calendar.name}",
-            "account": NAMESPACE,
+            "name": f"{EXTERNAL_ACCOUNT}|{calendar.name}",
+            "account": EXTERNAL_ACCOUNT,
             "id": calendar.name,
             "_name": calendar.calendar_name,
             "color": calendar.color,
@@ -194,8 +194,8 @@ def _event_row(calendar: frappe._dict, row: frappe._dict, day: date, stamp: str)
     start = datetime.combine(day, starts_on.time())
 
     return {
-        "name": f"{NAMESPACE}|{row.name}-{day:%Y%m%d}",
-        "account": NAMESPACE,
+        "name": f"{EXTERNAL_ACCOUNT}|{row.name}-{day:%Y%m%d}",
+        "account": EXTERNAL_ACCOUNT,
         "id": f"{row.name}-{day:%Y%m%d}",
         "uid": row.uid,
         # A yearly event's occurrence is named the way a series' is on the mail server: by the
@@ -207,7 +207,7 @@ def _event_row(calendar: frappe._dict, row: frappe._dict, day: date, stamp: str)
         "organizer": "",
         "calendars": [
             {
-                "calendar": f"{NAMESPACE}|{calendar.name}",
+                "calendar": f"{EXTERNAL_ACCOUNT}|{calendar.name}",
                 "calendar_id": calendar.name,
                 "calendar_name": calendar.calendar_name,
                 "color": calendar.color,

@@ -202,11 +202,13 @@ class IntegrationTestSearchOfTheSitesOwnCalendars(IntegrationTestCase):
     def test_a_holiday_answers_beside_the_mail_servers_events(self):
         with patch.object(calendar_api, "_with_shared", return_value=[]):
             [found] = self.search(self.user, "gandhi")
-            self.assertEqual((found["title"], found["account"]), ("Gandhi Jayanti", external.NAMESPACE))
+            self.assertEqual(
+                (found["title"], found["account"]), ("Gandhi Jayanti", external.EXTERNAL_ACCOUNT)
+            )
             self.assertEqual(self.search(self.stranger, "gandhi"), [])
 
     def test_a_calendar_this_site_keeps_is_asked_alone(self):
-        named = f"{external.NAMESPACE}|{self.calendar}"
+        named = f"{external.EXTERNAL_ACCOUNT}|{self.calendar}"
 
         self.assertEqual(
             [e["title"] for e in self.search(self.user, "gandhi", calendar=named)], ["Gandhi Jayanti"]
@@ -219,7 +221,7 @@ class IntegrationTestSearchOfTheSitesOwnCalendars(IntegrationTestCase):
         the_day_before = {**HOLIDAY, "uid": "holiday-India 2026-2026-10-01", "title": "Eve"}
         the_day_before.update(starts_on="2026-10-01 00:00:00", ends_on="2026-10-02 00:00:00")
         external.replace_events(self.calendar, [HOLIDAY, the_day_before])
-        named = f"{external.NAMESPACE}|{self.calendar}"
+        named = f"{external.EXTERNAL_ACCOUNT}|{self.calendar}"
         # 2 October, whole, in Kolkata — which is these instants
         one_day = {"after": "2026-10-01T18:30:00Z", "before": "2026-10-02T18:29:59Z"}
 

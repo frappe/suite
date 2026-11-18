@@ -168,7 +168,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         [row] = external.calendar_rows(self.user)
         self.assertEqual(row["_name"], "India 2026")
         self.assertEqual(row["color"], "#123456")
-        self.assertEqual(row["account"], external.NAMESPACE)
+        self.assertEqual(row["account"], external.EXTERNAL_ACCOUNT)
         self.assertEqual(external.calendar_rows(self.stranger), [])
 
         [event] = external.events_in_window(self.user, "2026-10-01", "2026-10-31")
@@ -177,7 +177,7 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(event["duration"], "P1D")
         self.assertEqual(event["show_without_time"], 1)
         self.assertEqual(event["free_busy_status"], "Free")
-        self.assertEqual(event["calendars"][0]["calendar"], f"{external.NAMESPACE}|{self.calendar}")
+        self.assertEqual(event["calendars"][0]["calendar"], f"{external.EXTERNAL_ACCOUNT}|{self.calendar}")
         self.assertEqual(external.events_in_window(self.stranger, "2026-10-01", "2026-10-31"), [])
 
     def test_a_second_run_writes_nothing(self):
@@ -333,7 +333,9 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
 
         self.assertEqual(again, "race-winner")
         # and the one that lost was not stored
-        self.assertEqual(frappe.db.count("External Calendar", {"source": "Test Source", "source_key": key}), 1)
+        self.assertEqual(
+            frappe.db.count("External Calendar", {"source": "Test Source", "source_key": key}), 1
+        )
 
     def second_connection(self):
         """Another writer's own connection, whose commit is seen as a concurrent run's would be.
