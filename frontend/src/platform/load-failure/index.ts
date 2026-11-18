@@ -56,6 +56,17 @@ export function installLoadFailureRecovery(
   }
 }
 
+/**
+ * Opens the error route for the page the person is on, for a failure outside a
+ * navigation. It does nothing on the error route, and nothing before the first
+ * navigation has settled: the router's own handler deals with that one.
+ */
+export function openLoadError(router: Router, options: LoadFailureOptions): void {
+  const route = router.currentRoute.value
+  if (route.name === options.errorRoute || route.matched.length === 0) return
+  void router.replace({ name: options.errorRoute, query: { redirect: route.fullPath } })
+}
+
 // Storage that cannot be used counts as "already reloaded": one error page is
 // better than a loop of full page loads.
 function claimReload(): boolean {

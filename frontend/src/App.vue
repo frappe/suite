@@ -21,24 +21,20 @@ import { drivePaletteSearch, DriveUploadTracker } from '@/apps/drive'
 import { findArea, useAppRegistry, useAreaWork } from '@/composition/appRegistry'
 import { settingsGroups } from '@/composition/settings'
 import { PALETTE_SEARCH_KEY } from '@/platform/contracts'
-import { defineAsyncWrapper } from '@/platform/load-failure'
+import { defineAsyncWrapper, openLoadError } from '@/platform/load-failure'
 import { AREA_PROGRESS_KEY } from '@/shell/areaProgress'
 import { SETTINGS_GROUPS_KEY } from '@/shell/settings/settings'
 
 const route = useRoute()
 const router = useRouter()
 
-// Each wraps the page or sits beside it: one that fails to load leaves the page showing, the load
-// error page included.
 // Toasts and dialogs show inside FeedbackProvider, so without it a confirmation never appears: the
 // page that says it did not load takes over.
 const FeedbackProvider = defineAsyncWrapper(
   () => import('@/platform/feedback').then(({ FeedbackProvider }) => FeedbackProvider),
-  () => {
-    if (route.name === 'app-load-error') return
-    void router.replace({ name: 'app-load-error', query: { redirect: route.fullPath } })
-  },
+  () => openLoadError(router, { errorRoute: 'app-load-error' }),
 )
+// Each wraps the page or sits beside it: one that fails to load leaves the page showing.
 const ShellLayout = defineAsyncWrapper(() => import('@/shell/ShellLayout.vue'))
 const NotificationsBell = defineAsyncWrapper(
   () => import('@/composition/notifications/NotificationsBell.vue'),

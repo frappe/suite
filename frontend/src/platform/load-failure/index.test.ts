@@ -1,7 +1,8 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h } from 'vue'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
-import { defineAsyncWrapper } from './index'
+import { defineAsyncWrapper, openLoadError } from './index'
 
 const root = document.createElement('div')
 let app: ReturnType<typeof createApp> | undefined
@@ -53,4 +54,53 @@ it('wraps the page in what it loads', async () => {
   await mountWrapped(async () => Frame)
 
   expect(root.querySelector('main')?.textContent).toBe('Frame: The page')
+})
+
+describe('openLoadError', () => {
+  const Page = defineComponent(() => () => h('p', 'A page'))
+  const options = { errorRoute: 'load-error' }
+
+  function makeRouter() {
+    return createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/files/:id', component: Page },
+        { path: '/load-error', name: 'load-error', component: Page },
+      ],
+    })
+  }
+
+  async function settled(router: ReturnType<typeof makeRouter>) {
+    await vi.waitFor(() => expect(router.currentRoute.value.matched.length).toBeGreaterThan(0))
+    return router.currentRoute.value.fullPath
+  }
+
+  it('opens the error route with the page the person was on', async () => {
+    const router = makeRouter()
+    await router.push('/files/7?tab=2')
+
+    openLoadError(router, options)
+
+    await vi.waitFor(() => expect(router.currentRoute.value.name).toBe('load-error'))
+    expect(router.currentRoute.value.query.redirect).toBe('/files/7?tab=2')
+  })
+
+  it('leaves the error route as it is', async () => {
+    const router = makeRouter()
+    await router.push('/load-error?redirect=/files/7')
+
+    openLoadError(router, options)
+
+    expect(await settled(router)).toBe('/load-error?redirect=/files/7')
+  })
+
+  it('does nothing before the first navigation has settled', async () => {
+    const router = makeRouter()
+
+    openLoadError(router, options)
+    // Long enough for a navigation it started to finish.
+    await new Promise((resolve) => setTimeout(resolve))
+
+    expect(router.currentRoute.value.name).toBeUndefined()
+  })
 })
