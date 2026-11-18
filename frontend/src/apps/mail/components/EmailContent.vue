@@ -1,25 +1,17 @@
 <template>
-  <!-- `invisible`, never `v-show`, and the placeholder laid over the frame rather than standing in
-	     for it. The frame is made as tall as its own document says it is, and a document that is
-	     not laid out has no height to report: under `display: none` the frame would never be
-	     measured, so never shown. -->
-  <div class="relative w-full">
+  <!-- Hidden, and taking no room, until the frame first says how tall its message is: it shows
+	     at its full height or not at all. Hidden with `invisible`, never `v-show`: the frame is made
+	     as tall as its own document says it is, and a document that is not laid out has no height
+	     to report. Under `display: none` the frame would never be measured, so never shown. -->
+  <div class="w-full">
     <iframe
       ref="frame"
       class="w-full"
       :class="{ invisible: !isMeasured }"
-      :style="{ height: isMeasured ? `${height}px` : undefined }"
+      :style="{ height: `${height ?? 0}px` }"
       scrolling="yes"
       :srcdoc
     />
-    <div v-if="!isMeasured" class="absolute inset-0 animate-pulse space-y-2 py-4">
-      <div
-        v-for="i in 5"
-        :key="i"
-        class="bg-surface-gray-3 h-2"
-        :style="{ width: `${Math.floor(Math.random() * 40) + 60}%` }"
-      />
-    </div>
   </div>
 </template>
 
@@ -497,7 +489,8 @@ const srcdoc = computed(() => {
 				// it had, and hears again when the message is opened.
 				let reported;
 				const reportHeight = () => {
-					if (!root.clientWidth) return;
+					// Not clientWidth: a hidden frame keeps its window's width, but its root has no box.
+					if (!root.getBoundingClientRect().width) return;
 					const height = messageHeight();
 					if (height === reported) return;
 					reported = height;

@@ -44,7 +44,7 @@ const rendered = (root: HTMLElement) =>
   new DOMParser().parseFromString(frame(root)!.getAttribute('srcdoc')!, 'text/html')
 const stylesheets = (doc: Document) =>
   [...doc.querySelectorAll('style')].map((style) => style.textContent).join('\n')
-const placeholder = (root: HTMLElement) => root.querySelector('.animate-pulse')
+const waiting = (root: HTMLElement) => frame(root)!.classList.contains('invisible')
 
 // The frame's document with its own scripts run, as the frame runs them. Nothing is laid out
 // here, so the pane's width and the width the message takes up are given; changing them and
@@ -53,7 +53,8 @@ const placeholder = (root: HTMLElement) => root.querySelector('.animate-pulse')
 // laid out in, else it fills the pane on screen, which a zoomed body outgrows by the zoom.
 // The message's height is given the same way, as a number or read off the document, and `settle`
 // is the browser's part once it has laid the message out: it tells whoever watches the message's
-// box that the box changed, if it did. A collapsed message has no box: width 0, height 0. What
+// box that the box changed, if it did. A collapsed message is not laid out: its root has no box,
+// though its window keeps the width it had, as in Chrome. What
 // the document then posts to its parent reaches the page as coming from this message's frame.
 type Pane = {
   width: number
@@ -61,12 +62,17 @@ type Pane = {
   height?: number | ((message: Document) => number)
   // How far down the message's content reaches, when something is drawn below its box.
   reach?: number
+  // False while the message is collapsed.
+  laidOut?: boolean
 }
 const framed = (root: HTMLElement, pane: Pane) => {
-  const box = (message: Document) => ({
-    width: pane.width,
-    height: typeof pane.height === 'function' ? pane.height(message) : (pane.height ?? 0),
-  })
+  const box = (message: Document) =>
+    pane.laidOut === false
+      ? { width: 0, height: 0 }
+      : {
+          width: pane.width,
+          height: typeof pane.height === 'function' ? pane.height(message) : (pane.height ?? 0),
+        }
   let watcher = () => {}
   let watched = { width: 0, height: 0 }
   const { window: inner } = new JSDOM(frame(root)!.getAttribute('srcdoc')!, {
@@ -156,7 +162,9 @@ describe('EmailContent', () => {
 
     expect(frame(root)).not.toBeNull()
     expect(frame(root)!.style.display).not.toBe('none')
-    expect(placeholder(root)).not.toBeNull()
+    expect(waiting(root)).toBe(true)
+    // Hidden, it takes no room: what follows the message does not wait below an empty gap.
+    expect(frame(root)!.style.height).toBe('0px')
   })
 
   it("folds away an Apple Mail reply's quoted trail", async () => {
@@ -243,7 +251,7 @@ describe('EmailContent', () => {
 })
 
 describe('EmailContent makes its frame as tall as its message', () => {
-  it('shows the frame at the height of the message, and drops the placeholder', async () => {
+  it('shows the frame once, at the height of the message', async () => {
     const root = mount()
     await nextTick()
 
@@ -251,8 +259,7 @@ describe('EmailContent makes its frame as tall as its message', () => {
     await nextTick()
 
     expect(frame(root)!.style.height).toBe('420px')
-    expect(frame(root)!.className).not.toContain('invisible')
-    expect(placeholder(root)).toBeNull()
+    expect(waiting(root)).toBe(false)
   })
 
   it('grows when the quoted trail is shown, and shrinks back when it is hidden again', async () => {
@@ -308,20 +315,20 @@ describe('EmailContent makes its frame as tall as its message', () => {
 
   // A message is mounted collapsed when it is not the last of its thread, and collapsed it has
   // no layout to measure.
-  it('waits behind the placeholder for a collapsed message to be opened', async () => {
+  it('stays hidden until a collapsed message is opened', async () => {
     const root = mount()
     await nextTick()
-    const pane: Pane = { width: 0, content: 0, height: 0 }
+    const pane: Pane = { width: 600, content: 600, height: 420, laidOut: false }
     const { settle } = framed(root, pane)
     settle()
     await nextTick()
-    expect(placeholder(root)).not.toBeNull()
+    expect(waiting(root)).toBe(true)
 
-    Object.assign(pane, { width: 600, content: 600, height: 420 })
+    Object.assign(pane, { laidOut: true })
     settle()
     await nextTick()
     expect(frame(root)!.style.height).toBe('420px')
-    expect(placeholder(root)).toBeNull()
+    expect(waiting(root)).toBe(false)
   })
 
   it('keeps its height while its message is collapsed, to open at it again', async () => {
@@ -331,12 +338,12 @@ describe('EmailContent makes its frame as tall as its message', () => {
     const { settle } = framed(root, pane)
     settle()
 
-    Object.assign(pane, { width: 0, height: 0 })
+    Object.assign(pane, { laidOut: false })
     settle()
     await nextTick()
 
     expect(frame(root)!.style.height).toBe('420px')
-    expect(placeholder(root)).toBeNull()
+    expect(waiting(root)).toBe(false)
   })
 
   // A sheet that fills its window would make the message as tall as its frame, whatever its
@@ -368,8 +375,8 @@ describe('EmailContent makes its frame as tall as its message', () => {
     report(null)
     await nextTick()
 
-    expect(frame(first)!.style.height).toBe('')
-    expect(placeholder(first)).not.toBeNull()
+    expect(frame(first)!.style.height).toBe('0px')
+    expect(waiting(first)).toBe(true)
     expect(frame(second)!.style.height).toBe('5000px')
   })
 
@@ -386,8 +393,8 @@ describe('EmailContent makes its frame as tall as its message', () => {
       )
     await nextTick()
 
-    expect(frame(root)!.style.height).toBe('')
-    expect(placeholder(root)).not.toBeNull()
+    expect(frame(root)!.style.height).toBe('0px')
+    expect(waiting(root)).toBe(true)
   })
 })
 
