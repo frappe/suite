@@ -116,6 +116,11 @@ class OversizedImageError extends Error {
  * mobile — and the only way to keep those from drifting into two subtly different mail clients is
  * for the behaviour to live in one place and only the markup to differ.
  */
+/** A request that got no answer: the connection or the page dropped it, or it was aborted. */
+const isUnanswered = (error: unknown) =>
+  (error instanceof TransportError && error.status === 0) ||
+  (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError')
+
 export const useComposeMail = (options: ComposeMailOptions) => {
   const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
 
@@ -375,11 +380,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // after that (autosave, Close, the page going, the editor unmounting) would turn it back into a
   // draft. Undo send brings it back as a draft of its own, in Drafts, not in this composer.
   let submitted = false
-  // A draft's first save went out and no answer came back: the browser drops a page's requests as
-  // the page goes, and the server may well have made the draft all the same. A save on the way out
-  // then makes no second one; the draft the server made, if it did, stands. A composer that stays
-  // (a dropped connection) goes on saving as before.
-  let createUnanswered = false
+  // The mail as a draft's first save sent it, when no answer came back: the browser drops a page's
+  // requests as the page goes, and the server may well have made the draft all the same. A save on
+  // the way out with nothing new since makes no second one; the draft the server made, if it did,
+  // stands. With something typed since, it is made anyway: a second draft can be thrown away, lost
+  // text cannot be brought back. A composer that stays (a dropped connection) saves as before.
+  let unansweredCreate: string | undefined
   // `keepalive`: the page is going (see flushDraft), and the request has to outlive it.
   // `leaving`: the save of a composer on its way out (see settleDraft and flushDraft).
   const saveDraft = async ({
@@ -394,7 +400,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       !isDraftUpdated.value ||
       isLoading.value ||
       isDiscarding.value ||
-      (leaving && !mail.id && createUnanswered)
+      (leaving && !mail.id && unansweredCreate === JSON.stringify(mail))
     )
       return
     isSavingDraft.value = true
@@ -778,11 +784,11 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     let result: OutputOf<typeof api.mail.messages.create>
     try {
       result = await (keepalive ? createMailOnLeave : createMail).run(input)
-      createUnanswered = false
+      unansweredCreate = undefined
     } catch (error) {
-      // Status 0: no answer at all, so whether the server made the draft is not known.
-      if (save_as_draft && error instanceof TransportError && error.status === 0)
-        createUnanswered = true
+      // No answer at all, as status 0 or as the request's abort: whether the server made the draft
+      // is not known.
+      if (save_as_draft && isUnanswered(error)) unansweredCreate = JSON.stringify(asSaved)
       throw error
     }
     await onMailUpdateSuccess(result, asSaved)

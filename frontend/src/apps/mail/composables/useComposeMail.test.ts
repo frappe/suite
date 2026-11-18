@@ -624,24 +624,52 @@ describe('leaving a page that leaves its document', () => {
     first.settle(saved('draft-9'))
   })
 
-  it('makes no second draft when the first save went out and the page dropped its answer', async () => {
-    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
-    // The browser drops the request as the page goes: no answer, though the server may have made
-    // the draft.
-    server.create.mockRejectedValueOnce(
+  const dropped = {
+    'as status 0': () =>
       new TransportError({ type: 'NetworkError', message: 'Load request cancelled', status: 0 }),
-    )
+    'as an abort': () => new DOMException('Aborted', 'AbortError'),
+  }
+  it.each(Object.entries(dropped))(
+    'makes no second draft when the first save went out with all of it and its answer was dropped %s',
+    async (_, error) => {
+      const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
+      // The browser drops the request as the page goes: no answer, though the server may have
+      // made the draft.
+      server.create.mockRejectedValueOnce(error())
+      composer.mail.subject = 'Planning'
+      await composer.saveDraft()
+      expect(server.create).toHaveBeenCalledOnce()
+
+      // Then the page goes, with nothing typed since: pagehide, and Close on the way out.
+      composer.flushDraft()
+      await composer.settleDraft()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+
+      expect(server.create).toHaveBeenCalledOnce()
+      expect(server.updateDraft).not.toHaveBeenCalled()
+    },
+  )
+
+  it('saves what was typed while that first save was out, as the page goes', async () => {
+    const composer = compose({ mailDetails: { to: [{ email: 'dana@brightwave.example' }] } })
+    let drop!: () => void
+    server.create
+      .mockReturnValueOnce(
+        new Promise((_, reject) => (drop = () => reject(dropped['as status 0']()))),
+      )
+      .mockResolvedValue(saved('draft-2'))
     composer.mail.subject = 'Planning'
-    await composer.saveDraft()
-    expect(server.create).toHaveBeenCalledOnce()
+    const first = composer.saveDraft()
+    await vi.waitFor(() => expect(server.create).toHaveBeenCalledOnce())
+    composer.mail.subject = 'Planning, Thursday at ten'
+    drop()
+    await first
 
-    // Then the page goes: pagehide, and Close on the way out.
     composer.flushDraft()
-    await composer.settleDraft()
-    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(server.create).toHaveBeenCalledOnce()
-    expect(server.updateDraft).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(server.create).toHaveBeenCalledTimes(2))
+    expect(server.create.mock.calls[1][0]).toMatchObject({ subject: 'Planning, Thursday at ten' })
+    expect(server.create.mock.calls[1][1]).toEqual({ keepalive: true })
   })
 
   it('still saves a draft refused by the server on the way out', async () => {
