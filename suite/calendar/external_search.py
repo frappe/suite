@@ -59,13 +59,10 @@ def search_events(
 
     found = []
     for row in _rows_carrying(list(drawn), words, title_only, start, end):
-        if not row.repeats:
-            days = [get_datetime(row.starts_on).date()]
-        else:
-            days = occurrences(row, since, until)
-            if not windowed:
-                days.sort(key=lambda day: abs(day - now.date()))
-                del days[SEARCH_INSTANCES:]
+        days = occurrences(row, since, until)
+        if row.repeats and not windowed:
+            days.sort(key=lambda day: abs(day - now.date()))
+            del days[SEARCH_INSTANCES:]
         if days:
             found.append((row, days))
 
