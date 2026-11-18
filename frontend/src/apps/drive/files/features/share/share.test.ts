@@ -498,7 +498,7 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     })
   })
 
-  it('sends a link to an outsider and notifies only users', async () => {
+  it('sends an outsider a link with the same access, and notifies only users', async () => {
     const server = fakeServer((call) =>
       call.id === 'node_get'
         ? node('folder')
@@ -509,15 +509,14 @@ describe('share writes (spec §7.4, §7.7, §7.9)', () => {
     const share = useShare('doc', { client: testClient(server.transport) })
     await share.load()
 
-    await share.sendLink('guest@example.com', 20)
-    await share.add(['asha@example.com', '$GROUP:Design team'], 40, true)
+    await share.add(['asha@example.com', '$GROUP:Design team'], 20, true, ['guest@example.com'])
 
     expect(
       server.calls.filter((call) => call.id === 'node_put_grant').map((call) => call.input),
     ).toEqual([
+      { node: 'doc', principal: 'asha@example.com', role: 20, notify: true },
+      { node: 'doc', principal: '$GROUP:Design team', role: 20 },
       { node: 'doc', principal: '$LINK', role: 20, send_to: 'guest@example.com' },
-      { node: 'doc', principal: 'asha@example.com', role: 40, notify: true },
-      { node: 'doc', principal: '$GROUP:Design team', role: 40 },
     ])
   })
 
