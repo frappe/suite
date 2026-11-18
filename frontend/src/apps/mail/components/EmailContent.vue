@@ -12,19 +12,19 @@
 	     holds the space until then. -->
   <div class="relative w-full">
     <IframeResizer
-      v-if="rendered"
+      v-if="srcdoc"
       ref="frame"
       class="w-full"
       :class="{ invisible: !isIframeReady }"
       license="GPLv3"
       :scrolling="true"
-      :srcdoc="rendered.srcdoc"
+      :srcdoc
       @on-ready="isIframeReady = true"
     />
     <div
       v-if="!isIframeReady"
       class="animate-pulse space-y-2 py-4"
-      :class="{ 'absolute inset-0': rendered }"
+      :class="{ 'absolute inset-0': srcdoc }"
     >
       <div
         v-for="i in 5"
@@ -41,7 +41,7 @@ import iframeResizerChildScript from '@iframe-resizer/child/index.umd.js?raw'
 // The package maps `./sfc` only via its (non-honored) `browser` field under
 // Vite 8/Rolldown, so import the concrete SFC file directly.
 import IframeResizer from '@iframe-resizer/vue/iframe-resizer.vue'
-import { computed, onMounted, onUnmounted, ref, useTemplateRef } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 
 import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'
 import { isMac } from '@/apps/mail/utils'
@@ -63,13 +63,24 @@ import { sanitizeEmailHtml } from '@/apps/mail/utils/sanitizeEmail'
 // `highlight`: the words a search found the message by, marked in its body. `sentAt`: when the mail
 // was sent; given it, the dates in the mail's own words are marked, read from then, and picking one
 // asks for an event at it (`pickDate`).
+// `asSent`: the reader asked to see the message as its sender designed it, on a light canvas,
+// because the dark-theme remap spoiled it. Only the thread knows that, and it learns whether
+// the remap applies at all from `adaptable`, which says so for the theme the app is in, shown
+// as sent or not.
 const {
   content,
   blockImages = false,
   highlight = '',
   sentAt,
-} = defineProps<{ content: string; blockImages?: boolean; highlight?: string; sentAt?: string }>()
-const emit = defineEmits<{ pickDate: [date: NamedDate] }>()
+  asSent = false,
+} = defineProps<{
+  content: string
+  blockImages?: boolean
+  highlight?: string
+  sentAt?: string
+  asSent?: boolean
+}>()
+const emit = defineEmits<{ pickDate: [date: NamedDate]; adaptable: [adaptable: boolean] }>()
 const mailDates = useMailDates()
 
 const { dataTheme } = useTheme()
@@ -90,7 +101,7 @@ const handleMessage = (event: MessageEvent) => {
   // A date in the message the reader picked (see markMailDates), by its place in this render's list.
   if (event.data?.type === 'mail-date') {
     if (event.source !== frame.value?.$el?.contentWindow) return
-    const date = rendered.value?.dates[Number(event.data.index)]
+    const date = body.value.dates[Number(event.data.index)]
     if (date) emit('pickDate', date)
     return
   }
@@ -163,9 +174,10 @@ const collapseQuotes = (doc: Document) => {
   })
 }
 
-const rendered = computed(() => {
-  // Until the date reader has loaded, or failed to, there is nothing to show yet.
-  if (sentAt && mailDates.value === undefined) return null
+const body = computed(() => {
+  // Until the date reader has loaded, or failed to, the frame waits (see the template); the rest,
+  // whether the theme adapts the message among it, is known already.
+  const waiting = !!sentAt && mailDates.value === undefined
   const doc = new DOMParser().parseFromString(sanitizeEmailHtml(content, blockImages), 'text/html')
   // Two kinds of email render exactly as authored, dark theme or not: those
   // declaring a fixed palette (suite's own templates), and art-directed ones
@@ -179,7 +191,8 @@ const rendered = computed(() => {
   // light-scheme self. Remap runs before collapseQuotes so the toggle buttons
   // it inserts keep their exact theme colors.
   normalizeToLightScheme(doc)
-  const remapped = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  const adapts = dataTheme.value === 'dark' && !declaresFixedPalette(doc) && !isArtDirected(doc)
+  const remapped = adapts && !asSent
   if (remapped) remapEmailForDarkMode(doc)
   // Before the search highlight, which cuts text into pieces a date could straddle.
   const dates =
@@ -188,14 +201,30 @@ const rendered = computed(() => {
       : []
   if (doc.body) highlightBody(doc.body, highlight)
   collapseQuotes(doc)
-  const transformedContent = doc.documentElement.outerHTML
+  return { html: doc.documentElement.outerHTML, adapts, remapped, dates, waiting }
+})
 
-  const srcdoc = `
+watch(
+  () => body.value.adapts,
+  (adapts) => emit('adaptable', adapts),
+  { immediate: true },
+)
+
+// As sent, the frame takes the light theme whatever the app's: the sender's design on the
+// canvas it was drawn for.
+const frameTheme = computed(() => (asSent ? 'light' : dataTheme.value))
+const colors = computed(() => THEME_CONFIG[frameTheme.value])
+
+const srcdoc = computed(() => {
+  if (body.value.waiting) return null
+  const { html: transformedContent, remapped } = body.value
+
+  return `
 		<!DOCTYPE html>
 		<html>
 		<head>
 			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<meta name="color-scheme" content="${dataTheme.value}">
+			<meta name="color-scheme" content="${frameTheme.value}">
 			<meta charset="UTF-8">
 			<style>
 				body {
@@ -317,10 +346,12 @@ const rendered = computed(() => {
 					text-decoration-color: currentColor;
 				}
 
+				/* Code keeps its line breaks and indentation but wraps a line too long for the
+				   pane, as Gmail does: unwrapped, one long line (an inline <code> run in a
+				   notification) widened the whole message past the pane. */
 				pre, code {
 					font-family: 'Courier New', Courier, monospace;
-					white-space: pre;
-					overflow-x: auto;
+					white-space: pre-wrap;
 				}
 			</style>
 			<script> ${iframeResizerChildScript} <\/script>
@@ -425,15 +456,69 @@ const rendered = computed(() => {
 					});
 				};
 
+				// The last resort, as in Apple Mail: what still overflows once everything that can
+				// reflow has (a row of fixed-size images, a nowrap run, a grid's own min-width) is
+				// scaled down to the pane, never clipped at its edge or panned inside it. Zoom rather
+				// than a transform, so the frame's measured height shrinks with it. A zoomed body that
+				// kept following the pane would get wider by the same scale, and whatever takes its
+				// width from the body (a 100% column with padding) would overflow again, so the body
+				// is laid out once as on a pane as wide as the message, held at that width, and that
+				// layout is what gets scaled. Everything is measured unzoomed, where every browser
+				// agrees. Each pass lets go of the hold before anything else measures, so a pane that
+				// widens gets the message back at full size.
+				const root = document.documentElement;
+				const bodyStyle = document.body.style;
+				// The hold saves the value each property had just before it (a sent <body style>, or
+				// what normalizeWidths wrote this pass) and puts it back on release; mail that fits
+				// is never touched.
+				let heldOver = null;
+				const hold = (values) => {
+					heldOver ??= {};
+					Object.entries(values).forEach(([name, value]) => {
+						if (!(name in heldOver))
+							heldOver[name] = [bodyStyle.getPropertyValue(name), bodyStyle.getPropertyPriority(name)];
+						bodyStyle.setProperty(name, value, 'important');
+					});
+				};
+				const release = () => {
+					if (!heldOver) return;
+					Object.entries(heldOver).forEach(([name, saved]) => bodyStyle.setProperty(name, ...saved));
+					heldOver = null;
+				};
+				const fitToPane = () => {
+					const pane = root.clientWidth;
+					const content = root.scrollWidth;
+					if (!pane || content <= pane + 1) return;
+					const rootWidth = [root.style.getPropertyValue('width'), root.style.getPropertyPriority('width')];
+					root.style.setProperty('width', content + 'px', 'important');
+					const width = document.body.getBoundingClientRect().width;
+					root.style.setProperty('width', ...rootWidth);
+					hold({ 'box-sizing': 'border-box', width: width + 'px', 'min-width': '0', 'max-width': 'none' });
+					hold({ zoom: String(pane / root.scrollWidth) });
+				};
+
 				const normalizeAll = () => {
+					// Release first: normalizeWidths writes the same properties the hold saved.
+					release();
 					normalizeWidths();
 					unsquashImages();
+					fitToPane();
 				};
 				normalizeAll();
 				window.addEventListener('resize', normalizeAll);
-				document.querySelectorAll('img').forEach((img) =>
-					img.addEventListener('load', unsquashImages),
-				);
+				// An image that fails changes the layout as surely as one that arrives, so both
+				// refit; the window's own load is the backstop once every image has settled.
+				const refit = () => {
+					// Release first, so what follows measures the unheld layout.
+					release();
+					unsquashImages();
+					fitToPane();
+				};
+				document.querySelectorAll('img').forEach((img) => {
+					img.addEventListener('load', refit);
+					img.addEventListener('error', refit);
+				});
+				window.addEventListener('load', refit);
 
 				// Forward keyboard events to parent
 				['keydown', 'keyup', 'keypress'].forEach(eventType => {
@@ -581,10 +666,7 @@ const rendered = computed(() => {
 		</body>
 		</html>
 	`
-  return { srcdoc, dates }
 })
-
-const colors = computed(() => THEME_CONFIG[dataTheme.value])
 
 const THEME_CONFIG = {
   light: {

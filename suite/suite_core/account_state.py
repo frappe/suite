@@ -17,6 +17,17 @@ def read(user: str) -> dict:
     )
 
 
+def read_all() -> dict[str, dict]:
+    """Every user's state at once, keyed by user, for directory listings."""
+    return {
+        state.name: state
+        for state in frappe.get_all(
+            "Suite Account State",
+            fields=["name", "account", "operation", "status", "must_change_password", "temporary_expires_at"],
+        )
+    }
+
+
 def write(user: str, **values) -> None:
     frappe.db.get_value("User", user, "name", for_update=True)
     doc = (

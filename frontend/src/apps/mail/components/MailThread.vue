@@ -229,7 +229,9 @@
                           :reload-mails="handleReload"
                           :drop-mail
                           :thread="thread"
+                          :body-view="bodyViews[mail.name]"
                           @set-flagged="onSetFlagged"
+                          @toggle-as-sent="toggleAsSent(mail)"
                           @sync-unseen="handleSyncUnseen"
                           @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
                           @mark-mail-spam="
@@ -495,7 +497,9 @@
                                   :drop-mail
                                   :thread="thread"
                                   :hide-star="isCollapsed(mail)"
+                                  :body-view="bodyViews[mail.name]"
                                   @set-flagged="onSetFlagged"
+                                  @toggle-as-sent="toggleAsSent(mail)"
                                   @sync-unseen="handleSyncUnseen"
                                   @move-mail="
                                     (m: Mail, target: string) => emit('moveMail', m, target)
@@ -520,6 +524,7 @@
                               <Button
                                 variant="ghost"
                                 :tooltip="mail.flagged ? __('Unstar') : __('Star')"
+                                :aria-label="mail.flagged ? __('Unstar') : __('Star')"
                                 @click.stop="onSetFlagged(mailCopyIds(mail), !mail.flagged)"
                               >
                                 <template #icon>
@@ -624,7 +629,9 @@
                             :block-images="isBlocked(mail)"
                             :highlight="isMatch(mail) ? searchTerm : ''"
                             :sent-at="offersEvents(mail) ? mail.received_at : undefined"
+                            :as-sent="bodyViews[mail.name] === 'asSent'"
                             @pick-date="createEventAt(mail, $event)"
+                            @adaptable="(adaptable: boolean) => onBodyAdaptable(mail, adaptable)"
                           />
 
                           <!-- font-sans is the system stack, not Inter: the preset leaves
@@ -658,6 +665,7 @@
                               class="hover:text-ink-gray-8 disabled:opacity-70"
                               :disabled="downloadingZipMail === mail.name"
                               :title="__('Download all')"
+                              :aria-label="__('Download all')"
                               @click.stop.prevent="downloadAttachmentsAsZip(mail)"
                             >
                               <LoaderCircle
@@ -843,6 +851,7 @@ import { isMailRoute } from '@/apps/mail/router'
 import { userStore } from '@/apps/mail/stores/user'
 import type {
   Attachment,
+  BodyView,
   ComposeMailData,
   Identity,
   Mail,
@@ -1723,6 +1732,20 @@ const dsnCardRendered = ref<Record<string, boolean>>({})
 const showsDsnCard = (mail: Mail) => !readonly && !isCollapsed(mail) && !!mail.dsn_blob_id
 const dsnReplacesBody = (mail: Mail) =>
   showsDsnCard(mail) && dsnCardRendered.value[mail.name] !== false
+
+// In the dark theme a message's colours are remapped onto the dark canvas, which can spoil a
+// design, so each message the remap applies to offers to show it as sent instead, on a light
+// canvas. The choice is not kept past a reload. `adaptable` is EmailContent's word on whether
+// the remap applies: a message that renders as authored anyway offers nothing.
+const bodyViews = ref<Record<string, BodyView>>({})
+const onBodyAdaptable = (mail: Mail, adaptable: boolean) => {
+  if (!adaptable) delete bodyViews.value[mail.name]
+  else bodyViews.value[mail.name] ??= 'adapted'
+}
+const toggleAsSent = (mail: Mail) => {
+  const view = bodyViews.value[mail.name]
+  if (view) bodyViews.value[mail.name] = view === 'asSent' ? 'adapted' : 'asSent'
+}
 
 // The message's calendar invite, if it carries one — as a text/calendar (or application/ics)
 // part or a file merely named *.ics.

@@ -307,11 +307,17 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
     },
 
     /**
-     * Adds users and groups from the picker in turn (§7.8). An existing row
-     * keeps its expiry. Resolves with those not added: a failed write, or a
-     * declined confirm. The picker's message keeps a line for every failure.
+     * Adds users and groups from the picker in turn (§7.8), then mints a link
+     * for each outside address in `invites` and emails it, with the same role.
+     * An existing row keeps its expiry. Resolves with those not added: a failed
+     * write, or a declined confirm. The picker's message keeps a line for every failure.
      */
-    async add(principals: readonly string[], role: number, notify: boolean): Promise<string[]> {
+    async add(
+      principals: readonly string[],
+      role: number,
+      notify: boolean,
+      invites: readonly string[] = [],
+    ): Promise<string[]> {
       // The Share button is busy from the first click, or a second one would mail twice.
       pending.add(PICKER)
       try {
@@ -320,7 +326,8 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
         errors.delete(PICKER)
         const lines: string[] = []
         const fail = (principal: string) => (message: string) => {
-          lines.push(principals.length > 1 ? `${label(principal)}: ${message}` : message)
+          const several = principals.length + invites.length > 1
+          lines.push(several ? `${label(principal)}: ${message}` : message)
           errors.set(PICKER, lines.join('\n'))
         }
         const left: string[] = []
@@ -340,15 +347,19 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
           )
           if (!added) left.push(principal)
         }
+        for (const email of invites) {
+          const sent = await write(
+            PICKER,
+            () => grants.put(NEW_LINK, { role, send_to: email }),
+            fail(email),
+          )
+          if (!sent) left.push(email)
+        }
         return left
       } finally {
         pending.delete(PICKER)
       }
     },
-
-    /** Mints a link for one outsider and emails it (§7.8). */
-    sendLink: (email: string, role: number) =>
-      write(PICKER, () => grants.put(NEW_LINK, { role, send_to: email })),
 
     /** Creates a share link with the chosen access and protection (§7.7). Resolves with its URL. */
     async newLink(link: GrantPatch = { role: DRIVE_ROLES.read }): Promise<string | undefined> {

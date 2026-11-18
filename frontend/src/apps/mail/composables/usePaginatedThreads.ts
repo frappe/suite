@@ -1,8 +1,9 @@
 import { useIntersectionObserver } from '@vueuse/core'
-import { computed, nextTick, ref, useTemplateRef } from 'vue'
+import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
 import type { Thread } from '@/apps/mail/types'
+import { beginListRead } from '@/apps/mail/utils/draftsInList'
 
 /** Rows per window; the server reports whether another window exists. */
 export const PAGE_LENGTH = 25
@@ -19,7 +20,10 @@ const MAX_FILL_WINDOWS = 20
  */
 export type ThreadListState = 'loading' | 'error' | 'empty' | 'list'
 
-/** Keyboard navigation, viewport filling and the list's state over engine-owned pages. */
+/**
+ * Reading the list again, keyboard navigation, viewport filling and the list's state over
+ * engine-owned pages.
+ */
 interface Options {
   query: () => InfiniteQueryState<unknown>
   rows: () => Thread[]
@@ -80,6 +84,37 @@ export function usePaginatedThreads({
       pendingEdge = false
     }
   }
+  /**
+   * Read the list again from its first window. Every such read goes through here: its rows settle
+   * the drafts shown on them (see beginListRead).
+   */
+  function refetch() {
+    const settleDrafts = beginListRead()
+    return query()
+      .refetch()
+      .then(() => settleDrafts(rows()))
+      .catch(() => {
+        /* Query state holds the refusal. */
+      })
+  }
+  // A refresh asked while the list is being read waits for that read rather than being dropped: the
+  // change that asked for it may have reached the server after the read went out.
+  const refreshOwed = ref(false)
+  /** Read the list again, now or once the read under way is in. */
+  function refresh() {
+    if (isFetching.value) refreshOwed.value = true
+    else void refetch()
+  }
+  // Reads nothing of the query until a refresh is owed: the source runs at setup, and a caller may
+  // declare its query further down.
+  watch(
+    () => refreshOwed.value && !isFetching.value,
+    (due) => {
+      if (!due) return
+      refreshOwed.value = false
+      void refetch()
+    },
+  )
   let fillWindows = 0
   let lastProgress = 0
   const visible = ref(false)
@@ -134,6 +169,8 @@ export function usePaginatedThreads({
     listState,
     listFramed,
     container,
+    refetch,
+    refresh,
     hasMore,
     loadingMore,
     isFetching,

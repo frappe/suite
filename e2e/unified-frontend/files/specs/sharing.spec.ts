@@ -77,6 +77,8 @@ const whoHasAccess = (dialog: Locator) => dialog.getByRole("region", { name: "Wh
 const rowFor = (dialog: Locator, text: string | RegExp) =>
 	whoHasAccess(dialog).getByRole("listitem").filter({ hasText: text });
 const accessButton = (row: Locator) => row.getByRole("button", { name: /^Access for / });
+// A role set elsewhere is plain text; what can be done about it here sits in this menu.
+const moreButton = (row: Locator) => row.getByRole("button", { name: /^More for / });
 const peopleField = (dialog: Locator) => dialog.getByRole("combobox", { name: "Add people, groups or emails" });
 
 /** Picks PERSON in the people field. The pick waits in "People to add" until Share is pressed. */
@@ -157,15 +159,15 @@ test("an inherited grant shows its source; Deny access here, then Allow again", 
 	const dialog = await openShare(page, file.name);
 
 	const inherited = rowFor(dialog, PERSON).filter({ hasText: `via ${home.title}` });
-	await expect(accessButton(inherited)).toHaveAccessibleName(/: Comment$/);
-	await accessButton(inherited).click();
+	await expect(inherited.getByText("Comment", { exact: true })).toBeVisible();
+	await moreButton(inherited).click();
 	await page.getByRole("menuitem", { name: "Deny access here" }).click();
 
 	const denied = rowFor(dialog, PERSON_NAME).filter({ hasText: "Denied here" });
 	await expect(denied).toBeVisible();
 	expect((await grants(file.name)).find((grant) => grant.principal === PERSON)?.role).toBe(0);
 
-	await accessButton(denied).click();
+	await moreButton(denied).click();
 	await page.getByRole("menuitem", { name: "Allow again" }).click();
 	await expect(rowFor(dialog, "Denied here")).toHaveCount(0);
 	expect((await grants(file.name)).some((grant) => grant.principal === PERSON)).toBe(false);
@@ -191,8 +193,11 @@ test("an outsider gets a link of their own", async ({ page }) => {
 	const outsider = `${runTag("outsider")}@example.com`;
 	const dialog = await openShare(page, file.name);
 
+	// An address waits with the people picked; its link is made and sent on Share.
 	await peopleField(dialog).fill(outsider);
-	await page.getByRole("option", { name: `Send a link to ${outsider}` }).click();
+	await page.getByRole("option", { name: outsider }).click();
+	await expect(dialog.getByRole("list", { name: "People to add" }).getByRole("listitem")).toContainText([outsider]);
+	await dialog.getByRole("button", { name: "Share", exact: true }).click();
 
 	await expect(rowFor(dialog, `Sent to ${outsider}`)).toBeVisible();
 	const sent = (await grants(file.name)).filter((grant) => grant.sent_to === outsider);
@@ -225,8 +230,7 @@ test("a document surface places Share; a new share link is created from the dial
 	const deck = await createDocument(api, home.name, runTag("uf9-deck"), "Presentation");
 	const dialog = await openShare(page, deck.name);
 
-	await dialog.getByRole("button", { name: "Sharing options" }).click();
-	await page.getByRole("menuitem", { name: "Create share link" }).click();
+	await whoHasAccess(dialog).getByRole("button", { name: "Create link" }).click();
 	const create = page.getByRole("dialog", { name: "Create share link" });
 	await create.getByRole("button", { name: "Create link" }).click();
 	const created = page.getByRole("dialog", { name: "Link created" });
@@ -239,8 +243,8 @@ test("a document surface places Share; a new share link is created from the dial
 
 	await expect(accessButton(rowFor(dialog, "Anyone with this link"))).toHaveAccessibleName(/: View$/);
 	// The footer copies the item's own address, and Done closes the dialog.
-	await expect(dialog.getByRole("button", { name: "Copy link" })).toBeVisible();
-	await expect(dialog.getByText("For people with access")).toBeVisible();
+	await expect(dialog.getByRole("button", { name: "Copy link", exact: true })).toBeVisible();
+	await expect(dialog.getByText("Opens for people with access")).toBeVisible();
 	await dialog.getByRole("button", { name: "Done" }).click();
 	await expect(dialog).toBeHidden();
 });

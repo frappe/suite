@@ -468,7 +468,7 @@ function handleSend() {
 }
 
 function focusInput() {
-  inputEl.value?.focus()
+  inputEl.value?.focus({ preventScroll: true })
 }
 
 function autosize() {

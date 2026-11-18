@@ -483,6 +483,11 @@ export interface DriveDialogs {
   share(node: string, known?: DriveNode): Promise<boolean>
   /** Opens the file picker. Resolves with the picked file or document, or `undefined` when cancelled. */
   pickFile(options?: { title?: string; action?: string }): Promise<DriveNodeSummary | undefined>
+  /**
+   * Opens the files picker, titled `title`, its button naming what is done with the files.
+   * Resolves with the files picked, or `undefined` when cancelled. Only files can be picked.
+   */
+  pickFiles(options?: { title?: string; action?: string }): Promise<DriveNodeSummary[] | undefined>
 }
 
 /** Drive dialogs, opened by function call. Call it in a component's setup. */
@@ -523,6 +528,13 @@ export function useDriveDialogs(): DriveDialogs {
         () => import('@/apps/drive/files/features/FilePicker.vue'),
         options,
         'choose',
+      ),
+    pickFiles: (options = {}) =>
+      presentDialog<DriveNodeSummary[]>(
+        context,
+        () => import('@/apps/drive/files/features/FilesPicker.vue'),
+        options,
+        'picked',
       ),
   }
 }

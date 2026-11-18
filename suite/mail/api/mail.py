@@ -4,6 +4,7 @@ import os
 import re
 import zipfile
 from datetime import datetime
+from typing import TypedDict
 
 import frappe
 import pydenticon
@@ -25,6 +26,7 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.bounces import dsn_blob_id, get_delivery_report
 from suite.mail.classification import Category, tab_filter
 from suite.mail.doctype.mail_message.mail_message import (
+    ListChanges,
     add_messages_to_mailbox,
     delete_messages,
     empty_mailbox,
@@ -35,7 +37,9 @@ from suite.mail.doctype.mail_message.mail_message import (
     get_messages,
     get_messages_mailboxes,
     is_unscreened_message,
+    merge_list_changes,
     move_messages_to_mailbox,
+    no_list_changes,
     query_message_ids,
     query_threads,
     remove_messages_from_mailbox,
@@ -45,6 +49,7 @@ from suite.mail.doctype.mail_message.mail_message import (
     set_seen_status,
     set_spam_status,
     set_unscreened_status,
+    sync_account_changes,
     try_move_messages,
     try_set_seen,
 )
@@ -54,6 +59,7 @@ from suite.mail.doctype.mailbox_settings.mailbox_settings import (
     automation_rules_to_settings,
     set_mailbox_settings,
 )
+from suite.mail.doctype.push_subscription.push_subscription import is_jmap_push_notifications_frozen
 from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_global_accepted_values,
     get_global_screened_email_addresses,
@@ -73,6 +79,7 @@ from suite.mail.doctype.user_account.user_account import (
 )
 from suite.mail.email_suggestions import EmailSuggestions
 from suite.mail.filing import Filed, file_messages
+from suite.mail.http.shapes import AttachedFile
 from suite.mail.jmap import (
     SuiteJMAPClient,
     get_account_client,
@@ -110,6 +117,7 @@ from suite.mail.reminders import (
 )
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_user_timezone, to_utc_z
+from suite.mail.utils.logger import get_push_logger
 from suite.mail.utils.reaction import (
     MAILING_LIST_PROPERTIES,
     emoji_key,
@@ -662,6 +670,44 @@ def get_user_jmap_accounts() -> list[dict]:
     personal = get_user_personal_jmap_account()
     accounts.sort(key=lambda a: (a["name"] != personal, a["_name"] or ""))
     return accounts
+
+
+class SyncedChanges(ListChanges):
+    """What a sync found for the lists, and whether some account's changes could not be fetched."""
+
+    # The client waits longer before it asks again.
+    failed: bool
+
+
+@frappe.whitelist(methods=["POST"])
+def sync_changes() -> SyncedChanges:
+    """Catch the user's open lists up with their mail server now.
+
+    What arrived or changed since the last look reaches every open list as a push's changes do,
+    through the socket, and is returned for the one that asked. Mailbox ids are per account, so
+    `new_mail_in` can name another account's folder; a list that reads one as its own only reads
+    again for nothing.
+
+    While an import has push frozen it does nothing, as a push does nothing then: the imported mail
+    would be announced, and notified, as new mail arriving.
+
+    An account that fails leaves the others to sync, and is answered as `failed` rather than as an
+    error: the client asks every few seconds, and an error would log each ask.
+    """
+
+    found, failed = no_list_changes(), False
+    user = frappe.session.user
+    if not is_jmap_configured(user) or is_jmap_push_notifications_frozen(user):
+        return SyncedChanges(**found, failed=failed)
+
+    for account in get_user_jmap_accounts():
+        try:
+            found = merge_list_changes(found, sync_account_changes(user, account["name"]))
+        except Exception:
+            # To the push log rather than as an Error Log row, which would pile up on each ask.
+            get_push_logger({"source": "sync", "account": account["name"]}).exception("sync-account-failed")
+            failed = True
+    return SyncedChanges(**found, failed=failed)
 
 
 def mailbox_slug(mailbox: dict) -> str | None:
@@ -2659,6 +2705,102 @@ def _refuse_oversized_attachment(filename: str) -> None:
         ),
         MaxFileSizeReachedError,
     )
+
+
+# What one pick from Drive may bring in all: as much as one mail carries at the common provider limit
+# above. Each copy is held in memory until all are read, so this bounds what one request holds.
+MAX_DRIVE_ATTACHMENT_TOTAL = MAX_ATTACHMENT_SIZE
+
+
+@frappe.whitelist(methods=["POST"])
+@dynamic_rate_limit()
+def attach_drive_files(nodes: JSONList[str]) -> list[AttachedFile]:
+    """Attach files from Drive to a mail being written, as copies.
+
+    Each one is read through Drive, which refuses a file the user can't read, and saved as a private
+    file as an upload from the device would be (see `upload_file`), under the same size limit, and
+    together under `MAX_DRIVE_ATTACHMENT_TOTAL`. A copy rather than a link: the mail goes on carrying
+    what was attached even if the Drive file changes, moves or goes. Every file is read before any is
+    kept, so a refusal keeps none.
+    """
+
+    from contextlib import closing
+
+    from frappe.core.doctype.file.exceptions import MaxFileSizeReachedError
+
+    from suite import drive
+
+    picked, total = [], 0
+    for node in nodes:
+        try:
+            stream, mime = drive.read_file(node)
+        except drive.DriveError as error:
+            # Raised as it is, the refusal reaches the client as its type alone, so it is thrown
+            # again with words. They name no file: the title of one the user can't read isn't
+            # theirs to learn.
+            gone = isinstance(error, drive.DriveNotFound | drive.DriveForbidden)
+            frappe.throw(
+                _("A file you picked is no longer in Drive, or no longer shared with you.")
+                if gone
+                else _("A file you picked could not be read from Drive. Try again."),
+                type(error),
+            )
+        # After the read: `node_title` checks no role, and the read has just checked READ.
+        filename = _drive_attachment_name(drive.node_title(node), mime)
+        with closing(stream):
+            content = stream.read(MAX_ATTACHMENT_SIZE + 1)
+        if len(content) > MAX_ATTACHMENT_SIZE:
+            _refuse_oversized_attachment(filename)
+        total += len(content)
+        if total > MAX_DRIVE_ATTACHMENT_TOTAL:
+            frappe.throw(
+                _("These files come to more than {0} MB together. Attach fewer at a time.").format(
+                    MAX_DRIVE_ATTACHMENT_TOTAL // (1024 * 1024)
+                ),
+                MaxFileSizeReachedError,
+            )
+        picked.append((filename, content))
+
+    attached = []
+    for filename, content in picked:
+        file = frappe.get_doc(
+            {
+                "doctype": "File",
+                "folder": "Home/Frappe Mail",
+                "file_name": filename,
+                "is_private": 1,
+                "content": content,
+            }
+        ).insert()
+        attached.append(
+            AttachedFile(
+                name=file.name,
+                file_name=file.file_name,
+                file_url=file.file_url,
+                file_size=file.file_size,
+            )
+        )
+    return attached
+
+
+def _drive_attachment_name(title: str, mime: str) -> str:
+    """The attachment's file name: the Drive title, with an extension for its type when it has none.
+
+    A sent attachment's type is read off its file name (`MailQueue`), and a Drive title need not end
+    in one, so a PDF titled "Invoice" would otherwise go out as an unknown type.
+    """
+
+    from mimetypes import guess_extension, guess_type
+
+    from frappe.core.doctype.file.utils import get_safe_file_name
+
+    if (
+        mime != "application/octet-stream"
+        and not guess_type(title)[0]
+        and (extension := guess_extension(mime))
+    ):
+        title += extension
+    return get_safe_file_name(title)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

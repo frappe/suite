@@ -20,7 +20,6 @@
         :disabled="state.isPending(PICKER)"
         :autofocus="autofocusPicker"
         :share="share"
-        @send-link="(email, role) => state.sendLink(email, role)"
       />
       <Skeleton v-else class="h-7 w-full" aria-hidden="true" />
       <ErrorMessage v-if="state.errors.get(PICKER)" :message="state.errors.get(PICKER)" />
@@ -47,27 +46,16 @@
       </p>
       <ErrorMessage v-if="state.errors.get(UNDO_ROW)" :message="state.errors.get(UNDO_ROW)" />
 
-      <section v-if="!picked" :aria-label="__('Who has access')">
+      <section :aria-label="__('Who has access')">
         <div class="mb-1 flex h-7 items-center justify-between gap-3">
           <h3 class="text-base-medium">{{ __('Who has access') }}</h3>
-          <Dropdown
+          <Button
             v-if="sections?.links"
-            :options="[
-              {
-                label: __('Create share link'),
-                icon: 'lucide-link',
-                onClick: () => (creatingLink = true),
-              },
-            ]"
-            align="end"
-          >
-            <Button
-              icon="lucide-ellipsis"
-              variant="ghost"
-              size="sm"
-              :aria-label="__('Sharing options')"
-            />
-          </Dropdown>
+            icon-left="lucide-link"
+            variant="ghost"
+            :label="__('Create link')"
+            @click="creatingLink = true"
+          />
         </div>
         <ul v-if="!sections" :aria-label="__('Loading who has access')">
           <!-- Most items list at least the owner, the workspace and the public. -->
@@ -127,18 +115,40 @@
                 :disabled="state.isPending(PUBLIC)"
                 @update:model-value="(enabled) => state.setPublic(enabled)"
               />
-              <Dropdown v-else-if="hasMenu(row)" :options="rowOptions(row)" align="end">
+              <template v-else-if="changesRole(row)">
                 <Button
+                  v-if="linkUrl(row)"
+                  icon="lucide-copy"
                   variant="ghost"
-                  icon-right="lucide-chevron-down"
-                  class="shrink-0 justify-end"
-                  :aria-label="__('Access for {0}: {1}', [rowName(row), rowValue(row)])"
-                  :loading="state.isPending(rowPrincipal(row))"
-                >
-                  {{ rowValue(row) }}
-                </Button>
-              </Dropdown>
-              <span v-else class="shrink-0 px-2 text-sm text-ink-gray-5">{{ rowValue(row) }}</span>
+                  class="shrink-0"
+                  :aria-label="__('Copy link: {0}', [rowDescription(row)])"
+                  @click="copyLink(linkUrl(row))"
+                />
+                <Dropdown :options="rowOptions(row)" align="end">
+                  <Button
+                    variant="ghost"
+                    icon-right="lucide-chevron-down"
+                    class="shrink-0 justify-end"
+                    :aria-label="__('Access for {0}: {1}', [rowName(row), rowValue(row)])"
+                    :loading="state.isPending(rowPrincipal(row))"
+                  >
+                    {{ rowValue(row) }}
+                  </Button>
+                </Dropdown>
+              </template>
+              <template v-else>
+                <!-- Set elsewhere, so the role is plain text; what can be done here sits in its own menu. -->
+                <span class="shrink-0 px-2 text-base text-ink-gray-6">{{ rowValue(row) }}</span>
+                <Dropdown v-if="hasMenu(row)" :options="rowOptions(row)" align="end">
+                  <Button
+                    icon="lucide-ellipsis"
+                    variant="ghost"
+                    class="shrink-0"
+                    :aria-label="__('More for {0}', [rowName(row)])"
+                    :loading="state.isPending(rowPrincipal(row))"
+                  />
+                </Dropdown>
+              </template>
             </div>
             <form
               v-if="editing?.key === row.key"
@@ -416,7 +426,7 @@ function rowValue(row: UnifiedRow): string {
   if (row.type === 'owner') return __('Owner')
   if (row.type === 'general') {
     if (row.access.state === 'off') return __('No access')
-    if (row.access.state === 'denied') return __('Denied')
+    if (row.access.state === 'denied') return row.kind === 'public' ? __('Blocked') : __('Denied')
     if (row.access.state === 'expired') return __('Expired')
     return row.kind === 'public' ? __('On') : __(roleLabel(generalRole(row.access)))
   }
@@ -426,13 +436,27 @@ function rowValue(row: UnifiedRow): string {
   return __(roleLabel(row.grantRow.grant.role))
 }
 
+/** Only access that has run out is dimmed; access from a folder still works, so it reads in full. */
 function isMuted(row: UnifiedRow): boolean {
   return (
-    row.type === 'inherited' ||
-    (row.type === 'general' &&
-      (row.access.state === 'inherited' || row.access.state === 'expired')) ||
+    (row.type === 'general' && row.access.state === 'expired') ||
     (row.type === 'local' && row.grantRow.expired)
   )
+}
+
+/** Whether the row's own menu leads with its roles, so its control is the role itself. */
+function changesRole(row: UnifiedRow): boolean {
+  if (row.type === 'local') return !row.grantRow.denied && !row.grantRow.expired
+  return (
+    row.type === 'general' &&
+    row.kind === 'general' &&
+    (row.access.state === 'off' || row.access.state === 'local')
+  )
+}
+
+/** A live link's address, copied from its own row. */
+function linkUrl(row: UnifiedRow): string {
+  return (row.type === 'local' && row.kind === 'link' && row.grantRow.grant.url) || ''
 }
 
 function hasMenu(row: UnifiedRow): boolean {
@@ -545,13 +569,6 @@ function linkOptions(row: Extract<UnifiedRow, { type: 'local' }>): DropdownOptio
   const grantRow = row.grantRow
   const grant = grantRow.grant
   const options: DropdownOption[] = []
-  const url = grant.url
-  if (url)
-    options.push({
-      label: __('Copy link'),
-      icon: 'lucide-copy',
-      onClick: () => void copyLink(url),
-    })
   options.push({
     label: grant.has_password ? __('Change password') : __('Set password'),
     icon: 'lucide-lock',
@@ -676,13 +693,12 @@ async function share(
   notify: boolean,
 ): Promise<PickedPerson[]> {
   for (const person of people) props.state.rememberName(person.principal, person.name)
-  const left = new Set(
-    await props.state.add(
-      people.map((person) => person.principal),
-      role,
-      notify,
-    ),
-  )
+  // Outside addresses get a share link by email, with the same access (§7.8).
+  const principals: string[] = []
+  const invites: string[] = []
+  for (const person of people)
+    (person.kind === 'email' ? invites : principals).push(person.principal)
+  const left = new Set(await props.state.add(principals, role, notify, invites))
   return people.filter((person) => left.has(person.principal))
 }
 </script>

@@ -41,6 +41,44 @@ class TestFailedSetupGate(UnitTestCase):
                 require_access(USER, method=method)
 
 
+SPAM_SCAN_METHODS = (
+    "suite.mail.api.spamd.scan",
+    "suite.mail.api.spamd.get_spam_score",
+    "mail.api.spamd.scan",
+    "mail.api.spamd.get_spam_score",
+)
+
+
+class TestSpamScanWithoutMailAccount(UnitTestCase):
+    """A service user with an API key and no business Mail account."""
+
+    def setUp(self):
+        super().setUp()
+        self.enterContext(patch.object(access, "is_suite_cloud_configured", return_value=True))
+        self.health = self.enterContext(
+            patch.object(mail, "provider_health", return_value={"suspended": False})
+        )
+        self.enterContext(patch.object(access, "read", return_value={}))
+        self.enterContext(patch.object(access, "is_suite_admin", return_value=False))
+        self.enterContext(patch.object(frappe.db, "get_value", return_value=None))
+
+    def test_spam_scanning_is_open(self):
+        for method in SPAM_SCAN_METHODS:
+            with self.subTest(method=method):
+                require_access(USER, method=method)
+
+    def test_mailbox_methods_are_still_refused(self):
+        for method in ("mail.api.outbound.send_raw", "suite.mail.api.inbound.pull", "mail.api.auth.validate"):
+            with self.subTest(method=method), self.assertRaises(AccountSetupRequired):
+                require_access(USER, method=method)
+
+    def test_a_suspended_site_still_refuses_spam_scanning(self):
+        self.health.return_value = {"suspended": True}
+        for method in SPAM_SCAN_METHODS:
+            with self.subTest(method=method), self.assertRaisesRegex(frappe.PermissionError, "suspended"):
+                require_access(USER, method=method)
+
+
 class TestSuspendedSite(SuiteCloudTestCase):
     def setUp(self):
         # Logging in commits, which would keep the Suite Cloud settings past the test's rollback

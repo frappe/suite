@@ -157,7 +157,7 @@
                 @clear="clearAllReturned"
               >
                 <!-- Mobile: group select ("all of Today") appears only in selection mode. -->
-                <template #lead>
+                <template #lead="{ label }">
                   <div
                     v-if="!isMobile || mobileSelectionMode"
                     class="checkbox-hitbox -mx-3 -my-2.5 flex cursor-pointer items-center py-2.5 pl-3 pr-8"
@@ -167,6 +167,7 @@
                       :model-value="isGroupSelected(key)"
                       size="md"
                       class="pointer-events-none [&_input]:mt-0"
+                      :aria-label="__('Select all of {0}', [label])"
                     />
                   </div>
                 </template>
@@ -484,6 +485,8 @@ const {
   listState,
   listFramed,
   container: mailListRef,
+  refetch: refetchThreads,
+  refresh: refreshList,
   loadingMore,
   isFetching,
   canGoNext,
@@ -575,8 +578,8 @@ const threadRows = computed(() =>
   ),
 )
 watch(threadRows, keptRead.keep)
-// Ask again for a list that failed to load.
-const retryList = () => void threads.refetch().catch(() => {})
+// Ask again for a list that failed to load, settling its drafts like any other read.
+const retryList = () => void refetchThreads()
 
 // After an action, and on the poll: every count the sidebar shows, the merged folders' included.
 const refreshCounts = () => void store.refreshCounts()
@@ -595,14 +598,13 @@ const resetThreads = () => {
   expandedStacks.value = new Set()
   // Ticked threads belong to the list they were ticked in; another folder or filter starts clear.
   resetSelections()
-  void threads.refetch().catch(() => {})
+  void refetchThreads()
   refreshCounts()
 }
 
 // Refresh the loaded windows without changing the reader's selection.
 const refreshThreads = (reloadCounts = true) => {
-  if (isFetching.value) return
-  void threads.refetch().catch(() => {})
+  refreshList()
   if (reloadCounts) refreshCounts()
 }
 

@@ -26,7 +26,7 @@
             :options="signatureOptions(signature)"
             :title="signature.signature_name"
           >
-            <Button variant="ghost">
+            <Button variant="ghost" :aria-label="__('{0} options', [signature.signature_name])">
               <template #icon>
                 <Ellipsis class="text-ink-gray-5 h-4 w-4" />
               </template>

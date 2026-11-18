@@ -59,6 +59,7 @@
                       v-if="!row.email_deleted && row.thread_id"
                       variant="ghost"
                       :tooltip="__('Open email')"
+                      :aria-label="__('Open email')"
                       @click.stop.prevent="openEmail(row)"
                     >
                       <template #icon>
@@ -66,7 +67,7 @@
                       </template>
                     </Button>
                     <AdaptiveDropdown :options="rowOptions(row)" align="end">
-                      <Button variant="ghost" @click.stop.prevent>
+                      <Button variant="ghost" :aria-label="__('More')" @click.stop.prevent>
                         <template #icon>
                           <EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
                         </template>
