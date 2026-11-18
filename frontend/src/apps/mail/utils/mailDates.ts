@@ -42,6 +42,12 @@ const SHORT_WEEKDAY = /\b(?:Mon|Tue|Tues|Wed|Thu|Thur|Thurs|Fri|Sat|Sun)\b/
 // "3/4", "1/2", "24/7", "4/5": as often a fraction or a ratio as a day, unless a year or a time
 // says which.
 const SLASH_TAG = 'parser/SlashDateFormatParser'
+// A part of the day, at the hour a meeting in it starts: ours, not chrono's, which puts the
+// morning at 6 and the evening at 8. "Friday night" and "tonight" are an evening's.
+const PART_TIMES = { morning: '09:00', afternoon: '14:00', evening: '18:00', tonight: '18:00' }
+// Said without a day, a part of the day is the mail's own only after "this": "Good morning" isn't
+// one, nor is "this morning", which has mostly gone by the time anyone reads of it.
+const THIS_PART = /^this\s+(?:afternoon|evening)$/i
 // The line a reply's quoted trail starts with, however a client wraps it: its date is the quoted
 // mail's, not one the writer proposes.
 const ATTRIBUTION = /(?:^|\n)[ \t]*On\s(?:[^\n]{0,200}\n){0,2}?[^\n]{0,200}?\bwrote\s*:/g
@@ -100,9 +106,10 @@ const headerBlocks = (text: string): [number, number][] => {
 /**
  * The dates and times in `text`, read as the mail's writer meant them: "tomorrow" and "Thursday"
  * from `sentAt` (a UTC timestamp) on, in the reader's zone, and "05/06" in the order the reader's
- * locale writes a day and month. A date before the day it was sent is the past, and not offered. An hour without am or pm is a working hour (1–7 the
- * afternoon, 8–11 the morning). A time with a zone of its own ("3pm EST") is moved into the
- * reader's.
+ * locale writes a day and month. A date before the day it was sent is the past, and not offered.
+ * An hour without am or pm is a working hour (1–7 the afternoon, 8–11 the morning), and a part of
+ * the day is the hour a meeting in it starts ("tomorrow evening" at 18:00). A time with a zone of
+ * its own ("3pm EST") is moved into the reader's.
  */
 export function findMailDates(
   text: string,
@@ -141,6 +148,7 @@ const namesADate = (result: ParsedResult) => {
   const { start, text } = result
   const tags = result.tags()
   if (RELATIVE_TAGS.some((tag) => tags.has(tag)) || PAST.test(text)) return false
+  if (partOfDay(result) && THIS_PART.test(text.replace(TRAIL, ''))) return true
   const time = start.isCertain('hour')
   const day = start.isCertain('day')
   if (!time && !day && !start.isCertain('weekday')) return false // "this week", "march"
@@ -148,6 +156,13 @@ const namesADate = (result: ParsedResult) => {
   if (day || !start.isCertain('weekday') || WEEKDAY.test(text)) return true
   const clock = start.isCertain('meridiem') || /\d:\d\d/.test(text)
   return time && clock && SHORT_WEEKDAY.test(text)
+}
+
+// The time a part of the day the text names stands for, when it names no hour.
+const partOfDay = (result: ParsedResult) => {
+  if (result.start.isCertain('hour')) return undefined
+  const tags = result.tags()
+  return Object.entries(PART_TIMES).find(([part]) => tags.has(`casualReference/${part}`))?.[1]
 }
 
 // Whether `hour` is written in `text` as a clock does, with its leading zero ("07:30", "at 05"),
@@ -162,11 +177,13 @@ const toNamedDate = (result: ParsedResult, timeZone: string, sent: Dayjs): Named
   const lead = result.text.match(LEAD)?.[0].length ?? 0
   const sentDay = sent.format('YYYY-MM-DD')
   const workingHours = (hour: number) => !zeroLed(result.text, hour)
+  const part = partOfDay(result)
   const from = moment(result.start, timeZone, {
     workingHours,
-    // A time with no day is the next one after the mail was sent.
+    part,
+    // A time with no day is the next one after the mail was sent; "this evening" is that day's.
     dayFor: (time) =>
-      time >= sent.format('HH:mm') ? sentDay : sent.add(1, 'day').format('YYYY-MM-DD'),
+      time >= sent.format('HH:mm') || part ? sentDay : sent.add(1, 'day').format('YYYY-MM-DD'),
     // A weekday with an hour is the next time that weekday comes round at that hour: today, when
     // it is today and the hour is still to come. Except "next Friday", whose week is chrono's, as
     // it is without an hour.
@@ -193,6 +210,8 @@ interface MomentRules {
   workingHours: (hour: number) => boolean
   /** The day of a time that names none. */
   dayFor: (time: string) => string
+  /** The time a part of the day ("tomorrow evening") stands for, when no hour is named. */
+  part?: string
   /**
    * For a weekday at a time, which week: chrono's (`'as named'`), or the soonest at or after
    * `earliest` (`YYYY-MM-DDTHH:mm`). Without it, the weekday's day is `dayFor`'s.
@@ -205,14 +224,11 @@ interface MomentRules {
 const moment = (
   components: ParsedResult['start'],
   timeZone: string,
-  { workingHours, dayFor, weekday }: MomentRules,
+  { workingHours, dayFor, weekday, part }: MomentRules,
 ): MailMoment => {
   const named = `${pad(components.get('year'))}-${pad(components.get('month'))}-${pad(components.get('day'))}`
-  if (!components.isCertain('hour')) return { date: named }
-  const written = components.get('hour') ?? 0
-  const afternoon =
-    !components.isCertain('meridiem') && written >= 1 && written <= 7 && workingHours(written)
-  const time = `${pad(afternoon ? written + 12 : written)}:${pad(components.get('minute'))}`
+  if (!components.isCertain('hour') && !part) return { date: named }
+  const time = part ?? clockTime(components, workingHours)
   let date = named
   if (!components.isCertain('day')) {
     if (!components.isCertain('weekday') || !weekday) date = dayFor(time)
@@ -229,6 +245,17 @@ const moment = (
     .subtract(components.get('timezoneOffset') ?? 0, 'minute')
     .tz(timeZone)
   return { date: at.format('YYYY-MM-DD'), time: at.format('HH:mm') }
+}
+
+// The hour and minute the text names, an hour without am or pm read as `workingHours` says.
+const clockTime = (
+  components: ParsedResult['start'],
+  workingHours: MomentRules['workingHours'],
+) => {
+  const written = components.get('hour') ?? 0
+  const afternoon =
+    !components.isCertain('meridiem') && written >= 1 && written <= 7 && workingHours(written)
+  return `${pad(afternoon ? written + 12 : written)}:${pad(components.get('minute'))}`
 }
 
 // Only a range of the start's kind (days with days, times with times) that runs forward is one.

@@ -130,6 +130,50 @@ describe('dates in a mail', () => {
     }
   })
 
+  it('reads a part of the day as the hour a meeting in it starts', () => {
+    // Sent on Wednesday 18 November, at 15:30 in India.
+    const at = (text: string) =>
+      findMailDates(text, '2026-11-18T10:00:00Z', READER).map((date) => ({
+        text: text.slice(date.index, date.index + date.length),
+        start: date.start,
+      }))
+    expect(at('tomorrow morning')).toEqual([
+      { text: 'tomorrow morning', start: { date: '2026-11-19', time: '09:00' } },
+    ])
+    expect(at('tomorrow afternoon')[0].start).toEqual({ date: '2026-11-19', time: '14:00' })
+    expect(at('tomorrow evening')[0].start).toEqual({ date: '2026-11-19', time: '18:00' })
+    expect(at('Friday morning')[0].start).toEqual({ date: '2026-11-20', time: '09:00' })
+    expect(at('Friday evening')[0].start).toEqual({ date: '2026-11-20', time: '18:00' })
+    expect(at('tonight')[0].start).toEqual({ date: '2026-11-18', time: '18:00' })
+    expect(at('Are you free this evening?')).toEqual([
+      { text: 'this evening', start: { date: '2026-11-18', time: '18:00' } },
+    ])
+    // Still that day's evening when the mail was sent in it, not tomorrow's.
+    expect(findMailDates('this evening', '2026-11-18T13:00:00Z', READER)[0].start).toEqual({
+      date: '2026-11-18',
+      time: '18:00',
+    })
+    // An hour named beside it is the hour.
+    expect(at('tomorrow evening at 7')[0].start).toEqual({ date: '2026-11-19', time: '19:00' })
+  })
+
+  it('offers no deadline or vague stretch of time, nor a part of the day without a day', () => {
+    const at = (text: string) =>
+      findMailDates(text, '2026-11-18T10:00:00Z', READER).map((date) =>
+        text.slice(date.index, date.index + date.length),
+      )
+    for (const text of [
+      'Good morning Lena',
+      'Send it by end of day',
+      'Send it by EOD',
+      'by the end of the week',
+      'early next week',
+      'in two days',
+    ])
+      expect(at(text)).toEqual([])
+    expect(at('by EOD Friday')).toEqual(['Friday'])
+  })
+
   it('reads a day and month in slashes in the order the reader’s locale writes them', () => {
     // Sent in January, so both readings are still to come. Alone, "05/06" could be a score; a time
     // says it is a day.
