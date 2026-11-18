@@ -15,11 +15,17 @@ def report() -> dict:
     roots = drive.administration_usage()
     fetched_at = cached.get("fetched_at")
     expired = bool(fetched_at and (now_datetime() - get_datetime(fetched_at)).total_seconds() >= 21600)
+    personal_by_user = {}
+    for root in roots:
+        if root["kind"] == "Personal":
+            stored, reserved = personal_by_user.get(root["user"], (0, 0))
+            personal_by_user[root["user"]] = (
+                stored + root["stored_bytes"],
+                reserved + root["reserved_bytes"],
+            )
     users = []
     for user in list_users():
-        personal = [row for row in roots if row["user"] == user["name"] and row["kind"] == "Personal"]
-        stored = sum(row["stored_bytes"] for row in personal)
-        reserved = sum(row["reserved_bytes"] for row in personal)
+        stored, reserved = personal_by_user.get(user["name"], (0, 0))
         mail_bytes = personal_mail_usage(cached, user["name"]) if cloud else 0
         limit = policy.get("users", {}).get(user["name"], {})
         timestamp = (
