@@ -310,6 +310,45 @@ describe('saving a draft', () => {
     expect(composer.isSaveFailed.value).toBe(false)
   })
 
+  it('keeps what was typed while a save was out still to be saved', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    composer.mail.html_body = '<p>First.</p>'
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalled())
+
+    composer.mail.html_body = '<p>First. Second.</p>'
+    answer({ id: 'draft-2', status: 'Drafted', error: null })
+    await saving
+
+    expect(composer.isDraftUpdated.value).toBe(true)
+  })
+
+  it('saves what was typed while a save was out, once the composer has closed', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft
+      .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+      .mockResolvedValueOnce({ id: 'draft-3', status: 'Drafted', error: null })
+    composer.mail.html_body = '<p>First.</p>'
+    const saving = composer.saveDraft()
+    await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalled())
+
+    composer.mail.html_body = '<p>First. Second.</p>'
+    open = false
+    apps.splice(0).forEach((app) => app.unmount())
+    await composer.saveDraft() // The host's save on the way out, while the first is still out.
+    answer({ id: 'draft-2', status: 'Drafted', error: null })
+    await saving
+
+    expect(server.updateDraft).toHaveBeenCalledTimes(2)
+    expect(server.updateDraft.mock.calls[1][0]).toMatchObject({
+      id: 'draft-2',
+      html_body: '<p>First. Second.</p>',
+    })
+  })
+
   it('keeps a draft whose save on close was refused, ready to reopen', async () => {
     const composer = compose()
     server.updateDraft.mockRejectedValueOnce(new Error('Attachment is not a site file'))
