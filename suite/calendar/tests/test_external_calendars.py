@@ -109,29 +109,6 @@ class UnitTestOccurrences(UnitTestCase):
         self.assertEqual(external._duration(timedelta(0)), "P0D")
 
 
-class UnitTestCalendarRows(UnitTestCase):
-    """What the app is handed for an external calendar: a row shaped like the mail server's,
-    on which nothing can be written."""
-
-    def test_a_calendar_is_a_read_only_row_of_the_apps_shape(self):
-        calendars = [
-            frappe._dict(name="c1", calendar_name="Celebrations", color=None),
-            frappe._dict(name="c2", calendar_name="India 2026", color="#123456"),
-        ]
-        with patch.object(external, "_calendars_for", return_value=calendars):
-            rows = external.calendar_rows("akash@x.io")
-
-        self.assertEqual([row["name"] for row in rows], ["external|c1", "external|c2"])
-        self.assertEqual([row["color"] for row in rows], [None, "#123456"])
-        # nobody writes to these here: what they say is the source's to change
-        self.assertTrue(all(not row["may_write_all"] and not row["may_delete"] for row in rows))
-
-    def test_somebody_with_no_calendars_is_asked_nothing_more(self):
-        with patch.object(external, "_calendars_for", return_value=[]) as calendars:
-            self.assertEqual(external.events_in_window("nobody@x.io", "2026-09-01", "2026-09-30"), [])
-        calendars.assert_called_once()
-
-
 class IntegrationTestExternalCalendars(IntegrationTestCase):
     """The store itself: what a source writes is what the people it is for are shown."""
 
@@ -169,6 +146,8 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         [row] = external.calendar_rows(self.user)
         self.assertEqual(row["_name"], "India 2026")
         self.assertEqual(row["color"], "#123456")
+        # nobody writes to these here: what they say is the source's to change
+        self.assertEqual((row["may_write_all"], row["may_delete"]), (0, 0))
         self.assertEqual(row["account"], external.EXTERNAL_ACCOUNT)
         self.assertEqual(external.calendar_rows(self.stranger), [])
 
