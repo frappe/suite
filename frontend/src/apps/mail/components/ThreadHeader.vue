@@ -313,8 +313,14 @@ const threadMailboxes = computed(() =>
 )
 
 // Drafts offers only Discard: a draft isn't archived, junked, filed, starred or read. And Archive and
-// Junk act only on mail you received, so a conversation of nothing but your own has neither.
-const inDrafts = computed(() => mailbox.value === mailboxIds.value.drafts)
+// Junk act only on mail you received, so a conversation of nothing but your own has neither. The
+// merged folders' thread route names Drafts outright, as their list does; elsewhere a folder whose id
+// is not in yet is no folder, so it is not Drafts either.
+const inDrafts = computed(() =>
+  route.name === UNIFIED_THREAD_ROUTE
+    ? route.params.folder === 'drafts'
+    : !!mailboxIds.value.drafts && mailbox.value === mailboxIds.value.drafts,
+)
 const holdsReceived = computed(() =>
   holdsReceivedMail(
     (thread ?? []).filter((mail: Mail) => mail.id),
@@ -445,16 +451,14 @@ const moreActions = computed((): Action[] => [
     label: __('Move to Trash (Delete)'),
     onClick: () => emit('moveThread', mailboxIds.value.trash),
     icon: Trash2,
-    condition: () =>
-      mailbox.value !== mailboxIds.value.drafts &&
-      !threadMailboxes.value.includes(mailboxIds.value.trash),
+    condition: () => !inDrafts.value && !threadMailboxes.value.includes(mailboxIds.value.trash),
   },
   // Read from Drafts, a draft is discarded for good, as the list and the composer do.
   {
     label: __('Discard (Delete)'),
     onClick: () => emit('deleteThread'),
     icon: Trash2,
-    condition: () => mailbox.value === mailboxIds.value.drafts,
+    condition: () => inDrafts.value,
   },
   {
     label: __('Delete Thread (Shift+Delete)'),

@@ -19,6 +19,8 @@ const BOXES = { inbox: 'in', archive: 'ar', sent: 'se', snoozed: 'sn', drafts: '
 const screen = vi.hoisted(() => ({
   mobile: false,
   route: { name: '', params: { mailbox: '', folder: '', threadID: 't' }, query: {} },
+  // The account's folders have come in.
+  mailboxesIn: true,
 }))
 
 type Row = {
@@ -118,10 +120,18 @@ vi.mock('@/apps/mail/stores/user', () => ({ takesPins: () => false }))
 vi.mock('@/apps/mail/utils/accountScope', async () => {
   const { ref: reference } = await import('vue')
   return {
-    injectAccountScope: () => ({
-      mailboxes: reference({ data: [{ id: 'se', slug: 'sent', name: 'Sent', role: 'sent' }] }),
-      mailboxIds: reference(BOXES),
-    }),
+    injectAccountScope: () =>
+      screen.mailboxesIn
+        ? {
+            mailboxes: reference({
+              data: [{ id: 'se', slug: 'sent', name: 'Sent', role: 'sent' }],
+            }),
+            mailboxIds: reference(BOXES),
+          }
+        : {
+            mailboxes: reference({ data: undefined }),
+            mailboxIds: reference(Object.fromEntries(Object.keys(BOXES).map((box) => [box, '']))),
+          },
   }
 })
 vi.mock('@/apps/mail/utils/composables', async () => {
@@ -141,6 +151,7 @@ const onPrint = vi.fn()
 beforeEach(() => {
   window.__ = (text: string) => text
   screen.mobile = false
+  screen.mailboxesIn = true
   viewing('in')
   root = document.createElement('div')
   document.body.append(root)
@@ -388,6 +399,33 @@ describe('a thread on its way', () => {
 
     expect(steps()).toBeNull()
     expect(tooltips()).toEqual([])
+  })
+
+  const dots = () => outline()?.querySelectorAll('.rounded-full').length ?? 0
+  const inAllInboxes = (folder: string) => {
+    screen.route.name = UNIFIED_THREAD_ROUTE
+    screen.route.params.folder = folder
+  }
+
+  it("outlines an Inbox thread's buttons in All Inboxes before the account's folders are in", async () => {
+    screen.mailboxesIn = false
+    inAllInboxes('drafts')
+    await show([], false)
+    const inDrafts = dots()
+    app?.unmount()
+
+    inAllInboxes('inbox')
+    await show([], false)
+    expect(dots()).toBeGreaterThan(inDrafts)
+  })
+
+  it("offers to move a thread to Trash, not to discard it, before the account's folders are in", async () => {
+    screen.mailboxesIn = false
+    inAllInboxes('inbox')
+    await show(THEIR_LAST_WORD, false)
+
+    expect(tooltips()).toContain('Move to Trash (Delete)')
+    expect(tooltips()).not.toContain('Discard (Delete)')
   })
 
   it("shows its buttons in the outline's place once it is in", async () => {
