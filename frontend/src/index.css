@@ -88,3 +88,10 @@ body {
 :root[data-theme='dark'] [role='switch'][data-state='unchecked'] > span {
   background-color: var(--ink-gray-7);
 }
+
+/* frappe-ui's settings row makes its title a label as wide as the row, so the empty space
+   after the words lit up the row's switch and toggled it on a click. The label ends with
+   its words. */
+.min-w-0.flex-1 > label[for].text-base-medium.block {
+  width: fit-content;
+}
