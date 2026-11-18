@@ -2,18 +2,6 @@
   <!-- Rows of the Sending page's list, there once the preferences are read. -->
   <template v-if="preferences">
     <SettingsRow
-      :title="__('Default send-as address')"
-      :description="__('The address selected automatically when composing a message.')"
-    >
-      <Combobox
-        trigger="button"
-        align="end"
-        :model-value="preferences.default_outgoing_email"
-        :options="addresses"
-        @update:model-value="setDefaultOutgoing"
-      />
-    </SettingsRow>
-    <SettingsRow
       :title="__('Undo send')"
       :description="
         __('How long a sent message waits before delivery, so you can still take it back.')
@@ -43,31 +31,18 @@
 </template>
 
 <script setup lang="ts">
-import { Combobox, Select, SettingsRow, Switch } from 'frappe-ui'
-import { computed } from 'vue'
+import { Select, SettingsRow, Switch } from 'frappe-ui'
 
 import { api, client } from '@/api'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
-import type { Identity } from '@/apps/mail/types'
 import { UNDO_SEND_PERIODS, undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
 import { translate as __ } from '@/platform/translation'
 
-const { identities, userResource: user } = userStore()
-const { preferences, change, flag } = useAccountPreferences()
+const { userResource: user } = userStore()
+const { preferences, flag } = useAccountPreferences()
 const createContacts = flag('create_contacts_after_email_submit')
 const keepForwardedInThread = flag('keep_forwarded_email_in_thread')
-
-const addresses = computed(() =>
-  (identities.data ?? []).map((identity: Identity) => identity.email),
-)
-
-// The control can also hand back nothing; an address is all there is to save
-async function setDefaultOutgoing(email: unknown) {
-  if (typeof email !== 'string') return
-
-  await change({ default_outgoing_email: email })
-}
 
 const UNDO_SEND_OPTIONS = UNDO_SEND_PERIODS.map((seconds) => ({
   label: __('{0} seconds', [String(seconds)]),

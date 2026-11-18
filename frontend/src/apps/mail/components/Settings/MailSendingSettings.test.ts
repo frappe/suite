@@ -16,22 +16,6 @@ vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'personal',
     sieveScripts: { data: [] },
-    identities: reactive({
-      isFetching: false,
-      data: [
-        {
-          name: 'personal|a',
-          id: 'a',
-          account: 'personal',
-          email: 'maya@example.com',
-          _name: 'Maya',
-          reply_to: [],
-          bcc: [],
-          html_signature: '',
-          may_delete: 0,
-        },
-      ],
-    }),
   }),
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
@@ -40,11 +24,9 @@ vi.mock('@/apps/mail/utils/composables', () => ({
 }))
 // The parts this file doesn't open
 vi.mock('./ComposeSettings.vue', () => ({ default: { render: () => null } }))
+vi.mock('./IdentitySettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('./SignatureSettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
-  default: { render: () => null },
-}))
-vi.mock('@/apps/mail/components/IdentitySettingsListView.vue', () => ({
   default: { render: () => null },
 }))
 vi.mock('@/apps/mail/components/Modals/SetSieveScriptStateModal.vue', () => ({

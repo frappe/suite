@@ -61,14 +61,6 @@
       />
     </div>
 
-    <Button
-      v-if="draft.may_delete"
-      :label="__('Delete')"
-      class="min-h-7 self-start"
-      variant="outline"
-      theme="red"
-      @click="askToDelete"
-    />
     <Dialog v-model:open="showDialog" v-bind="addEmailDialog">
       <template #default>
         <FormControl
@@ -87,22 +79,6 @@
         />
       </template>
     </Dialog>
-    <Dialog
-      v-model:open="showDeleteDialog"
-      v-bind="{
-        title: __('Delete this address?'),
-        message: __('This cannot be undone.'),
-        actions: [
-          {
-            label: __('Delete address'),
-            variant: 'solid' as const,
-            theme: 'red' as const,
-            loading: deleteIdentity.isPending,
-            onClick: () => deleteIdentitySubmit(),
-          },
-        ],
-      }"
-    />
     <SettingsDialogActions>
       <Button
         :label="__('Save')"
@@ -168,7 +144,15 @@
         >
           <span class="text-ink-gray-8 truncate">{{ titleOf(identity) }}</span>
           <span v-if="identity._name" class="text-ink-gray-5 truncate">{{ identity.email }}</span>
+          <Badge v-if="isDefault(identity)" :label="__('Default')" size="sm" class="self-center" />
         </button>
+        <AdaptiveDropdown :options="addressOptions(identity)" :title="titleOf(identity)">
+          <Button variant="ghost" :aria-label="__('More for {0}', [identity.email])">
+            <template #icon>
+              <Ellipsis class="text-ink-gray-5 h-4 w-4" />
+            </template>
+          </Button>
+        </AdaptiveDropdown>
       </div>
     </div>
     <div v-else-if="isListRead" class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
@@ -177,20 +161,39 @@
         {{ __('Send-as addresses are the addresses you send mail as. Create one to get started.') }}
       </p>
     </div>
+    <Dialog
+      v-model:open="showDeleteDialog"
+      v-bind="{
+        title: __('Delete this address?'),
+        message: __('This cannot be undone.'),
+        actions: [
+          {
+            label: __('Delete address'),
+            variant: 'solid' as const,
+            theme: 'red' as const,
+            loading: deleteIdentity.isPending,
+            onClick: () => deleteIdentitySubmit(),
+          },
+        ],
+      }"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl } from 'frappe-ui'
+import { Badge, Button, Dialog, FormControl } from 'frappe-ui'
+import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import IdentitySettingsListView from '@/apps/mail/components/IdentitySettingsListView.vue'
+import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import { translate as __ } from '@/platform/translation'
@@ -305,20 +308,62 @@ async function createAddress() {
   showList()
 }
 
+// The address a new message starts from, found as the composer finds it: the saved one, or the
+// first when none is saved
+const { preferences, change } = useAccountPreferences()
+const defaultEmail = computed(() => {
+  if (!preferences.value) {
+    return undefined
+  }
+
+  const saved = preferences.value.default_outgoing_email?.toLowerCase()
+  const emails = (identities.data ?? []).map((identity) => identity.email)
+
+  return emails.find((address) => address.toLowerCase() === saved) ?? emails[0]
+})
+function isDefault(identity: Identity) {
+  return identity.email === defaultEmail.value
+}
+
+// The address the question "Delete this address?" is about
+const deleting = ref<Identity>()
 const showDeleteDialog = ref(false)
-function askToDelete() {
+function askToDelete(identity: Identity) {
+  deleting.value = identity
   showDeleteDialog.value = true
 }
 
 const deleteIdentity = useMutation(api.mail.identities.delete)
 async function deleteIdentitySubmit() {
-  if (!draft.value) {
+  if (!deleting.value) {
     return
   }
 
-  await deleteIdentity.run({ names: [draft.value.name] })
+  await deleteIdentity.run({ names: [deleting.value.name] })
   raiseToast(__('Address deleted'))
   showDeleteDialog.value = false
-  showList()
+}
+
+function addressOptions(identity: Identity) {
+  return [
+    {
+      label: __('Set as default'),
+      icon: Pin,
+      condition: () => !isDefault(identity),
+      onClick: () => change({ default_outgoing_email: identity.email }),
+    },
+    {
+      label: __('Edit'),
+      icon: Edit2,
+      onClick: () => editAddress(identity),
+    },
+    {
+      label: __('Delete'),
+      icon: Trash2,
+      theme: 'red' as const,
+      condition: () => !!identity.may_delete,
+      onClick: () => askToDelete(identity),
+    },
+  ]
 }
 </script>
