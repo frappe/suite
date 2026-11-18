@@ -66,13 +66,24 @@ vi.mock('@/apps/mail/stores/user', () => ({
   }),
 }))
 vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
-  default: { render: () => null },
+  default: defineComponent({
+    props: { modelValue: { type: String, default: '' } },
+    setup(props) {
+      return () => h('textarea', { value: props.modelValue })
+    },
+  }),
 }))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
   return {
     api: { mail: api },
-    useQuery: () => reactive({ data: [] }),
+    useQuery: () =>
+      reactive({
+        data: [
+          { name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>' },
+          { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>' },
+        ],
+      }),
     useMutation: (reference: { id: string }) =>
       reactive({ isPending: false, run: (input: unknown) => state.run(reference.id, input) }),
   }
@@ -92,16 +103,38 @@ vi.mock('frappe-ui', () => ({
     },
   }),
   FormControl: defineComponent({
-    props: { modelValue: { type: String, default: '' }, label: { type: String, default: '' } },
+    props: {
+      modelValue: { type: String, default: '' },
+      label: { type: String, default: '' },
+      type: { type: String, default: 'text' },
+      options: { type: Array<{ label: string; value: string }>, default: () => [] },
+    },
     emits: ['update:modelValue'],
     setup(props, { emit }) {
-      return () =>
-        h('input', {
+      return () => {
+        if (props.type === 'select') {
+          return h(
+            'select',
+            {
+              'aria-label': props.label,
+              value: props.modelValue,
+              onChange: (event: Event) =>
+                emit(
+                  'update:modelValue',
+                  requireTestElement(event.target, HTMLSelectElement).value,
+                ),
+            },
+            props.options.map((option) => h('option', { value: option.value }, option.label)),
+          )
+        }
+
+        return h('input', {
           'aria-label': props.label,
           value: props.modelValue,
           onInput: (event: Event) =>
             emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
         })
+      }
     },
   }),
   // As the real one in what the tests look at: nothing while closed, the message and a button
@@ -197,6 +230,21 @@ async function addAddress(label: string, value: string) {
   box.dispatchEvent(new Event('input'))
   await nextTick()
   box.dispatchEvent(new Event('blur'))
+  await nextTick()
+}
+
+/** The signature picker's chosen words, such as "None". */
+function pickedSignature() {
+  const picker = requireTestElement(root.querySelector('select'), HTMLSelectElement)
+
+  return picker.selectedOptions[0]?.textContent
+}
+
+async function pickSignature(label: string) {
+  const picker = requireTestElement(root.querySelector('select'), HTMLSelectElement)
+  const option = Array.from(picker.options).find((candidate) => candidate.textContent === label)
+  picker.value = requireTestElement(option, HTMLOptionElement).value
+  picker.dispatchEvent(new Event('change'))
   await nextTick()
 }
 
@@ -345,6 +393,53 @@ it('keeps Save off while a box holds something that is not an email address', as
   await press('Add reply-to or Bcc')
   await addAddress('Reply-to', 'not an address')
   expect(findButton('Save')?.disabled).toBe(true)
+})
+it('reads an address without a signature as None, with no editor', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  expect(pickedSignature()).toBe('None')
+  expect(root.querySelector('textarea')).toBeNull()
+})
+it('reads a signature that matches a saved one as that one, and any other as Custom', async () => {
+  mount([
+    { ...me, html_signature: '<p>Thanks</p>' },
+    { ...sales, html_signature: '<p>Sales desk</p>' },
+  ])
+  await openAddress('me@example.com')
+  expect(pickedSignature()).toBe('Short')
+  expect(root.querySelector('textarea')).toBeNull()
+
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(pickedSignature()).toBe('Custom')
+  expect(root.querySelector('textarea')?.value).toBe('<p>Sales desk</p>')
+})
+it('saves the words of the saved signature that is picked', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await pickSignature('Work')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '<p>Regards</p>' }),
+  )
+})
+it('saves no signature once None is picked', async () => {
+  mount([{ ...me, html_signature: '<p>Thanks</p>' }])
+  await openAddress('me@example.com')
+  await pickSignature('None')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '' }),
+  )
+})
+it('opens the editor on the words in use when Custom is picked', async () => {
+  mount([{ ...me, html_signature: '<p>Thanks</p>' }])
+  await openAddress('me@example.com')
+  await pickSignature('Custom')
+  expect(pickedSignature()).toBe('Custom')
+  expect(root.querySelector('textarea')?.value).toBe('<p>Thanks</p>')
 })
 it('creates an address on this account from New address, then shows the list', async () => {
   mount([me])

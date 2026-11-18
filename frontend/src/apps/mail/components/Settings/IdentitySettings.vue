@@ -34,32 +34,18 @@
     />
 
     <FormControl
-      v-if="signatures.data?.length"
-      v-model="savedSignature"
-      type="combobox"
-      :label="__('Use saved signature')"
-      :options="
-        signatures.data?.map((sig) => ({
-          label: sig.signature_name,
-          value: sig.html_body,
-        }))
-      "
+      type="select"
+      :model-value="signatureChoice"
+      :label="__('Signature')"
+      :options="signatureChoices"
       variant="outline"
-      :open-on-click="true"
-      @update:model-value="setSignature"
+      @update:model-value="chooseSignature"
     />
-
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">
-        {{ __('Default signature') }}
-      </label>
-      <MailRichTextField
-        :model-value="draft.signature"
-        :placeholder="__('Write your signature here')"
-        @update:model-value="setSignature"
-      />
-    </div>
-
+    <MailRichTextField
+      v-if="isWritingSignature"
+      v-model="draft.signature"
+      :placeholder="__('Write your signature here')"
+    />
     <SettingsDialogActions>
       <Button
         :label="__('Save')"
@@ -221,6 +207,7 @@ function editAddress(identity: Identity) {
   }
   original.value = JSON.stringify(draft.value)
   Object.assign(typed, { replyTo: '', bcc: '' })
+  isCustomPicked.value = false
   showsReplyAndBcc.value = draft.value.replyTo.length + draft.value.bcc.length > 0
 }
 
@@ -280,13 +267,57 @@ async function save() {
   showList()
 }
 
-function setSignature(value: string) {
-  if (draft.value) {
-    draft.value.signature = value
+// The picker's choices: none, one of the saved signatures, or words written for this address alone;
+// a saved one goes by its name after SAVED, so no name can read as one of the other two
+const NONE = 'none'
+const CUSTOM = 'custom'
+const SAVED = 'saved:'
+const savedSignatures = computed(() =>
+  (signatures.data ?? []).filter((signature) => signature.html_body),
+)
+const signatureChoices = computed(() => [
+  { label: __('None'), value: NONE },
+  ...savedSignatures.value.map((signature) => ({
+    label: signature.signature_name,
+    value: SAVED + signature.name,
+  })),
+  { label: __('Custom'), value: CUSTOM },
+])
+// Custom is picked, not read off the words: they may be none yet, or still match a saved signature
+const isCustomPicked = ref(false)
+const signatureChoice = computed(() => {
+  const words = draft.value?.signature
+  if (isCustomPicked.value) {
+    return CUSTOM
   }
+
+  if (!words) {
+    return NONE
+  }
+
+  const saved = savedSignatures.value.find((signature) => signature.html_body === words)
+  if (saved) {
+    return SAVED + saved.name
+  }
+
+  return CUSTOM
+})
+const isWritingSignature = computed(() => signatureChoice.value === CUSTOM)
+// A saved signature is copied into the address: the address keeps its words if the saved one changes
+function chooseSignature(choice: unknown) {
+  if (!draft.value) {
+    return
+  }
+
+  isCustomPicked.value = choice === CUSTOM
+  if (choice === CUSTOM) {
+    return
+  }
+
+  const saved = savedSignatures.value.find((signature) => SAVED + signature.name === choice)
+  draft.value.signature = saved?.html_body ?? ''
 }
 
-const savedSignature = ref('')
 const addIdentity = useMutation(api.mail.identities.create)
 const isCreateBlocked = computed(() => !newAddress.value?.email)
 async function createAddress() {
