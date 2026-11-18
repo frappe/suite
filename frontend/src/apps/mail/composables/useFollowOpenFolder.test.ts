@@ -8,9 +8,14 @@ import type { MailboxData } from '@/apps/mail/types'
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 // The active account and its folder list, as the user store holds them.
-const store = vi.hoisted(() => ({
-  current: { accountId: '', mailboxes: { data: undefined as MailboxData[] | undefined } },
-}))
+interface StoreState {
+  accountId: string
+  mailboxes: { data?: MailboxData[] }
+}
+const store = vi.hoisted(() => {
+  const current: StoreState = { accountId: '', mailboxes: {} }
+  return { current }
+})
 vi.mock('@/apps/mail/stores/user', () => ({
   SECONDARY_MAILBOX_ROLES: [],
   userStore: () => store.current,
