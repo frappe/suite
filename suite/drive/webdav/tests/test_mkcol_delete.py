@@ -43,6 +43,7 @@ from suite.drive.webdav.tests.utils import (
     personal_dav_root,
     raw_document_node,
     reset_dav_request,
+    restrict_owner,
 )
 
 OWNER = "webdav-structure-owner@example.com"
@@ -192,12 +193,12 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         pair names which of their own folders were taken away from them.
         """
         read_only = folder_node(OWNER, self.base, "ReadOnly")
-        grant(read_only, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(read_only, READ)
         with self.assertRaises(DriveForbidden):
             self._mkcol(f"/dav/{self.base_name}/ReadOnly/Intruder")
 
         hidden = folder_node(OWNER, self.base, "Hidden")
-        grant(hidden, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(hidden, NONE)
         with self.assertRaises(Conflict) as unreadable:
             self._mkcol(f"/dav/{self.base_name}/Hidden/Intruder")
         # and a parent that was never there says exactly the same thing
@@ -222,7 +223,7 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         root. Below READ the answer is 404 (§12.1), taken or not.
         """
         hidden = folder_node(OWNER, self.base, "Concealed")
-        grant(hidden, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(hidden, NONE)
 
         with self.assertRaises(DriveNotFound):
             self._mkcol(f"/dav/{self.base_name}/Concealed")
@@ -307,7 +308,7 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
     def test_delete_requires_edit_on_the_node(self):
         """§12.1: DELETE takes EDIT, so READ alone is 403 and the node stays."""
         protected = file_node(OWNER, self.base, "keep.txt", b"safe")
-        grant(protected.name, "$GENERAL", READ, node_principals(OWNER))
+        restrict_owner(protected.name, READ)
 
         with self.assertRaises(DriveForbidden):
             self._delete(f"/dav/{self.base_name}/keep.txt")
@@ -321,7 +322,7 @@ class TestWebDAVMkcolDelete(IntegrationTestCase):
         own not-found, which `errors.map_exception` turns into 404.
         """
         secret = file_node(OWNER, self.base, "hidden.txt", b"nope")
-        grant(secret.name, "$GENERAL", NONE, node_principals(OWNER))
+        restrict_owner(secret.name, NONE)
 
         path = f"/dav/{self.base_name}/hidden.txt"
         with self.assertRaises(DriveNotFound):

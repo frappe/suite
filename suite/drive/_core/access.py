@@ -969,6 +969,7 @@ def grant(
             },
             tell_target=tell_target,
         )
+        _keep_owner_manage(node, principal_kind)
     except Exception as exc:
         rollback_savepoint(savepoint, exc)
         raise
@@ -1439,6 +1440,31 @@ def _refuse_owner_loss(
         return
     if role is None or role < MANAGE or expires_on is not None:
         raise DriveForbidden(_("The owner of a Personal Drive root keeps Manage on their own files"))
+
+
+def _keep_owner_manage(node: Mapping, principal_kind: str) -> None:
+    """Keep a Personal root's user at Manage on a node inside it after a grant write.
+
+    A grant to `$GENERAL` or to a group the user is in, written on a node
+    inside their root, is nearer than the anchor grant on the root and
+    outranks it (§5.1). Without this, sharing a document with everyone at the
+    organization would lower its owner to the role they shared. The user's own
+    grant on the node is beside the new one and outranks it, so it keeps
+    their Manage there and on everything below. Their own row is left to
+    them: a change to it is theirs to make.
+    """
+    if node.get("kind") == "root" or principal_kind not in ("general", "group"):
+        return
+    owner = _personal_root_owner(node)
+    if not owner:
+        return
+    from suite.drive.framework import principals_for_principal
+
+    if effective_role(node, principals_for_principal(owner)) >= MANAGE:
+        return
+    frappe.get_doc(
+        {"doctype": "Drive Grant", "node": node.get("name"), "principal": owner, "role": MANAGE}
+    ).insert(ignore_permissions=True)
 
 
 def _is_personal_root_owner(node: Mapping, principal: str) -> bool:

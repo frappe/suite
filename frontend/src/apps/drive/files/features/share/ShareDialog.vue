@@ -53,6 +53,7 @@ import { BottomSheet, Dialog } from 'frappe-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 
 import { driveNodeRoute } from '@/apps/drive'
+import { bootRoots } from '@/apps/drive/client/roots'
 import { DRIVE_ROLES, type DriveNode } from '@/apps/drive/client/types'
 import { confirm } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
@@ -96,6 +97,7 @@ const state = useShare(props.node, {
       destructive: true,
     })
   },
+  personalRoot: bootRoots()?.personal.node,
   workspace: workspaceName,
   placeTitle: useLocationTitle(),
   known: props.known,

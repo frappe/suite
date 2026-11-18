@@ -48,6 +48,8 @@ export interface ShareOptions {
   me?: string
   /** Asks the caller to confirm a write that lowers their own role to `after`. Resolves true to go on. */
   confirmLoss?: (after: number) => Promise<boolean>
+  /** The caller's Personal root. Drive keeps them at Manage on a node inside it whoever else it is shared with. */
+  personalRoot?: string
   /** The workspace name, which names everyone at the org. Empty while unknown. */
   workspace?: MaybeRefOrGetter<string>
   /** The name an ancestor shows under, such as "My files" for the caller's own root. Defaults to its title. */
@@ -171,14 +173,18 @@ export function useShare(nodeId: string, options: ShareOptions = {}) {
   /**
    * Whether a write may go ahead. A change that would lower the caller's own
    * role asks first (§7.4), whatever row carries it: their own row, a group
-   * they are in, or everyone at the org.
+   * they are in, or everyone at the org. In the caller's Personal root only
+   * their own row can: Drive keeps them at Manage through any group or
+   * everyone-at-the-org share there.
    */
   async function mayChange(change: GrantChange): Promise<boolean> {
-    const { me, confirmLoss } = options
+    const { me, confirmLoss, personalRoot } = options
     if (!me || !confirmLoss) return true
     const kind = principalKind(change.principal)
     if (kind === 'link' || kind === 'public' || (kind === 'user' && change.principal !== me))
       return true
+    const inMyRoot = personalRoot !== undefined && node.value?.root === personalRoot
+    if (inMyRoot && (kind === 'general' || kind === 'group')) return true
     const explanation = await grants.explain(me).catch(() => null)
     if (!explanation) return true
     // Drive's own account holds every right, whatever the grants say.

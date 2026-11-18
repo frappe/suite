@@ -436,6 +436,39 @@ class TestGrantWorkflows(_GrantFixture):
         # Rewriting the anchor as it stands is allowed.
         self.assertEqual(grant(self.root.name, TARGET, MANAGE, self.admin)["role"], MANAGE)
 
+    def test_the_personal_root_owner_keeps_manage_after_sharing_with_everyone_or_a_group(self):
+        frappe.set_user("Administrator")
+        group = frappe.get_doc(
+            {
+                "doctype": "User Group",
+                "name": f"drive-owner-team-{frappe.generate_hash(length=6)}",
+                "user_group_members": [{"user": TARGET}, {"user": MANAGER}],
+            }
+        ).insert()
+        team = f"$GROUP:{group.name}"
+        owner = principals_for(TARGET)
+        colleague = principals_for(MANAGER)
+        cases = (
+            # (who shares, with whom, at what role)
+            ("owner", "$GENERAL", READ),
+            ("owner", "$GENERAL", COMMENT),
+            ("owner", "$GENERAL", EDIT),
+            ("owner", "$GENERAL", NONE),
+            ("owner", team, READ),
+            ("admin", "$GENERAL", NONE),
+        )
+        for sharer, principal, role in cases:
+            with self.subTest(sharer=sharer, principal=principal, role=role):
+                file = create_empty_file(owner, self.folder.name, f"notes-{sharer}-{principal}-{role}.txt")
+                grant(file, principal, role, owner if sharer == "owner" else self.admin)
+
+                node = frappe.db.get_value("Drive Node", file, ["name", "root", "path", "kind"], as_dict=True)
+                self.assertEqual(effective_role(node, owner), MANAGE)
+                # The share still reaches everyone else it names.
+                self.assertEqual(effective_role(node, colleague), role)
+                # And the owner can still change it.
+                grant(file, principal, READ, owner)
+
     def test_explain_is_authorized_ordered_fresh_and_includes_unheld_rows(self):
         for principal, role in (
             ("$GROUP:manage", MANAGE),
