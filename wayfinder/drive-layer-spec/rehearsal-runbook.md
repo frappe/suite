@@ -12,6 +12,17 @@ The running plan is [`PROGRESS.md`](PROGRESS.md). The rules for Build,
 Cleanup and the preflight are in [`drive-layer-spec.md`](drive-layer-spec.md)
 §14.
 
+Two related documents:
+
+- [`production-move-record.md`](production-move-record.md) records how
+  the first production site was moved to a new server and migrated in one
+  window, and what that window taught.
+- [`migration-differences.md`](migration-differences.md) lists what people
+  notice after the migration, and why.
+
+Most steps here also apply to a production window. Where a step is for
+production only, it says so.
+
 ## Rules
 
 Breaking a rule is worse than a failed rehearsal.
@@ -171,6 +182,14 @@ Build reads every legacy object in full to compute its checksum, so a
 full run downloads the whole bucket once. Tell Faris before the first
 full run, because S3 charges for that transfer.
 
+Build computes every checksum itself. It does not read checksums from
+the ledger of the tool that copied the bucket, even when that tool
+verified each object. On a production window this read is the longest
+part of the storage phase. Reusing the ledger would need a change under
+`suite/drive/patches/` and so a new full rehearsal (rule 6). It was
+considered for the first production window and not done. Plan the window
+with the full read.
+
 ### 5. Chrome for Testing
 
 The browser checks use Playwright over the Chrome DevTools protocol. Use
@@ -277,6 +296,12 @@ site config has no `mail` server address. `bench --site $SITE scheduler
 status` says the scheduler is disabled. Ask Faris to stop the bench's
 background worker until step 13, so that no queued job runs during the
 migrate.
+
+Keep the Redis queue running. Stop only the worker. During a migrate,
+if the Redis queue does not answer, Frappe runs every job that a patch
+queues inside the migrate itself (`frappe/utils/background_jobs.py`,
+`enqueue`). The Mail jobs of step 12 would then run at once, before
+anyone can hold them.
 
 ## Before the migrate
 
@@ -435,6 +460,39 @@ records every copy in a new copy ledger. If the restored database is not
 that backup, restore the database and `private/` from the same backup. A
 migrate that continues a matching state file prints
 `Resuming the Drive migration from <file>`.
+
+**Mail jobs that the migrate queues.** `forge/drive-layer` also changes
+Mail. Three Mail patches queue background jobs during the migrate:
+`suite.mail.patches.move_screener_to_unscreened_keyword`,
+`suite.mail.patches.turn_reject_rules_into_spam` and
+`suite.mail.patches.rebuild_screening_gates #delivery-reports`. When a
+worker starts, these jobs open a session for every mail account. They
+rebuild the account's Sieve script on the mail server, move the mail that
+waits in its Screener folder into the Inbox with the `unscreened`
+keyword, and delete the empty folder.
+
+The mail server is outside the site. A way back does not undo these
+jobs: after a way back, the old code finds the new scripts, and mail that
+was moved stays in the Inbox. No mail is lost.
+
+On a rehearsal the copy has no mail credentials, so the jobs do nothing.
+In production, hold them until the site is open:
+
+1. Before any worker starts, take every queued job whose method starts
+   with `suite.mail.` off the Redis queue. Save each job's method and
+   arguments to a file under `private/`, mode 600. The arguments name
+   accounts.
+2. Leave every other job queued. The thumbnail backfill (job id
+   `drive-preview-backfill`) must stay.
+3. If a `suite.mail.` job is already running, stop and find out why.
+4. Release the held jobs (queue them again from the file) after the site
+   is open and the write checks pass.
+5. Ten minutes after the release, read the Error Log ("Logs and errors").
+
+Practice the hold and the release on the rehearsal, with a dry run first.
+While the jobs are held, do not change Mail folders, filters or screening
+in the browser. Each of these rebuilds that account's Sieve script at
+once, with the new code.
 
 **Pass:** the runner exits 0 with no changed patch files.
 
@@ -596,11 +654,19 @@ If the cursor is lost, the next run starts from the beginning but passes
 over every file that already has a preview, so it costs time only.
 
 A file that fails to render is logged and passed over. Count the
-failures, and group them by type and error message:
+failures, and group them by type and error message. The Error Log is in
+the site's log database, not in MariaDB ("Logs and errors"):
 
-```sql
-SELECT COUNT(*) FROM `tabError Log`
-WHERE method = 'Drive: could not render a preview' AND creation >= '<backfill start>';
+```bash
+bench --site $SITE console <<'PY'
+from frappe.utils.logging import get_log_db, log_table
+qb, t = log_table("Error Log")
+rows = get_log_db().sql(
+    qb.from_(t).select(t.name, t.creation)
+    .where((t.method == "Drive: could not render a preview") & (t.creation >= "<backfill start>"))
+)
+print(len(rows))
+PY
 ```
 
 When Faris starts the background worker again, it runs the queued
@@ -616,8 +682,9 @@ other preview.
 - failures per type: images, videos, PDFs
 - the pixel size of a few previews: the longest side must equal
   `preview_size`
-- for each failed MP4, whether its index comes after the video data
-  (see "Known open issues")
+- for each failed video, the error message. Since `ea4d230a8`, an MP4
+  whose index comes after the video data renders, so a failure on such a
+  file is new. A damaged, truncated or encrypted file is expected to fail.
 
 ## Sheets and Writer conversion
 
@@ -717,11 +784,59 @@ reason.
 **Pass:** the waiting count falls to the refusals only. Every refusal has
 a known cause.
 
+## Two nightly Drive jobs
+
+On a rehearsal the scheduler stays paused, so no daily job ever runs on
+migrated data. In production the scheduler starts when the site opens.
+Two daily Drive jobs then make large changes that people did not ask for.
+Stop them before the scheduler starts, and keep them stopped until the
+team decides the version rule and tells people.
+
+- `suite.drive.jobs.thin_versions` applies the retention ladder (spec
+  §9.1) to every document. Build ports every old Writer version and Sheet
+  snapshot as an `auto` version, and the ladder keeps no `auto` version
+  older than 90 days. So the first run deletes most ported history, and
+  many documents keep no version at all. Only `named`, `milestone` and
+  pinned versions stay. The current content is not touched. The rows are
+  deleted and the bytes follow, so this cannot be undone on the site.
+- `suite.drive.jobs.sweep_unused_document_media` moves every picture of a
+  deck or Writer document that the document no longer names into its
+  owner's Trash (spec §10.6). Right after a migration this is many
+  pictures that the old app kept. Slide thumbnails that still work
+  through their old file address are among them. People find items in
+  their Trash that they never deleted. Each can be restored, one at a
+  time, for 30 days. Then the purge deletes the bytes.
+
+The two jobs run on a queue with a 300 second limit, so a first run can
+take several nights. Work that is done stays done.
+
+Stop them while the scheduler is still paused:
+
+```bash
+bench --site $SITE console <<'PY'
+for m in ("suite.drive.jobs.thin_versions", "suite.drive.jobs.sweep_unused_document_media"):
+    frappe.db.set_value("Scheduled Job Type", {"method": m}, "stopped", 1)
+frappe.db.commit()
+print(sorted((r.method.rsplit(".", 1)[1], r.stopped) for r in frappe.get_all(
+    "Scheduled Job Type", filters={"method": ["like", "suite.drive.jobs.%"]}, fields=["method", "stopped"])))
+PY
+```
+
+**Pass:** `stopped` is 1 for these two jobs and 0 for the other Drive
+jobs. The scheduler reads this column on every tick
+(`frappe/utils/scheduler.py`, `enqueue_events`), and a later migrate keeps
+it. To start a job again, set `stopped` to 0. `drive_version_ladder` in
+the site config changes the ladder (spec §9.1). Nothing else pauses the
+media sweep.
+
+If the check fails, do not start the scheduler.
+
 ## Browser checks
 
 ### 17. Open the site in the browser
 
-Ask Faris to start the background worker again. Then:
+First hold the Mail jobs (step 12) if the site can reach a mail server.
+Then ask Faris to start the background worker again. Then:
 
 ```bash
 bench --site $SITE set-config maintenance_mode 0
@@ -759,6 +874,33 @@ Add these new cases, by hand or in the script:
 - **A picture inside a document opens by its own link:** open the
   picture's link in a new tab. It loads.
 - **Thumbnails** show in the grid view for images, videos and PDFs.
+
+Three checks found real bugs before the first production window. Run
+each of them on every rehearsal:
+
+- **A share link, as a person who is not signed in.** In a private
+  window, open a file link, a folder link (list and grid), an edit link
+  and a password link. Preview each kind: PDF (also at phone width),
+  image, text, Markdown, audio, video and a DOCX file. Download each one.
+  The bytes come from a signed storage address that the page gets from
+  `GET nodes/<id>/content-url` (PR #1257). Check in the Network tab that
+  the link code never goes to the storage host. Before #1257 every
+  preview and download failed with 404 for such a person, while the owner
+  saw no fault.
+- **Pictures in composite decks.** Open every composite deck as an
+  admin, and a public composite through its link in a private window.
+  Every picture loads, also in slideshow mode after the signed links are
+  renewed (they live 15 minutes, spec §6.8). The pictures are children of
+  the decks that the composite names, not of the composite (spec §6.6).
+  Before PR #1250 every picture in a composite was blank.
+- **A picture pasted into a new Writer document in its first seconds.**
+  Create a Writer document and paste an image at once, before the editor
+  has loaded. The page must refuse it with "Wait a moment for the document
+  to open, then try again" (PR #1252), not drop it with no message. Paste
+  again after the document has loaded: the picture uploads.
+
+Keep the Network tab open, filtered to status 400 and above, for every
+check. Read "Logs and errors" for the answers that are expected.
 
 **Pass:** every check passes. Writer is 10 of 10 now that B112 and B113 are
 fixed. Zero page errors, zero CORS errors in the console, and zero blocked
@@ -830,6 +972,68 @@ Deleting them means copying the production bucket again.
 5. **Faris deletes** the backup files and, once no rehearsal is left, the
    rehearsal bucket.
 
+## Logs and errors
+
+### Where the Error Log is
+
+The Frappe version on `forge/storage-v2` keeps the Error Log in the
+site's SQLite log database, `private/files/sqlite.db`
+(`frappe.utils.logging.get_log_db`). It does not write the MariaDB table
+`tabError Log`. That table still exists on a migrated site, with its old
+rows. A query on it returns no new row, which looks like "no errors".
+This happened on the first production window: every Error Log check that
+read the MariaDB table proved nothing.
+
+Read the Error Log in Desk, or through the log database:
+
+```bash
+bench --site $SITE console <<'PY'
+from frappe.utils.logging import get_log_db, log_table
+qb, t = log_table("Error Log")
+for row in get_log_db().sql(
+    qb.from_(t).select(t.creation, t.method).where(t.creation >= "<start>").orderby(t.creation)
+):
+    print(row)
+PY
+```
+
+`creation` is in the site's time zone, not in UTC.
+
+Expect "Session Stopped" rows for requests that arrived while the site
+was in maintenance mode. They can be written later in a batch, when the
+scheduler starts.
+
+### Service users and the Mail account check
+
+After the site opens, read the web server's request log for 403 answers
+on API methods. Look at callers that use an API key: other services,
+not people.
+
+The new code checks every signed-in request
+(`suite.composition.access.require_access`). It refuses a user without a
+business Mail account for every method that starts with `mail.` or
+`suite.mail.`. A service user has no Mail account. On the first
+production window, another service called the spam-scan API as such a
+user, and every call answered 403 from the opening until PR #1258. Since
+#1258, the spam-scan methods (`suite.mail.api.spamd.` and
+`mail.api.spamd.`) are let through. Any other Mail method that a service
+user calls is still refused. If one shows up, find the service before
+you change the check.
+
+### Calls to methods of the old code
+
+Browser tabs that were open before the update keep the old page code,
+and call methods that the new code does not have. Expect these answers
+for a while after the opening:
+
+- 417 on `suite.sheets.api.yjs_relay`
+- 417 on `suite.drive.api.files.stream_file_content`
+- 404 on `POST /api/v2/document/Writer`
+
+They are not a fault. They stop when the person reloads the tab. If
+calls to `stream_file_content` continue after a day, look for that
+address stored inside documents.
+
 ## Report
 
 Write the results to `drive-rehearsal/REPORT.md`, which stays local. For
@@ -840,17 +1044,24 @@ still unproven.
 
 ## Known open issues
 
-The next run must check each of these.
+Fixed since the last version of this list:
 
-- **Thumbnail size setting.** The patch `migrate_preview_size_unit` maps
-  only one legacy `preview_size` value to the default of 512. A site that
-  stored any other legacy value keeps it. On the last rehearsal that value
-  was far too large, so previews came out nearly full size. Record the
-  value after the migrate, and the pixel size of the previews.
-- **Videos.** Some MP4 files keep their index at the end of the file. The
-  renderer reads the file as a stream it cannot seek, so it cannot reach
-  the index, and those previews fail. Record how many MP4 previews fail,
-  and check the index position of each failed file.
+- **Thumbnail size setting.** `migrate_preview_size_unit` now resets any
+  `preview_size` outside 128 to 2048 pixels to 512 (`e84634068`). Still
+  record the value after the migrate, and the pixel size of a few
+  previews.
+- **Videos.** An MP4 whose index is at the end of the file now renders:
+  the renderer reads the video through ranged reads (`ea4d230a8`). Videos
+  that are damaged, truncated or encrypted still fail, and that is
+  expected. HEIC and SVG files get no thumbnail by design: they are not
+  in `RENDERABLE_MIMES` (`suite/drive/_core/previews.py`).
+- **Share links, composite decks and the first seconds of a new Writer
+  document.** Fixed by PRs #1257, #1250 and #1252. Step 17 checks each.
+- **Spam-scan calls by a service user.** Fixed by PR #1258 ("Logs and
+  errors").
+
+Still open. The next run must check each of these.
+
 - **Expected missing references.** The source has defects from before the
   migration: missing objects, truncated objects, and Sheets that name a
   history snapshot that does not exist. These are on the accepted list or
@@ -858,3 +1069,29 @@ The next run must check each of these.
   deleted are now reported as missing (`writer_media_references_missing`).
   These are expected. A missing reference that is not one of these is new,
   and must be explained.
+- **Suite Admins who created an item can end at EDIT on it.** The patch
+  `suite.drive.patches.grant_admin_creators_edit` runs after Build. For an
+  item that a Suite Admin created and holds no grant on, it adds an EDIT
+  grant for that admin, and it looks only at what the parent gives. Where
+  a group or `$GENERAL` grant on the item itself gives MANAGE, the admin's
+  own EDIT grant now wins, so the admin ends at EDIT. Nothing is deleted.
+  A follow-up patch must raise such a grant. Until then, count these
+  items after the migrate.
+- **Read-only mode is not usable on the new code.** In maintenance mode
+  with reads allowed, opening a Writer, Sheets or Slides document fails,
+  because opening is itself a write. A Writer page that was already open
+  accepts typing that it cannot save, and the text is lost on reload.
+  Sign-in spins with no message, and no page says the site is read-only.
+  During a window, keep the site fully closed: `maintenance_mode` 1 and
+  `allow_reads_during_maintenance` 0.
+- **The slash menu in the first seconds of a new Writer document.** The
+  Image, Video and File entries fail with no message until the editor has
+  loaded. A pasted or dropped file is refused with a message (#1252).
+- **Link-only viewers.** After #1257, some things still differ for a
+  person whose only access is a share link. They are listed in
+  [`migration-differences.md`](migration-differences.md).
+- **Mail accounts of disabled users keep their Screener folder.** The
+  mail server locks such an account, so the Screener move cannot reach
+  it. Since PR #1259 the move skips these accounts. If such a user is
+  enabled again, run the move for that account:
+  `suite.mail.patches.move_screener_to_unscreened_keyword.move_screener`.
