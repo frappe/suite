@@ -18,8 +18,9 @@ vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ accountId: 'personal', userResource: { data: { api_key: '' } } }),
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn(), copyToClipBoard: vi.fn() }))
-// The part this file doesn't open
+// The parts this file doesn't look into
 vi.mock('./PushSubscriptionSettings.vue', () => ({ default: { render: () => null } }))
+vi.mock('./AutomationSettings.vue', () => ({ default: { render: () => null } }))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
   return {
@@ -202,6 +203,7 @@ it.each([
   ['login-details', 'Login details'],
   ['client-setup', 'Mail client setup'],
   ['api-access', 'API access'],
+  ['rules', 'Rules'],
 ] as const)('opens %s when Settings is opened on it', (section, title) => {
   openSettings('mail.advanced', section)
   expect(mount().querySelector('dialog')?.getAttribute('aria-label')).toBe(title)

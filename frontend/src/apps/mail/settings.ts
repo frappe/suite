@@ -79,7 +79,6 @@ export const mailSettings = {
           keywords: () => __('tabs'),
         },
         { id: 'folders', label: () => __('Folders') },
-        { id: 'rules', label: () => __('Rules'), keywords: () => __('filters, sieve') },
       ],
     },
     {
@@ -101,6 +100,7 @@ export const mailSettings = {
       icon: 'lucide-code',
       body: scoped(() => import('@/apps/mail/components/Settings/MailAdvancedSettings.vue')),
       sections: [
+        { id: 'rules', label: () => __('Rules'), keywords: () => __('filters, sieve') },
         {
           id: 'login-details',
           label: () => __('Login details'),

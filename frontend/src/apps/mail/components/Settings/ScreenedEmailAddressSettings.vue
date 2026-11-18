@@ -2,11 +2,7 @@
   <!-- Rows of the Inbox page's list. The screened senders are a long list, so they open in a dialog. -->
   <SettingsRow
     :title="__('Screen new senders')"
-    :description="
-      __(
-        'Mail from new senders goes to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
-      )
-    "
+    :description="__('New senders wait in the Screener until you accept them.')"
   >
     <Switch
       :model-value="screeningEnabled"

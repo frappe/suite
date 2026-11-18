@@ -5,6 +5,15 @@
       <!-- Each of these parts opens in a dialog, so they make one short list -->
       <div class="divide-y divide-outline-gray-1">
         <SettingsDialogRow
+          :title="__('Rules')"
+          section="mail.advanced.rules"
+          :description="__('Scripts that sort and file incoming mail for you.')"
+          :action="__('Manage')"
+          size="xl"
+        >
+          <AutomationSettings />
+        </SettingsDialogRow>
+        <SettingsDialogRow
           :title="__('Login details')"
           section="mail.advanced.login-details"
           :description="__('The username and app password Mail connects with.')"
@@ -58,6 +67,7 @@
 <script setup lang="ts">
 import { SettingsRow, Switch } from 'frappe-ui'
 
+import AutomationSettings from '@/apps/mail/components/Settings/AutomationSettings.vue'
 import CredentialsSettings from '@/apps/mail/components/Settings/CredentialsSettings.vue'
 import MailClientSettings from '@/apps/mail/components/Settings/MailClientSettings.vue'
 import PushSubscriptionSettings from '@/apps/mail/components/Settings/PushSubscriptionSettings.vue'

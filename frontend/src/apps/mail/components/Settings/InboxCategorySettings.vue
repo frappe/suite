@@ -1,36 +1,47 @@
 <template>
-  <!-- Rows of the Inbox page's list: whether the Inbox is split into categories, and which; off, it
-       is one list, and the choice is kept for when it is on again. Nothing where the site doesn't
+  <!-- A part of the Inbox page: whether the Inbox is split into categories, and which; off, it is
+       one list, and the choice is kept for when it is on again. Nothing where the site doesn't
        sort mail into them. -->
-  <template v-if="offered">
+  <SettingsSection v-if="offered" :title="__('Categories')">
     <SettingsRow
       :title="__('Split Inbox into categories')"
       :description="__('Mail that isn’t personal moves out of Primary into its own category.')"
     >
       <Switch :model-value="split" @update:model-value="setSplit" />
     </SettingsRow>
-    <template v-if="split">
-      <SettingsRow
+    <!-- Four of a kind, so they share one row of cards; a card is the label of its check box -->
+    <div v-if="split" class="grid grid-cols-2 gap-2 pb-4 sm:grid-cols-4">
+      <label
         v-for="choice in choices"
         :key="choice.category"
-        :title="choice.label"
-        :description="TAB_DESCRIPTIONS[choice.category]"
+        class="flex flex-col gap-2 rounded-6 border p-3 transition-colors"
+        :class="cardLook(choice)"
       >
-        <Switch
-          :model-value="choice.on"
-          :disabled="isLastOn(choice)"
-          @update:model-value="(on) => setTab(choice.category, on)"
-        />
-      </SettingsRow>
-    </template>
-  </template>
+        <span class="flex items-center justify-between">
+          <span class="size-4" :class="choice.icon" aria-hidden="true" />
+          <Checkbox
+            :model-value="choice.on"
+            :disabled="isLastOn(choice)"
+            @update:model-value="(on) => tick(choice.category, on)"
+          />
+        </span>
+        <span>
+          <span class="text-base-medium block">{{ choice.label }}</span>
+          <span class="text-p-sm text-ink-gray-5 mt-0.5 block">
+            {{ TAB_DESCRIPTIONS[choice.category] }}
+          </span>
+        </span>
+      </label>
+    </div>
+  </SettingsSection>
 </template>
 
 <script setup lang="ts">
-import { SettingsRow, Switch } from 'frappe-ui'
+import { Checkbox, SettingsRow, Switch } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { useTabChoice, type InboxCategory } from '@/apps/mail/composables/useInboxTabs'
+import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 const { offered, split, choices, setTab, setSplit } = useTabChoice()
@@ -40,11 +51,30 @@ function isLastOn(choice: { on: boolean }) {
   return choice.on && onCount.value === 1
 }
 
+// The check box says 1 and 0 as well as true and false
+function tick(category: InboxCategory, on?: boolean | 1 | 0) {
+  setTab(category, Boolean(on))
+}
+
+// A category that is off reads as set aside: grey, and without its border. The last one on can't
+// be clicked off, and its card says so
+function cardLook(choice: { on: boolean }) {
+  if (!choice.on) {
+    return 'bg-surface-gray-1 text-ink-gray-5 cursor-pointer border-transparent'
+  }
+
+  if (isLastOn(choice)) {
+    return 'border-outline-gray-2 text-ink-gray-8 cursor-not-allowed'
+  }
+
+  return 'border-outline-gray-2 text-ink-gray-8 cursor-pointer'
+}
+
 const TAB_DESCRIPTIONS: Record<InboxCategory, string> = {
   primary: '',
-  updates: __('Receipts, alerts, confirmations and other mail sent by systems.'),
-  forums: __('Mailing lists and discussion groups.'),
-  promotions: __('Newsletters, offers and marketing.'),
-  social: __('Mail from social networks.'),
+  updates: __('Receipts, alerts and confirmations'),
+  forums: __('Mailing lists and groups'),
+  promotions: __('Newsletters and offers'),
+  social: __('Mail from social networks'),
 }
 </script>
