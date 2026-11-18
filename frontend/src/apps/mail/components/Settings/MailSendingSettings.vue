@@ -18,6 +18,7 @@
           <SettingsDialogRow
             :title="__('Signatures')"
             section="mail.sending.signatures"
+            :description="__('Text added to the end of the messages you send.')"
             :action="__('Manage')"
           >
             <SignatureSettings />
@@ -35,6 +36,7 @@
         <SettingsDialogRow
           :title="__('Auto-reply')"
           section="mail.sending.auto-reply"
+          :description="__('Answers mail for you while you are away.')"
           :status="autoReplyStatus"
           :action="__('Edit')"
           size="2xl"

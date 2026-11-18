@@ -15,10 +15,16 @@
         @update:model-value="saveUndoSend"
       />
     </SettingsRow>
-    <SettingsRow :title="__('Add recipients to contacts')">
+    <SettingsRow
+      :title="__('Add recipients to contacts')"
+      :description="__('Saves anyone you write to as a contact, if they are not one yet.')"
+    >
       <Switch v-model="createContacts" />
     </SettingsRow>
-    <SettingsRow :title="__('Keep forwards in the conversation')">
+    <SettingsRow
+      :title="__('Keep forwards in the conversation')"
+      :description="__('A message you forward stays in the conversation it came from.')"
+    >
       <Switch v-model="keepForwardedInThread" />
     </SettingsRow>
   </template>
