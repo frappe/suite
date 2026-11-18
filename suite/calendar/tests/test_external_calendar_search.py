@@ -4,6 +4,7 @@
 from datetime import date, datetime, timedelta
 from unittest.mock import patch
 
+import frappe
 from frappe.tests import IntegrationTestCase
 
 from suite.calendar import api as calendar_api
@@ -129,6 +130,17 @@ class IntegrationTestExternalCalendarSearch(IntegrationTestCase):
         )
         self.assertEqual(self.search(self.user, ["gandhi"], start=datetime(2030, 1, 1)), [])
         self.assertEqual(self.search(self.user, ["gandhi"], end=datetime(2026, 10, 1)), [])
+
+    def test_an_event_with_no_repeat_recorded_happens_once_in_a_range(self):
+        # a row written past the event's validate, with nothing in the column at all
+        external.replace_events(self.calendar, [self.holiday])
+        external.replace_assignments(self.calendar, [self.user])
+        frappe.db.set_value("External Calendar Event", {"calendar": self.calendar}, "repeats", None)
+
+        found = self.search(self.user, ["gandhi"], start=datetime(2026, 10, 1), end=datetime(2026, 10, 3))
+        self.assertEqual([event["start"] for event in found], ["2026-10-02T00:00:00"])
+        [drawn] = external.events_in_window(self.user, "2026-10-01", "2026-10-31")
+        self.assertEqual(drawn["start"], "2026-10-02T00:00:00")
 
     def test_a_range_is_narrowed_on_before_the_count_is(self):
         # five birthdays rank as today and would fill any count; the one holiday inside the

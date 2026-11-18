@@ -211,6 +211,54 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         self.assertEqual(in_2028["start"], "2028-07-09T00:00:00")
         self.assertEqual(external.events_in_window(self.user, "2028-08-01", "2028-08-31"), [])
 
+    def test_a_yearly_event_entered_by_hand_is_drawn_on_the_day_it_says(self):
+        external.replace_assignments(self.calendar, [self.user])
+        founders_day = frappe.get_doc(
+            {
+                "doctype": "External Calendar Event",
+                "calendar": self.calendar,
+                "uid": "entered-by-hand",
+                "title": "Founders' day",
+                "starts_on": "2026-05-01 00:00:00",
+                "ends_on": "2026-05-02 00:00:00",
+                "all_day": 1,
+                "repeats": "Yearly",
+            }
+        ).insert()
+
+        [in_2029] = external.events_in_window(self.user, "2029-05-01", "2029-05-31")
+        self.assertEqual(in_2029["start"], "2029-05-01T00:00:00")
+
+        # moved by hand, it moves in every year, and leaves the day it was on
+        founders_day.update({"starts_on": "2026-06-15 00:00:00", "ends_on": "2026-06-16 00:00:00"})
+        founders_day.save()
+        self.assertEqual(external.events_in_window(self.user, "2029-05-01", "2029-05-31"), [])
+        [moved] = external.events_in_window(self.user, "2029-06-01", "2029-06-30")
+        self.assertEqual(moved["start"], "2029-06-15T00:00:00")
+
+    def test_a_leap_day_anchored_on_the_28th_stays_a_leap_day_when_edited(self):
+        # born on 29 February, and the source's first year with them has no such day
+        leap_day = {
+            "uid": "birthday-EMP-29",
+            "title": "Leap day birthday",
+            "starts_on": "2027-02-28 00:00:00",
+            "ends_on": "2027-03-01 00:00:00",
+            "all_day": True,
+            "repeats": "Yearly",
+            "month_day": "02-29",
+        }
+        external.replace_events(self.calendar, [leap_day])
+        external.replace_assignments(self.calendar, [self.user])
+
+        stored = frappe.get_doc("External Calendar Event", {"calendar": self.calendar})
+        stored.title = "Leap day birthday (renamed)"
+        stored.save()
+
+        [in_2028] = external.events_in_window(self.user, "2028-02-01", "2028-03-31")
+        self.assertEqual(in_2028["start"], "2028-02-29T00:00:00")
+        [in_2029] = external.events_in_window(self.user, "2029-02-01", "2029-03-31")
+        self.assertEqual(in_2029["start"], "2029-02-28T00:00:00")
+
     def test_somebody_the_source_no_longer_names_stops_seeing_it(self):
         external.replace_events(self.calendar, [self.holiday])
         external.replace_assignments(self.calendar, [self.user, self.stranger])

@@ -1,9 +1,15 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+from calendar import isleap
+from datetime import datetime
 from uuid import uuid7
 
 from frappe.model.document import Document
+from frappe.utils import get_datetime
+
+# A 29 February repeat anchored in a year without one is stored against the 28th, and says so.
+LEAP_DAY = "02-29"
 
 
 class ExternalCalendarEvent(Document):
@@ -35,3 +41,24 @@ class ExternalCalendarEvent(Document):
 
     def autoname(self) -> None:
         self.name = str(uuid7())
+
+    def validate(self) -> None:
+        # Written here as well as by the store, which writes past this: an event entered or
+        # moved in Desk is drawn on the day it now says.
+        self.repeats = self.repeats or ""
+        self.month_day = month_day_of(get_datetime(self.starts_on), self.repeats, self.month_day)
+
+
+def month_day_of(starts_on: datetime, repeats: str | None, stated: str | None = None) -> str | None:
+    """The MM-DD a repeat falls on, which a window asks for it by; none for an event that happens
+    once.
+
+    The day it starts on, except a 29 February anchored on the 28th of a year without one: that
+    is the one day an event is stored against a day it does not fall on, and it is kept.
+    """
+
+    if not repeats:
+        return None
+    if stated == LEAP_DAY and (starts_on.month, starts_on.day) == (2, 28) and not isleap(starts_on.year):
+        return LEAP_DAY
+    return f"{starts_on:%m-%d}"

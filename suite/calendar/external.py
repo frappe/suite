@@ -23,6 +23,7 @@ from frappe.database.database import savepoint
 from frappe.utils import get_datetime, now_datetime
 from isodate import duration_isoformat
 
+from suite.calendar.doctype.external_calendar_event.external_calendar_event import month_day_of
 from suite.utils.dt import utcnow
 
 # What an external calendar's `account` is called where the app expects one. Calendars and events
@@ -400,9 +401,8 @@ def _stored_values(event: dict) -> dict:
         "ends_on": get_datetime(event["ends_on"]) if event.get("ends_on") else starts_on,
         "all_day": 1 if event.get("all_day") else 0,
         "repeats": repeats,
-        # The day a repeat falls on, which the source may state where it is not the day the
-        # series is anchored on — a 29 February anchored on the 28th.
-        "month_day": (event.get("month_day") or starts_on.strftime("%m-%d")) if repeats else None,
+        # Worked out as the event's own validate does, since these rows are written past it.
+        "month_day": month_day_of(starts_on, repeats, event.get("month_day")),
     }
 
 

@@ -109,7 +109,9 @@ def _rows_carrying(
         query = query.where(carries)
 
     if start or end:
-        dated = event.repeats == ""
+        # Read as the grid's `get_all` reads a blank: an event written with no repeat at all
+        # happens once.
+        dated = event.repeats.isnull() | (event.repeats == "")
         yearly = event.repeats == "Yearly"
         if start:
             dated &= event.ends_on > start
