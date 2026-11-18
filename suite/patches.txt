@@ -104,6 +104,8 @@ suite.mail.patches.rebuild_screening_gates #delivery-reports
 suite.mail.patches.add_attach_drive_files_rate_limit
 # The automation Sieve gives mail its category at delivery; older Inbox mail is classified once.
 suite.mail.patches.classify_mail_at_delivery
+# Mail that was sent, or a draft that was replaced, could stay cached as a draft.
+suite.mail.patches.drop_cached_drafts
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
