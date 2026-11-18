@@ -42,8 +42,21 @@ replaces what was there, so a run is repeatable and what the source drops is rem
 
 - The calendar list, the event grid and the mini month's ticks include the external calendars
   drawn for the reader: those assigned to them and the site-wide ones.
-- They are listed under Shared calendars and can be hidden per browser, as a calendar shared
-  read-only can.
+- They are listed under Shared calendars, as a calendar shared read-only is.
+- **Shared calendars start unticked**, these and the mail server's alike: a calendar someone
+  else keeps is drawn over the reader's own week only once they switch it on. The choice is
+  kept per browser, since the mail server lets only a writer change a calendar's visibility.
+  It is made in the sidebar, in the calendar's menu, or in the phone's calendar sheet. A
+  shared calendar a reader could already see before this change stays drawn.
+- A calendar that is switched off is not drawn in the grid and its days are not ticked in the
+  mini month. Nothing is drawn until the calendar list has loaded, so a hidden calendar's
+  events never flash up first.
+- **Search** finds these events beside the mail server's, in the palette and the phone's
+  search page: every word typed, in the title, or the notes too unless the title alone is
+  asked, within a range where one is given. A range is read as the reader's own days. A
+  yearly event answers as its occurrences nearest today and counts as one result. The
+  calendar filter can name one of these calendars. Nobody is on them, so a search by
+  attendee or organizer finds none.
 - **Read-only.** Nothing offers to edit, move, delete or answer one of these events, and none
   of these calendars is offered as a place for a new event.
 - Events carry no organizer, participants or alerts, and count as free time.
@@ -62,7 +75,5 @@ replaces what was there, so a run is repeatable and what the source drops is rem
 ## Out of scope
 
 - Any source, including Frappe HR.
-- Search. The palette and the phone's search page do not find these events yet.
-- Shared calendars starting unticked.
 - Assigning a calendar to a mail domain. The site has no record of domains; a source that
   wants this resolves the users itself.
