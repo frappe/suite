@@ -723,8 +723,10 @@ class MailQueue(OwnerFromUser, Document):
         try:
             with client.batch() as b:
                 destroyed = b.mail.email.set(destroy=[self.id])
-            if self.id in destroyed.result.not_destroyed:
-                raise ValueError(destroyed.result.not_destroyed[self.id])
+            refusal = destroyed.result.not_destroyed.get(self.id)
+            # A draft the server cannot find is already gone, which is all this asked for.
+            if refusal and refusal.get("type") != "notFound":
+                raise ValueError(refusal)
         except Exception:
             log_mail_error(f"Mail Queue: could not destroy replaced draft {self.id}", frappe.get_traceback())
         else:
