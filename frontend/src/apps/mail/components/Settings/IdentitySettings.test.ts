@@ -126,7 +126,8 @@ vi.mock('frappe-ui', () => ({
       options: { type: Array<{ label: string; value: string }>, default: () => [] },
     },
     emits: ['update:modelValue'],
-    setup(props, { emit }) {
+    inheritAttrs: false,
+    setup(props, { emit, attrs }) {
       return () => {
         if (props.type === 'select') {
           return h(
@@ -146,7 +147,8 @@ vi.mock('frappe-ui', () => ({
 
         return [
           h('input', {
-            'aria-label': props.label,
+            // A field without a label is named by the attribute, as a row's fields are
+            'aria-label': props.label || attrs['aria-label'],
             value: props.modelValue,
             onInput: (event: Event) =>
               emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
@@ -235,20 +237,43 @@ async function type(label: string, value: string) {
   await nextTick()
 }
 
-/** The box of addresses under this label. */
-function addressBox(label: string) {
+/** The list of addresses under this label, such as "Reply-to". */
+function addressList(label: string) {
   const name = Array.from(root.querySelectorAll('p')).find((part) => part.textContent === label)
 
-  return name?.parentElement?.querySelector('input') ?? null
+  return name?.parentElement ?? null
 }
 
-/** Types an address into a box and leaves the box, which is when it joins the list. */
-async function addAddress(label: string, value: string) {
-  const box = requireTestElement(addressBox(label), HTMLInputElement)
-  box.value = value
-  box.dispatchEvent(new Event('input'))
+/** The rows of a list, each as its email and display name read. */
+function rows(label: string) {
+  const fields = Array.from(addressList(label)?.querySelectorAll('input') ?? [])
+  const emails = fields.filter((input) => input.getAttribute('aria-label') === 'Email address')
+
+  return emails.map((email) => [email.value, fields[fields.indexOf(email) + 1].value])
+}
+
+/** Types into the last row of a list: its email, and its display name when one is given. */
+async function typeInRow(label: string, email: string, name?: string) {
+  const fields = Array.from(addressList(label)?.querySelectorAll('input') ?? []).slice(-2)
+  const typed = [email, name]
+  for (const [index, input] of fields.entries()) {
+    const value = typed[index]
+    if (value !== undefined) {
+      input.value = value
+      input.dispatchEvent(new Event('input'))
+    }
+  }
+
   await nextTick()
-  box.dispatchEvent(new Event('blur'))
+}
+
+/** Presses a button of a list, such as "Add address", found by its words or its label. */
+async function pressIn(label: string, name: string) {
+  const button = Array.from(addressList(label)?.querySelectorAll('button') ?? []).find(
+    (candidate) =>
+      candidate.textContent.trim() === name || candidate.getAttribute('aria-label') === name,
+  )
+  requireTestElement(button, HTMLButtonElement).click()
   await nextTick()
 }
 
@@ -419,40 +444,91 @@ it('keeps Reply-to and Bcc behind a button until the address uses one', async ()
   const support = { ...sales, bcc: [{ email: 'log@example.com', display_name: '' }] }
   mount([me, support])
   await openAddress('me@example.com')
-  expect(addressBox('Reply-to')).toBeNull()
+  expect(addressList('Reply-to')).toBeNull()
 
   await press('Add reply-to or Bcc')
-  expect(addressBox('Reply-to')).not.toBeNull()
-  expect(addressBox('Bcc')).not.toBeNull()
+  expect(rows('Reply-to')).toEqual([['', '']])
+  expect(rows('Bcc')).toEqual([['', '']])
 
   await press('Back to addresses')
   await openAddress('sales@example.com')
-  expect(root.textContent).toContain('log@example.com')
+  expect(rows('Reply-to')).toEqual([])
+  expect(rows('Bcc')).toEqual([['log@example.com', '']])
 })
-it('saves the addresses of each box, one saved with a display name keeping it', async () => {
+it('saves each address with the display name beside it, a new one and a changed one alike', async () => {
   const support = { ...sales, reply_to: [{ email: 'help@example.com', display_name: 'Help desk' }] }
   mount([support])
   await openAddress('sales@example.com')
-  await addAddress('Reply-to', 'desk@example.com')
-  await addAddress('Bcc', 'log@example.com')
+  expect(rows('Reply-to')).toEqual([['help@example.com', 'Help desk']])
+
+  await typeInRow('Reply-to', 'help@example.com', 'Helpers')
+  await pressIn('Reply-to', 'Add address')
+  await typeInRow('Reply-to', 'desk@example.com', 'Front desk')
+  await pressIn('Bcc', 'Add address')
+  await typeInRow('Bcc', 'log@example.com')
   await press('Save')
   expect(state.run).toHaveBeenCalledWith(
     'save_identity',
     expect.objectContaining({
       reply_to: [
-        { email: 'help@example.com', display_name: 'Help desk' },
-        { email: 'desk@example.com', display_name: '' },
+        { email: 'help@example.com', display_name: 'Helpers' },
+        { email: 'desk@example.com', display_name: 'Front desk' },
       ],
       bcc: [{ email: 'log@example.com', display_name: '' }],
     }),
   )
 })
-it('keeps Save off while a box holds something that is not an email address', async () => {
+it('saves an address removed from its list as gone', async () => {
+  const support = {
+    ...sales,
+    reply_to: [
+      { email: 'help@example.com', display_name: 'Help desk' },
+      { email: 'desk@example.com', display_name: '' },
+    ],
+  }
+  mount([support])
+  await openAddress('sales@example.com')
+  await pressIn('Reply-to', 'Remove help@example.com')
+  expect(rows('Reply-to')).toEqual([['desk@example.com', '']])
+
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ reply_to: [{ email: 'desk@example.com', display_name: '' }] }),
+  )
+})
+it('sends no row that was left empty, and counts none as a change', async () => {
   mount([me])
   await openAddress('me@example.com')
   await press('Add reply-to or Bcc')
-  await addAddress('Reply-to', 'not an address')
   expect(findButton('Save')?.disabled).toBe(true)
+
+  await typeInRow('Bcc', ' log@example.com ')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({
+      reply_to: [],
+      bcc: [{ email: 'log@example.com', display_name: '' }],
+    }),
+  )
+})
+it('says which row is no email address when Save is pressed, and sends nothing', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await press('Add reply-to or Bcc')
+  await typeInRow('Reply-to', 'not an address', 'Help desk')
+  expect(root.querySelector('[role="alert"]')).toBeNull()
+
+  await press('Save')
+  expect(addressList('Reply-to')?.querySelector('[role="alert"]')?.textContent).toBe(
+    'Enter a valid email address',
+  )
+  expect(addressList('Bcc')?.querySelector('[role="alert"]')).toBeNull()
+  expect(state.run).not.toHaveBeenCalled()
+
+  await typeInRow('Reply-to', 'help@example.com')
+  expect(root.querySelector('[role="alert"]')).toBeNull()
 })
 it('reads an address without a signature as None, with no editor', async () => {
   mount([me])

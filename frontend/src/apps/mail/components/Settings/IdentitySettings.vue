@@ -23,19 +23,17 @@
     />
     <!-- Last of the fields, as the two fewest addresses use -->
     <template v-if="showsReplyAndBcc">
-      <EmailListInput
+      <NamedAddressList
         v-model="draft.replyTo"
-        v-model:draft="typed.replyTo"
         :label="__('Reply-to')"
         :description="__('Replies to your mail go to these addresses.')"
-        placeholder="name@example.com"
+        :is-checked="isChecked"
       />
-      <EmailListInput
+      <NamedAddressList
         v-model="draft.bcc"
-        v-model:draft="typed.bcc"
         :label="__('Bcc')"
         :description="__('These addresses get a hidden copy of each message you send.')"
-        placeholder="name@example.com"
+        :is-checked="isChecked"
       />
     </template>
     <Button
@@ -163,11 +161,11 @@
 <script setup lang="ts">
 import { Badge, Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { computed, reactive, ref } from 'vue'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
-import EmailListInput from '@/apps/mail/components/Controls/EmailListInput.vue'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
+import NamedAddressList from '@/apps/mail/components/Controls/NamedAddressList.vue'
 import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Identity } from '@/apps/mail/types'
@@ -186,42 +184,79 @@ const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const signatures = useQuery(api.mail.signatures.list)
 
-type Address = Identity['reply_to'][number]
+/** A reply-to or Bcc address as its row holds it: one saved without a name has an empty one. */
+interface Address {
+  email: string
+  display_name: string
+}
+
+function rowsOf(addresses?: Identity['reply_to']) {
+  return (addresses ?? []).map(({ email, display_name }) => ({
+    email,
+    display_name: display_name ?? '',
+  }))
+}
 
 /** The address that is open, and what its form holds. */
 interface Draft {
   identity: Identity
   name: string
-  replyTo: string[]
-  bcc: string[]
+  replyTo: Address[]
+  bcc: Address[]
   signature: string
 }
 
 // Unset, the list shows
 const draft = ref<Draft>()
 const original = ref('')
-// What is typed in each box and not yet an address of its list
-const typed = reactive({ replyTo: '', bcc: '' })
-// Few addresses have a reply-to or a Bcc, so the two boxes wait behind a button until one is used
+// Few addresses have a reply-to or a Bcc, so the two lists wait behind a button until one is used
 const showsReplyAndBcc = ref(false)
 function showReplyAndBcc() {
+  const form = draft.value
+  if (!form) {
+    return
+  }
+
+  // Each opens on a row to type in
+  form.replyTo.push({ email: '', display_name: '' })
+  form.bcc.push({ email: '', display_name: '' })
   showsReplyAndBcc.value = true
 }
 
-function emailsOf(addresses?: Address[]) {
-  return (addresses ?? []).map((address) => address.email)
+// The rows of a list that hold something: one left empty is no address
+function filled(addresses: Address[]) {
+  return addresses.flatMap((address) => {
+    const row = { email: address.email.trim(), display_name: address.display_name.trim() }
+    if (!row.email && !row.display_name) {
+      return []
+    }
+
+    return [row]
+  })
 }
 
+/** What a save of the form sends. */
+function changesOf(form: Draft) {
+  return {
+    name: form.name,
+    reply_to: filled(form.replyTo),
+    bcc: filled(form.bcc),
+    html_signature: form.signature,
+  }
+}
+
+// Whether Save was pressed on the open address: from then on a row that is no address says so
+const isChecked = ref(false)
 function editAddress(identity: Identity) {
   draft.value = {
     identity,
     name: identity._name ?? '',
-    replyTo: emailsOf(identity.reply_to),
-    bcc: emailsOf(identity.bcc),
+    replyTo: rowsOf(identity.reply_to),
+    bcc: rowsOf(identity.bcc),
     signature: identity.html_signature ?? '',
   }
-  original.value = JSON.stringify(draft.value)
-  Object.assign(typed, { replyTo: '', bcc: '' })
+  original.value = JSON.stringify(changesOf(draft.value))
+  isChecked.value = false
   isCustomPicked.value = false
   showsReplyAndBcc.value = draft.value.replyTo.length + draft.value.bcc.length > 0
   saveIdentity.reset()
@@ -243,27 +278,15 @@ function showList() {
   newAddress.value = undefined
 }
 
-// Nothing to save until the form differs from the address as it was read, and nothing that is
-// not an address is sent
+// Nothing to save until the form differs from the address as it was read
 const isSaveBlocked = computed(() => {
   const form = draft.value
   if (!form || identities.isFetching) {
     return true
   }
 
-  const isUnchanged = JSON.stringify(form) === original.value && !typed.replyTo && !typed.bcc
-
-  return isUnchanged || ![...form.replyTo, ...form.bcc].every(isEmail)
+  return JSON.stringify(changesOf(form)) === original.value
 })
-
-// The boxes hold addresses alone, so one that was saved with a display name keeps it
-function withNames(emails: string[], saved?: Address[]) {
-  return emails.map((email) => {
-    const kept = saved?.find((address) => address.email === email)
-
-    return { email, display_name: kept?.display_name ?? '' }
-  })
-}
 
 // A refused save is said on the page that was saved, where the eyes are, so no toast says it too
 const saveIdentity = useMutation(api.mail.identities.save, { silent: true })
@@ -274,14 +297,14 @@ async function save() {
     return
   }
 
-  await saveIdentity.run({
-    account: form.identity.account,
-    id: form.identity.id,
-    name: form.name,
-    reply_to: withNames(form.replyTo, form.identity.reply_to),
-    bcc: withNames(form.bcc, form.identity.bcc),
-    html_signature: form.signature,
-  })
+  const changes = changesOf(form)
+  isChecked.value = true
+  // A row that is no address says so, and nothing is sent
+  if (![...changes.reply_to, ...changes.bcc].every((address) => isEmail(address.email))) {
+    return
+  }
+
+  await saveIdentity.run({ account: form.identity.account, id: form.identity.id, ...changes })
   raiseToast(__('Address updated'))
   // A slow save can end after another page was opened, and that page stays
   if (draft.value === form) {
