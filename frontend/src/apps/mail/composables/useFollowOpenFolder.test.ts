@@ -17,8 +17,8 @@ vi.mock('@/apps/mail/stores/user', () => ({
 }))
 
 const folder = (id: string, slug: string) => fromPartial<MailboxData>({ id, slug, _name: slug })
-const akashFolders = [folder('a1', 'inbox'), folder('a2', 'support')]
-const suiteFolders = [folder('b1', 'inbox')]
+const aliceFolders = [folder('a1', 'inbox'), folder('a2', 'support')]
+const bobFolders = [folder('b1', 'inbox')]
 
 const page = { render: () => null }
 const routes = [
@@ -56,17 +56,17 @@ const openAt = async (path: string, accountId: string, folders: MailboxData[]) =
 
 describe('the open folder in the URL', () => {
   // A switch to another account turns the folder list over before the URL follows; the old
-  // account's folder is not in the new list, and was taken for deleted.
+  // account's folder is not in the new list, so it looks deleted.
   it("is left alone while the list turns to another account's", async () => {
-    const settle = await openAt('/account/ih/mailbox/support/t7', 'ih', akashFolders)
-    store.current.accountId = 'q9'
-    store.current.mailboxes.data = suiteFolders
-    expect(await settle()).toBe('/account/ih/mailbox/support/t7')
+    const settle = await openAt('/account/alice/mailbox/support/t7', 'alice', aliceFolders)
+    store.current.accountId = 'bob'
+    store.current.mailboxes.data = bobFolders
+    expect(await settle()).toBe('/account/alice/mailbox/support/t7')
   })
 
   it("leaves for the account's default folder when the folder is deleted", async () => {
-    const settle = await openAt('/account/ih/mailbox/support', 'ih', akashFolders)
+    const settle = await openAt('/account/alice/mailbox/support', 'alice', aliceFolders)
     store.current.mailboxes.data = [folder('a1', 'inbox')]
-    expect(await settle()).toBe('/account/ih')
+    expect(await settle()).toBe('/account/alice')
   })
 })

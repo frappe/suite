@@ -9,9 +9,9 @@ import { currentMailboxParam } from '@/apps/mail/utils/unifiedFolders'
  * while the folder is open. Follow it to its new name, or out to the account's default folder, rather
  * than leave the URL naming nothing (see utils/unifiedFolders).
  *
- * The folder list is the active account's, and on an account switch it turns to the new account's
- * before the URL does. Judged against it, the old account's folder looks deleted, and the replace
- * that followed cancelled the switch. A URL is only judged against its own account's folders.
+ * During an account switch the folder list turns to the new account's before the URL does, so the
+ * old account's folder would look deleted and a replace would cancel the switch. A URL is judged
+ * only against its own account's folders.
  */
 export const useFollowOpenFolder = () => {
   const route = useRoute()
