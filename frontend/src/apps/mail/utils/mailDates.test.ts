@@ -238,6 +238,15 @@ describe('dates in a mail', () => {
     // 5 June and 6 May: both long gone, so next year's.
     expect(read('05/06 at 3pm', 'en-GB')).toEqual(['2027-06-05'])
     expect(read('05/06 at 3pm', 'en-US')).toEqual(['2027-05-06'])
+    // Nor is any part of a phrase around a date gone by, read as a time on another day.
+    for (const locale of ['en-GB', 'en-US'])
+      for (const text of [
+        'Thanks for the notes from 20 Oct.',
+        'since 20 Oct',
+        'on 20 Oct at 3pm',
+        'from 1 Oct to 5 Oct',
+      ])
+        expect(read(text, locale), `${text} (${locale})`).toEqual([])
     // With a year, as written: a past one is not offered.
     expect(read('5 Jun 2026', 'en-GB')).toEqual([])
     expect(read('5 Jun 2027', 'en-GB')).toEqual(['2027-06-05'])
