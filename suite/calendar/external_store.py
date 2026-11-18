@@ -114,15 +114,6 @@ def replace_assignments(calendar: str, users: Iterable[str]) -> int:
     return len(wanted)
 
 
-def calendars_of(source: str) -> dict[str, str]:
-    """What this source keeps here, by the key it knows each calendar as."""
-
-    return {
-        row.source_key: row.name
-        for row in frappe.get_all("External Calendar", {"source": source}, ["name", "source_key"])
-    }
-
-
 def remove_calendar(calendar: str) -> None:
     """A calendar the source no longer has, with its events and its assignments."""
 
