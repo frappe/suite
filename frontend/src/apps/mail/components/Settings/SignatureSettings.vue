@@ -4,7 +4,7 @@
       <Button
         variant="solid"
         icon-left="lucide-plus"
-        :label="__('New')"
+        :label="__('New signature')"
         :size="buttonSize"
         @click="addSignature"
       />
