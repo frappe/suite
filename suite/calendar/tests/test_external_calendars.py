@@ -350,10 +350,16 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
                 again = external_store.upsert_calendar("Test Source", key, "Kerala 2026")
 
         self.assertEqual(again, "race-winner")
-        # and the one that lost was not stored
-        self.assertEqual(
-            frappe.db.count("External Calendar", {"source": "Test Source", "source_key": key}), 1
+        # and the one that lost was not stored. Read locking, as the store does: a plain read
+        # still answers from the snapshot taken before the winner committed, and finds none
+        stored = frappe.db.get_values(
+            "External Calendar",
+            {"source": "Test Source", "source_key": key},
+            "name",
+            for_update=True,
+            pluck=True,
         )
+        self.assertEqual(list(stored), ["race-winner"])
 
     def second_connection(self):
         """Another writer's own connection, whose commit is seen as a concurrent run's would be.
