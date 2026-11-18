@@ -12,14 +12,18 @@
       <div class="grid gap-4 sm:grid-cols-2">
         <FormControl
           v-model="draft.from_date"
-          type="datetime-local"
+          type="datetime"
           :label="__('Starts')"
+          :format="SHOWN_FORMAT"
+          :placeholder="__('Select date and time')"
           variant="outline"
         />
         <FormControl
           v-model="draft.to_date"
-          type="datetime-local"
+          type="datetime"
           :label="__('Ends (optional)')"
+          :format="SHOWN_FORMAT"
+          :placeholder="__('Select date and time')"
           variant="outline"
         />
       </div>
@@ -67,7 +71,7 @@ import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScri
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { fromLocalInput, toLocalInput } from '@/apps/mail/utils/datetime'
+import { fromLocalInput, inUserTimeZone } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
@@ -92,6 +96,20 @@ async function handleSave() {
   await updateVacationResponseSubmit()
 }
 
+// What a date and time field reads and writes: a clock reading in the user's zone, naming no
+// zone. The field keeps time to the minute, so a saved time is read to the minute, or the field
+// would hand back another time the first time it is left
+const FIELD_FORMAT = 'YYYY-MM-DD HH:mm[:00]'
+// How the field shows the time it holds: on the 24-hour clock, as the time box in its calendar does
+const SHOWN_FORMAT = 'D MMM YYYY, HH:mm'
+function toField(value?: string | null) {
+  if (!value) {
+    return ''
+  }
+
+  return inUserTimeZone(value).format(FIELD_FORMAT)
+}
+
 const draft = reactive({
   enabled: false,
   from_date: '',
@@ -111,16 +129,21 @@ watch(
   () => vacationResponse.data,
   (data) => {
     if (!data) return
-    // An absence that is off and over is history, not a default: its dates go, so turning the
-    // responder on again starts from nothing rather than last year's trip. Its words stay, to reuse.
-    const over = !data.enabled && !!data.to_date && dayjs.utc(data.to_date).isBefore(dayjs())
     Object.assign(draft, {
       enabled: Boolean(data.enabled),
-      from_date: over ? '' : toLocalInput(data.from_date),
-      to_date: over ? '' : toLocalInput(data.to_date),
+      from_date: toField(data.from_date),
+      to_date: toField(data.to_date),
       subject: data.subject ?? '',
       html_body: data.html_body ?? '',
     })
+    // An absence that is off and over is history, not a default: its dates go, so turning the
+    // responder on again starts from nothing rather than last year's trip. Its words stay, to reuse
+    const over = !data.enabled && !!data.to_date && dayjs.utc(data.to_date).isBefore(dayjs())
+    if (over) {
+      draft.from_date = ''
+      draft.to_date = ''
+    }
+
     original.value = JSON.stringify(draft)
   },
   {

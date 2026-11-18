@@ -1,6 +1,8 @@
 import { beforeEach, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick } from 'vue'
 
+import { requireTestElement } from '@/platform/testing/dom'
+
 import VacationResponseSettings from './VacationResponseSettings.vue'
 
 const saved = vi.hoisted<{ value: Record<string, unknown> | null }>(() => ({ value: null }))
@@ -35,14 +37,17 @@ vi.mock('frappe-ui', async () => {
         () =>
           h('button', { 'data-switch': '', onClick: () => emit('update:modelValue', true) }),
     }),
-    // A field shows what it was handed: its label and its value
+    // A field shows what it was handed, its label and its value, and hands back what is typed
     FormControl: defineComponent({
       inheritAttrs: false,
-      setup(_props, { attrs }) {
+      emits: ['update:modelValue'],
+      setup(_props, { attrs, emit }) {
         return () =>
           h('input', {
             'data-label': attrs.label,
             value: attrs.modelValue,
+            onInput: (event: Event) =>
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
           })
       },
     }),
@@ -59,6 +64,10 @@ vi.mock('@/api', async () => {
 })
 vi.mock('@/platform/feedback', () => ({
   failureLine: (error: Error | null) => error?.message,
+}))
+// The zone the dates are read and typed in
+vi.mock('@/platform/session', () => ({
+  useSession: () => ({ user: { value: { timeZone: 'Asia/Kolkata' } } }),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ accountId: 'account', sieveScripts: { data: [] } }),
@@ -158,4 +167,21 @@ it('says why a save was refused on the form, in place of a toast', async () => {
     'The dates are the wrong way round',
   )
   expect(failureToast).not.toHaveBeenCalled()
+})
+it('saves a picked time as UTC, and a date left alone as it was read', async () => {
+  const { root, field } = await mount(1, AHEAD)
+  const starts = requireTestElement(field('Starts'), HTMLInputElement)
+  // What the date and time picker hands back: a clock reading, here in Kolkata, 5:30 ahead of UTC
+  starts.value = '2099-07-01 09:00:00'
+  starts.dispatchEvent(new Event('input'))
+  await nextTick()
+  root.querySelector<HTMLElement>('[label="Save"]')!.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(run).toHaveBeenCalledWith(
+    expect.objectContaining({ from_date: '2099-07-01T03:30:00Z', to_date: AHEAD.to }),
+  )
+})
+it('reads a saved time to the minute, as the picker hands times back', async () => {
+  const { field } = await mount(1, { from: '2099-06-01T09:00:45Z', to: AHEAD.to })
+  expect(field('Starts')!.value).toBe('2099-06-01 14:30:00')
 })
