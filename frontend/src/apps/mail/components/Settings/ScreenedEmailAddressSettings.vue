@@ -101,16 +101,9 @@
           <p>{{ __('No screened senders match your search.') }}</p>
         </div>
       </template>
-      <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-        <p class="text-base font-medium">{{ __('No screened senders yet') }}</p>
-        <p>{{ MESSAGE }}</p>
-        <Button
-          icon-left="lucide-plus"
-          :label="__('New sender')"
-          class="w-fit"
-          @click="addSender"
-        />
-      </div>
+      <SettingsEmptyList v-else :title="__('No screened senders yet')" :description="MESSAGE">
+        <Button icon-left="lucide-plus" :label="__('New sender')" class="mt-1" @click="addSender" />
+      </SettingsEmptyList>
 
       <AddScreenedSenderModal v-model="showAddModal" />
       <Dialog v-model:open="showRemoveModal" v-bind="removeModalOptions" />
@@ -137,6 +130,7 @@ import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

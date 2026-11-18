@@ -60,13 +60,13 @@
       </div>
     </div>
 
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No signatures yet') }}</p>
-
-      <p>
-        {{ __('Signatures let you automatically add personalized content to your messages.') }}
-      </p>
-    </div>
+    <SettingsEmptyList
+      v-else
+      :title="__('No signatures yet')"
+      :description="
+        __('Signatures let you automatically add personalized content to your messages.')
+      "
+    />
   </div>
 </template>
 
@@ -83,6 +83,7 @@ import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 type Signature = OutputOf<typeof api.mail.signatures.list>[number]

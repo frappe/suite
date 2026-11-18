@@ -38,13 +38,11 @@
       </div>
     </div>
 
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No folders yet') }}</p>
-
-      <p>
-        {{ __('Folders let you file your mail.') }}
-      </p>
-    </div>
+    <SettingsEmptyList
+      v-else
+      :title="__('No folders yet')"
+      :description="__('Folders let you file your mail.')"
+    />
 
     <FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
     <DeleteFolderModal v-model="showDeleteFolderModal" :mailbox="selectedMailbox" />
@@ -67,6 +65,7 @@ import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 
 const { mailboxes } = userStore()
 const { isMobile } = useScreenSize()

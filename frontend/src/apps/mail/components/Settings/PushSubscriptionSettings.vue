@@ -40,13 +40,11 @@
         </ListView>
       </div>
     </template>
-    <div
+    <SettingsEmptyList
       v-else-if="!pushSubscriptions.isFetching"
-      class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
-    >
-      <p class="text-base font-medium">{{ __('No push subscriptions yet') }}</p>
-      <p>{{ MESSAGE }}</p>
-    </div>
+      :title="__('No push subscriptions yet')"
+      :description="MESSAGE"
+    />
 
     <AddPushSubscriptionModal
       v-model="showAddModal"
@@ -66,6 +64,7 @@ import AddPushSubscriptionModal from '@/apps/mail/components/Modals/AddPushSubsc
 import type { PushSubscription } from '@/apps/mail/types'
 import { raiseError, raiseToast } from '@/apps/mail/utils'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const user = inject<import('@/apps/mail/types').UserResource>('$user')

@@ -133,12 +133,13 @@
         </AdaptiveDropdown>
       </div>
     </div>
-    <div v-else-if="isListRead" class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base font-medium">{{ __('No send-as addresses yet') }}</p>
-      <p>
-        {{ __('Send-as addresses are the addresses you send mail as. Create one to get started.') }}
-      </p>
-    </div>
+    <SettingsEmptyList
+      v-else-if="isListRead"
+      :title="__('No send-as addresses yet')"
+      :description="
+        __('Send-as addresses are the addresses you send mail as. Create one to get started.')
+      "
+    />
   </div>
   <!-- Outside the pages above: the list and an open address both ask it -->
   <Dialog
@@ -176,6 +177,7 @@ import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()

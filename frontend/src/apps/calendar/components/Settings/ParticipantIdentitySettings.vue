@@ -57,19 +57,15 @@
         </div>
       </div>
     </template>
-    <div
+    <SettingsEmptyList
       v-else-if="!participantIdentities.isFetching"
-      class="text-ink-gray-6 flex flex-col space-y-2 text-sm"
-    >
-      <p class="text-base font-medium">{{ __('No invite addresses yet') }}</p>
-      <p>
-        {{
-          __(
-            'Invite addresses are the addresses you organize and attend calendar events as. Create one to get started.',
-          )
-        }}
-      </p>
-    </div>
+      :title="__('No invite addresses yet')"
+      :description="
+        __(
+          'Invite addresses are the addresses you organize and attend calendar events as. Create one to get started.',
+        )
+      "
+    />
 
     <Dialog
       v-model:open="showAddDialogState"
@@ -138,6 +134,7 @@ import { userStore } from '@/apps/calendar/stores/user'
 import { isEmail, raiseToast } from '@/apps/calendar/utils'
 import { failureLine } from '@/platform/feedback'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const emit = defineEmits<{ saved: [] }>()

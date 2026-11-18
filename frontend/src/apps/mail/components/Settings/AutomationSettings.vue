@@ -31,21 +31,19 @@
       </div>
     </div>
 
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No rules yet') }}</p>
-      <div class="space-x-1">
-        <span>
-          {{ __('Rules are Sieve scripts that sort and file incoming mail for you.') }}
-        </span>
-        <a
-          class="text-ink-blue-5 hover:underline"
-          href="https://stalw.art/docs/category/sieve-scripting/"
-          target="_blank"
-        >
-          {{ __('Learn about Sieve scripts') }}
-        </a>
-      </div>
-    </div>
+    <SettingsEmptyList
+      v-else
+      :title="__('No rules yet')"
+      :description="__('Rules are Sieve scripts that sort and file incoming mail for you.')"
+    >
+      <a
+        class="text-p-base text-ink-blue-link hover:underline"
+        href="https://stalw.art/docs/category/sieve-scripting/"
+        target="_blank"
+      >
+        {{ __('Learn about Sieve scripts') }}
+      </a>
+    </SettingsEmptyList>
 
     <SieveScriptModal v-model="showSieveScript" :selected-script />
     <SetSieveScriptStateModal
@@ -74,6 +72,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
