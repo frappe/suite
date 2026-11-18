@@ -15,52 +15,41 @@
       variant="outline"
       :options="importOptions"
     />
-    <input
-      ref="fileInput"
-      type="file"
-      class="hidden"
+    <SettingsFileField
+      :label="__('File')"
+      :description="fileUploadSubtitle"
       :accept="acceptTypes"
-      @change="onFileSelected"
+      :upload="uploadFile"
+      :progress
     />
-    <Button
-      class="self-start"
-      :label="uploadLabel"
-      :loading="uploading"
-      @click="fileInput?.click()"
+    <Alert
+      v-if="isImportRunning"
+      :title="__('Import in progress. We’ll email you when it’s ready.')"
     />
-    <p class="text-ink-gray-5 mt-2 flex text-sm">{{ fileUploadSubtitle }}</p>
-
-    <Button
-      class="min-h-7 self-start"
-      :label="__('Start import')"
-      variant="solid"
-      :loading="isImporting"
-      :disabled="isImportBlocked"
-      @click="createCalendarImport.run(makeInput())"
-    />
-    <div class="!mt-3 space-x-1 text-base">
-      <span class="text-ink-gray-5">{{ importSubtitle }}</span>
-      <a class="hover:underline" :href="importHref" target="_blank">
-        {{ importLinkText }}
-      </a>
-    </div>
-    <ErrorMessage
-      v-if="createCalendarImport.error"
-      :message="createCalendarImport.error?.message"
-      class="mb-2.5"
-    />
+    <ErrorMessage :message="importError" />
+    <SettingsDialogActions>
+      <Button :label="importLinkText" :href="importHref" />
+      <Button
+        :label="__('Start import')"
+        variant="solid"
+        :loading="isImporting"
+        :disabled="isImportBlocked"
+        @click="createCalendarImport.run(makeInput())"
+      />
+    </SettingsDialogActions>
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl } from 'frappe-ui'
-import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
+import { Alert, Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { computed, onScopeDispose, reactive, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
-import { raiseToast } from '@/apps/calendar/utils'
 import { destinationOptions } from '@/apps/calendar/utils/calendars'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsFileField from '@/platform/settings/SettingsFileField.vue'
 import { translate as __ } from '@/platform/translation'
 import { useChunkedUpload } from '@/utils/useChunkedUpload'
 
@@ -73,34 +62,13 @@ const calendarImport = reactive<Omit<InputOf<typeof api.mail.calendar.import>, '
   file: '',
   calendar: '',
 })
-const fileInput = ref<HTMLInputElement | null>(null)
-const { uploading, progress, upload } = useChunkedUpload()
+const { progress, upload } = useChunkedUpload()
 const acceptTypes = computed(() => (calendarImport.format === 'ics' ? '.ics' : '.zip,.tgz,.tar.gz'))
-const uploadLabel = computed(() => {
-  if (uploading.value) {
-    return __('Uploading ({0}%)', [progress.value])
-  }
-
-  return __('Upload file')
-})
 
 // Upload in chunks so large import archives aren't blocked by the web server's request-size limit.
-const onFileSelected = async (event: Event) => {
-  const checkedEventTarget = event.target
-  if (!(checkedEventTarget instanceof HTMLInputElement)) return
-
-  const input = checkedEventTarget
-  const file = input.files?.[0]
-  input.value = '' // let the same file be re-selected after an error
-  if (!file) return
-  try {
-    const uploaded = await upload(file, {
-      private: true,
-    })
-    calendarImport.file = uploaded.file_url
-  } catch {
-    raiseToast(__('Could not import the calendar'), 'error')
-  }
+async function uploadFile(file: File) {
+  const uploaded = await upload(file, { private: true })
+  calendarImport.file = uploaded.file_url
 }
 
 // Only a calendar the account can write to takes the events.
@@ -119,7 +87,6 @@ watch(
   },
 )
 const fileUploadSubtitle = computed(() => {
-  if (calendarImport.file) return __('File uploaded: {0}', [calendarImport.file])
   if (calendarImport.format === 'ics') return __('Supported file format: .ics')
   return __('Supported file formats: .zip, .tar, .tgz')
 })
@@ -142,9 +109,9 @@ const ongoingImport = useQuery(api.mail.calendar.ongoingExchange, () =>
       }
     : false,
 )
-const isImporting = computed(
-  () => Boolean(ongoingImport.data?.name) || createCalendarImport.isPending,
-)
+const isImportRunning = computed(() => Boolean(ongoingImport.data?.name))
+const isImporting = computed(() => isImportRunning.value || createCalendarImport.isPending)
+const importError = computed(() => createCalendarImport.error?.message)
 const isImportBlocked = computed(
   () => ongoingImport.isFetching || Boolean(ongoingImport.error) || !calendarImport.file,
 )
@@ -153,10 +120,6 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 }
 socket.on('calendar_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('calendar_exchange_completed', onExchangeCompleted))
-const importSubtitle = computed(() => {
-  if (ongoingImport.data?.name) return __('Import in progress. We’ll email you when it’s ready.')
-  return __('No imports in progress.')
-})
 const importHref = computed(() => {
   if (ongoingImport.data?.name) return `/mail/calendar-exchanges/${ongoingImport.data.name}`
   return '/mail/calendar-exchanges?operation=Import'
