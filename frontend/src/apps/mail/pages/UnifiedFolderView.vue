@@ -672,7 +672,7 @@ const {
   isAllSelected,
   mobileSelectionMode,
   toggleSelect,
-  extendRange,
+  moveCursor,
   toggleSelectAll,
   resetSelections,
   isGroupSelected,
@@ -837,18 +837,18 @@ const handleKeyDown = (e: KeyboardEvent) => {
   if (threadID) {
     const to = threadByOffset(offset)
     stepOpenThread(offset)
-    if (e.shiftKey && to) extendRange(from.length ? from : [to], [to])
+    moveCursor(from, to ? [to] : [], e.shiftKey)
     return
   }
 
   // With no thread open the keys move the cursor without opening anything, as the mailbox list
   // does — Enter opens what the marker is on, or folds the day. Shift ticks the run from where it
-  // began, as there (see extendRange).
+  // began, as there (see moveCursor).
   const rows = navigableRows.value
   const next = stepFromKey(rows, focusedRowKey.value, offset)
   if (next) {
     focusRow(next)
-    if (e.shiftKey) extendRange(from.length ? from : rowKeys(next), rowKeys(next))
+    moveCursor(from, rowKeys(next), e.shiftKey)
     return
   }
   // Off the bottom of what is loaded: load the next window and take the cursor into it. Only from a

@@ -622,7 +622,7 @@ const {
   isAllSelected,
   mobileSelectionMode,
   toggleSelect,
-  extendRange,
+  moveCursor,
   toggleSelectAll,
   resetSelections,
   isGroupSelected,
@@ -773,10 +773,10 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
     } else if (hasCursor(rows, focusedRowKey.value)) loadMoreThenOpenEdge(offset, 'focus')
   }
 
-  // Shift+arrow ticks the run from where it began (see extendRange). A row carries every thread it
-  // stands for, so shifting onto a stack takes its whole run and onto a header takes the day — the
-  // same sets their checkboxes select.
-  if (e.shiftKey && newIDs.length) extendRange(prevIDs.length ? prevIDs : newIDs, newIDs)
+  // Shift+arrow ticks from where the run began to the cursor (see moveCursor). A row carries every
+  // thread it stands for, so shifting onto a stack takes its whole run and onto a header takes the
+  // day — the same sets their checkboxes select.
+  moveCursor(prevIDs, newIDs, e.shiftKey)
 }
 // The actions on the ticked threads, the same set the All accounts list offers (see selectActions).
 const selectActions = buildSelectActions(
