@@ -28,20 +28,32 @@ vi.mock('frappe-ui/editor', async (importOriginal) => ({
 }))
 vi.mock('@/apps/mail/utils/mentionSuggestion', () => ({ createMentionSuggestion: () => ({}) }))
 vi.mock('@/apps/mail/resources', () => ({ getAttachmentUrl: vi.fn() }))
-vi.mock('@/api', () => ({
-  api: {
-    mail: {
-      messages: { create: 'create', updateDraft: 'updateDraft', deleteDraft: 'deleteDraft' },
-      scheduled: { cancel: 'cancel' },
-      attachments: { fromDrive: 'fromDrive' },
+vi.mock('@/api', async () => {
+  const { getCurrentScope, onScopeDispose } = await import('vue')
+  return {
+    api: {
+      mail: {
+        messages: { create: 'create', updateDraft: 'updateDraft', deleteDraft: 'deleteDraft' },
+        scheduled: { cancel: 'cancel' },
+        attachments: { fromDrive: 'fromDrive' },
+      },
     },
-  },
-  client: { mutation: (reference: string, input: unknown) => server.mutation(reference, input) },
-  useMutation: (reference: 'create' | 'updateDraft') => ({
-    run: (input: unknown) => server[reference](input),
-    isPending: false,
-  }),
-}))
+    client: { mutation: (reference: string, input: unknown) => server.mutation(reference, input) },
+    // As the real one does: the scope it was made in going away cancels what it has in flight.
+    useMutation: (reference: 'create' | 'updateDraft') => {
+      const cancels = new Set<() => void>()
+      if (getCurrentScope()) onScopeDispose(() => cancels.forEach((cancel) => cancel()))
+      return {
+        run: (input: unknown) =>
+          new Promise((resolve, reject) => {
+            cancels.add(() => reject(new DOMException('Aborted', 'AbortError')))
+            server[reference](input).then(resolve, reject)
+          }),
+        isPending: false,
+      }
+    },
+  }
+})
 vi.mock('@/apps/mail/utils', () => ({
   commitAfterUndo: vi.fn(),
   // The body goes out with the quote below it, as the real one sends it.
@@ -280,6 +292,22 @@ describe('saving a draft', () => {
     await composer.saveDraft()
     expect(composer.isSaveFailed.value).toBe(true)
     expect(composer.isDraftUpdated.value).toBe(true)
+  })
+
+  it('lets an autosave already on its way land when the composer closes', async () => {
+    const composer = compose()
+    let answer!: (value: unknown) => void
+    server.updateDraft.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+    composer.mail.html_body = '<p>Last words.</p>'
+    const saving = composer.saveDraft()
+
+    open = false
+    apps.splice(0).forEach((app) => app.unmount())
+    answer({ id: 'draft-2', status: 'Drafted', error: null })
+    await saving
+
+    expect(toastError).not.toHaveBeenCalled()
+    expect(composer.isSaveFailed.value).toBe(false)
   })
 
   it('keeps a draft whose save on close was refused, ready to reopen', async () => {
