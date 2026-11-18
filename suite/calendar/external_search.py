@@ -5,15 +5,14 @@ sorts, cuts and opens them as it does the mail server's.
 """
 
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import frappe
 from frappe.utils import get_datetime, now_datetime
 
 from suite.calendar.external import calendars_for, event_row, occurrences, stored_events
-from suite.mail.utils.dt import normalize_utc_z
-from suite.utils.dt import utcnow
+from suite.utils.dt import parse_iso_datetime, utcnow
 
 if TYPE_CHECKING:
     from suite.calendar.api import EventSearchFilters
@@ -53,8 +52,8 @@ def search(
     def wall_clock(value: str) -> datetime | None:
         if not value:
             return None
-        instant = datetime.fromisoformat(normalize_utc_z(value).replace("Z", "+00:00"))
-        return instant.astimezone(zone).replace(tzinfo=None)
+        instant = cast(datetime, parse_iso_datetime(value, zone.key, as_str=False))
+        return instant.replace(tzinfo=None)
 
     return _matching_events(
         user,
