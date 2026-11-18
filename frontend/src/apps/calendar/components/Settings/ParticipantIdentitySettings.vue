@@ -2,6 +2,14 @@
   <div class="flex flex-col gap-5">
     <SettingsDialogActions>
       <Button icon-left="lucide-plus" :label="__('New')" @click="showAddDialog" />
+      <Button
+        v-if="form"
+        :label="__('Save')"
+        variant="solid"
+        :disabled="isSaveBlocked"
+        :loading="updateIdentity.isPending"
+        @click="save()"
+      />
     </SettingsDialogActions>
     <template v-if="participantIdentities?.data?.length">
       <div class="flex min-h-full flex-col">
@@ -36,13 +44,15 @@
               :label="__('Set as default invite address')"
             />
 
-            <Button
-              :label="__('Delete')"
-              class="min-h-7"
-              variant="outline"
-              theme="red"
-              @click="showDeleteDialog = true"
-            />
+            <div>
+              <Button
+                :label="__('Delete')"
+                class="min-h-7"
+                variant="outline"
+                theme="red"
+                @click="openDeleteDialog"
+              />
+            </div>
           </template>
         </div>
       </div>
@@ -60,15 +70,6 @@
         }}
       </p>
     </div>
-    <Button
-      v-if="form"
-      class="self-end"
-      :label="__('Save')"
-      variant="solid"
-      :disabled="isSaveBlocked"
-      :loading="updateIdentity.isPending"
-      @click="save()"
-    />
 
     <Dialog
       v-model:open="showAddDialogState"
@@ -187,6 +188,9 @@ const showDeleteDialog = ref(false)
 const newName = ref('')
 const newEmail = ref('')
 const newDefault = ref(false)
+function openDeleteDialog() {
+  showDeleteDialog.value = true
+}
 function showAddDialog() {
   newName.value = ''
   newEmail.value = ''

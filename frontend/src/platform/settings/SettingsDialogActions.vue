@@ -1,6 +1,6 @@
 <!--
-  Moves its content onto the title line of the `<SettingsDialogRow>` dialog it renders in, so a
-  part's own buttons sit beside its title. Outside a row dialog the content stays where it is.
+  Moves its content to the bottom of the `<SettingsDialogRow>` dialog it renders in, so a part's
+  own buttons are the dialog's actions. Outside a row dialog the content stays where it is.
 -->
 <template>
   <Teleport :to="target" :disabled="isInPlace">

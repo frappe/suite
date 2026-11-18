@@ -1,7 +1,13 @@
 <template>
   <div class="flex flex-col gap-3">
     <SettingsDialogActions>
-      <Button icon-left="lucide-plus" :label="__('New')" :size="buttonSize" @click="addSignature" />
+      <Button
+        variant="solid"
+        icon-left="lucide-plus"
+        :label="__('New')"
+        :size="buttonSize"
+        @click="addSignature"
+      />
     </SettingsDialogActions>
     <div v-if="signatures?.data?.length">
       <div

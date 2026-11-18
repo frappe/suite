@@ -2,6 +2,7 @@
   <div class="flex flex-col gap-3">
     <SettingsDialogActions>
       <Button
+        variant="solid"
         icon-left="lucide-plus"
         :label="__('New')"
         :size="buttonSize"

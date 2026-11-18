@@ -8,7 +8,7 @@
         :loading="pushSubscriptions.isFetching"
         @click="pushSubscriptions.refetch().catch(() => {})"
       />
-      <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
+      <Button variant="solid" icon-left="lucide-plus" :label="__('New')" @click="openAddModal" />
     </SettingsDialogActions>
     <template v-if="rows.length">
       <!-- A long list scrolls in its own box, so the dialog stays short. -->
@@ -71,6 +71,9 @@ const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
 const showDeleteModal = ref(false)
 const renewing = ref(false)
+function openAddModal() {
+  showAddModal.value = true
+}
 
 // Push subscriptions are user-scoped (not account-scoped), so they're fetched here rather than from the
 // account store. A high limit keeps this a single request — a user has at most a handful of devices.

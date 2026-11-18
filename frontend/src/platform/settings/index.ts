@@ -29,7 +29,7 @@ export const settingsTab = ref<SettingsTabId | undefined>()
  */
 export const settingsSection = ref<string | undefined>()
 
-/** The element on a row dialog's title line that `<SettingsDialogActions>` teleports into. */
+/** The element at a row dialog's bottom that `<SettingsDialogActions>` teleports into. */
 export const SETTINGS_DIALOG_ACTIONS_KEY: InjectionKey<Readonly<Ref<HTMLElement | null>>> =
   Symbol('settings-dialog-actions')
 

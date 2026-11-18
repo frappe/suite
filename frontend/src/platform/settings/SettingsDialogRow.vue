@@ -5,13 +5,9 @@
     <Button :label="action" :aria-label="actionName" @click="open" />
   </SettingsRow>
   <Dialog v-model:open="isOpen" :title :size>
-    <!-- A part's own buttons. They sit on the title's line, left of the close button, where
-         Dialog leaves room. A phone has no room there, so they keep a line of their own. -->
-    <div
-      ref="actions"
-      class="flex items-center justify-end gap-2 empty:hidden max-md:mb-3 md:absolute md:right-16 md:top-5 md:h-7"
-    />
     <slot :close />
+    <!-- A part's own buttons. They end the dialog, spaced like Dialog's own actions -->
+    <div ref="actions" class="mt-10 flex justify-end gap-2 pb-1 empty:hidden" />
   </Dialog>
 </template>
 

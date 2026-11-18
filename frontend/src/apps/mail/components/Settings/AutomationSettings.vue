@@ -8,7 +8,7 @@
         :tooltip="__('Regenerate the folder automation script from your saved folder rules.')"
         @click="rebuildAutomationSubmit()"
       />
-      <Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
+      <Button variant="solid" icon-left="lucide-plus" :label="__('New')" @click="addScript" />
     </SettingsDialogActions>
     <div v-if="filteredScripts.length">
       <div

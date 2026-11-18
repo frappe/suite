@@ -7,6 +7,15 @@
         :size="buttonSize"
         @click="showAddIdentity"
       />
+      <Button
+        v-if="draft"
+        :label="__('Save')"
+        variant="solid"
+        :size="buttonSize"
+        :disabled="isSaveBlocked"
+        :loading="saveIdentity.isPending"
+        @click="save()"
+      />
     </SettingsDialogActions>
     <template v-if="identities?.data?.length">
       <div class="flex min-h-full flex-col">
@@ -135,16 +144,6 @@
         {{ __('Send-as addresses are the addresses you send mail as. Create one to get started.') }}
       </p>
     </div>
-    <Button
-      v-if="draft"
-      class="self-end"
-      :label="__('Save')"
-      variant="solid"
-      :size="buttonSize"
-      :disabled="isSaveBlocked"
-      :loading="saveIdentity.isPending"
-      @click="save()"
-    />
 
     <Dialog
       v-model:open="showAddIdentityDialog"
