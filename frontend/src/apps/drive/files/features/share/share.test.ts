@@ -614,15 +614,26 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     winner: false,
   })
 
+  interface SetupOptions {
+    /** Where the caller's role comes from, as the explanation answers it. */
+    source?: string
+    /** The caller's Personal root, when they have one in this test. */
+    personalRoot?: string
+  }
+
   /**
    * A node `doc` under `folder` under `root`, and a caller whose explanation is
    * `rows`. `asked` records the role each confirm says the caller would keep.
    */
-  function setup(local: DriveGrant[], rows: ExplainRow[], role = 50, source = 'grant') {
+  function setup(
+    local: DriveGrant[],
+    rows: ExplainRow[],
+    { source = 'grant', personalRoot }: SetupOptions = {},
+  ) {
     const server = fakeServer((call) => {
       if (call.id === 'node_get') return node('document')
       if (call.id === 'node_grants' && call.input.principal)
-        return { explain: { role, source, rows } }
+        return { explain: { role: 50, source, rows } }
       if (call.id === 'node_grants') return { grants: local, inherited: [] }
       if (call.id === 'node_delete_grant') return { count: 3 }
       return { grant: local[0] }
@@ -632,6 +643,9 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     const share = useShare('doc', {
       client: testClient(server.transport),
       me: ME,
+      roots: personalRoot
+        ? { personal: { node: personalRoot, title: 'My files' }, organization: null }
+        : null,
       confirmLoss: async (after) => {
         asked.push(after)
         return answer
@@ -696,7 +710,7 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
   })
 
   it("does not ask Drive's own account, which holds every right", async () => {
-    const { share, asked } = setup([grant('$GENERAL', 10)], [], 50, 'system')
+    const { share, asked } = setup([grant('$GENERAL', 10)], [], { source: 'system' })
     await share.load()
 
     await share.setGeneral('$GENERAL', 20)
@@ -713,6 +727,43 @@ describe('share writes that touch the caller (spec §7.4, §7.9)', () => {
     await share.setRole(share.sections.value!.people[1]!, 10)
     expect(asked).toHaveLength(0)
     expect(writes()).toHaveLength(1)
+  })
+
+  it('does not ask when the caller shares a file in their own Drive with everyone or a group', async () => {
+    const { share, asked, writes } = setup(
+      [],
+      [row('root', 0, ME, 50), row('root', 0, '$GROUP:Leads', 10)],
+      { personalRoot: 'root' },
+    )
+    await share.load()
+
+    await share.setGeneral('$GENERAL', 10)
+    await share.add(['$GROUP:Leads'], 20, false)
+    expect(asked).toEqual([])
+    expect(writes()).toHaveLength(2)
+  })
+
+  it('still asks before removing the group that gives the caller Manage in their own Drive', async () => {
+    // A group the caller is in holds Manage here and everyone at the org holds
+    // View; Drive does not restore the caller's Manage when a row is removed.
+    const { share, asked, writes } = setup(
+      [grant('$GROUP:Leads', 50), grant('$GENERAL', 10)],
+      [row('doc', 2, '$GROUP:Leads', 50), row('doc', 2, '$GENERAL', 10)],
+      { personalRoot: 'root' },
+    )
+    await share.load()
+
+    await share.remove(share.sections.value!.people[0]!)
+    expect(asked).toEqual([10])
+    expect(writes()).toEqual([])
+  })
+
+  it('still asks when everyone at the org would lower the caller outside their own Drive', async () => {
+    const { share, asked } = setup([], [row('root', 0, ME, 50)], { personalRoot: 'elsewhere' })
+    await share.load()
+
+    await share.setGeneral('$GENERAL', 10)
+    expect(asked).toEqual([10])
   })
 
   it('keeps the org-wide expiry on a role change, and counts only the items inside', async () => {

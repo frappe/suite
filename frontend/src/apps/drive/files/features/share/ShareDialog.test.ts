@@ -50,7 +50,10 @@ vi.mock('@/platform/feedback', () => ({
   },
 }))
 vi.mock('../../internal/icons', () => ({ nodeIcon: () => '', nodeIconTint: () => '' }))
-vi.mock('../../internal/locations', () => ({ useLocationTitle: () => () => '' }))
+vi.mock('../../internal/locations', () => ({
+  useLocationTitle: () => () => '',
+  useRoots: () => () => null,
+}))
 vi.mock('./useShare', () => ({
   useShare: () => ({
     node: { value: null },

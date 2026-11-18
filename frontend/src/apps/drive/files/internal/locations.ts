@@ -76,16 +76,22 @@ export function trashLocation(
 }
 
 /**
- * `locationTitle` bound to the caller's roots, for templates. Call it in a
- * component's setup. The roots the page arrived with name a root until the
- * query answers, so "My files" never shows first as the root's stored title.
+ * The caller's roots. Call it in a component's setup. The roots the page
+ * arrived with answer until the query does, so "My files" never shows first
+ * as the root's stored title.
  */
-export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
+export function useRoots(): () => DriveRoots | null {
   const session = useSession()
   // A guest has no roots to discover (spec §10.13).
   const discovered = useQuery(api.drive.roots.list, () =>
     session.status.value === 'authenticated' ? {} : false,
   )
   const booted = bootRoots()
-  return (node) => locationTitle(node, discovered.data ?? booted)
+  return () => discovered.data ?? booted
+}
+
+/** `locationTitle` bound to the caller's roots, for templates. Call it in a component's setup. */
+export function useLocationTitle(): (node: Pick<DriveBreadcrumb, 'name' | 'title'>) => string {
+  const roots = useRoots()
+  return (node) => locationTitle(node, roots())
 }
