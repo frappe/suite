@@ -7,7 +7,7 @@ import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail, useScreenSize } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
-import { useMailCompose } from '.'
+import { useMailCompose, type MailRecipient } from '.'
 
 // Another app writing to people through Mail's public interface, the way the calendar's "Email
 // participants" does: a page that has never opened Mail, against a small Frappe that knows one user
@@ -166,11 +166,18 @@ afterEach(() => {
 })
 
 const PAGE = '/calendar/week/2026-11-18?event=standup'
-const PARTICIPANTS = ['dana@brightwave.example', 'lee@northwind.example']
+// The event's people, one of them with no name on the event.
+const PARTICIPANTS: MailRecipient[] = [
+  { email: 'dana@brightwave.example', display_name: 'Dana Whitfield' },
+  { email: 'lee@northwind.example' },
+]
+const ADDRESSES = PARTICIPANTS.map(({ email }) => email)
+// What the To field's chips say: the name where there is one, else the address.
+const CHIPS = ['Dana Whitfield', 'lee@northwind.example']
 
 /** Another app's page, open on an event, with an "Email participants" button. */
 async function openPage(
-  participants = PARTICIPANTS,
+  participants: MailRecipient[] = PARTICIPANTS,
 ): Promise<{ router: Router; leave: () => void }> {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -230,17 +237,21 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     button('Email participants')!.click()
 
     await vi.waitFor(() => expect(composer()).not.toBeNull(), { timeout: 15_000 })
-    await vi.waitFor(() => expect(recipients()).toEqual(PARTICIPANTS))
+    await vi.waitFor(() => expect(recipients()).toEqual(CHIPS))
     expect(router.currentRoute.value.fullPath).toBe(PAGE)
   })
 
   it('leaves out every address that is the reader’s own in Mail', async () => {
-    await openPage(['Maya@Example.com', ...PARTICIPANTS, 'maya.lead@example.com'])
+    await openPage([
+      { email: 'Maya@Example.com' },
+      ...PARTICIPANTS,
+      { email: 'maya.lead@example.com', display_name: 'Maya' },
+    ])
 
     button('Email participants')!.click()
 
     await vi.waitFor(() => expect(composer()).not.toBeNull(), { timeout: 15_000 })
-    await vi.waitFor(() => expect(recipients()).toEqual(PARTICIPANTS))
+    await vi.waitFor(() => expect(recipients()).toEqual(CHIPS))
   })
 
   it('on a desktop, closing the composer leaves the page where it was', async () => {
@@ -265,7 +276,7 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
       { timeout: 15_000 },
     )
     expect(composer()).toBeNull()
-    expect(takePendingCompose()?.to?.map((r) => r.email)).toEqual(PARTICIPANTS)
+    expect(takePendingCompose()?.to).toEqual(PARTICIPANTS)
 
     router.back()
     await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe(PAGE))
@@ -283,7 +294,7 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
 
       await vi.waitFor(() => expect(open).toHaveBeenCalledOnce(), { timeout: 15_000 })
       expect(decodeURIComponent(String(open.mock.calls[0][0]))).toBe(
-        `mailto:${PARTICIPANTS.join(',')}`,
+        `mailto:${ADDRESSES.join(',')}`,
       )
       expect(composer()).toBeNull()
       expect(router.currentRoute.value.fullPath).toBe(PAGE)

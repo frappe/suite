@@ -4,6 +4,7 @@ import { api, useQuery } from '@/api'
 import MailIcon from '@/apps/mail/AreaIcon.vue'
 import type { MountedComposeHost } from '@/apps/mail/composables/mountComposeHost'
 import { showMailReminder } from '@/apps/mail/reminders'
+import type { DraftRecipient } from '@/apps/mail/types'
 import type { AreaDefinition } from '@/platform/contracts'
 import { toast } from '@/platform/feedback'
 import { realtime } from '@/platform/realtime'
@@ -66,12 +67,15 @@ export function useInboxSummary(enabled: () => boolean = () => true) {
   return useQuery(api.mail.inbox.summary, () => (enabled() ? {} : false))
 }
 
+/** Someone to write to: the address, and the name the chip shows when there is one. */
+export type MailRecipient = Pick<DraftRecipient, 'email' | 'display_name'>
+
 export interface MailCompose {
   /**
    * Opens Mail's composer addressed to `to`, less the reader's own addresses. Resolves once it has
    * been asked to open, or once the failure to load Mail's code has been said.
    */
-  compose(to: readonly string[]): Promise<void>
+  compose(to: readonly MailRecipient[]): Promise<void>
 }
 
 /**

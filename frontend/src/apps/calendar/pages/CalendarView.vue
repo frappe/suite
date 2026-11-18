@@ -51,7 +51,7 @@ import {
   scopeOptions,
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
-import { useMailCompose } from '@/apps/mail'
+import { useMailCompose, type MailRecipient } from '@/apps/mail'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { LoadFailed } from '@/platform/load-failed'
 import { appPageMeta } from '@/platform/page-meta'
@@ -912,9 +912,9 @@ watch(selectedCalendarEvent, (open) => {
 // everyone is where attention goes next, so the card or sheet steps aside first, as it does in
 // Mail, rather than sitting over the window.
 const mailCompose = useMailCompose()
-const emailParticipants = async (emails: string[]) => {
+const emailParticipants = async (people: MailRecipient[]) => {
   await closeEventDetail()
-  await mailCompose.compose(emails)
+  await mailCompose.compose(people)
 }
 
 // A deep link can only be built from the ids its author has. The grid's own

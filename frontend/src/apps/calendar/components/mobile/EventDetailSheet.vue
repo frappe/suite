@@ -19,7 +19,7 @@
       @close="emit('close')"
       @edit="emit('edit')"
       @reload-events="emit('reloadEvents')"
-      @email-participants="(emails: string[]) => emit('emailParticipants', emails)"
+      @email-participants="(people: MailRecipient[]) => emit('emailParticipants', people)"
     />
   </BottomSheet>
 </template>
@@ -29,6 +29,7 @@ import { BottomSheet } from 'frappe-ui'
 import { ref, watch } from 'vue'
 
 import EventDetail from '@/apps/calendar/components/EventDetail.vue'
+import type { MailRecipient } from '@/apps/mail'
 
 const props = defineProps<{ calendarEvent: any | null }>()
 
@@ -44,6 +45,6 @@ const emit = defineEmits<{
   close: []
   edit: []
   reloadEvents: []
-  emailParticipants: [emails: string[]]
+  emailParticipants: [people: MailRecipient[]]
 }>()
 </script>

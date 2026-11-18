@@ -68,6 +68,7 @@ import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { userStore } from '@/apps/mail/stores/user'
+import type { DraftRecipient } from '@/apps/mail/types'
 import {
   useComposeMail,
   useDiscardingDrafts,
@@ -139,8 +140,8 @@ const openEventInCalendar = () => {
 // From the event's popover: writing to everyone is where attention goes next, so the popover
 // steps aside rather than sitting over the page beside the composer.
 const { requestCompose } = useComposeMail()
-const emailEventParticipants = (emails: string[]) => {
+const emailEventParticipants = (people: DraftRecipient[]) => {
   selectedEvent.value = null
-  requestCompose({ to: emails.map((email) => ({ email })) })
+  requestCompose({ to: people })
 }
 </script>

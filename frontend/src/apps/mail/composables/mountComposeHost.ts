@@ -4,6 +4,7 @@ import { api, client } from '@/api'
 import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import MailScope from '@/apps/mail/components/MailScope.vue'
 import { userStore } from '@/apps/mail/stores/user'
+import type { DraftRecipient } from '@/apps/mail/types'
 import { useComposeMail } from '@/apps/mail/utils/composables'
 
 /** Mail's composer on another app's page, as `useMailCompose` (the package root) mounts it. */
@@ -12,7 +13,7 @@ export interface MountedComposeHost {
    * Opens the composer addressed to `to`, less every address that is the reader's own in Mail.
    * With no Mail account to write from, it hands the same people to the device's mail app instead.
    */
-  compose(to: readonly string[]): Promise<void>
+  compose(to: readonly Pick<DraftRecipient, 'email' | 'display_name'>[]): Promise<void>
   unmount(): void
 }
 
@@ -60,12 +61,15 @@ export function mountComposeHost(context: AppContext): MountedComposeHost {
       // The page may have gone while that loaded: a request left now would open the window the
       // next time Mail does.
       if (unmounted) return
-      const others = to.filter((email) => !own.has(email.toLowerCase()))
+      const others = to.filter(({ email }) => !own.has(email.toLowerCase()))
       if (!store.accountId) {
-        window.open(`mailto:${others.map(encodeURIComponent).join(',')}`, '_self')
+        window.open(
+          `mailto:${others.map(({ email }) => encodeURIComponent(email)).join(',')}`,
+          '_self',
+        )
         return
       }
-      requestCompose({ to: others.map((email) => ({ email })) })
+      requestCompose({ to: [...others] })
     },
     unmount() {
       unmounted = true
