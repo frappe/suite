@@ -1387,11 +1387,15 @@ const syncWithSource = (source = sourceMessages()) => {
   thread.value.forEach((mail) => {
     const fresh = freshByCopy.get(mail.id)
     if (!fresh) return
-    mail.mailboxes = fresh.mailboxes
+    // Folders and star are each copy's own, so they come from the copy this card is: taken from the
+    // delivered copy, the Sent one claimed the Inbox, and an Undo of its trash put it back there,
+    // out of Sent (see mailCopies).
+    const copy = mailCopies(fresh).find((each) => each.id === mail.id) ?? fresh
+    mail.mailboxes = copy.mailboxes
     // Waiting again after an undo: a decision made here no longer holds, so the banner returns.
     mail.unscreened = fresh.unscreened
     // A star set or cleared from the list row, or on another device, reaches the open thread.
-    mail.flagged = fresh.flagged
+    mail.flagged = copy.flagged
     mail.pinned_in = fresh.pinned_in
     // A reaction landing on a message already open. It comes with the copy actions have to reach.
     mail.reactions = fresh.reactions
