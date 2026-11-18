@@ -1385,12 +1385,12 @@ const syncWithSource = (source = sourceMessages()) => {
   // one card it has, not added as a second.
   const freshByCopy = byCopyId(source)
   thread.value.forEach((mail) => {
-    const fresh = freshByCopy.get(mail.id)
-    if (!fresh) return
+    const found = freshByCopy.get(mail.id)
+    if (!found) return
+    const { message: fresh, copy } = found
     // Folders and star are each copy's own, so they come from the copy this card is: taken from the
     // delivered copy, the Sent one claimed the Inbox, and an Undo of its trash put it back there,
     // out of Sent (see mailCopies).
-    const copy = mailCopies(fresh).find((each) => each.id === mail.id) ?? fresh
     mail.mailboxes = copy.mailboxes
     // Waiting again after an undo: a decision made here no longer holds, so the banner returns.
     mail.unscreened = fresh.unscreened

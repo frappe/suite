@@ -695,11 +695,12 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     if (isDiscarding.value) return
     // The toast, with its Undo, goes up as the answer lands: the server holds delivery for the undo
     // window from the send, so an Undo raised after the thread's own fetch could outlive the hold.
+    confirmResult(result)
     if (status === 'Submitted' && options.showSent) {
       // What the saves owed the list goes with it: paid on the way out, it rebuilt the thread.
       listOwesReload = false
-      confirmResult(result)
-      return await options.showSent().catch(reloadMails)
+      await options.showSent().catch(reloadMails)
+      return
     }
     if (!isInThread || status === 'Submitted') reloadMails()
     // In a thread the list is where the messages come from — the pane is built from the rows the
@@ -719,7 +720,6 @@ export const useComposeMail = (options: ComposeMailOptions) => {
         showDraftInList(scopeAccountId.value, thread_id, id, mail.html_body)
       }
     }
-    confirmResult(result)
   }
   // Says how the save or send went, once the composer is off screen (a send is always said).
   const confirmResult = ({

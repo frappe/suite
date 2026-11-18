@@ -97,8 +97,8 @@ describe('a message whose leading copy changed', () => {
   const delivered = mail({ duplicates: [sentCopy] })
 
   it('is found under the copy the thread already shows', () => {
-    expect(byCopyId([delivered]).get('s1')).toBe(delivered)
-    expect(byCopyId([delivered]).get('d1')).toBe(delivered)
+    expect(byCopyId([delivered]).get('s1')).toEqual({ message: delivered, copy: sentCopy })
+    expect(byCopyId([delivered]).get('d1')).toEqual({ message: delivered, copy: delivered })
   })
 
   it('gives the shown copy the delivered one to act on, and not itself twice', () => {

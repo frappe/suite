@@ -27,12 +27,17 @@ export const mailCopies = (mail: Mail): MailCopy[] => [mail, ...(mail.duplicates
 export const isMailSeen = (mail: Mail): boolean => mailCopies(mail).some((copy) => !!copy.seen)
 
 /**
- * Each row of `mails` under the id of every copy it stands for. Which copy the server leads with
- * changes: a reply to yourself is its Sent copy until it is delivered, and the delivered copy from
- * then on. A thread already showing one finds the same message under the other here.
+ * Each row of `mails` under the id of every copy it stands for, with that copy. Which copy the server
+ * leads with changes: a reply to yourself is its Sent copy until it is delivered, and the delivered
+ * copy from then on. A thread already showing one finds the same message under the other here, and
+ * the copy it shows, whose folders and star are its own.
  */
-export const byCopyId = (mails: Mail[]): Map<string, Mail> =>
-  new Map(mails.flatMap((mail) => mailCopyIds(mail).map((id) => [id, mail] as const)))
+export const byCopyId = (mails: Mail[]): Map<string, { message: Mail; copy: MailCopy }> =>
+  new Map(
+    mails.flatMap((message) =>
+      mailCopies(message).map((copy) => [copy.id, { message, copy }] as const),
+    ),
+  )
 
 /** The copies of `fresh` other than the one shown under `id`: what that row's actions also reach. */
 export const copiesBeside = (fresh: Mail, id: string): MailCopy[] =>
