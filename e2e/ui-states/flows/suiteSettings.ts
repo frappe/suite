@@ -15,10 +15,10 @@ interface AppTab {
 
 const MAIL_TABS = {
 	mailGeneral: { nav: "General", marker: "Block remote images", description: "Mail > General: Reading (Split view, Group by date, Block remote images) and the mailbox storage line. Each switch saves as it is flipped; the page has no Save." },
-	mailSending: { nav: "Sending", marker: "Undo send", description: "Mail > Sending: one short list. The default address, Undo send and two switches are set in place; Send-as addresses, Signatures and Auto-reply each have a button that opens them in a dialog. Sent copies, two switches, sits below under its own heading." },
+	mailSending: { nav: "Sending", marker: "Undo send", description: "Mail > Sending: three headings. Addresses and signatures has Send-as addresses and Signatures, each with a button that opens it in a dialog. When you send has Undo send and two switches, set in place. Away has Auto-reply, which shows where it stands, such as Off, beside its Edit button." },
 	mailInbox: { nav: "Inbox", marker: "Screen new senders", description: "Mail > Inbox: one short list. Screen new senders, what blocking does and the Inbox categories are set in place; Screened senders, Folders and Rules each have a button that opens them in a dialog." },
 	mailImportExport: { nav: "Import and export", marker: "Bring in mail or contacts from a file.", description: "Mail > Import and export: Import and Export, each with a button that opens it in a dialog." },
-	mailAdvanced: { nav: "Advanced", marker: "Login details", description: "Mail > Advanced: one short list of Login details, Mail client setup, API access and Push subscriptions, each with a button that opens it in a dialog." },
+	mailAdvanced: { nav: "Advanced", marker: "Login details", description: "Mail > Advanced: one short list of Login details, Mail client setup, API access and Push subscriptions, each with a button that opens it in a dialog. Sent copies, two switches, sits below under its own heading." },
 } as const satisfies Record<string, AppTab>;
 
 const CALENDAR_TABS = {
