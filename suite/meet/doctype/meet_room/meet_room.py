@@ -53,6 +53,23 @@ class MeetRoom(Document):
         if not self.name:
             self.name = generate()
 
+    def notify_update(self):
+        if (
+            frappe.flags.in_import
+            or frappe.flags.in_patch
+            or frappe.flags.in_migrate
+            or frappe.flags.in_install
+        ):
+            return
+
+        frappe.publish_realtime(
+            "doc_update",
+            {"modified": self.modified, "doctype": self.doctype, "name": self.name},
+            doctype=self.doctype,
+            docname=self.name,
+            after_commit=True,
+        )
+
     def validate(self):
         self.validate_recording_policy()
         self.validate_controlled_updates()
