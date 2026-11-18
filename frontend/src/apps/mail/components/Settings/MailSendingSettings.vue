@@ -11,9 +11,7 @@
           :action="__('Manage')"
           size="2xl"
         >
-          <template #default="{ close }">
-            <IdentitySettings @saved="close" />
-          </template>
+          <IdentitySettings />
         </SettingsDialogRow>
         <SettingsDialogRow
           :title="__('Signatures')"

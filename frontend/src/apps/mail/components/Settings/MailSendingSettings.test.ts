@@ -168,26 +168,6 @@ beforeEach(() => {
 })
 afterEach(() => app.unmount())
 
-it('closes Send-as addresses once the address is saved', async () => {
-  const root = mount()
-  await saveField(await openRow(root, 'Send-as addresses'), 'Display name', 'Maya K')
-  expect(state.save).toHaveBeenCalledWith('save_identity', {
-    account: 'personal',
-    id: 'a',
-    name: 'Maya K',
-    reply_to: [],
-    bcc: [],
-    html_signature: '',
-  })
-  expect(root.querySelector('dialog')).toBeNull()
-})
-it('keeps Send-as addresses open, with what was typed, when the save is refused', async () => {
-  state.save.mockRejectedValue(new Error('Not your address'))
-  const root = mount()
-  await saveField(await openRow(root, 'Send-as addresses'), 'Display name', 'Maya K')
-  const name = root.querySelector('dialog input[aria-label="Display name"]')
-  expect(requireTestElement(name, HTMLInputElement).value).toBe('Maya K')
-})
 it('closes Auto-reply once the reply is saved', async () => {
   const root = mount()
   await saveField(await openRow(root, 'Auto-reply'), 'Subject', 'Back on Monday')
