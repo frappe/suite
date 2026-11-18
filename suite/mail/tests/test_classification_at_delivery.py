@@ -211,9 +211,11 @@ def _lists(filter: dict, email: dict) -> bool:
 class InboxBackfill(unittest.TestCase):
     """Mail that was in an Inbox before the server gave categories is given one, once."""
 
-    def backfill(self, *emails: dict, user: str | None = USER, refused: tuple[str, ...] = ()) -> _Mail:
-        """Run the backfill over a server holding `emails`, two to a batch, which declines to mark
-        the `refused` ones."""
+    def backfill(
+        self, *emails: dict, user: str | None = USER, refused: tuple[str, ...] = (), most: int = 100
+    ) -> _Mail:
+        """Run the backfill over a server holding `emails`, newest first, two to a batch and `most`
+        in all, which declines to mark the `refused` ones."""
 
         mail = _Mail(*emails)
         mail.refused = set(refused)
@@ -234,6 +236,7 @@ class InboxBackfill(unittest.TestCase):
             mock.patch.multiple(
                 backfill,
                 BATCH_SIZE=2,
+                MAX_MESSAGES=most,
                 get_enabled_account_user=mock.Mock(return_value=user),
                 user_context=mock.MagicMock(),
                 invalidate_jmap_mailboxes_cache=mock.Mock(),
@@ -303,6 +306,25 @@ class InboxBackfill(unittest.TestCase):
         self.assertEqual(
             self.categories(mail), {"refused-1": [], "refused-2": [], "draft": [], "post": ["forums"]}
         )
+
+    def test_only_the_newest_mail_of_a_large_inbox_is_classified(self):
+        mail = self.backfill(*(_email(f"post-{i}", headers=LIST_POST) for i in range(1, 6)), most=3)
+
+        self.assertEqual(
+            self.categories(mail),
+            {"post-1": ["forums"], "post-2": ["forums"], "post-3": ["forums"], "post-4": [], "post-5": []},
+        )
+
+    def test_mail_that_cannot_be_marked_counts_towards_what_is_looked_at(self):
+        mail = self.backfill(
+            _email("refused-1", headers=LIST_POST),
+            _email("refused-2", headers=LIST_POST),
+            _email("post", headers=LIST_POST),
+            refused=("refused-1", "refused-2"),
+            most=2,
+        )
+
+        self.assertEqual(self.categories(mail), {"refused-1": [], "refused-2": [], "post": []})
 
     def test_the_account_of_a_disabled_user_is_not_read(self):
         mail = self.backfill(_email("post", headers=LIST_POST), user=None)

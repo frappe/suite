@@ -5,7 +5,8 @@
 The automation script marks mail as it is delivered (see `sieve`), and a fetch marks what it
 reads. Neither reaches mail that was delivered earlier and that no site has read: it would stay
 out of its tab until someone scrolled that far. This goes through each Inbox once and classifies
-that mail.
+that mail, newest first, up to `MAX_MESSAGES` of it: an Inbox can hold millions of messages, and
+the older ones are still classified when they are fetched.
 """
 
 import frappe
@@ -23,6 +24,10 @@ from suite.utils import enqueue_job, user_context
 
 # How many messages are read and marked per round. Their headers come along, so it is kept small.
 BATCH_SIZE = 100
+
+# How many of an Inbox's uncategorised messages are looked at, newest first. What lies beyond is
+# left to the fetch that first reads it.
+MAX_MESSAGES = 10_000
 
 # An account's Inbox is read a batch at a time, which for a large one takes a while.
 JOB_TIMEOUT = 3600
@@ -56,7 +61,7 @@ def backfill_inboxes(accounts: list[str] | None = None) -> None:
 
 
 def backfill_inbox(account: str) -> None:
-    """Classify the mail in the account's Inbox that has no category.
+    """Classify the newest `MAX_MESSAGES` of the mail in the account's Inbox that has no category.
 
     An account whose user is disabled or gone is left alone: the mail server lets nobody in as
     that user. A message that cannot be marked - a draft left in the Inbox, an account that may
@@ -84,20 +89,21 @@ def backfill_inbox(account: str) -> None:
         }
         properties = ["id", "mailboxIds", "keywords", "from", *EMAIL_PROPERTIES]
 
-        position = 0
-        while True:
+        position = examined = 0
+        while examined < MAX_MESSAGES:
             with client.batch() as b:
                 query = b.mail.email.query(
                     filter=uncategorised,
                     sort=[{"property": "receivedAt", "isAscending": False}],
                     position=position,
-                    limit=BATCH_SIZE,
+                    limit=min(BATCH_SIZE, MAX_MESSAGES - examined),
                 )
                 get = b.mail.email.get(ids=query.ref_ids(), properties=properties)
             emails = [email.to_wire() for email in get.result.items]
             if not emails:
                 return
 
+            examined += len(emails)
             classify_emails(client, account, emails, mailboxes)
             # Mail that was marked has left the list; what is still unmarked stays at its head.
             position += sum(1 for email in emails if not get_category(email.get("keywords")))
