@@ -15433,8 +15433,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -15560,8 +15567,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -15915,8 +15929,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -16406,8 +16427,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -16533,8 +16561,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -16888,8 +16923,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -17651,8 +17693,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -17778,8 +17827,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -18430,8 +18486,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -18557,8 +18620,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",
@@ -18912,8 +18982,15 @@
                 "title": "From Name"
               },
               "from_email": {
-                "title": "From Email",
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "From Email"
               },
               "received_at": {
                 "title": "Received At",

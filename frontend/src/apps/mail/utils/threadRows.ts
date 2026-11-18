@@ -18,6 +18,7 @@ export function mailRow(row: WireMessage): Mail {
     ...row,
     message_id: row.message_id ?? '',
     from_name: row.from_name ?? '',
+    from_email: row.from_email ?? '',
     subject: row.subject ?? '',
     html_body: row.html_body ?? '',
     text_body: row.text_body ?? '',
@@ -34,6 +35,7 @@ export function mailRow(row: WireMessage): Mail {
     duplicates: row.duplicates?.map((copy) => ({
       ...copy,
       from_name: copy.from_name ?? '',
+      from_email: copy.from_email ?? '',
       mailboxes: copy.mailboxes.map((mailbox) => ({
         ...mailbox,
         mailbox_name: mailbox.mailbox_name ?? '',
@@ -52,6 +54,7 @@ export function threadRow(row: WireThread | SearchRow, account: string): Thread 
     archive: row.archive ?? undefined,
     trash: row.trash ?? undefined,
     from_name: row.from_name ?? '',
+    from_email: row.from_email ?? '',
     messages: 'messages' in row ? row.messages.map(mailRow) : [],
     mailboxes: row.mailboxes.map((mailbox) => ({
       ...mailbox,

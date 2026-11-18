@@ -5394,7 +5394,7 @@ export type GetThreadsOutputCopy = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetThreadsOutputMailboxRef>
   seen: 0 | 1
@@ -5415,7 +5415,7 @@ export type GetThreadsOutputMessage = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetThreadsOutputMailboxRef>
   seen: 0 | 1
@@ -5461,7 +5461,7 @@ export type GetThreadsOutputThread = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetThreadsOutputMailboxRef>
   seen: 0 | 1
@@ -5551,7 +5551,7 @@ export type GetUnifiedThreadsOutputCopy = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetUnifiedThreadsOutputMailboxRef>
   seen: 0 | 1
@@ -5572,7 +5572,7 @@ export type GetUnifiedThreadsOutputMessage = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetUnifiedThreadsOutputMailboxRef>
   seen: 0 | 1
@@ -5618,7 +5618,7 @@ export type GetUnifiedThreadsOutputThread = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetUnifiedThreadsOutputMailboxRef>
   seen: 0 | 1
@@ -5801,7 +5801,7 @@ export type GetThreadOutputCopy = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetThreadOutputMailboxRef>
   seen: 0 | 1
@@ -5822,7 +5822,7 @@ export type GetThreadOutputMessage = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<GetThreadOutputMailboxRef>
   seen: 0 | 1
@@ -5929,7 +5929,7 @@ export type SearchMailsOutputCopy = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<SearchMailsOutputMailboxRef>
   seen: 0 | 1
@@ -5950,7 +5950,7 @@ export type SearchMailsOutputMessage = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<SearchMailsOutputMailboxRef>
   seen: 0 | 1
@@ -5996,7 +5996,7 @@ export type SearchMailsOutputSearchRow = {
   id: string
   thread_id: string
   from_name: string | null
-  from_email: string
+  from_email: string | null
   received_at: string
   mailboxes: Array<SearchMailsOutputMailboxRef>
   seen: 0 | 1
