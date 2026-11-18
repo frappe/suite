@@ -112,6 +112,26 @@ afterEach(() => {
   root.remove()
 })
 
+// Opens thread `one` in an Inbox pane, as a list does, its messages whatever `query` holds.
+const openThread = async () => {
+  window.__ = (text: string) => text
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
+  })
+  app = createApp({
+    setup: () => () =>
+      h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
+  })
+  app.config.globalProperties.__ = window.__
+  app.use(router)
+  app.provide('$user', { data: {} })
+  app.provide('$dayjs', dayjs)
+  document.body.appendChild(root)
+  app.mount(root)
+  await nextTick()
+}
+
 const colorScheme = () =>
   new DOMParser()
     .parseFromString(root.querySelector('[data-frame]')!.getAttribute('srcdoc')!, 'text/html')
@@ -119,7 +139,6 @@ const colorScheme = () =>
     .getAttribute('content')
 
 it('offers a recoloured message as sent, shows it so, and drops the offer when the theme turns light', async () => {
-  window.__ = (text: string) => text
   query.current.data = [
     {
       id: 'one',
@@ -137,21 +156,7 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
       html_body: '<div><p>This week in the project.</p></div>',
     },
   ]
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
-  })
-  app = createApp({
-    setup: () => () =>
-      h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
-  })
-  app.config.globalProperties.__ = window.__
-  app.use(router)
-  app.provide('$user', { data: {} })
-  app.provide('$dayjs', dayjs)
-  document.body.appendChild(root)
-  app.mount(root)
-  await nextTick()
+  await openThread()
   await nextTick()
 
   expect(menu.bodyView).toBe('adapted')
@@ -169,28 +174,13 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
 })
 
 it('stands in outline until its messages arrive, then shows them in its place', async () => {
-  window.__ = (text: string) => text
   // Opened by its link: not in any list, so the pane fetches it, and the answer is still out.
   query.current = reactive({
     data: fromPartial<Partial<Mail>[] | undefined>(undefined),
     status: 'pending',
     refetch: async () => {},
   })
-  const router = createRouter({
-    history: createMemoryHistory(),
-    routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
-  })
-  app = createApp({
-    setup: () => () =>
-      h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
-  })
-  app.config.globalProperties.__ = window.__
-  app.use(router)
-  app.provide('$user', { data: {} })
-  app.provide('$dayjs', dayjs)
-  document.body.appendChild(root)
-  app.mount(root)
-  await nextTick()
+  await openThread()
 
   expect(root.querySelector('[role="status"]')).not.toBeNull()
   expect(root.querySelector('h1')).toBeNull()

@@ -146,7 +146,7 @@ export function usePaginatedThreads({
     })
   }
   // A refusal stands in for the list only while there is nothing to show: a failed refresh of a
-  // loaded list keeps its rows. Asking again shows the spinner, not the stale refusal.
+  // loaded list keeps its rows. Asking again shows the outline, not the stale refusal.
   const listState = computed<ThreadListState>(() => {
     const state = query()
     if (busy()) return 'loading'

@@ -8,7 +8,7 @@
   <div class="animate-pulse" role="status" :aria-label="__('Loading mail')">
     <!-- The first date header, where the list's rows sit under them (see MailGroupHeader). -->
     <div v-if="dateHeaders" :class="GROUP_HEADER_BOX_CLASS" data-outline="date-header">
-      <div v-if="showCheckbox" class="bg-surface-gray-3 mr-5 h-4 w-4 rounded-4" />
+      <div v-if="showCheckbox" class="bg-surface-gray-3 mr-5 h-4 w-4 rounded-full" />
       <div class="bg-surface-gray-3 h-3 w-12 rounded-4" />
     </div>
     <div v-for="(row, i) in ROWS" :key="i" :class="[ROW_BOX_CLASS, { '!py-1': isFullWidth }]">
@@ -17,7 +17,7 @@
         class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
         :class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
       >
-        <div v-if="showCheckbox" class="bg-surface-gray-3 h-4 w-4 rounded-4" />
+        <div v-if="showCheckbox" class="bg-surface-gray-3 h-4 w-4 rounded-full" />
         <div v-else class="bg-surface-gray-3 h-8 w-8 rounded-full max-sm:h-10 max-sm:w-10" />
       </div>
 
