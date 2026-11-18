@@ -804,7 +804,7 @@ import {
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
-import { useNewCalendarEvent } from '@/apps/calendar'
+import { useNewEventDialog } from '@/apps/calendar'
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
@@ -2125,12 +2125,12 @@ const getReplyIdentityEmail = (mail: Mail) => {
   )
 }
 
-// A date in a mail's own words opens Calendar on a new event at it, filled in from the mail, for
-// the reader to finish and save. Not in a draft, which is still the reader's to write, nor in a
-// thread shown for reading alone.
+// A date in a mail's own words opens Calendar's new-event form over the mail, at that date and
+// filled in from the mail, for the reader to finish and save without leaving it. Not in a draft,
+// which is still the reader's to write, nor in a thread shown for reading alone.
 const offersEvents = (mail: Mail) => !readonly && !mail.draft
-const newCalendarEvent = useNewCalendarEvent()
-const createEventAt = (mail: Mail, date: NamedDate) => newCalendarEvent(eventFromMail(mail, date))
+const openNewEvent = useNewEventDialog()
+const createEventAt = (mail: Mail, date: NamedDate) => void openNewEvent(eventFromMail(mail, date))
 
 // The plain-text reading of a body, normalised. Servers hand some bodies over already
 // entity-escaped, and those carry no real tags — so they take this path, where showing

@@ -1,11 +1,10 @@
 import { useNow } from '@vueuse/core'
-import { defineAsyncComponent, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { defineAsyncComponent, getCurrentInstance, watch } from 'vue'
 
 import { api, useQuery } from '@/api'
 import CalendarIcon from '@/apps/calendar/AreaIcon.vue'
 import { showEventReminder, type EventReminder } from '@/apps/calendar/reminders'
-import { newEventDrafts, type NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
+import type { NewEventDraft } from '@/apps/calendar/utils/newEventDraft'
 import type { AreaDefinition } from '@/platform/contracts'
 import { realtime, type Realtime } from '@/platform/realtime'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
@@ -49,15 +48,18 @@ export const calendarArea: AreaDefinition = {
 }
 
 /**
- * Opens Calendar on a new event filled in from `draft`, for the reader to finish and save. Call it
- * in a component's setup.
+ * Opens Calendar's new-event form over the page, filled in from `draft`, for the reader to finish and
+ * save there: the URL stays, and closing the form leaves the page as it was. The form's code loads
+ * on the first call. The returned function resolves when the form closes. Call it in a component's
+ * setup.
  */
-export function useNewCalendarEvent(): (draft: NewEventDraft) => void {
-  const router = useRouter()
-  return (draft) => {
-    // By path: Calendar's routes load with the area, so from elsewhere its route names are unknown.
-    void router.push({ path: calendarArea.to, query: { new: newEventDrafts.hold(draft) } })
-  }
+export function useNewEventDialog(): (draft: NewEventDraft) => Promise<void> {
+  const context = getCurrentInstance()?.appContext
+  if (!context) throw new Error('useNewEventDialog() must be called in a component setup')
+  return (draft) =>
+    import('@/apps/calendar/components/newEventDialog').then((dialog) =>
+      dialog.presentNewEventDialog(context, draft),
+    )
 }
 
 // How often the rail asks again. The window starts at "now", so each step is a new question —

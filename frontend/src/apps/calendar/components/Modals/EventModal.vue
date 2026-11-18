@@ -45,6 +45,7 @@ import {
   newEventTimes,
   seatOrganizer,
   withoutReader,
+  type CreatedEvent,
   type NewEventDraft,
 } from '@/apps/calendar/utils/newEventDraft'
 import {
@@ -59,8 +60,15 @@ import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 const show = defineModel<boolean>()
-const { selectedEvent } = defineProps<{
+const { selectedEvent, createdAction, askBeforeLeaving } = defineProps<{
   selectedEvent: any
+  /** What the toast for a new event offers, once it is saved and sent. */
+  createdAction?: (created: CreatedEvent) => { label: string; onClick: () => void }
+  /**
+   * Leaving a changed form asks what to do with it, as Cancel does, rather than keeping it as a
+   * draft: for a form opened over another area's page, where nothing may be saved but by asking.
+   */
+  askBeforeLeaving?: boolean
 }>()
 const emit = defineEmits(['reloadEvents'])
 const store = userStore()
@@ -632,8 +640,17 @@ const submitEvent = (sendEmail: boolean) => {
       sendEmail,
     })
   }
+  const offer = isNew.value && createdAction
+  // Read now: the save closes the form, and the next one to open refills it.
+  const created = { account: event.account ?? '', date: event.startDate ?? '' }
   toast.promise(submit(), {
     ...messages,
+    ...(offer && {
+      success: (result: unknown) => ({
+        message: messages.success,
+        action: offer({ ...created, id: createdId(result) }),
+      }),
+    }),
     // The refusal's own message, as the request layer shows it for a non-silent call.
     error: (error: unknown) =>
       (error instanceof TransportError && error.type !== 'NetworkError'
@@ -642,6 +659,15 @@ const submitEvent = (sendEmail: boolean) => {
   })
   showNotifyParticipantsModal.value = false
 }
+
+// The new event's id, as either create answers: the plain one with the id alone, the one with a
+// Meet room with the meeting around it.
+const createdId = (result: unknown) =>
+  typeof result === 'string'
+    ? result
+    : result && typeof result === 'object' && 'event_id' in result
+      ? String(result.event_id)
+      : ''
 
 // --- Leaving the modal ---
 //
@@ -679,7 +705,7 @@ const leave = () => {
     show.value = false
     return
   }
-  if (canSaveDraft.value && !missingOrganizer.value) saveDraftAndLeave()
+  if (canKeepAsDraft.value && !askBeforeLeaving) saveDraftAndLeave()
   else showDiscardModal.value = true
 }
 const discardDraft = useMutation(api.calendar.events.delete, {
