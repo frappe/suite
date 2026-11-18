@@ -100,26 +100,25 @@ describe('useListSelection', () => {
     wrapper.unmount()
   })
 
-  it('starts a new run where the cursor is after it moved without Shift', () => {
-    const { selection, wrapper } = mountSelection()
-    selection.moveCursor(['a:1'], ['b:1'], true)
-    // The cursor walked on to b:2 without Shift, then Shift+arrow went up.
-    selection.moveCursor(['b:2'], ['a:2'], true)
-    expect(selection.selections.value.sort()).toEqual(['a:1', 'a:2', 'b:1', 'b:2'])
-    wrapper.unmount()
-  })
-
-  it('starts a new run after walking away and back to where the last one stopped', () => {
+  it('measures a Shift step from the anchor after the cursor moved without Shift', () => {
     const { selection, wrapper } = mountSelection()
     selection.moveCursor(['a:1'], ['b:1'], true)
     selection.moveCursor(['b:1'], ['a:2'], true)
-    // Down and back up without Shift, onto a:2 again.
-    selection.moveCursor(['a:2'], ['b:2'], false)
+    selection.moveCursor(['a:2'], ['b:2'], true)
+    // Up past the last ticked row without Shift, then Shift+arrow up: the run shrinks toward a:1.
     selection.moveCursor(['b:2'], ['a:2'], false)
-    // Shift+arrow up from a:2 starts a run there, which keeps a:2 ticked, rather than shrinking
-    // the old run back toward a:1.
     selection.moveCursor(['a:2'], ['b:1'], true)
-    expect(selection.selections.value.sort()).toEqual(['a:1', 'a:2', 'b:1'])
+    expect(selection.selections.value.sort()).toEqual(['a:1', 'b:1'])
+    wrapper.unmount()
+  })
+
+  it('starts a new run at the cursor after a tick by hand', () => {
+    const { selection, wrapper } = mountSelection()
+    selection.moveCursor(['a:1'], ['b:1'], true)
+    selection.toggleSelect(['b:2'], true)
+    selection.moveCursor(['b:2'], ['a:3'], true)
+    // a:2 sits between the old run and the new one, and stays unticked.
+    expect(selection.selections.value.sort()).toEqual(['a:1', 'a:3', 'b:1', 'b:2'])
     wrapper.unmount()
   })
 
