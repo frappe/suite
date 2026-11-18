@@ -676,7 +676,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   }
   const onMailUpdateSuccess = async (
     result: OutputOf<typeof api.mail.messages.create>,
-    sent?: string,
+    sent: string,
   ) => {
     const { id, status, error, thread_id } = result
     if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
@@ -782,9 +782,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: save_as_draft ? undefined : remindAt.value,
     }
-    // A draft is saved as it went, so what is typed meanwhile is still owed a save. A send owes
-    // nothing more (see `submitted`).
-    const sent = save_as_draft ? JSON.stringify(mail) : undefined
+    const sent = JSON.stringify(mail)
     const result = await createMail.run(input)
     await onMailUpdateSuccess(result, sent)
   }
@@ -866,7 +864,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       undo_send,
       remind_at: submit ? remindAt.value : undefined,
     }
-    const sent = submit ? undefined : JSON.stringify(mail)
+    const sent = JSON.stringify(mail)
     const result = await updateDraft.run(input)
     await onMailUpdateSuccess(result, sent)
   }
