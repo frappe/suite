@@ -3,7 +3,6 @@ import { computed } from 'vue'
 
 import { arrowGeometry } from '../canvas/arrow'
 import type { LineShape } from '../canvas/scene'
-import { displayInk } from './display-ink'
 
 const props = defineProps<{
   shape: LineShape
@@ -14,7 +13,7 @@ const props = defineProps<{
 
 const geometry = computed(() => arrowGeometry(props.shape, props.scale))
 const shaftColor = computed(() =>
-  props.shape.stroke === null ? 'transparent' : displayInk(props.shape.stroke),
+  props.shape.stroke === null ? 'transparent' : (props.shape.stroke ?? 'var(--draw-ink)'),
 )
 const headColor = computed(() => props.shape.arrowHeadFill ?? shaftColor.value)
 </script>

@@ -98,7 +98,6 @@ import { layoutText, TEXT_FONT_FAMILIES, TEXT_LINE_HEIGHT } from '../canvas/text
 import type { DrawingTool } from '../canvas/tools'
 import ArrowShape from './ArrowShape.vue'
 import CanvasMinimap from './CanvasMinimap.vue'
-import { displayInk } from './display-ink'
 import LaserTrail from './LaserTrail.vue'
 import ShapeColorPicker from './ShapeColorPicker.vue'
 import SnapGuides from './SnapGuides.vue'
@@ -188,9 +187,9 @@ const pendingText = ref<RectangleShape>()
 const pendingDraw = ref<FreeDrawShape>()
 const erasedShapeIds = ref<string[]>([])
 const drawStyle = reactive<
-  Required<Pick<RectangleShape, 'stroke' | 'fill' | 'strokeWidth' | 'strokeStyle' | 'opacity'>>
+  Pick<RectangleShape, 'stroke'> &
+    Required<Pick<RectangleShape, 'fill' | 'strokeWidth' | 'strokeStyle' | 'opacity'>>
 >({
-  stroke: '#171717',
   fill: 'none',
   strokeWidth: 3,
   strokeStyle: 'solid',
@@ -248,7 +247,6 @@ const armedTextStyle = reactive<
     | 'textAlign'
   >
 >({
-  fill: '#171717',
   backgroundColor: undefined,
   fontFamily: 'shantell',
   fontSize: 16,
@@ -721,7 +719,7 @@ const textEditorStyle = computed(() => {
     width: `${editor.width}px`,
     height: `${Math.max(editor.height, editor.fontSize * TEXT_LINE_HEIGHT)}px`,
     fontSize: `${editor.fontSize}px`,
-    color: displayInk(editor.fill),
+    color: editor.fill ?? 'var(--draw-ink)',
     backgroundColor: editor.backgroundColor ?? 'transparent',
     lineHeight: `${TEXT_LINE_HEIGHT}`,
     fontFamily: TEXT_FONT_FAMILIES[editor.fontFamily ?? 'shantell'],
@@ -1545,7 +1543,7 @@ function editLabel(shape: RectangleShape) {
     y: fitted.shape.y + (fitted.shape.height - fitted.layout.height) / 2,
     width: labelTextWidth(fitted.shape),
     height: fitted.layout.height,
-    fill: shape.labelFill ?? '#171717',
+    fill: shape.labelFill,
     fontSize: shape.labelFontSize ?? 16,
     fontFamily: shape.labelFontFamily ?? 'shantell',
     fontWeight: shape.labelFontWeight,
@@ -2333,7 +2331,7 @@ function replaceLine(next: LineShape) {
 
 function shapeStyle(shape: Shape) {
   return {
-    stroke: shape.stroke === null ? 'none' : displayInk(shape.stroke),
+    stroke: shape.stroke === null ? 'none' : (shape.stroke ?? 'var(--draw-ink)'),
     fill:
       isLine(shape) || isImage(shape) || (isFreeDraw(shape) && !isClosedFreeDraw(shape))
         ? 'none'
@@ -4110,7 +4108,7 @@ onBeforeUnmount(() => {
               :font-size="rectangle.labelFontSize ?? 16"
               class="shape-label"
               :style="{
-                fill: displayInk(rectangle.labelFill),
+                fill: rectangle.labelFill ?? 'var(--draw-ink)',
                 fontFamily: TEXT_FONT_FAMILIES[rectangle.labelFontFamily ?? 'shantell'],
                 fontWeight: rectangle.labelFontWeight ?? 400,
                 fontStyle: rectangle.labelFontStyle ?? 'normal',
@@ -4166,7 +4164,7 @@ onBeforeUnmount(() => {
               :font-size="text.fontSize"
               class="drawn-text"
               :style="{
-                fill: displayInk(text.fill),
+                fill: text.fill ?? 'var(--draw-ink)',
                 opacity: text.opacity ?? 1,
                 fontFamily: TEXT_FONT_FAMILIES[text.fontFamily ?? 'shantell'],
                 fontWeight: text.fontWeight ?? 400,

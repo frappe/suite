@@ -14,7 +14,6 @@ import {
 import { bounds, isFreeDraw, isLine, type Shape } from '../canvas/selection'
 import { layoutText, TEXT_FONT_FAMILIES } from '../canvas/text-layout'
 import ArrowShape from './ArrowShape.vue'
-import { displayInk } from './display-ink'
 
 const props = defineProps<{
   shapes: Shape[]
@@ -163,7 +162,7 @@ function rotation(shape: RectangleShape): string {
 }
 
 function stroke(shape: Shape): string {
-  return shape.stroke === null ? 'none' : displayInk(shape.stroke)
+  return shape.stroke === null ? 'none' : (shape.stroke ?? 'var(--draw-ink)')
 }
 
 function fill(shape: RectangleShape): string {
@@ -266,7 +265,7 @@ function textX(shape: TextShape): number {
               :x="textX(shape)"
               :y="shape.y + (textLayouts.get(shape.id)?.baseline ?? shape.fontSize)"
               :font-size="shape.fontSize"
-              :fill="displayInk(shape.fill)"
+              :fill="shape.fill ?? 'var(--draw-ink)'"
               :font-family="TEXT_FONT_FAMILIES[shape.fontFamily ?? 'shantell']"
               :font-weight="shape.fontWeight ?? 400"
               :font-style="shape.fontStyle ?? 'normal'"
@@ -329,7 +328,7 @@ function textX(shape: TextShape): number {
             :x="shape.x + shape.width / 2"
             :y="shape.y + shape.height / 2"
             :font-size="shape.labelFontSize ?? 16"
-            :fill="displayInk(shape.labelFill)"
+            :fill="shape.labelFill ?? 'var(--draw-ink)'"
             :font-family="TEXT_FONT_FAMILIES[shape.labelFontFamily ?? 'shantell']"
             text-anchor="middle"
             dominant-baseline="middle"
