@@ -92,6 +92,8 @@ interface ComposeMailOptions {
   onDiscardStarted?: () => void
   /** The mounted editor, for mention bookkeeping and emoji insertion. */
   host: () => EditorHost | null | undefined
+  /** The composer's outermost element: the part a send locks (see `isSending`). */
+  root: () => HTMLElement | null | undefined
   /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
   isUploading?: () => boolean
   /**
@@ -392,6 +394,19 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // after that (autosave, Close, the editor unmounting) is refused as "not a draft", and comes back
   // as "Draft not saved". Undo send brings it back as a draft of its own, in Drafts.
   let submitted = false
+  // `inert` takes the focus out of the locked composer, and does not give it back: it falls to the
+  // page. What was typed next went to the thread's own shortcuts, so `e` archived the thread being
+  // answered and Backspace trashed it, and after a refusal ⌘Enter could not send again. So while a
+  // send that took the focus is out, keys at the page stop there, and a refusal gives it back.
+  let heldFocus = false
+  const holdKeys = (e: KeyboardEvent) => {
+    if (!isSending.value || !heldFocus) return
+    const focused = document.activeElement
+    // Focus the reader has since put somewhere else is theirs.
+    if (!focused || focused === document.body) e.stopPropagation()
+  }
+  window.addEventListener('keydown', holdKeys, true)
+  onScopeDispose(() => window.removeEventListener('keydown', holdKeys, true))
   const saveDraft = async () => {
     if (
       pendingSave ||
@@ -477,6 +492,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
     sendMode.value = sendAt ? 'scheduled' : 'undo'
     isSavingDraft.value = false
+    // Read before the lock is drawn, which is when `inert` takes the focus.
+    heldFocus = !!options.root()?.contains(document.activeElement)
     isSending.value = true
     try {
       await pendingSave
@@ -500,6 +517,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
       if (error instanceof UnsentImageError) raiseToast(error.message, 'error')
     } finally {
       isSending.value = false
+      // After the lock is gone: an inert composer takes no focus.
+      if (!submitted && heldFocus) void nextTick(() => host()?.editor?.commands.focus())
     }
   }
   // The composer is gone and its last save was refused: the draft lives only in this copy, which a

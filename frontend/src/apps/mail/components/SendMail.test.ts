@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn'
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
@@ -68,8 +69,11 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
   return { injectAccountScope: scope, provideAccountScope: scope }
 })
 
-// jsdom lays nothing out; the suggestion list scrolls its highlighted row into view.
+// jsdom lays nothing out; the suggestion list scrolls its highlighted row into view, and the
+// editor its caret.
 Element.prototype.scrollIntoView = () => {}
+Range.prototype.getClientRects = () => fromPartial<DOMRectList>({ length: 0, item: () => null })
+Range.prototype.getBoundingClientRect = () => new DOMRect()
 
 const apps: ReturnType<typeof createApp>[] = []
 beforeEach(() => {
@@ -319,4 +323,105 @@ describe('leaving with the composer open while a save is out', () => {
       expect(said).not.toContain('Draft not saved')
     },
   )
+})
+
+// A reply in a thread, sent while the server takes its time over it.
+describe('sending a reply in a thread', () => {
+  const answered = (error: string | null) =>
+    reply({
+      message: {
+        name: 'draft-1',
+        id: 'draft-1',
+        status: error ? 'Drafted' : 'Submitted',
+        error,
+        thread_id: 'thread-1',
+        submission_id: null,
+        send_at: null,
+        undo_send_period: 10,
+      },
+    })
+
+  /** The reply open in a thread, its body focused, and Send pressed: the answer waits on `answer`. */
+  async function sendHeld() {
+    let answer!: (response: Response) => void
+    const held = new Promise<Response>((resolve) => (answer = resolve))
+    // Answered in the end either way, so no send is left out for the next test's to queue behind.
+    onTestFinished(() => answer(answered(null)))
+    server.answer = (method) => (method === 'update_draft_mail' ? held : reply({ message: [] }))
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/:any(.*)*', component: { render: () => null } }],
+    })
+    await router.push('/mail')
+    const ComposeMailEditor = (await import('./ComposeMailEditor.vue')).default
+    const app = createApp({
+      render: () =>
+        h(ComposeMailEditor, {
+          modelValue: true,
+          isInThread: true,
+          reloadMails: () => {},
+          mailDetails: {
+            id: 'draft-1',
+            to: [{ email: 'dana@brightwave.example' }],
+            subject: 'Re: Brief',
+            html_body: '<p>Looks good.</p>',
+            in_reply_to: '<brief@brightwave.example>',
+            attachments: [],
+          },
+        }),
+    })
+    app.config.globalProperties.__ = translate
+    app.provide('$user', { data: { name: 'maya@example.com', undo_send_period: 10 } })
+    app.use(router)
+    app.mount(document.body.appendChild(document.createElement('div')))
+    apps.push(app)
+    const body = await vi.waitFor(() => {
+      const editable = document.querySelector<HTMLElement>('.ProseMirror')
+      expect(editable).not.toBeNull()
+      return editable!
+    })
+    // Where a reply opens (see ComposeMailEditor), and where Send is pressed from.
+    await vi.waitFor(() => expect(document.activeElement).toBe(body))
+    body.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, metaKey: true, bubbles: true }),
+    )
+    await vi.waitFor(() => expect(server.asked).toContain('update_draft_mail'))
+    return { body, answer }
+  }
+  // What the thread around the composer hears of a key: its shortcuts listen on the window.
+  const heardByThePage = () => {
+    const heard: string[] = []
+    const listen = (e: KeyboardEvent) => heard.push(e.key)
+    window.addEventListener('keydown', listen)
+    onTestFinished(() => window.removeEventListener('keydown', listen))
+    return heard
+  }
+  const press = (key: string) =>
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+
+  it('keeps the keys typed after Send from the thread’s shortcuts', async () => {
+    const { body } = await sendHeld()
+    const heard = heardByThePage()
+    // The locked composer gives up the focus (a browser does this for `inert`; jsdom does not).
+    body.blur()
+
+    press('e')
+    press('Backspace')
+
+    expect(heard).toEqual([])
+  })
+
+  it('puts the focus back in the reply when the send is refused', async () => {
+    const { body, answer } = await sendHeld()
+    body.blur()
+
+    answer(answered('Dana’s server refused the address'))
+
+    await vi.waitFor(() => expect(toasts.error).toHaveBeenCalled())
+    await vi.waitFor(() => expect(document.activeElement).toBe(body))
+    // And a key typed then is the reply's again, not held back from the page.
+    const heard = heardByThePage()
+    press('a')
+    expect(heard).toEqual(['a'])
+  })
 })

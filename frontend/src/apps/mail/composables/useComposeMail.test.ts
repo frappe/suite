@@ -144,6 +144,7 @@ function compose({
           close: () => (open = false),
           isOpen: () => open,
           host,
+          root: () => null,
           uploadInlineImage: upload,
         })
         composer.onOpened()
@@ -234,6 +235,7 @@ describe('the body and the editor', () => {
             close: vi.fn(),
             isOpen: () => true,
             host: () => editor.value,
+            root: () => null,
             uploadInlineImage: vi.fn(),
           })
           onMounted(() => {
@@ -437,6 +439,7 @@ describe('an image held in the body as a data URL', () => {
             close: vi.fn(),
             isOpen: () => true,
             host: () => host.value,
+            root: () => null,
             uploadInlineImage: upload,
           })
           onMounted(() => composer.onOpened())

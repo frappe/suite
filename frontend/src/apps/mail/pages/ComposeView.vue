@@ -19,6 +19,7 @@
 	-->
   <!-- Locked while a send is out, as the desktop composer is: what is typed then is in no request. -->
   <div
+    ref="composerRoot"
     class="bg-surface-base fixed inset-x-0 z-30 flex flex-col overflow-hidden"
     :style="{ top: `${keyboardTop}px`, height: `${viewportHeight}px` }"
     :inert="isSending || undefined"
@@ -326,6 +327,7 @@ import { TransportError } from '@/platform/transport'
 
 const router = useRouter()
 
+const composerRoot = useTemplateRef<HTMLElement>('composerRoot')
 const textEditor = useTemplateRef('textEditor')
 const toInput = useTemplateRef<{ setFocus: () => void }>('toInput')
 const ccInput = useTemplateRef<{ setFocus: () => void }>('ccInput')
@@ -390,6 +392,7 @@ const {
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
+  root: () => composerRoot.value,
   isUploading: () => pendingUploads.value > 0,
   uploadInlineImage,
 })

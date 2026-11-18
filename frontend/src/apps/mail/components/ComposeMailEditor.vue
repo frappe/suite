@@ -559,6 +559,7 @@ const {
   onDiscardUnsaved: () => emit('discardMail'),
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
+  root: () => composerRoot.value,
   isUploading: () =>
     pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
   uploadInlineImage,
