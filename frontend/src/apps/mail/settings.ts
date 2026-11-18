@@ -44,15 +44,15 @@ export const mailSettings = {
       icon: 'lucide-send',
       body: scoped(() => import('@/apps/mail/components/Settings/MailSendingSettings.vue')),
       sections: [
-        { id: 'undo-send', label: () => __('Undo send') },
-        { id: 'create-contacts', label: () => __('Add recipients to contacts') },
-        { id: 'forwarded', label: () => __('Keep forwards in the conversation') },
         {
           id: 'send-as',
           label: () => __('Send-as addresses'),
           keywords: () => __('identity, alias, from, default address'),
         },
         { id: 'signatures', label: () => __('Signatures') },
+        { id: 'undo-send', label: () => __('Undo send') },
+        { id: 'create-contacts', label: () => __('Add recipients to contacts') },
+        { id: 'forwarded', label: () => __('Keep forwards in the conversation') },
         {
           id: 'auto-reply',
           label: () => __('Auto-reply'),
