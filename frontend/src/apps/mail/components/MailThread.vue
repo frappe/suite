@@ -807,6 +807,7 @@ import {
   onUnmounted,
   reactive,
   ref,
+  shallowRef,
   useTemplateRef,
   watch,
 } from 'vue'
@@ -1143,20 +1144,15 @@ usePageTitle(() =>
 // Asked only once the list is in and holds no row for the thread: while it loads, the row may be on
 // its way, and a thread fetched and marked read beside it leaves that row unread when it lands. Read
 // once the props have settled, not as each is set: a landing list hands over `threadsLoading` and
-// the thread's `messages` in one update, and between the two the pane would ask all the same.
-const listLanded = ref(!threadsLoading)
-watch(
-  () => threadsLoading,
-  (loading) => (listLanded.value = !loading),
-)
-const threadFallback = useQuery(api.mail.threads.get, () =>
-  !messages?.length && threadID && listLanded.value
-    ? {
-        account: scopeAccountId.value,
-        thread_id: threadID,
-      }
-    : false,
-)
+// the thread's `messages` in one update, as does a list that starts loading again, and between the
+// two the pane would ask all the same.
+const fallbackInput = (): InputOf<typeof api.mail.threads.get> | false =>
+  !messages?.length && !threadsLoading && threadID
+    ? { account: scopeAccountId.value, thread_id: threadID }
+    : false
+const settledFallbackInput = shallowRef(fallbackInput())
+watch(fallbackInput, (input) => (settledFallbackInput.value = input))
+const threadFallback = useQuery(api.mail.threads.get, () => settledFallbackInput.value)
 watch(
   () => [threadFallback.data, threadFallback.error],
   () => {

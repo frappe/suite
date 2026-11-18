@@ -165,11 +165,15 @@ it('names a directly fetched conversation after async arrival and when the reuse
 
 describe('a thread the list may not hold', () => {
   // The pane as a list mounts it: the open thread's row, if the list has one, comes with the list.
-  const list = reactive<{ loading: boolean; messages?: Partial<Mail>[] }>({ loading: true })
-  const open = async () => {
+  const list = reactive<{ threadID: string; loading: boolean; messages?: Partial<Mail>[] }>({
+    threadID: 'one',
+    loading: true,
+  })
+  const open = async (start: Omit<typeof list, 'threadID'> = { loading: true }) => {
     window.__ = (text: string) => text
-    list.loading = true
-    list.messages = undefined
+    list.threadID = 'one'
+    list.loading = start.loading
+    list.messages = start.messages
     query.current = reactive({ data: undefined, status: 'pending', refetch: async () => {} })
     const router = createRouter({
       history: createMemoryHistory(),
@@ -185,7 +189,7 @@ describe('a thread the list may not hold', () => {
           Reader,
           {
             mailbox: 'inbox',
-            threadID: 'one',
+            threadID: list.threadID,
             threads: [],
             threadsLoading: list.loading,
             messages: list.messages,
@@ -193,7 +197,7 @@ describe('a thread the list may not hold', () => {
           },
           null,
           8,
-          ['threadsLoading', 'messages'],
+          ['threadID', 'threadsLoading', 'messages'],
         )
       ),
     })
@@ -236,6 +240,58 @@ describe('a thread the list may not hold', () => {
     await nextTick()
     await nextTick()
     expect(threadReads).toEqual([])
+  })
+
+  it('never asks for the thread when the list it came from starts loading again', async () => {
+    await open({
+      loading: false,
+      messages: [
+        {
+          id: 'one',
+          name: 'one',
+          thread_id: 'one',
+          subject: 'Friday planning',
+          seen: 1,
+          draft: 0,
+          from_email: 'bob@example.com',
+          recipients: [],
+          reply_to: [],
+          attachments: [],
+          mailboxes: [],
+          received_at: '2026-10-30T08:00:00Z',
+        },
+      ],
+    })
+    list.loading = true
+    list.messages = undefined
+    await nextTick()
+    await nextTick()
+    expect(threadReads).toEqual([])
+  })
+  it('asks for no thread but the one it opens on when stepping to one the list holds', async () => {
+    await open({ loading: false })
+    expect(threadReads).toEqual([expect.objectContaining({ thread_id: 'one' })])
+
+    list.threadID = 'two'
+    list.messages = [
+      {
+        id: 'two',
+        name: 'two',
+        thread_id: 'two',
+        subject: 'Travel confirmation',
+        seen: 1,
+        draft: 0,
+        from_email: 'bob@example.com',
+        recipients: [],
+        reply_to: [],
+        attachments: [],
+        mailboxes: [],
+        received_at: '2026-10-30T08:00:00Z',
+      },
+    ]
+    await nextTick()
+    await nextTick()
+    expect(threadReads).toEqual([expect.objectContaining({ thread_id: 'one' })])
   })
 })
 
