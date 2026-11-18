@@ -3,15 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
+import { userStore } from '@/apps/mail/stores/user'
 import { translate } from '@/platform/translation'
 
 import MailboxView from './MailboxView.vue'
 import UnifiedFolderView from './UnifiedFolderView.vue'
 
-// A small Frappe whose thread lists fail until told otherwise, and then hold one empty folder.
+// A small Frappe whose thread lists fail until told otherwise, and then hold one empty folder. While
+// `holding`, it keeps a list's reader waiting for the answer.
 const server = vi.hoisted(() => {
   const asked: string[] = []
-  return { failing: true, asked }
+  const waiting: (() => void)[] = []
+  return { failing: true, holding: false, asked, waiting }
 })
 vi.hoisted(() => {
   globalThis.fetch = async (input) => {
@@ -25,6 +28,7 @@ vi.hoisted(() => {
     if (method !== 'get_threads' && method !== 'get_unified_threads')
       return reply({ message: null })
     server.asked.push(method)
+    if (server.holding) await new Promise<void>((resolve) => server.waiting.push(resolve))
     if (server.failing)
       return reply(
         {
@@ -42,12 +46,21 @@ vi.hoisted(() => {
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
   const nothing = defineComponent({ setup: () => () => null })
+  const slotOnly = defineComponent({
+    setup:
+      (_, { slots }) =>
+      () =>
+        slots.default?.(),
+  })
   return {
     toast: { success: () => {}, error: () => {}, warning: () => {}, info: () => {} },
     usePortalTarget: () => undefined,
     Breadcrumbs: nothing,
     Dialog: nothing,
     Checkbox: nothing,
+    Divider: nothing,
+    Dropdown: slotOnly,
+    Tooltip: slotOnly,
     PageHeader: defineComponent({
       setup:
         (_, { slots }) =>
@@ -71,7 +84,11 @@ vi.mock('frappe-ui', async () => {
 // The page's chrome and the reading pane are not under test.
 const { none } = vi.hoisted(() => ({ none: () => ({ default: { render: () => null } }) }))
 vi.mock('@/apps/mail/components/HeaderActions.vue', none)
-vi.mock('@/apps/mail/components/MailThread.vue', none)
+// The reading pane's content: a mark where the thread, or the prompt to pick one, would stand.
+vi.mock('@/apps/mail/components/MailThread.vue', async () => {
+  const { h } = await import('vue')
+  return { default: { render: () => h('section', { 'data-reading-pane': '' }) } }
+})
 vi.mock('@/apps/mail/components/SnoozeMenu.vue', none)
 vi.mock('@/apps/mail/components/ListSelection/MobileSelectionBar.vue', none)
 vi.mock('@/apps/mail/components/mobile/MobileTitleHeader.vue', none)
@@ -102,13 +119,22 @@ vi.mock('@/apps/mail/stores/user', async (importOriginal) => {
 })
 
 const apps: ReturnType<typeof createApp>[] = []
+// The reader's "group by date" setting, where the lists read it: the store.
+const groupByDate = (on: boolean) => {
+  const settings = userStore().userResource.data
+  if (settings) settings.group_by_date = on
+}
+
 beforeEach(() => {
   server.failing = true
+  server.holding = false
   server.asked = []
 })
 afterEach(() => {
+  for (const answer of server.waiting.splice(0)) answer()
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
+  groupByDate(false)
 })
 
 async function open(path: string) {
@@ -124,6 +150,12 @@ async function open(path: string) {
       {
         path: '/mail/all/:folder',
         name: 'mail-unified',
+        component: UnifiedFolderView,
+        props: true,
+      },
+      {
+        path: '/mail/all/:folder/account/:accountId/:threadID',
+        name: 'mail-unified-mail',
         component: UnifiedFolderView,
         props: true,
       },
@@ -174,5 +206,66 @@ describe.each([
     await vi.waitFor(() => expect(element.textContent).toContain('No mails in Inbox.'))
     expect(server.asked.filter((asked) => asked === method).length).toBeGreaterThan(before)
     expect(element.querySelector('[role="alert"]')).toBeNull()
+  })
+})
+
+describe.each([
+  ['an account folder', '/mail/account/acc/mailbox/a'],
+  ['an "All accounts" folder', '/mail/all/inbox'],
+])('a thread list on its way, in %s', (_view, path) => {
+  const outline = (element: HTMLElement) => element.querySelector('[role="status"]')
+
+  it('stands in outline under the toolbar its rows will sit under', async () => {
+    server.holding = true
+    const { element, errors } = await open(path)
+
+    await vi.waitFor(() => expect(outline(element)).not.toBeNull())
+    const refresh = element.querySelector('button[aria-label="Refresh"]')
+    expect(refresh).not.toBeNull()
+    expect(
+      refresh!.compareDocumentPosition(outline(element)!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+    expect(errors).toEqual([])
+  })
+
+  it('keeps the reading pane beside it, not a blank half', async () => {
+    server.holding = true
+    const { element } = await open(path)
+
+    await vi.waitFor(() => expect(outline(element)).not.toBeNull())
+    expect(element.querySelector('[data-reading-pane]')).not.toBeNull()
+  })
+
+  it('outlines a date header where the reader groups mail by date', async () => {
+    groupByDate(true)
+    server.holding = true
+    const { element } = await open(path)
+
+    await vi.waitFor(() => expect(outline(element)).not.toBeNull())
+    expect(outline(element)!.firstElementChild?.matches('[data-outline="date-header"]')).toBe(true)
+  })
+
+  it('outlines rows alone where the reader does not', async () => {
+    server.holding = true
+    const { element } = await open(path)
+
+    await vi.waitFor(() => expect(outline(element)).not.toBeNull())
+    expect(element.querySelector('[data-outline="date-header"]')).toBeNull()
+  })
+})
+
+describe('a thread opened in an "All accounts" folder whose list is on its way', () => {
+  it('stands in outline in the reading pane, toolbar and all, until its row is in', async () => {
+    server.holding = true
+    const { element, errors } = await open('/mail/all/inbox/account/acc/t1')
+
+    await vi.waitFor(() =>
+      expect(element.querySelector('[role="status"][aria-label="Loading thread"]')).not.toBeNull(),
+    )
+    const pane = element.querySelector('[role="status"][aria-label="Loading thread"]')!
+    expect(pane.querySelector('[data-outline="thread-actions"]')).not.toBeNull()
+    // The pane itself waits for the row: what its buttons do is read off it.
+    expect(element.querySelector('[data-reading-pane]')).toBeNull()
+    expect(errors).toEqual([])
   })
 })

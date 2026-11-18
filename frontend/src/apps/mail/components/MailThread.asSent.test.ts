@@ -1,6 +1,6 @@
 import dayjs from 'dayjs'
 import { afterEach, expect, it, vi } from 'vitest'
-import { createApp, h, nextTick, ref, type App } from 'vue'
+import { createApp, h, nextTick, reactive, ref, type App } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import MailThread from '@/apps/mail/components/MailThread.vue'
@@ -145,6 +145,7 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
     setup: () => () =>
       h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
   })
+  app.config.globalProperties.__ = window.__
   app.use(router)
   app.provide('$user', { data: {} })
   app.provide('$dayjs', dayjs)
@@ -165,4 +166,56 @@ it('offers a recoloured message as sent, shows it so, and drops the offer when t
   await nextTick()
   await nextTick()
   expect(menu.bodyView).toBeUndefined()
+})
+
+it('stands in outline until its messages arrive, then shows them in its place', async () => {
+  window.__ = (text: string) => text
+  // Opened by its link: not in any list, so the pane fetches it, and the answer is still out.
+  query.current = reactive({
+    data: fromPartial<Partial<Mail>[] | undefined>(undefined),
+    status: 'pending',
+    refetch: async () => {},
+  })
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }],
+  })
+  app = createApp({
+    setup: () => () =>
+      h(MailThread, { mailbox: 'inbox', threadID: 'one', threads: [], marksSeen: false }),
+  })
+  app.config.globalProperties.__ = window.__
+  app.use(router)
+  app.provide('$user', { data: {} })
+  app.provide('$dayjs', dayjs)
+  document.body.appendChild(root)
+  app.mount(root)
+  await nextTick()
+
+  expect(root.querySelector('[role="status"]')).not.toBeNull()
+  expect(root.querySelector('h1')).toBeNull()
+
+  query.current.data = [
+    {
+      id: 'one',
+      name: 'one',
+      thread_id: 'one',
+      subject: 'Trail map for Saturday',
+      seen: 1,
+      draft: 0,
+      from_email: 'sam@home.example',
+      recipients: [],
+      reply_to: [],
+      attachments: [],
+      mailboxes: [],
+      received_at: '2026-10-30T08:00:00Z',
+      html_body: '<p>Here is the map.</p>',
+    },
+  ]
+  query.current.status = 'success'
+  await nextTick()
+  await nextTick()
+
+  expect(root.querySelector('[role="status"]')).toBeNull()
+  expect(root.querySelector('h1')?.textContent).toContain('Trail map for Saturday')
 })

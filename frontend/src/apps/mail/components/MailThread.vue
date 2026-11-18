@@ -3,6 +3,7 @@
     <ThreadHeader
       v-if="!readonly"
       :threads
+      :threads-loading="threadsLoading"
       :thread
       :can-go-next="canGoNext"
       :remindable="replyReminder.remindable.value"
@@ -30,6 +31,9 @@
       <Transition :name="slide || ''" @after-enter="emit('slideDone')">
         <div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
           <div ref="threadContainer" class="flex-1 overflow-y-auto">
+            <!-- Until the thread's messages are in, from the list or fetched on their own (see
+			     loadThread), the thread stands in outline: the pane is never a blank half. -->
+            <MailThreadSkeleton v-if="!thread.length" />
             <!-- The composer window floats over the app, so while one is up the thread keeps a
 			     little room under its last message — enough to scroll clear of a minimised bar
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
@@ -40,6 +44,7 @@
 			     blank. The body scrolls inside the card past that. A reply draft under other mail
 			     keeps its cap — there the thread is what scrolls. -->
             <div
+              v-else
               class="sm:space-y-2 sm:px-5 sm:pt-5"
               :class="{
                 'pb-16': isMobile && !thread?.at(-1)?.draft,
@@ -820,6 +825,7 @@ import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
+import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
@@ -905,6 +911,7 @@ const {
   mailbox,
   threadID,
   threads,
+  threadsLoading,
   messages,
   canGoNext,
   returned,
@@ -922,6 +929,8 @@ const {
   mailbox: string
   threadID?: string
   threads: string[]
+  // The list those ids come from is still on its way (see ThreadHeader).
+  threadsLoading?: boolean
   messages?: Mail[]
   // The message to open on, for a search: its newest match (see scrollToLanding).
   landOn?: string

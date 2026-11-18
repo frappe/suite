@@ -47,8 +47,8 @@
   </PageHeader>
 
   <div class="relative flex h-[calc(100dvh-3.05rem)] max-sm:min-h-0 max-sm:flex-1 max-sm:!h-auto">
-    <!-- The list in its frame; the frame shows its own empty, loading and refused states (see
-         usePaginatedThreads). Without the frame, they fill the view below. -->
+    <!-- The list in its frame, which is up while the list loads too. It shows its own empty and
+         refused states (see usePaginatedThreads); without the frame, those fill the view below. -->
     <template v-if="listFramed">
       <ThreadPane
         :thread-open="!!threadID"
@@ -125,10 +125,12 @@
             @focusin="onListFocusIn"
           >
             <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.
-                 While a new tab or filter loads, the list area spins in its place. -->
-            <div v-if="listState === 'loading'" class="flex justify-center py-10">
-              <LoaderCircle class="text-ink-gray-5 h-5 w-5 animate-spin" />
-            </div>
+                 While the list loads, its rows stand here in outline. -->
+            <MailListSkeleton
+              v-if="listState === 'loading'"
+              :hide-avatar="!isMobile"
+              :date-headers="headersVisible"
+            />
             <LoadError
               v-else-if="listState === 'error'"
               :title="__('Could not load the list.')"
@@ -147,7 +149,7 @@
             </p>
             <div v-for="(rows, key) in groupedRows" :key="key">
               <MailGroupHeader
-                v-if="groupedByDate && !isMobile"
+                v-if="headersVisible"
                 :date-key="key"
                 :collapsed="collapsedGroups.includes(key)"
                 :collapsible="!isLastGroup(key)"
@@ -289,13 +291,15 @@
           @prev-thread="stepOpenThread(-1)"
           @next-thread="stepOpenThread(1)"
         />
+        <!-- The open thread's row is on its way with the list: the pane stands in outline until
+             it lands, not a blank half. -->
+        <MailThreadSkeleton
+          v-else-if="listState === 'loading'"
+          toolbar
+          :drafts="folder === 'drafts'"
+        />
       </ThreadPane>
     </template>
-
-    <!-- Loading: the list's rows in outline, in the list's own column. -->
-    <ThreadPane v-else-if="listState === 'loading'" :thread-open="false">
-      <template #list><MailListSkeleton :hide-avatar="!isMobile" /></template>
-    </ThreadPane>
 
     <LoadError
       v-else-if="listState === 'error'"
@@ -356,6 +360,7 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
@@ -506,7 +511,6 @@ const {
   fillProgress: () => visibleThreadCount.value,
   // Deferred reads too, as in the mailbox list.
   framed: () => !!inboxTab.value || !!filter.value || filterChanged.value,
-  switching: () => filterChanged.value || (tabSwitched.value && !!inboxTab.value),
 })
 
 // The list's filters, their menu, and its title (see useListFilter) — all shared with the mailbox
@@ -532,7 +536,6 @@ const {
   tabs: inboxTabs,
   active: inboxTab,
   routeFor: routeForTab,
-  switched: tabSwitched,
 } = useInboxTabs(
   () => folder === INBOX_FOLDER && 'unified',
   () => unifiedFolderRoute(folder),
@@ -629,7 +632,7 @@ const reloadPaneThread = () => refreshThreads()
 // this merged list. And not in the same folders: every row in Sent or Drafts is from the reader, and
 // Starred is curated by hand (see MailboxView's stackingEnabled).
 const {
-  groupedByDate,
+  headersVisible,
   getGroupThreads,
   isLastGroup,
   collapsedGroups,

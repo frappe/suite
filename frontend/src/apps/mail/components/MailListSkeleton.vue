@@ -6,6 +6,11 @@
        the rows don't shuffle on each render. Each line carries its row line's type classes, so it is
        that line's height whatever the bar inside it. -->
   <div class="animate-pulse" role="status" :aria-label="__('Loading mail')">
+    <!-- The first date header, where the list's rows sit under them (see MailGroupHeader). -->
+    <div v-if="dateHeaders" :class="GROUP_HEADER_BOX_CLASS" data-outline="date-header">
+      <div v-if="showCheckbox" class="bg-surface-gray-3 mr-5 h-4 w-4 rounded-4" />
+      <div class="bg-surface-gray-3 h-3 w-12 rounded-4" />
+    </div>
     <div v-for="(row, i) in ROWS" :key="i" :class="[ROW_BOX_CLASS, { '!py-1': isFullWidth }]">
       <div
         v-if="showLeading"
@@ -53,12 +58,18 @@
 
 <script setup lang="ts">
 import { useRowLayout } from '@/apps/mail/composables/useRowLayout'
-import { ROW_BOX_CLASS } from '@/apps/mail/constants'
+import { GROUP_HEADER_BOX_CLASS, ROW_BOX_CLASS } from '@/apps/mail/constants'
 
 // The list's own row settings, passed as the list passes them to its rows.
-const { selectable = true, hideAvatar = false } = defineProps<{
+const {
+  selectable = true,
+  hideAvatar = false,
+  dateHeaders = false,
+} = defineProps<{
   selectable?: boolean
   hideAvatar?: boolean
+  /** Whether the list's rows sit under date headers (see useListRows' headersVisible). */
+  dateHeaders?: boolean
 }>()
 
 const { isFullWidth, showCheckbox, showLeading } = useRowLayout(() => ({

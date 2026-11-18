@@ -56,9 +56,7 @@
   </DefineLater>
   <!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
 	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
-  <div
-    class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b"
-  >
+  <div :class="THREAD_TOOLBAR_BOX_CLASS">
     <Button
       variant="ghost"
       class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
@@ -71,8 +69,8 @@
     </Button>
     <!-- Only actions up here, on a phone as on a desktop: the subject heads the thread below,
 	     where it can wrap. -->
-    <template v-if="thread?.length">
-      <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
+    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
+      <template v-if="thread?.length">
         <!-- Three groups, apart a step more than their buttons, with a line halfway: what is done to
              it, read or taken away; where it is filed; what holds it for later, the order of a row's
              hover actions. A group with nothing to offer here takes no room, and no line stands at
@@ -156,36 +154,50 @@
             </template>
           </Button>
         </AdaptiveDropdown>
-        <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). -->
-        <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
-          <Button
-            variant="ghost"
-            :tooltip="__('Previous Thread (↑/K)')"
-            :aria-label="__('Previous Thread')"
-            aria-keyshortcuts="ArrowUp K"
-            :disabled="threadID === threads[0]"
-            @click="emit('prevThread')"
-          >
-            <template #icon>
-              <ArrowLeft class="icon" />
-            </template>
-          </Button>
+      </template>
+      <!-- A thread on its way: its buttons in outline. Nothing to press yet: what a button does
+           depends on where the thread's mail is filed. -->
+      <ThreadActionsOutline v-else class="animate-pulse" :drafts="inDrafts" />
+      <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). They don't wait for the
+           thread: the reader can step on past one that is slow to load. -->
+      <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
+        <Button
+          variant="ghost"
+          :tooltip="__('Previous Thread (↑/K)')"
+          :aria-label="__('Previous Thread')"
+          aria-keyshortcuts="ArrowUp K"
+          :disabled="threadID === threads[0]"
+          @click="emit('prevThread')"
+        >
+          <template #icon>
+            <ArrowLeft class="icon" />
+          </template>
+        </Button>
 
-          <Button
-            variant="ghost"
-            :tooltip="__('Next Thread (↓/J)')"
-            :aria-label="__('Next Thread')"
-            aria-keyshortcuts="ArrowDown J"
-            :disabled="threadID === threads.at(-1) && !canGoNext"
-            @click="emit('nextThread')"
-          >
-            <template #icon>
-              <ArrowRight class="icon" />
-            </template>
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          :tooltip="__('Next Thread (↓/J)')"
+          :aria-label="__('Next Thread')"
+          aria-keyshortcuts="ArrowDown J"
+          :disabled="threadID === threads.at(-1) && !canGoNext"
+          @click="emit('nextThread')"
+        >
+          <template #icon>
+            <ArrowRight class="icon" />
+          </template>
+        </Button>
       </div>
-    </template>
+      <!-- While the list is on its way, whether the thread has one before or after it isn't known:
+           the arrows' places are held, so they don't land in an empty corner. -->
+      <div
+        v-else-if="threadsLoading && !isMobile"
+        class="!ml-auto flex animate-pulse space-x-2"
+        aria-hidden="true"
+        data-outline="thread-steps"
+      >
+        <ThreadButtonOutline v-for="n in 2" :key="n" />
+      </div>
+    </div>
   </div>
 </template>
 
@@ -218,7 +230,13 @@ import { useRoute } from 'vue-router'
 
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
-import { FOLDER_ICON_COLOR_MAP, PINNED_PIN_STYLE } from '@/apps/mail/constants'
+import ThreadActionsOutline from '@/apps/mail/components/ThreadActionsOutline.vue'
+import ThreadButtonOutline from '@/apps/mail/components/ThreadButtonOutline.vue'
+import {
+  FOLDER_ICON_COLOR_MAP,
+  PINNED_PIN_STYLE,
+  THREAD_TOOLBAR_BOX_CLASS,
+} from '@/apps/mail/constants'
 import { takesPins } from '@/apps/mail/stores/user'
 import type { Mail, MailboxData } from '@/apps/mail/types'
 import { getIcon, getMailboxName, isMac } from '@/apps/mail/utils'
@@ -237,9 +255,11 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
-const { thread, threads, canGoNext, remindable } = defineProps<{
+const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   thread: Mail[]
   threads: string[]
+  // The list those ids come from is still on its way, so where the thread stands in it isn't known.
+  threadsLoading?: boolean
   canGoNext?: boolean
   // The last word is yours and nothing is set to chase it (see useReplyReminder).
   remindable?: boolean

@@ -158,11 +158,16 @@ const viewing = (mailbox: string) => {
   screen.route.params.mailbox = mailbox
 }
 
-const show = async (thread: Mail[], remindable: boolean) => {
+// `list`: what the header is told of the list the thread was opened from.
+const show = async (
+  thread: Mail[],
+  remindable: boolean,
+  list: { threads: string[]; threadsLoading?: boolean } = { threads: ['t'] },
+) => {
   app = createApp(
     defineComponent({
       setup: () => () =>
-        h(ThreadHeader, { thread, threads: ['t'], remindable, onSnooze, onRemind, onPrint }),
+        h(ThreadHeader, { thread, ...list, remindable, onSnooze, onRemind, onPrint }),
     }),
   )
   app.config.globalProperties.__ = (text: string) => text
@@ -350,5 +355,45 @@ describe('Print', () => {
     screen.mobile = true
     await show([mail('a', ['dr'])], false)
     expect(root.querySelector('[aria-label="More"]')).toBeNull()
+  })
+})
+
+describe('a thread on its way', () => {
+  const outline = () => root.querySelector('[data-outline="thread-actions"]')
+  // The buttons that say what they do; Back alone has no tooltip.
+  const tooltips = () =>
+    Array.from(
+      root.querySelectorAll<HTMLElement>('button[data-tooltip]:not([data-tooltip=""])'),
+      (button) => button.dataset.tooltip,
+    )
+
+  it('outlines its buttons, and offers only the step to the next thread', async () => {
+    await show([], false)
+
+    expect(outline()).not.toBeNull()
+    expect(tooltips()).toEqual(['Previous Thread (↑/K)', 'Next Thread (↓/J)'])
+  })
+
+  const steps = () => root.querySelector('[data-outline="thread-steps"]')
+
+  it("holds the arrows' places while the list it was opened from is on its way too", async () => {
+    await show([], false, { threads: [], threadsLoading: true })
+
+    expect(steps()).not.toBeNull()
+    expect(tooltips()).toEqual([])
+  })
+
+  it('holds no place for arrows a thread outside the list will never get', async () => {
+    await show([], false, { threads: ['another'] })
+
+    expect(steps()).toBeNull()
+    expect(tooltips()).toEqual([])
+  })
+
+  it("shows its buttons in the outline's place once it is in", async () => {
+    await show(THEIR_LAST_WORD, false)
+
+    expect(outline()).toBeNull()
+    expect(tooltips()).toContain('Mark as Unread (U)')
   })
 })

@@ -15,8 +15,8 @@ export const PAGE_LENGTH = 25
 const MAX_FILL_WINDOWS = 20
 
 /**
- * What stands in the list's place: a spinner, the refusal with a way to ask again, the empty
- * message, or the rows.
+ * What stands in the list's place: its rows in outline, the refusal with a way to ask again, the
+ * empty message, or the rows.
  */
 export type ThreadListState = 'loading' | 'error' | 'empty' | 'list'
 
@@ -33,11 +33,9 @@ interface Options {
   fillProgress?: () => number
   /**
    * Whether the list's frame (toolbar, Inbox tabs, filter chips, search header) stays up around an
-   * empty or reloading list, so the reader can leave it by them: a split Inbox, a filtered list.
+   * empty or refused list, so the reader can leave it by them: a split Inbox, a filtered list.
    */
   framed?: () => boolean
-  /** Whether it stays up through the list's first load too: the reader just switched tab or filter. */
-  switching?: () => boolean
   /** Work under way that will change the whole list (emptying the folder): the list waits for it. */
   busy?: () => boolean
   /** Whether there is a list to ask for at all; a search waits for its query, and is empty till then. */
@@ -51,7 +49,6 @@ export function usePaginatedThreads({
   threadKey = (row) => row.thread_id,
   fillProgress,
   framed = () => false,
-  switching = () => false,
   busy = () => false,
   asked = () => true,
 }: Options) {
@@ -158,12 +155,10 @@ export function usePaginatedThreads({
     if (state.status === 'pending' || state.isFetching) return 'loading'
     return state.status === 'error' ? 'error' : 'empty'
   })
-  // A first load fills the whole view unless the reader's own switch asked for it.
+  // The frame stands around rows, and around rows on their way: it is there before them, so nothing
+  // moves when they land. An empty or refused list fills the whole view unless it is `framed`.
   const listFramed = computed(
-    () =>
-      switching() ||
-      listState.value === 'list' ||
-      (framed() && !busy() && query().status !== 'pending'),
+    () => listState.value === 'list' || listState.value === 'loading' || framed(),
   )
   return {
     listState,
