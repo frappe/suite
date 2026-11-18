@@ -2,6 +2,7 @@
   <!-- One line on a settings page for a part too big to sit on it: the button opens the part in a
        dialog. The part is built when the dialog opens, and is gone once it closes. -->
   <SettingsRow :title :description>
+    <span v-if="status" class="me-3 self-center text-base text-ink-gray-5">{{ status }}</span>
     <Button :label="action" :aria-label="actionName" @click="open" />
   </SettingsRow>
   <Dialog v-model:open="isOpen" :title :size>
@@ -27,6 +28,8 @@ interface Props {
   description?: string
   /** The button's word, such as "Edit". */
   action: string
+  /** Where the part stands, such as "Off", shown beside the button: read without opening it. */
+  status?: string
   size?: DialogSize
   /** The name this row goes by. Asked for by it, the row opens its dialog. */
   section?: SettingsSectionKey

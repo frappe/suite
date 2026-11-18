@@ -6,7 +6,12 @@ import { requireTestElement } from '@/platform/testing/dom'
 
 import MailSendingSettings from './MailSendingSettings.vue'
 
-const state = vi.hoisted(() => ({ save: vi.fn() }))
+type Reply = { enabled: number; from_date: string | null; to_date: string | null }
+const state = vi.hoisted(() => {
+  const reply: Reply = { enabled: 1, from_date: null, to_date: null }
+
+  return { save: vi.fn(), reply }
+})
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'personal',
@@ -56,7 +61,7 @@ vi.mock('@/api', async () => {
 
       return reactive({
         isFetching: false,
-        data: { enabled: 1, from_date: null, to_date: null, subject: 'Away', html_body: '' },
+        data: { ...state.reply, subject: 'Away', html_body: '' },
         refetch: async () => {},
       })
     },
@@ -158,6 +163,7 @@ async function saveField(dialog: HTMLElement, label: string, value: string) {
 beforeEach(() => {
   window.__ = (text: string) => text
   state.save.mockReset().mockResolvedValue(undefined)
+  state.reply = { enabled: 1, from_date: null, to_date: null }
   settingsSection.value = undefined
 })
 afterEach(() => app.unmount())
@@ -197,6 +203,26 @@ it('keeps Auto-reply open, with what was typed, when the save is refused', async
   await saveField(await openRow(root, 'Auto-reply'), 'Subject', 'Back on Monday')
   const subject = root.querySelector('dialog input[aria-label="Subject"]')
   expect(requireTestElement(subject, HTMLInputElement).value).toBe('Back on Monday')
+})
+// Midday UTC, so the day reads the same in the zone the tests run in
+it.each([
+  [{ enabled: 0, from_date: null, to_date: '2099-11-24T12:00:00Z' }, 'Off'],
+  [{ enabled: 1, from_date: null, to_date: null }, 'On'],
+  [{ enabled: 1, from_date: null, to_date: '2099-11-24T12:00:00Z' }, 'On until 24 Nov'],
+  [
+    { enabled: 1, from_date: '2099-11-20T12:00:00Z', to_date: '2099-11-24T12:00:00Z' },
+    'Starts 20 Nov',
+  ],
+  [
+    { enabled: 1, from_date: '2001-03-01T12:00:00Z', to_date: '2001-03-05T12:00:00Z' },
+    'Ended 5 Mar',
+  ],
+])('says where Auto-reply stands on its row: %o reads %s', (reply, status) => {
+  state.reply = reply
+  const row = Array.from(mount().querySelectorAll('section')).find((section) =>
+    section.textContent.startsWith('Auto-reply'),
+  )
+  expect(row?.querySelector('span')?.textContent).toBe(status)
 })
 it('saves a Sent copies switch as it is flipped, sending only that preference', async () => {
   const root = mount()
