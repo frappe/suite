@@ -8,6 +8,20 @@
     />
     <FormControl v-model="draft.name" :label="__('Display name')" variant="outline" />
 
+    <FormControl
+      type="select"
+      :model-value="signatureChoice"
+      :label="__('Signature')"
+      :options="signatureChoices"
+      variant="outline"
+      @update:model-value="chooseSignature"
+    />
+    <MailRichTextField
+      v-if="isWritingSignature"
+      v-model="draft.signature"
+      :placeholder="__('Write your signature here')"
+    />
+    <!-- Last of the fields, as the two fewest addresses use -->
     <template v-if="showsReplyAndBcc">
       <EmailListInput
         v-model="draft.replyTo"
@@ -26,25 +40,11 @@
     </template>
     <Button
       v-else
-      variant="ghost"
       icon-left="lucide-plus"
       :label="__('Add reply-to or Bcc')"
+      :size="buttonSize"
       class="self-start"
       @click="showReplyAndBcc"
-    />
-
-    <FormControl
-      type="select"
-      :model-value="signatureChoice"
-      :label="__('Signature')"
-      :options="signatureChoices"
-      variant="outline"
-      @update:model-value="chooseSignature"
-    />
-    <MailRichTextField
-      v-if="isWritingSignature"
-      v-model="draft.signature"
-      :placeholder="__('Write your signature here')"
     />
     <SettingsDialogActions>
       <!-- At the dialog's other end from Save, so neither is pressed for the other -->

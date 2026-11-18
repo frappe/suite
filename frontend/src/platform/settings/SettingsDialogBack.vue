@@ -4,7 +4,14 @@
 -->
 <template>
   <div class="flex items-center gap-2">
-    <Button variant="ghost" icon="lucide-arrow-left" :aria-label="label" @click="emit('back')" />
+    <!-- Pulled out by its own padding, so the arrow starts on the line the fields start on -->
+    <Button
+      variant="ghost"
+      icon="lucide-arrow-left"
+      :aria-label="label"
+      class="-ms-1.5"
+      @click="emit('back')"
+    />
     <h3 class="text-base-medium text-ink-gray-8 truncate">{{ title }}</h3>
   </div>
 </template>
