@@ -141,7 +141,7 @@ def _days_between(start: datetime, end: datetime) -> list[str]:
 
 
 def occurrences(row: frappe._dict, start: datetime, end: datetime) -> list[date]:
-    """The days this event lands on inside the window."""
+    """A one-off's own day, whatever the window; a yearly event's days inside the window."""
 
     first = get_datetime(row.starts_on)
     if not row.repeats:
