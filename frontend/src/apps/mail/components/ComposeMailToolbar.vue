@@ -66,18 +66,21 @@
             </template>
           </Button>
         </EmojiPicker>
-        <Button
-          variant="ghost"
-          class="max-h-6 max-w-6"
-          :tooltip="__('Attach files')"
-          :aria-label="__('Attach files')"
-          @click="fileInput?.click()"
+        <ComposeAttachMenu
+          @select-files="(files: File[]) => emit('selectFiles', files)"
+          @attach-from-drive="emit('attachFromDrive')"
         >
-          <template #icon>
-            <Paperclip class="text-ink-gray-8 h-4 w-4" />
-          </template>
-        </Button>
-        <input ref="fileInput" type="file" class="hidden" multiple @change="onFilesSelected" />
+          <Button
+            variant="ghost"
+            class="max-h-6 max-w-6"
+            :tooltip="__('Attach')"
+            :aria-label="__('Attach')"
+          >
+            <template #icon>
+              <Paperclip class="text-ink-gray-8 h-4 w-4" />
+            </template>
+          </Button>
+        </ComposeAttachMenu>
       </div>
 
       <!-- Stays until a save lands, so a refused save cannot pass for a kept draft. -->
@@ -107,8 +110,9 @@
 import { Button, Dropdown } from 'frappe-ui'
 import { EditorFixedMenu } from 'frappe-ui/editor'
 import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
-import { computed, useTemplateRef } from 'vue'
+import { computed } from 'vue'
 
+import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
 import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
@@ -126,6 +130,7 @@ const { isRecipientsEmpty, isUploading, saveFailed, remindAt } = defineProps<{
 const emit = defineEmits([
   'appendEmoji',
   'selectFiles',
+  'attachFromDrive',
   'discardMail',
   'sendMail',
   'scheduleSend',
@@ -146,20 +151,6 @@ const sendOptions = [
 
 const { isMobile } = useScreenSize()
 const menu = useEditorMenu(() => true)
-
-const fileInput = useTemplateRef('fileInput')
-
-const onFilesSelected = async (e: Event) => {
-  const checkedEventTarget = e.target
-  if (!(checkedEventTarget instanceof HTMLInputElement)) return
-
-  const input = checkedEventTarget
-  const files = Array.from(input.files ?? [])
-  if (!files.length) return
-
-  emit('selectFiles', files)
-  input.value = ''
-}
 </script>
 
 <!-- todo: file upload -> discard race condition (draft saved) -->

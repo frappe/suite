@@ -6,8 +6,15 @@ import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
+import { useDriveDialogs } from '@/apps/drive'
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
+import type {
+  Attachment,
+  ComposeMailData,
+  DraftRecipient,
+  Identity,
+  UserResource,
+} from '@/apps/mail/types'
 import {
   commitAfterUndo,
   formatBytes,
@@ -423,7 +430,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const sendMode = ref<'undo' | 'scheduled'>('undo')
   let sentAs = scopeAccountId.value
   const sendMail = async (sendAt?: string) => {
-    if (options.isUploading?.()) {
+    if (isUploading.value) {
       const message = __('Wait for attachments to finish uploading')
       if (sendAt) throw new Error(message)
       return raiseToast(message, 'error')
@@ -823,6 +830,55 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     }
   }
 
+  /**
+   * Puts a file just stored on the site on the mail: an upload from the device, or a copy from
+   * Drive. It has no blob until the draft is saved, so until then it opens from its URL.
+   */
+  const attachFile = (
+    doc: { file_name?: string; file_url?: string; file_size?: number },
+    type?: string,
+  ) => {
+    const file: Attachment & { file_name: string; file_size: number } = {
+      filename: doc.file_name ?? '',
+      file_name: doc.file_name ?? '',
+      blob_id: '',
+      // Kept for the pill's icon; the server reads the type from the file itself.
+      type: type ?? '',
+      size: doc.file_size ?? 0,
+      file_size: doc.file_size ?? 0,
+      file_url: doc.file_url ?? null,
+      disposition: 'attachment',
+    }
+    mail.attachments.push(file)
+  }
+
+  // Drive's own picker, then copies made on the server (attach_drive_files): what the mail carries
+  // is the file as it was picked, under the name Drive gives it. A refusal — a file too large, too
+  // much at once, or one the user can no longer read — comes back in the server's words, as an
+  // upload's does, and attaches none of the picked files.
+  const driveDialogs = useDriveDialogs()
+  const attachingFromDrive = ref(0)
+  const attachFromDrive = async () => {
+    const files = await driveDialogs.pickFiles({
+      title: __('Attach from Drive'),
+      action: __('Attach'),
+    })
+    if (!files?.length) return
+    attachingFromDrive.value++
+    try {
+      const attached = await client.mutation(api.mail.attachments.fromDrive, {
+        nodes: files.map(({ name }) => name),
+      })
+      for (const file of attached) attachFile(file)
+    } catch {
+      // The refusal has been shown already, as every refused write is.
+    } finally {
+      attachingFromDrive.value--
+    }
+  }
+  // Whether a file is still on its way to the mail, from the device or from Drive. Sending waits.
+  const isUploading = computed(() => !!options.isUploading?.() || attachingFromDrive.value > 0)
+
   // ── Mentions ────────────────────────────────────────────────────────────────────────────────
 
   // Picking a mention adds that person to To — reaching back up to the recipient fields is the trip
@@ -929,6 +985,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     setRemindAt,
     openQuotedContent,
     openAttachment,
+    attachFile,
+    attachFromDrive,
+    isUploading,
     editorExtensions,
     appendEmoji,
     editorContent,

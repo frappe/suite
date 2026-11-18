@@ -371,6 +371,7 @@
           :class="{ 'border-transparent': isDragging }"
           :remind-at="remindAt"
           @select-files="(files: File[]) => uploadFiles(files)"
+          @attach-from-drive="attachFromDrive"
           @append-emoji="(emoji: string) => appendEmoji(emoji)"
           @discard-mail="discardMail"
           @send-mail="sendMail"
@@ -455,9 +456,6 @@ const subjectInput = useTemplateRef<HTMLInputElement>('subjectInput')
 type FileUpload = ReturnType<typeof useFileUpload> & { name: string; size: number }
 const fileUploads = ref<FileUpload[]>([])
 const pendingInlineUploads = ref(0)
-const isUploading = computed(
-  () => pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
-)
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 
@@ -516,6 +514,9 @@ const {
   setRemindAt,
   openQuotedContent,
   openAttachment,
+  attachFile,
+  attachFromDrive,
+  isUploading,
   editorExtensions,
   appendEmoji,
   editorContent,
@@ -529,7 +530,8 @@ const {
   onDiscardUnsaved: () => emit('discardMail'),
   onDiscardStarted: () => emit('discardStarted'),
   host: () => textEditor.value,
-  isUploading: () => isUploading.value,
+  isUploading: () =>
+    pendingInlineUploads.value > 0 || fileUploads.value.some((upload) => upload.isUploading),
   uploadInlineImage,
 })
 
@@ -739,21 +741,12 @@ const uploadFile = async (file: File) => {
     size: file.size,
     ...fileUpload,
   })
-  // SAFETY: this Suite upload endpoint returns a Frappe File document; attachDoc reads its file_name/file_url fields.
+  // SAFETY: this Suite upload endpoint returns a Frappe File document; attachFile reads its file_name/file_url/file_size fields.
   const doc = (await fileUpload.upload(file, {
     private: true,
     folder: 'Home/Frappe Mail',
     upload_endpoint: '/api/method/suite.mail.api.mail.upload_file',
   })) as FileDoc
-  attachDoc(doc, file.type)
+  attachFile(doc, file.type)
 }
-const attachDoc = (doc: FileDoc, type?: string) =>
-  mail.attachments.push({
-    file_name: doc.file_name,
-    // Kept for the pill's icon; the server reads the type from the file itself.
-    type: type ?? '',
-    file_url: doc.file_url,
-    file_size: doc.file_size,
-    disposition: 'attachment',
-  })
 </script>

@@ -94,6 +94,7 @@ from suite.mail.api.mail import (
     SyncedChanges,
     add_mails_to_mailbox,
     allow_screening_senders,
+    attach_drive_files,
     block_senders,
     cancel_reply_reminder,
     clear_list,
@@ -247,6 +248,8 @@ from suite.mail.http.settings import CONTRACT_ROUTES as SETTINGS_CONTRACT_ROUTES
 from suite.mail.http.shapes import (
     AccountInput,
     AddressBook,
+    AttachDriveFiles,
+    AttachedFile,
     AttachmentBytesInput,
     AttachmentsZipInput,
     CalendarClientConfig,
@@ -452,6 +455,20 @@ CONTRACT_ROUTES += (
         public_name="screening.set",
         body=ScreenAddresses,
         output=type(None),
+        envelope="message",
+        errors=(
+            frappe.PermissionError,
+            frappe.ValidationError,
+        ),
+    ),
+    Route(
+        "POST",
+        "/api/method/suite.mail.api.mail.attach_drive_files",
+        "attach_drive_files",
+        kind="mutation",
+        public_name="attachments.fromDrive",
+        body=AttachDriveFiles,
+        output=list[AttachedFile],
         envelope="message",
         errors=(
             frappe.PermissionError,

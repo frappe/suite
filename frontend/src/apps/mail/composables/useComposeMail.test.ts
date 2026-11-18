@@ -9,7 +9,8 @@ import { CustomImageExtension, mailEditorKit } from '@/apps/mail/utils/text-edit
 
 import { useComposeMail } from './useComposeMail'
 
-const server = vi.hoisted(() => ({ updateDraft: vi.fn(), create: vi.fn() }))
+const server = vi.hoisted(() => ({ updateDraft: vi.fn(), create: vi.fn(), mutation: vi.fn() }))
+const pickFiles = vi.hoisted(() => vi.fn())
 const requestCompose = vi.hoisted(() => vi.fn())
 const toastError = vi.hoisted(() => vi.fn())
 
@@ -32,9 +33,10 @@ vi.mock('@/api', () => ({
     mail: {
       messages: { create: 'create', updateDraft: 'updateDraft', deleteDraft: 'deleteDraft' },
       scheduled: { cancel: 'cancel' },
+      attachments: { fromDrive: 'fromDrive' },
     },
   },
-  client: { mutation: vi.fn() },
+  client: { mutation: (reference: string, input: unknown) => server.mutation(reference, input) },
   useMutation: (reference: 'create' | 'updateDraft') => ({
     run: (input: unknown) => server[reference](input),
     isPending: false,
@@ -52,6 +54,7 @@ vi.mock('@/apps/mail/utils', () => ({
   raiseToast: vi.fn(),
   randomString: () => 'cid1',
 }))
+vi.mock('@/apps/drive', () => ({ useDriveDialogs: () => ({ pickFiles }) }))
 interface TestIdentity {
   email: string
   _name: string
@@ -135,7 +138,10 @@ function compose({
 beforeEach(() => {
   open = true
   scope.identities = mayaIdentities
+  draft.attachments = []
   server.updateDraft.mockReset()
+  server.mutation.mockReset()
+  pickFiles.mockReset()
   requestCompose.mockReset()
   toastError.mockReset()
   vi.mocked(raiseToast).mockReset()
@@ -535,5 +541,84 @@ describe('a reminder if nobody replies', () => {
     server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
     await composer.sendMail()
     expect(server.updateDraft.mock.calls.at(-1)![0].remind_at).toBeUndefined()
+  })
+})
+
+describe('attaching from Drive', () => {
+  const invoice = { name: 'node-invoice', title: 'Invoice.pdf' }
+  const copy = {
+    name: 'file-1',
+    file_name: 'Invoice.pdf',
+    file_url: '/private/files/Invoice.pdf',
+    file_size: 2048,
+  }
+  const sent = () => server.updateDraft.mock.calls.filter(([input]) => input.submit)
+
+  it('holds the send, and a scheduled send, until the copy is on the mail', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce([invoice])
+    let finishCopy!: (files: (typeof copy)[]) => void
+    server.mutation.mockReturnValueOnce(new Promise((resolve) => (finishCopy = resolve)))
+
+    const attaching = composer.attachFromDrive()
+    await vi.waitFor(() => expect(server.mutation).toHaveBeenCalled())
+    expect(composer.isUploading.value).toBe(true)
+
+    await composer.sendMail()
+    await expect(composer.scheduleSend('2026-11-20T09:00:00Z')).rejects.toThrow(
+      'Wait for attachments to finish uploading',
+    )
+    expect(sent()).toHaveLength(0)
+    expect(raiseToast).toHaveBeenCalledWith('Wait for attachments to finish uploading', 'error')
+
+    finishCopy([copy])
+    await attaching
+    expect(composer.isUploading.value).toBe(false)
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('sends the copy as a file on the site, not as a blob already on the mail server', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce([invoice])
+    server.mutation.mockResolvedValueOnce([copy])
+
+    await composer.attachFromDrive()
+    expect(server.mutation).toHaveBeenCalledWith('fromDrive', { nodes: ['node-invoice'] })
+
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    const [attachment] = sent()[0][0].attachments
+    expect(attachment).toMatchObject({
+      file_name: 'Invoice.pdf',
+      file_url: '/private/files/Invoice.pdf',
+      disposition: 'attachment',
+    })
+    expect(attachment.blob_id).toBeFalsy()
+  })
+
+  it('attaches nothing when the copy is refused, and lets the mail go without it', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce([invoice])
+    server.mutation.mockRejectedValueOnce(new Error('You cannot read Invoice.pdf'))
+
+    await composer.attachFromDrive()
+
+    expect(composer.mail.attachments).toEqual([])
+    expect(composer.isUploading.value).toBe(false)
+    server.updateDraft.mockResolvedValueOnce({ id: 'sent-1', status: 'Submitted', error: null })
+    await composer.sendMail()
+    expect(sent()).toHaveLength(1)
+  })
+
+  it('asks the server for nothing when the picker is cancelled', async () => {
+    const composer = compose()
+    pickFiles.mockResolvedValueOnce(undefined)
+
+    await composer.attachFromDrive()
+
+    expect(server.mutation).not.toHaveBeenCalled()
+    expect(composer.mail.attachments).toEqual([])
   })
 })
