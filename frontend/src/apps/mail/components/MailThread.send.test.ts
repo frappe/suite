@@ -56,6 +56,16 @@ vi.mock('@/apps/mail/components/SenderCard.vue', empty)
 vi.mock('@/apps/mail/components/MessageReactions.vue', empty)
 vi.mock('@/apps/mail/components/MailDate.vue', empty)
 vi.mock('@/apps/mail/components/AttachmentViewer.vue', empty)
+// A message's body, drawn as plain text where the reader can see whether it is open.
+vi.mock('@/apps/mail/components/EmailContent.vue', async () => {
+  const { defineComponent, h } = await import('vue')
+  return {
+    default: defineComponent({
+      props: { content: { type: String, default: '' } },
+      setup: (props) => () => h('div', { 'data-body': '' }, props.content),
+    }),
+  }
+})
 
 // The thread's own fetch, which the pane falls back on when no list holds the thread.
 const query = vi.hoisted(() => ({
@@ -240,4 +250,89 @@ it('leaves the thread the reader moved to while the reply was being sent as it i
   await settle()
 
   expect(router.currentRoute.value.name).not.toBe('mail-mailbox')
+})
+
+// What the reader sees of the thread: the card of each message, and whether its body is open.
+const cards = () =>
+  [...root.querySelectorAll<HTMLElement>('[data-mail-name]')].map((card) => card.dataset.mailName)
+const composerShown = () => root.querySelector('[data-composer]') !== null
+const isOpen = (name: string) => {
+  let node: HTMLElement | null = root.querySelector(`[data-mail-name="${name}"] [data-body]`)
+  if (!node) return false
+  for (; node && node !== root; node = node.parentElement)
+    if (node.style.display === 'none') return false
+  return true
+}
+const reply = message('reply', {
+  from_email: 'alice@example.com',
+  mailboxes: [{ mailbox_id: 'sent', mailbox_name: 'Sent' }],
+  received_at: '2026-10-30T10:00:00Z',
+})
+const draftOfReply = message('draft', {
+  from_email: 'alice@example.com',
+  draft: 1,
+  mailboxes: [{ mailbox_id: 'drafts', mailbox_name: 'Drafts' }],
+  received_at: '2026-10-30T09:30:00Z',
+})
+
+it('puts the sent reply where its composer was', async () => {
+  query.current = reactive({
+    data: [message('bob'), draftOfReply],
+    status: 'success',
+    refetch: async () => {},
+  })
+  await openThread()
+  expect(composerShown()).toBe(true)
+
+  threadAsked.answer = async () => [message('bob'), reply]
+  await composers.get('draft')!()
+  await settle()
+
+  expect(composerShown()).toBe(false)
+  expect(cards()).toEqual(['bob', 'reply'])
+  expect(isOpen('reply')).toBe(true)
+})
+
+it('leaves the messages above the reply open as the reader had them', async () => {
+  query.current = reactive({
+    data: [message('first'), message('bob', { received_at: '2026-10-30T09:00:00Z' }), draftOfReply],
+    status: 'success',
+    refetch: async () => {},
+  })
+  await openThread()
+  // Read mail opens folded, but for the newest; the reader opens the first one too.
+  expect(isOpen('first')).toBe(false)
+  root.querySelector<HTMLElement>('[data-mail-name="first"]')!.click()
+  await settle()
+  expect(isOpen('first')).toBe(true)
+  expect(isOpen('bob')).toBe(true)
+
+  threadAsked.answer = async () => [
+    message('first'),
+    message('bob', { received_at: '2026-10-30T09:00:00Z' }),
+    reply,
+  ]
+  await composers.get('draft')!()
+  await settle()
+
+  expect(cards()).toEqual(['first', 'bob', 'reply'])
+  expect(isOpen('first')).toBe(true)
+  expect(isOpen('bob')).toBe(true)
+})
+
+it('goes back to the folder when a draft that was the whole pane is sent off to a thread of its own', async () => {
+  query.current = reactive({
+    data: [{ ...draftOfReply, mailboxes: [{ mailbox_id: 'drafts', mailbox_name: 'Drafts' }] }],
+    status: 'success',
+    refetch: async () => {},
+  })
+  const router = await openThread('drafts')
+
+  // A forward: the thread it was drafted in has nothing left in it.
+  threadAsked.answer = async () => []
+  await composers.get('draft')!()
+  await settle()
+
+  expect(router.currentRoute.value.name).toBe('mail-mailbox')
+  expect(router.currentRoute.value.params.mailbox).toBe('drafts')
 })
