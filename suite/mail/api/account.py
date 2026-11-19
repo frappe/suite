@@ -272,7 +272,7 @@ def get_user_info() -> dict | None:
         account["enable_screening"] = bool(settings["enable_screening"]) if settings else False
         account["block_remote_images"] = bool(settings["block_remote_images"]) if settings else True
 
-    data.user_image = data.user_image or get_avatar_url(user)
+    data.user_image = data.user_image or get_avatar_url(data.email)
 
     return data
 
