@@ -110,7 +110,7 @@ const emit = defineEmits([
 ])
 
 const { isMobile } = useScreenSize()
-const { mailboxIds } = userStore()
+const user = userStore()
 
 const many = computed(() => threads.length > 1)
 const count = computed(() => String(threads.length))
@@ -121,8 +121,8 @@ const pinned = computed(() => !!threads[0]?.pinned)
 // Members of a stack always share an account (it is part of the stack key), so the first row's own
 // Archive/Trash ids speak for the run. Falling back to the active account covers a plain row whose
 // mailbox ids are not carried on the thread.
-const archiveId = computed(() => threads[0]?.archive ?? mailboxIds.archive)
-const trashId = computed(() => threads[0]?.trash ?? mailboxIds.trash)
+const archiveId = computed(() => threads[0]?.archive ?? user.mailboxIds.archive)
+const trashId = computed(() => threads[0]?.trash ?? user.mailboxIds.trash)
 
 const someIn = (mailboxId: string) =>
   threads.some((t) => t.mailboxes.some((m) => m.mailbox_id === mailboxId))
@@ -162,9 +162,9 @@ const actions = computed(() =>
         (unarchive
           ? threads.some((t) =>
               archivable(t.messages?.length ? t.messages : [t], {
-                sent: t.sent ?? mailboxIds.sent,
+                sent: t.sent ?? user.mailboxIds.sent,
                 archive: archiveId.value,
-                inbox: t.inbox ?? mailboxIds.inbox,
+                inbox: t.inbox ?? user.mailboxIds.inbox,
               }),
             )
           : !everyIn(archiveId.value)),
@@ -178,9 +178,9 @@ const actions = computed(() =>
         !drafts &&
         threads.some((t) =>
           unarchivable(t.messages?.length ? t.messages : [t], {
-            sent: t.sent ?? mailboxIds.sent,
+            sent: t.sent ?? user.mailboxIds.sent,
             archive: archiveId.value,
-            inbox: t.inbox ?? mailboxIds.inbox,
+            inbox: t.inbox ?? user.mailboxIds.inbox,
           }),
         ),
     },

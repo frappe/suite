@@ -33,7 +33,7 @@
       />
     </div>
     <div class="flex h-12 shrink-0 items-center py-2.5">
-      <HeaderActions view-menu :inbox="mailbox === mailboxIds.inbox" />
+      <HeaderActions view-menu :inbox="mailbox === store.mailboxIds.inbox" />
     </div>
   </PageHeader>
 
@@ -229,7 +229,7 @@
 									     rows below they never need the all-accounts cross-account handling. -->
                   <StackListItem
                     v-if="row.type === 'stack'"
-                    :drafts="mailbox === mailboxIds.drafts"
+                    :drafts="mailbox === store.mailboxIds.drafts"
                     :unarchive="true"
                     :threads="row.threads"
                     :expanded="row.expanded"
@@ -253,7 +253,7 @@
                   <MailListItem
                     v-else
                     :mailbox
-                    :drafts="mailbox === mailboxIds.drafts"
+                    :drafts="mailbox === store.mailboxIds.drafts"
                     :unarchive="!isAllAccountsSearch"
                     :mail="row.thread"
                     :account-id="isAllAccountsSearch ? row.thread.account : undefined"
@@ -264,7 +264,9 @@
                     :selection-mode="mobileSelectionMode"
                     :is-selected="selections.includes(row.thread.thread_id)"
                     :hide-sender="row.inStack"
-                    :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
+                    :draggable="
+                      !isMobile && !isAllAccountsSearch && mailbox !== store.mailboxIds.drafts
+                    "
                     :screened="screener.active.value && screener.isScreened(row.thread)"
                     :pinnable="pinnable"
                     :class="rowClasses(row)"
@@ -499,7 +501,7 @@ const { dropViewUndo } = useUndo()
 const socket = useMailSocket()
 // MailLayout's overlay layer; see the selection bar's Teleport.
 const store = userStore()
-const { mailboxes, mailboxIds } = store
+const { mailboxes } = store
 
 // Appearance
 
@@ -549,7 +551,7 @@ const {
 //                  covers all-accounts search (a subset of 'search'), whose rows must be acted on
 //                  through per-row cross-account handlers a stack could not use.
 const stackingEnabled = computed(
-  () => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
+  () => !['search', 'starred', store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox),
 )
 
 // Mail from a sender nobody has decided on yet sits in the Inbox, marked unscreened (see useScreener).
@@ -712,15 +714,15 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   if (key === (isMac ? 'backspace' : 'delete')) {
     e.preventDefault()
     // Trash and Drafts let go for good: a draft is discarded rather than filed in Trash.
-    if (e.shiftKey || mailbox === mailboxIds.trash || mailbox === mailboxIds.drafts)
+    if (e.shiftKey || mailbox === store.mailboxIds.trash || mailbox === store.mailboxIds.drafts)
       return junkOrDeleteThreads(thread_ids, false)
     return handleMoveThreads({
-      [mailboxIds.trash]: thread_ids,
+      [store.mailboxIds.trash]: thread_ids,
     })
   }
 
   // Drafts offers only Discard: a draft isn't read, archived or junked.
-  if (mailbox === mailboxIds.drafts) return
+  if (mailbox === store.mailboxIds.drafts) return
 
   // Mark as read/unread (u)
   if (key === 'u') {
@@ -733,7 +735,11 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   // Archive (e): Archive and Unarchive share a place, so E does whichever it shows — and nothing
   // where neither has anything to do.
   const acted = threadRows.value.filter((t) => thread_ids.includes(t.thread_id))
-  const boxes = { sent: mailboxIds.sent, archive: mailboxIds.archive, inbox: mailboxIds.inbox }
+  const boxes = {
+    sent: store.mailboxIds.sent,
+    archive: store.mailboxIds.archive,
+    inbox: store.mailboxIds.inbox,
+  }
   const messagesOf = (t: Thread) => (t.messages?.length ? t.messages : [t])
   if (key === 'e') {
     e.preventDefault()
@@ -746,7 +752,7 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   // Mark as junk (!): only mail you received is junked.
   if (key === '!') {
     e.preventDefault()
-    if (!acted.some((t) => holdsReceivedMail(messagesOf(t), mailboxIds.sent))) return
+    if (!acted.some((t) => holdsReceivedMail(messagesOf(t), store.mailboxIds.sent))) return
     return junkOrDeleteThreads(thread_ids, true)
   }
 }
@@ -784,15 +790,15 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 const selectActions = buildSelectActions(
   () => selectedRows.value,
   () => ({
-    archive: mailbox === mailboxIds.archive,
-    trash: mailbox === mailboxIds.trash,
-    drafts: mailbox === mailboxIds.drafts,
+    archive: mailbox === store.mailboxIds.archive,
+    trash: mailbox === store.mailboxIds.trash,
+    drafts: mailbox === store.mailboxIds.drafts,
     pinnable: pinnable.value,
-    snoozable: canSnooze.value && mailbox !== mailboxIds.snoozed,
-    snoozed: !!mailbox && mailbox === mailboxIds.snoozed,
-    sent: mailboxIds.sent,
-    archiveId: mailboxIds.archive,
-    inboxId: mailboxIds.inbox,
+    snoozable: canSnooze.value && mailbox !== store.mailboxIds.snoozed,
+    snoozed: !!mailbox && mailbox === store.mailboxIds.snoozed,
+    sent: store.mailboxIds.sent,
+    archiveId: store.mailboxIds.archive,
+    inboxId: store.mailboxIds.inbox,
   }),
   {
     star: () => setFlaggedByThreadIDs(selections.value, true),
@@ -801,7 +807,7 @@ const selectActions = buildSelectActions(
     unarchive: () => handleUnarchiveThreads(selections.value),
     junk: () => junkOrDeleteThreads(selections.value, true),
     notJunk: () => handleSetSpamStatus({ 0: selections.value }),
-    trash: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
+    trash: () => handleMoveThreads({ [store.mailboxIds.trash]: selections.value }),
     delete: () => junkOrDeleteThreads(selections.value, false),
     read: () => handleSetSeen({ 1: selections.value }),
     unread: () => handleSetSeen({ 0: selections.value }),
@@ -834,7 +840,7 @@ const selectActions = buildSelectActions(
 // submenu; a phone's selection bar has none to hang one off, so it asks in the list's sheet, as a
 // time of the reader's own is asked in its dialog, and what they asked about is held here meanwhile.
 const canSnooze = computed(() =>
-  [mailboxIds.inbox, mailboxIds.archive, mailboxIds.snoozed].includes(mailbox),
+  [store.mailboxIds.inbox, store.mailboxIds.archive, store.mailboxIds.snoozed].includes(mailbox),
 )
 const showSnooze = ref(false)
 const pickingSnooze = ref(false)
@@ -946,8 +952,8 @@ const {
   filterTitle,
 } = useListFilter({
   onChange: () => resetThreads(false),
-  starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
-  screenable: () => mailbox === mailboxIds.inbox && screener.active.value,
+  starrable: () => ![store.mailboxIds.trash, 'starred'].includes(mailbox),
+  screenable: () => mailbox === store.mailboxIds.inbox && screener.active.value,
 })
 
 // The Inbox's category tabs; `inboxTab` is the open one, and undefined in any other list or when the
@@ -957,14 +963,14 @@ const {
   active: inboxTab,
   routeFor: routeForTab,
 } = useInboxTabs(
-  () => mailbox === mailboxIds.inbox && 'account',
+  () => mailbox === store.mailboxIds.inbox && 'account',
   () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
   () => resetThreads(false),
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
 // (Starred, a search) or nothing unread to clear (Sent, Drafts).
 const clearScope = computed(() =>
-  ['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox)
+  ['search', 'starred', store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox)
     ? undefined
     : listScope(inboxTab.value, mailboxName.value, filter.value),
 )
@@ -999,7 +1005,7 @@ const threadRows = computed(() =>
       // On the page only so that paging by row count holds (see get_threads).
       .filter((row) => !('reaction_only' in row && row.reaction_only))
       .map((row) => threadRow(row, store.accountId))
-      .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
+      .filter((row) => !isDiscarding(row, { inDrafts: mailbox === store.mailboxIds.drafts }))
       .map(withoutHeldDrafts),
   ),
 )
@@ -1010,7 +1016,7 @@ watch(threadRows, keptRead.keep)
 // The layout below reserves height for it only when it's actually rendered, so the two stay in sync.
 const showDeleteBanner = computed(
   () =>
-    [mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
+    [store.mailboxIds.trash, store.mailboxIds.junk].includes(mailbox) &&
     !activeThreads.value.isFetching &&
     (!!threadRows.value?.length || !!filter.value) &&
     (showReadingPane.value || !threadID),
@@ -1027,7 +1033,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
   reloadMailboxes = true,
   mailboxRoles = [],
 ) => {
-  if (mailboxRoles.length && !mailboxRoles.map((m) => mailboxIds[m]).includes(mailbox)) return
+  if (mailboxRoles.length && !mailboxRoles.map((m) => store.mailboxIds[m]).includes(mailbox)) return
 
   // This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
   // the query's own state drives the list's, so the flag has done its job.
@@ -1136,7 +1142,9 @@ const onMailChanged = () => refreshThreads()
 // in a conversation this list holds, whose open thread would otherwise go on without it.
 const onNewMail = (updatedMailboxes: string[]) => {
   if (
-    [mailbox, mailboxIds.sent, mailboxIds.drafts].some((id) => id && updatedMailboxes.includes(id))
+    [mailbox, store.mailboxIds.sent, store.mailboxIds.drafts].some(
+      (id) => id && updatedMailboxes.includes(id),
+    )
   )
     refreshThreads()
 }
@@ -1386,7 +1394,7 @@ const rowTrash = (mail: Thread) => {
       __('Thread moved to Trash'),
       __('No Trash folder for this account'),
     )
-  return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+  return handleMoveThreads({ [store.mailboxIds.trash]: [mail.thread_id] })
 }
 
 // A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
@@ -1402,7 +1410,7 @@ const stackSetSeen = (threads: Thread[], seen: boolean) =>
 const stackArchive = (threads: Thread[]) => handleArchiveThreads(stackIDs(threads))
 const stackTrash = (threads: Thread[]) =>
   handleMoveThreads({
-    [mailboxIds.trash]: stackIDs(threads),
+    [store.mailboxIds.trash]: stackIDs(threads),
   })
 const stackDelete = (threads: Thread[]) => junkOrDeleteThreads(stackIDs(threads), false)
 const showEmptyMailbox = ref(false)

@@ -106,7 +106,7 @@ export function useThreadActions(deps: {
     goToNextThreadOrMailbox,
   } = deps
   const store = userStore()
-  const { mailboxes, mailboxIds } = store
+  const { mailboxes } = store
   const { setUndoAction, retireUndoAction, undo } = useUndo()
   const { holdDraft, releaseDraft } = useDiscardingDrafts()
   const screener = useScreener()
@@ -181,7 +181,7 @@ export function useThreadActions(deps: {
   const moveToOptions = computed(() => {
     const filedIn = commonMailboxIds(selectedRows.value)
     return mailboxes.data
-      ?.filter((m) => canMoveToMailbox(m.id, filedIn, mailboxIds))
+      ?.filter((m) => canMoveToMailbox(m.id, filedIn, store.mailboxIds))
       .map((m) => ({
         label: m._name,
         icon: h(Icon, {
@@ -198,7 +198,7 @@ export function useThreadActions(deps: {
   const showMoveTo = computed(
     () =>
       !!selections.value.length &&
-      mailbox.value !== mailboxIds.drafts &&
+      mailbox.value !== store.mailboxIds.drafts &&
       !!moveToOptions.value?.length,
   )
   const addMails = useMutation(api.mail.messages.addToFolder)
@@ -248,9 +248,13 @@ export function useThreadActions(deps: {
   const showFolders = computed(
     () =>
       !!selections.value.length &&
-      !['search', 'starred', mailboxIds.junk, mailboxIds.trash, mailboxIds.drafts].includes(
-        mailbox.value,
-      ),
+      ![
+        'search',
+        'starred',
+        store.mailboxIds.junk,
+        store.mailboxIds.trash,
+        store.mailboxIds.drafts,
+      ].includes(mailbox.value),
   )
   const folderOptions = computed(() => {
     if (!showFolders.value) return []
@@ -339,9 +343,9 @@ export function useThreadActions(deps: {
     }
     // Not a draft, ever; and your own mail never into the Inbox or Archive, which are for mail you
     // received (see filing.py) — it is filed into folders of yours only.
-    const toInboxOrArchive = [mailboxIds.inbox, mailboxIds.archive].includes(mailboxId)
+    const toInboxOrArchive = [store.mailboxIds.inbox, store.mailboxIds.archive].includes(mailboxId)
     const mailIds = threadMails(threadIds)
-      .filter((m) => !m.draft && (!toInboxOrArchive || isReceived(m, mailboxIds.sent)))
+      .filter((m) => !m.draft && (!toInboxOrArchive || isReceived(m, store.mailboxIds.sent)))
       .map((m) => m.id)
     if (!mailIds.length) return
     applyAdd() // optimistic: tag shown before the request
@@ -457,7 +461,7 @@ export function useThreadActions(deps: {
 
   // In Drafts the bin discards: a draft is one's own unsent text, let go for good rather than filed
   // in Trash, and taken back with Undo rather than confirmed up front (see discardDrafts).
-  const isDraftsList = computed(() => mailbox.value === mailboxIds.drafts)
+  const isDraftsList = computed(() => mailbox.value === store.mailboxIds.drafts)
   // Marking as Junk is reversible (and may still prompt to block per the account setting), so it
   // runs inline with no confirmation; only the destructive delete keeps a confirmation dialog.
   const junkOrDeleteThreads = (threadIDs: string[], isJunk: boolean) => {
@@ -616,7 +620,7 @@ export function useThreadActions(deps: {
     if (!selectedThreads.length) return
 
     // Moving to Junk is the same as Mark as Junk: no undo, offer to block the sender instead.
-    if (Object.keys(threadIDs).length === 1 && Object.keys(threadIDs)[0] === mailboxIds.junk)
+    if (Object.keys(threadIDs).length === 1 && Object.keys(threadIDs)[0] === store.mailboxIds.junk)
       return handleSetSpamStatus({
         1: selectedThreads,
       })
@@ -629,7 +633,7 @@ export function useThreadActions(deps: {
     }
     if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
     closeComposeWindowHolding(selectedThreads)
-    const movesAll = (t: string) => [mailboxIds.junk, mailboxIds.trash].includes(t)
+    const movesAll = (t: string) => [store.mailboxIds.junk, store.mailboxIds.trash].includes(t)
 
     // Snapshot each affected mail's exact state now (while the threads are still loaded), so undo
     // restores every mail to its precise mailbox set + junk status — even mails in several mailboxes.
@@ -642,7 +646,7 @@ export function useThreadActions(deps: {
     // Trash keeps a non-junk/trash copy (and the flag), so the thread stays starred — either way the
     // row stays in the list.
     const keptInList =
-      (mailbox.value === mailboxIds.sent || mailbox.value === 'starred') &&
+      (mailbox.value === store.mailboxIds.sent || mailbox.value === 'starred') &&
       Object.keys(threadIDs).every((t) => !movesAll(t))
     // Only Search stays server-reconciled: its membership is a text query we can't re-evaluate locally.
     // Starred's rule (a non-junk/trash copy AND some flagged message) is computable from the loaded
@@ -800,36 +804,38 @@ export function useThreadActions(deps: {
         ;[t, ...(t.messages ?? [])].forEach((item) => {
           if (messageOf(item).draft) return
           const ids = item.mailboxes.map((m) => m.mailbox_id)
-          const own = ids.includes(mailboxIds.sent)
+          const own = ids.includes(store.mailboxIds.sent)
           let next: string[] | undefined
           if (action === 'move' && target)
             next = own
-              ? target === mailboxIds.inbox
-                ? [mailboxIds.sent]
-                : [mailboxIds.sent, target]
+              ? target === store.mailboxIds.inbox
+                ? [store.mailboxIds.sent]
+                : [store.mailboxIds.sent, target]
               : [target]
-          else if (action === 'unarchive' && ids.includes(mailboxIds.archive))
+          else if (action === 'unarchive' && ids.includes(store.mailboxIds.archive))
             // Out of Archive; back in the Inbox only if you received it.
             next = [
-              ...ids.filter((id) => id !== mailboxIds.archive && id !== mailboxIds.inbox),
-              ...(own ? [] : [mailboxIds.inbox]),
+              ...ids.filter(
+                (id) => id !== store.mailboxIds.archive && id !== store.mailboxIds.inbox,
+              ),
+              ...(own ? [] : [store.mailboxIds.inbox]),
             ]
           else if (own) {
             // Never archived; out of the Inbox only (see filing.py).
-            if (action !== 'archive' || !ids.includes(mailboxIds.inbox)) return
-            next = ids.filter((id) => id !== mailboxIds.inbox)
+            if (action !== 'archive' || !ids.includes(store.mailboxIds.inbox)) return
+            next = ids.filter((id) => id !== store.mailboxIds.inbox)
           } else if (action === 'archive')
             next = [
               ...ids.filter(
                 (id) =>
                   ![
-                    mailboxIds.inbox,
-                    mailboxIds.junk,
-                    mailboxIds.trash,
-                    mailboxIds.archive,
+                    store.mailboxIds.inbox,
+                    store.mailboxIds.junk,
+                    store.mailboxIds.trash,
+                    store.mailboxIds.archive,
                   ].includes(id),
               ),
-              mailboxIds.archive,
+              store.mailboxIds.archive,
             ]
           if (!next) return
           const entries = next.map(entry).filter((m): m is Mailbox => !!m)
@@ -928,7 +934,9 @@ export function useThreadActions(deps: {
   // toast says it was added to Archive rather than archived. A row leaving the Inbox, Junk or Trash
   // is archived for certain, so its toast comes with the click; elsewhere the answer decides.
   const archiveThreads = (threadIds: string[]) => {
-    const leaves = [mailboxIds.inbox, mailboxIds.junk, mailboxIds.trash].includes(mailbox.value)
+    const leaves = [store.mailboxIds.inbox, store.mailboxIds.junk, store.mailboxIds.trash].includes(
+      mailbox.value,
+    )
     const archived = threadIds.length > 1 ? __('Threads archived') : __('Thread archived')
     return fileInPlace(
       'archive',
@@ -943,7 +951,7 @@ export function useThreadActions(deps: {
   // Archive reversed: the received mail goes back from Archive to the Inbox, every other folder kept,
   // and your own mail stays where it is. Only Archive loses the row.
   const unarchiveThreads = (threadIds: string[]) =>
-    fileInPlace('unarchive', threadIds, mailbox.value === mailboxIds.archive, {
+    fileInPlace('unarchive', threadIds, mailbox.value === store.mailboxIds.archive, {
       onClick: threadIds.length > 1 ? __('Threads unarchived') : __('Thread unarchived'),
     })
 
@@ -954,13 +962,13 @@ export function useThreadActions(deps: {
     fileInPlace(
       'snooze',
       threadIds,
-      [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
+      [store.mailboxIds.inbox, store.mailboxIds.archive].includes(mailbox.value),
       { onClick: snoozedMessage(threadIds.length, until) },
       until,
     )
 
   const unsnoozeThreads = (threadIds: string[]) =>
-    fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, {
+    fileInPlace('wake', threadIds, mailbox.value === store.mailboxIds.snoozed, {
       onClick: threadIds.length > 1 ? __('Threads unsnoozed') : __('Thread unsnoozed'),
     })
 
@@ -991,7 +999,9 @@ export function useThreadActions(deps: {
     // Sent keeps the conversation either way: your sent mail is never junked.
     // In Starred too: your own mail is never junked, and may be what keeps the thread starred.
     const reconcileView =
-      mailbox.value === 'search' || mailbox.value === mailboxIds.sent || mailbox.value === 'starred'
+      mailbox.value === 'search' ||
+      mailbox.value === store.mailboxIds.sent ||
+      mailbox.value === 'starred'
     const forward = () =>
       fileMailsSubmit({
         ids,
@@ -1058,11 +1068,11 @@ export function useThreadActions(deps: {
       // never junked), but the mail you received is junked now: it leaves the open thread, as it
       // would on reading the conversation again.
       let unjunkPane = () => {}
-      if (mailbox.value === mailboxIds.sent || mailbox.value === 'starred') {
+      if (mailbox.value === store.mailboxIds.sent || mailbox.value === 'starred') {
         resetThreads()
         if (spam && threadID.value && selectedThreads.includes(threadID.value)) {
           const rollbacks = threadMails([threadID.value])
-            .filter((m) => isReceived(m, mailboxIds.sent))
+            .filter((m) => isReceived(m, store.mailboxIds.sent))
             .map((m) => mailThreadRef.value?.removeMailFromView(m.id).rollback)
           // Last out, first back: each put back where it stood before the ones after it left.
           unjunkPane = () => [...rollbacks].reverse().forEach((rollback) => rollback?.())
@@ -1146,7 +1156,7 @@ export function useThreadActions(deps: {
       }
     },
     viewMailbox: () => mailbox.value,
-    outgoing: () => [mailboxIds.sent, mailboxIds.drafts].includes(mailbox.value),
+    outgoing: () => [store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox.value),
     afterForward: refillIfEmpty,
   })
 
@@ -1244,7 +1254,7 @@ export function useThreadActions(deps: {
   const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
     const touched = touchedRows(Object.values(threadIDs).flat())
     const result = moveThreads(threadIDs)
-    if (!(mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched, landedOf(result))
+    if (!(store.mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched, landedOf(result))
     return result
   }
 

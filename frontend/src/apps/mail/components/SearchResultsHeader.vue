@@ -92,7 +92,8 @@ const router = useRouter()
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
 const { isMobile } = useScreenSize()
-const { accountId, mailboxes, mailboxIds } = userStore()
+const store = userStore()
+const { mailboxes } = store
 const root = useRootStore()
 
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
@@ -148,7 +149,7 @@ const searchFilterChips = computed(() => {
 // search view for the Inbox.
 const searchWith = (query: Record<string, string>) => {
   if (!Object.keys(query).length) return exitSearch()
-  router.push(mailSearchRoute(accountId, query))
+  router.push(mailSearchRoute(store.accountId, query))
 }
 const removeSearchFilter = (key: string) => {
   const query: Record<string, string> = {}
@@ -162,5 +163,8 @@ const removeSearchFilter = (key: string) => {
 const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
 
 const exitSearch = () =>
-  router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
+  router.push({
+    name: 'mail-mailbox',
+    params: { accountId: store.accountId, mailbox: store.mailboxIds.inbox },
+  })
 </script>
