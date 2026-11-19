@@ -1,0 +1,183 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-11-19 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "hr_section",
+  "hr_site_url",
+  "column_break_hr",
+  "api_key",
+  "api_secret",
+  "holidays_section",
+  "sync_holidays",
+  "holiday_lists",
+  "column_break_holidays",
+  "holidays_color",
+  "celebrations_section",
+  "sync_birthdays",
+  "birthdays_color",
+  "column_break_celebrations",
+  "sync_anniversaries",
+  "anniversaries_color",
+  "status_section",
+  "last_sync",
+  "lists_not_updated",
+  "column_break_status",
+  "last_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Enabled",
+   "description": "Runs the sync every hour. Sync Now works whether or not this is on."
+  },
+  {
+   "fieldname": "hr_section",
+   "fieldtype": "Section Break",
+   "label": "Frappe HR"
+  },
+  {
+   "fieldname": "hr_site_url",
+   "fieldtype": "Data",
+   "label": "HR Site URL",
+   "description": "The HR site alone, such as https://hr.example.com."
+  },
+  {
+   "fieldname": "column_break_hr",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "api_key",
+   "fieldtype": "Password",
+   "label": "API Key",
+   "description": "Of an integration user on the HR site that can read Employee and Holiday List."
+  },
+  {
+   "fieldname": "api_secret",
+   "fieldtype": "Password",
+   "label": "API Secret"
+  },
+  {
+   "fieldname": "holidays_section",
+   "fieldtype": "Section Break",
+   "label": "Holidays"
+  },
+  {
+   "fieldname": "sync_holidays",
+   "fieldtype": "Check",
+   "default": "1",
+   "label": "Sync Holidays",
+   "description": "A calendar for each holiday list. Holiday calendars start ticked for readers."
+  },
+  {
+   "fieldname": "holiday_lists",
+   "fieldtype": "Small Text",
+   "label": "Holiday Lists",
+   "depends_on": "sync_holidays",
+   "description": "One per line. Leave empty to sync every holiday list."
+  },
+  {
+   "fieldname": "column_break_holidays",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "holidays_color",
+   "fieldtype": "Color",
+   "default": "#30a66d",
+   "label": "Holidays Colour",
+   "depends_on": "sync_holidays"
+  },
+  {
+   "fieldname": "celebrations_section",
+   "fieldtype": "Section Break",
+   "label": "Birthdays and Work Anniversaries",
+   "description": "A calendar each, for active employees. They start unticked for readers. Switching one off removes its calendar."
+  },
+  {
+   "fieldname": "sync_birthdays",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Sync Birthdays",
+   "description": "Day and month only. Turn on only where everyone expects the company to see them."
+  },
+  {
+   "fieldname": "birthdays_color",
+   "fieldtype": "Color",
+   "default": "#e34aa6",
+   "label": "Birthdays Colour",
+   "depends_on": "sync_birthdays"
+  },
+  {
+   "fieldname": "column_break_celebrations",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "sync_anniversaries",
+   "fieldtype": "Check",
+   "default": "0",
+   "label": "Sync Work Anniversaries"
+  },
+  {
+   "fieldname": "anniversaries_color",
+   "fieldtype": "Color",
+   "default": "#6846e3",
+   "label": "Work Anniversaries Colour",
+   "depends_on": "sync_anniversaries"
+  },
+  {
+   "fieldname": "status_section",
+   "fieldtype": "Section Break",
+   "label": "Status"
+  },
+  {
+   "fieldname": "last_sync",
+   "fieldtype": "Datetime",
+   "label": "Last Sync",
+   "read_only": 1
+  },
+  {
+   "fieldname": "lists_not_updated",
+   "fieldtype": "Small Text",
+   "label": "Holiday Lists Not Updated",
+   "read_only": 1,
+   "description": "Kept with their last holidays: HR no longer names them, or the list above leaves them out. Delete one in External Calendar when it should go."
+  },
+  {
+   "fieldname": "column_break_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_error",
+   "fieldtype": "Small Text",
+   "label": "Last Error",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-11-19 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Calendar",
+ "name": "HR Calendar Sync Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
