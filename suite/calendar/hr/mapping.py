@@ -1,11 +1,14 @@
 """HR records as calendar events.
 
-Pure functions from what HR returns to the events that should exist. Each event carries a `uid`
+Pure functions from what HR returns to the events that should exist, apart from translating what
+a reader sees into the site's language. Each event carries a `uid`
 made from the HR record it came from: that is how a later run finds the event it wrote, and
 rewrites or removes it rather than adding a second one.
 """
 
 from datetime import date, timedelta
+
+from frappe import _
 
 from suite.calendar.external import yearly_occurrence
 from suite.utils import convert_html_to_text
@@ -23,7 +26,7 @@ def holiday_events(holiday_list: str, holidays: list[dict]) -> list[dict]:
         events.append(
             {
                 "uid": f"hr-holiday-{holiday_list}-{day}",
-                "title": convert_html_to_text(holiday.get("description") or "") or "Holiday",
+                "title": convert_html_to_text(holiday.get("description") or "") or _("Holiday"),
                 **_all_day(day),
             }
         )
@@ -35,7 +38,7 @@ def birthday_events(employees: list[dict]) -> list[dict]:
     whose birthday it is belongs on a calendar, their age does not."""
 
     return [
-        _yearly(employee, "birthday", "birthday", anchor=born)
+        _yearly(employee, "birthday", _("{0}'s birthday"), anchor=born)
         for employee, born in _dated(employees, "date_of_birth")
     ]
 
@@ -48,10 +51,10 @@ def anniversary_events(employees: list[dict]) -> list[dict]:
         _yearly(
             employee,
             "anniversary",
-            "work anniversary",
+            _("{0}'s work anniversary"),
             anchor=yearly_occurrence(joined[5:], int(joined[:4]) + 1).isoformat(),
             month_day=joined[5:],
-            description=f"Joined on {_written_out(joined)}",
+            description=_("Joined on {0}").format(_written_out(joined)),
         )
         for employee, joined in _dated(employees, "date_of_joining")
     ]
@@ -68,12 +71,13 @@ def _dated(employees: list[dict], field: str):
 def _yearly(
     employee: dict,
     kind: str,
-    what: str,
+    title: str,
     anchor: str,
     month_day: str | None = None,
     description: str | None = None,
 ) -> dict:
-    """One yearly event of an employee's, first falling on `anchor`.
+    """One yearly event of an employee's, first falling on `anchor`, titled `title` with their
+    name in its place.
 
     The day it repeats on is stated apart from the anchor: a work anniversary from 29 February
     is anchored on the 28th the next year, and is still a 29 February anniversary.
@@ -81,7 +85,7 @@ def _yearly(
 
     event = {
         "uid": f"hr-{kind}-{employee['name']}",
-        "title": f"{employee.get('employee_name') or employee['name']}'s {what}",
+        "title": title.format(employee.get("employee_name") or employee["name"]),
         "repeats": "Yearly",
         "month_day": month_day or anchor[5:],
         **_all_day(anchor),
@@ -111,4 +115,23 @@ def _written_out(day: str) -> str:
     same date to a reader who writes the day first as to one who writes the month first."""
 
     value = date.fromisoformat(day)
-    return f"{value.day} {value:%B} {value.year}"
+    return f"{value.day} {_month_name(value.month)} {value.year}"
+
+
+def _month_name(month: int) -> str:
+    """The month's name in the site's language, not the server process's locale."""
+
+    return (
+        _("January"),
+        _("February"),
+        _("March"),
+        _("April"),
+        _("May"),
+        _("June"),
+        _("July"),
+        _("August"),
+        _("September"),
+        _("October"),
+        _("November"),
+        _("December"),
+    )[month - 1]
