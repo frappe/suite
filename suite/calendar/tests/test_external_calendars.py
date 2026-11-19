@@ -404,11 +404,32 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
         external_store.replace_assignments(self.calendar, [self.user])
 
-        # the source states it on every run, and one that stops saying so is believed
-        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026")
+        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=False)
 
         self.assertEqual(external.calendar_rows(self.stranger), [])
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
+
+    def test_a_source_that_says_nothing_of_site_wide_leaves_what_an_administrator_set(self):
+        frappe.db.set_value("External Calendar", self.calendar, "site_wide", 1)
+
+        # the next run, from a source that leaves who sees the calendar to the administrator
+        external_store.upsert_calendar("Test Source", "holidays:India 2026", "Renamed in the source")
+
+        self.assertEqual(
+            [row["_name"] for row in external.calendar_rows(self.stranger)], ["Renamed in the source"]
+        )
+
+    def test_a_reader_who_has_not_chosen_is_told_whether_the_source_starts_it_ticked(self):
+        external_store.replace_assignments(self.calendar, [self.user])
+        [row] = external.calendar_rows(self.user)
+        self.assertEqual(row["visible"], 0)
+
+        external_store.upsert_calendar(
+            "Test Source", "holidays:India 2026", "India 2026", starts_visible=True
+        )
+
+        [row] = external.calendar_rows(self.user)
+        self.assertEqual(row["visible"], 1)
 
     def test_the_rows_are_what_the_client_is_told_to_expect(self):
         """The app validates every answer against the contract and refuses one that strays, so

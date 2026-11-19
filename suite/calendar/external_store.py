@@ -17,21 +17,30 @@ from suite.calendar.external import EVENT_FIELDS
 
 
 def upsert_calendar(
-    source: str, source_key: str, calendar_name: str, color: str | None = None, site_wide: bool = False
+    source: str,
+    source_key: str,
+    calendar_name: str,
+    color: str | None = None,
+    site_wide: bool | None = None,
+    starts_visible: bool = False,
 ) -> str:
     """The calendar this source keeps for `source_key`, made if it isn't there yet.
 
-    Its name, its colour and whether it is site-wide are written on every run, not only the day
-    it was made: changed where the source states them, they are changed here.
+    Its name, its colour and whether it starts visible are written on every run, not only the
+    day it was made: changed where the source states them, they are changed here. Whether it is
+    site-wide is written only where the source states it. A source that leaves who sees the
+    calendar to an administrator passes nothing, and what the administrator set stays.
     """
 
     existing = frappe.db.get_value(
         "External Calendar",
         {"source": source, "source_key": source_key},
-        ["name", "calendar_name", "color", "site_wide"],
+        ["name", "calendar_name", "color", "site_wide", "starts_visible"],
         as_dict=True,
     )
-    wanted = {"calendar_name": calendar_name, "color": color, "site_wide": int(site_wide)}
+    wanted = {"calendar_name": calendar_name, "color": color, "starts_visible": int(starts_visible)}
+    if site_wide is not None:
+        wanted["site_wide"] = int(site_wide)
 
     if not existing:
         # The lookup above is not a guarantee — another writer can insert between it and this,

@@ -31,8 +31,10 @@ server, so no CalDAV client shows them.
 A source states what its calendars are called, what is on them and who they are for. Each call
 replaces what was there, so a run is repeatable and what the source drops is removed.
 
-- `upsert_calendar` makes the calendar for a key, or updates its name, colour and whether it is
-  site-wide. All three follow the source on every run.
+- `upsert_calendar` makes the calendar for a key, or updates its name, its colour and whether
+  it starts visible, which follow the source on every run. Whether it is site-wide follows the
+  source only where the source states it: a source that leaves who sees a calendar to an
+  administrator says nothing, and what the administrator set stays.
 - `replace_events` adds what is missing, rewrites what changed and removes what is gone, matched
   by `uid`. A run with nothing changed writes nothing.
 - `replace_assignments` replaces who the calendar is assigned to. Someone the source no longer
@@ -45,7 +47,9 @@ replaces what was there, so a run is repeatable and what the source drops is rem
   drawn for the reader: those assigned to them and the site-wide ones.
 - They are listed under Shared calendars, as a calendar shared read-only is.
 - **Shared calendars start unticked**, these and the mail server's alike: a calendar someone
-  else keeps is drawn over the reader's own week only once they switch it on. The choice is
+  else keeps is drawn over the reader's own week only once they switch it on. The exception is
+  an external calendar its source marks as starting visible, such as a holiday calendar: it
+  starts ticked. The choice is
   kept per browser, since the mail server lets only a writer change a calendar's visibility.
   It is made with a tap in the sidebar or the phone's calendar sheet, or with the Show or Hide
   button on a calendar's row on the settings page. A shared calendar a reader could already see

@@ -6,6 +6,7 @@ import { api, useQuery, type OutputOf } from '@/api'
 import {
   calendarColor,
   carriedVisibility,
+  startsVisible,
   type SharedVisibility,
 } from '@/apps/calendar/utils/calendars'
 import { useSession } from '@/platform/session'
@@ -89,8 +90,7 @@ export const userStore = defineStore('calendar-user', () => {
         ? cal
         : {
             ...cal,
-            // Drawn once the reader ticks it: a shared calendar starts unticked.
-            visible: sharedVisibility.value[cal.name] ?? 0,
+            visible: sharedVisibility.value[cal.name] ?? startsVisible(cal),
           },
     ),
   )
@@ -109,7 +109,8 @@ export const userStore = defineStore('calendar-user', () => {
 
   // Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
   // someone who can write to it change — so a calendar shared read-only is shown or hidden in
-  // this browser instead. Kept only where the reader made a choice; the rest stay unticked.
+  // this browser instead. Kept only where the reader made a choice; the rest start as
+  // `startsVisible` says.
   const sharedVisibility = useStorage<SharedVisibility>('calendar-shared-visibility', {})
 
   // An earlier build kept the hidden ones as a list. It is folded in with the first calendar
