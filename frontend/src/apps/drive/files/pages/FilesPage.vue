@@ -119,7 +119,7 @@
               </TextInput>
               <!-- A set filter stays, so an empty result can still change or clear it.
                    The wrapper keeps the filter its width, since MultiSelect's own root takes no class. -->
-              <div v-if="listingTypes.length || !settledEmpty" class="shrink-0">
+              <div v-if="offersTypeFilter" class="shrink-0">
                 <MultiSelect
                   :model-value="listingTypes.map((option) => option.value)"
                   :options="typeOptions"
@@ -162,10 +162,8 @@
                   :disabled="!listing.rows.length || trash.pending.value"
                   @click="trash.emptyTrash()"
                 />
-                <!-- An empty view has nothing to arrange or select. The control stays
-                     while rows load, so it does not pop in after them. -->
                 <ViewSettings
-                  v-if="!settledEmpty"
+                  v-if="offersRowControls"
                   :presentation="settingsPresentation"
                   :arrangeable="arrangeable"
                   :columns="offeredColumns"
@@ -784,7 +782,17 @@ const listing = heldWhileRearranging(createdRows.listing, () =>
   ].join('|'),
 )
 const hasRows = computed(() => listing.rows.length > 0)
-const settledEmpty = computed(() => !hasRows.value && listing.status !== 'pending')
+// The Type filter and view settings, which an empty view has no use for. While rows load they keep
+// what they last showed, so a reloaded empty view never flashes them and a move between folders
+// keeps them in place
+const offersRowControls = computed<boolean>((isShown = false) => {
+  if (listing.status === 'pending') {
+    return isShown
+  }
+
+  return hasRows.value
+})
+const offersTypeFilter = computed(() => listingTypes.value.length > 0 || offersRowControls.value)
 // A trashed folder's own Restore needs its root too, for a restore into a folder the user picks.
 const trash = useTrashActions(() => trashRoot.value ?? trashedFolder.value?.root ?? null)
 

@@ -35,6 +35,8 @@ const server = vi.hoisted(() => ({
   detailGate: fromPartial<Promise<void> | null>(null),
   /** Set, a search waits for it before it answers. */
   searchGate: fromPartial<Promise<void> | null>(null),
+  /** Set, a folder's or saved view's listing waits for it before it answers. */
+  listGate: fromPartial<Promise<void> | null>(null),
   /** Set, trash and batch writes are refused with it. */
   refusal: fromPartial<Error | null>(null),
   /** The nodes a batch answers as failed, and leaves unchanged. */
@@ -109,6 +111,9 @@ vi.mock('@/platform/transport', async (original) => {
             }
           }
           case 'node_children':
+            if (server.listGate) {
+              await server.listGate
+            }
             return {
               rows: [...server.nodes.values()].filter(
                 (row) => row.parent_node === input.node && row.state === 'Active',
@@ -117,6 +122,9 @@ vi.mock('@/platform/transport', async (original) => {
             }
           case 'view_list':
             if (input.view === 'search') await server.searchGate
+            else if (server.listGate) {
+              await server.listGate
+            }
             return { rows: server.recents.map((name) => node(name)), next_cursor: null }
           case 'view_clear_recents': {
             const named = input.nodes
@@ -309,19 +317,22 @@ function press(combo: string): KeyboardEvent {
   live?.handler(event)
   return event
 }
-const quiet = () =>
-  defineComponent({
+
+/** A stand-in that shows only its content, and its part's name when given one. */
+function quiet(part?: string) {
+  return defineComponent({
     setup:
       (_props, { slots }) =>
       () =>
-        h('div', slots.default?.()),
+        h('div', { 'data-part': part }, slots.default?.()),
   })
+}
 // The search field is frappe-ui's own, since what it shows while typing is under test
 vi.mock('frappe-ui', async () => ({
   Alert: quiet(),
   Breadcrumbs: quiet(),
   Button: quiet(),
-  MultiSelect: quiet(),
+  MultiSelect: quiet('type filter'),
   PageHeader: quiet(),
   PageHeaderBackButton: quiet(),
   PageHeaderMobile: quiet(),
@@ -348,8 +359,8 @@ vi.doMock('../features/FolderPicker.vue', () => ({
       },
   }),
 }))
+vi.doMock('../features/ViewSettings.vue', () => ({ default: quiet('view settings') }))
 for (const part of [
-  '../features/ViewSettings.vue',
   '../features/TemplatePicker.vue',
   '../features/RenameDialog.vue',
   '../features/CreateNodeDialog.vue',
@@ -425,6 +436,7 @@ afterEach(() => {
   server.gate = null
   server.detailGate = null
   server.searchGate = null
+  server.listGate = null
   notificationsArrive = Promise.resolve()
   held = null
   server.refusal = null
@@ -761,6 +773,44 @@ describe('Sort', () => {
     await vi.waitFor(() => expect(titles()).toHaveLength(3))
 
     expect(orders()).toEqual(['title'])
+  })
+})
+
+describe('The type filter and view settings', () => {
+  function shown(root: HTMLElement) {
+    return [...root.querySelectorAll<HTMLElement>('[data-part]')].map((part) => part.dataset.part)
+  }
+
+  it('stay out of an empty Trash from its first frame', async () => {
+    server.listGate = new Promise(() => {})
+    const { root } = await mount('/drive/trash')
+    await vi.waitFor(() => expect(expansions('view_list')).toHaveLength(1))
+    await nextTick()
+
+    expect(root.querySelector('[aria-label="Search all files"]')).not.toBeNull()
+    expect(shown(root)).toEqual([])
+  })
+
+  it('stay while another folder loads, and go once it comes back empty', async () => {
+    server.nodes.set('d', node('d', 'd.png', { parent_node: 'folder-12' }))
+    const { root, router } = await mount('/drive/f/folder-12/notes')
+    await vi.waitFor(() => expect(titles()).toEqual(['d.png']))
+    expect(shown(root)).toEqual(['type filter', 'view settings'])
+
+    const { promise, resolve: answer } = Promise.withResolvers<void>()
+    server.listGate = promise
+    await router.push('/drive/f/folder-14/empty')
+    await vi.waitFor(() =>
+      expect(server.calls).toContainEqual({
+        id: 'node_children',
+        input: expect.objectContaining({ node: 'folder-14' }),
+      }),
+    )
+    await nextTick()
+    expect(shown(root)).toEqual(['type filter', 'view settings'])
+
+    answer()
+    await vi.waitFor(() => expect(shown(root)).toEqual([]))
   })
 })
 
