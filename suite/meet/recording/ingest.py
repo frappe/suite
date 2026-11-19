@@ -16,7 +16,15 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_system_timezone, now_datetime
+from frappe.utils import (
+    add_to_date,
+    cint,
+    format_datetime,
+    get_datetime,
+    get_email_address,
+    get_system_timezone,
+    now_datetime,
+)
 
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 from suite.suite_core import suite_email
@@ -555,7 +563,7 @@ def deliver_recording_notification(recording_name: str):
         if not frappe.db.exists("Email Queue", {"message_id": message_id}):
             suite_email.send(
                 "meet-recording",
-                recording.room_owner,
+                get_email_address(recording.room_owner),
                 _recording_email_params(recording, args["link"]),
                 local={
                     "subject": subject,
