@@ -32,9 +32,8 @@ A source states what its calendars are called, what is on them and who they are 
 replaces what was there, so a run is repeatable and what the source drops is removed.
 
 - `upsert_calendar` makes the calendar for a key, or updates its name, its colour and whether
-  it starts visible, which follow the source on every run. Whether it is site-wide follows the
-  source only where the source states it: a source that leaves who sees a calendar to an
-  administrator says nothing, and what the administrator set stays.
+  it starts visible, which follow the source on every run. Whether it is site-wide is an
+  administrator's, set on the calendar, and no source writes it.
 - `replace_events` adds what is missing, rewrites what changed and removes what is gone, matched
   by `uid`. A run with nothing changed writes nothing.
 - `replace_assignments` replaces who the calendar is assigned to. Someone the source no longer

@@ -388,28 +388,28 @@ class IntegrationTestExternalCalendars(IntegrationTestCase):
         external_store.replace_events(self.calendar, [HOLIDAY])
         self.assertEqual(external.calendar_rows(self.stranger), [])
 
-        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
+        frappe.db.set_value("External Calendar", self.calendar, "site_wide", 1)
 
         self.assertEqual([row["_name"] for row in external.calendar_rows(self.stranger)], ["India 2026"])
         [event] = external.events_in_window(self.stranger, "2026-10-01", "2026-10-31")
         self.assertEqual(event["title"], "Gandhi Jayanti")
 
     def test_a_calendar_both_site_wide_and_assigned_is_drawn_once(self):
-        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
+        frappe.db.set_value("External Calendar", self.calendar, "site_wide", 1)
         external_store.replace_assignments(self.calendar, [self.user])
 
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
 
     def test_a_calendar_no_longer_site_wide_goes_back_to_who_it_is_assigned_to(self):
-        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=True)
+        frappe.db.set_value("External Calendar", self.calendar, "site_wide", 1)
         external_store.replace_assignments(self.calendar, [self.user])
 
-        external_store.upsert_calendar("Test Source", "holidays:India 2026", "India 2026", site_wide=False)
+        frappe.db.set_value("External Calendar", self.calendar, "site_wide", 0)
 
         self.assertEqual(external.calendar_rows(self.stranger), [])
         self.assertEqual(len(external.calendar_rows(self.user)), 1)
 
-    def test_a_source_that_says_nothing_of_site_wide_leaves_what_an_administrator_set(self):
+    def test_a_run_of_the_source_leaves_who_an_administrator_made_it_for(self):
         frappe.db.set_value("External Calendar", self.calendar, "site_wide", 1)
 
         # the next run, from a source that leaves who sees the calendar to the administrator
