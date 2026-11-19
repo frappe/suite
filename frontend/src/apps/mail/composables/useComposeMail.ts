@@ -77,6 +77,11 @@ interface ComposeMailOptions {
    * seen done with its mail still in it. Without it, a send reloads the list.
    */
   showSent?: () => Promise<void>
+  /**
+   * The thread on screen once the composer has gone, where the route does not say it: the phone's
+   * compose page goes back to the page it was opened from. Defaults to the route's thread.
+   */
+  shownThread?: () => string | undefined
   /** Take the composer off screen — the dialog's v-model on desktop, a route pop on mobile. */
   close: () => void
   /** Whether the composer is still on screen. Drives whether a result is worth a toast. */
@@ -162,12 +167,14 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   // its slug, as the URL names it: an id would be answered with a redirect that replaces the page
   // the reader came from, and Back would skip it.
   const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
+  // The thread in front of the reader once the composer goes: on the phone, the page it goes back to.
+  const shownThread = () => options.shownThread?.() ?? route.params.threadID
   // The sent toast's View, opening the thread in Sent. Not offered while the thread is already open,
   // nor when the account has no Sent mailbox to open it in (none has that role, or the mailboxes
   // have not loaded): the link needs one.
   const viewSentAction = (threadID: string | null | undefined) => {
     const sentId = mailboxIds.value.sent
-    if (!threadID || !sentId || route.params.threadID === threadID) return undefined
+    if (!threadID || !sentId || shownThread() === threadID) return undefined
     return {
       label: __('View'),
       onClick: () => {
