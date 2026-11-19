@@ -140,10 +140,13 @@ class WriterDocument(Document):
 
 def notify_comments(file, mentions):
     for mention in mentions:
+        to_user = frappe.db.get_value("User", {"email": mention["id"]})
+        if not to_user:
+            continue
         from_owner = frappe.get_cached_value("User", mention["owner"], "full_name")
         new_notification = create_notification(
             mention["owner"],
-            mention["id"],
+            to_user,
             "Mention",
             file,
             f'{from_owner} mentioned you in a comment in "{file.file_name}".',
