@@ -9,6 +9,7 @@ import time
 import frappe
 import jwt
 from frappe import _
+from frappe.utils import get_email_address
 
 from suite.meet import guest_access
 from suite.meet.api.recording import get_active_recording_state
@@ -145,7 +146,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         "e2ee_required": e2ee_required,
         "user_data": {
             "name": user_fullname,
-            "email": user,
+            "email": get_email_address(user),
             "avatar": user_avatar,
         },
         "expires_in": 3600,
