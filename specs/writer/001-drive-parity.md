@@ -106,13 +106,13 @@ The Versions panel says "No versions yet" on a document that has been edited. Ba
 
 | Gap | Before | Now | Done |
 |---|---|---|---|
-| Print or PDF menu item | Export > PDF and Download both printed. | Only Cmd+P prints, and only the current tab. | A menu item prints. Whether it prints all tabs is open. |
+| Print or PDF menu item | Export > PDF and Download both printed. | Export as PDF in the document menu prints the current tab, as Cmd+P does. | A menu item prints. Whether it prints all tabs is open. |
 | Export as folder | Saved the HTML and pictures as a zip. | Missing. The Markdown download now zips pictures, which covers part of this. | An "HTML (zip)" export is back. |
 | Export to Blog | Published the body as a Blog Post when the blog app is installed. | Missing. `create_blog` is still in `docs.py` and has no caller. | The export is back, shown only when the blog app is installed. |
 | Word count | Show Info listed words, characters and reading time. | Missing. `CharacterCount` is loaded but nothing shows it. | Words, characters and reading time are shown for the open document. |
 
 - **Where it was:** `fe/writer/components/Navbar.vue`, `fe/writer/utils/index.js` (`downloadZippedHTML`), `fe/writer/utils/exports.js`, `suite/writer/api/docs.py` (`create_blog`), `fe/drive/ui/drive/components/InfoDialog.vue`
-- **Where it goes:** print is in `fe/writer/components/CoreEditor.vue` (`onKeyDown('p')`)
+- **Where it goes:** print is in `fe/writer/components/CoreEditor.vue` (`onKeyDown('p')`, `print-file`); the menu item is in `fe/writer/surface/WriterDocumentMenu.vue`
 
 ## 7. Smaller items
 

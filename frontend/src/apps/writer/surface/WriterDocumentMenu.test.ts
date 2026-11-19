@@ -4,6 +4,7 @@ import { createApp, defineComponent, h, ref, type PropType } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import type { DocumentSession } from '@/apps/drive'
+import emitter from '@/apps/writer/emitter'
 
 import WriterDocumentMenu from './WriterDocumentMenu.vue'
 
@@ -161,15 +162,34 @@ describe('Writer document menu', () => {
   })
 
   it('offers a reader Copy link, the exports and Star, but not Import DOCX', () => {
-    expect(mountMenu(false)).toEqual(['Copy link', 'Export as DOCX', 'Export as Markdown', 'Star'])
+    expect(mountMenu(false)).toEqual([
+      'Copy link',
+      'Export as DOCX',
+      'Export as Markdown',
+      'Export as PDF',
+      'Star',
+    ])
   })
 
   it('offers an editor Import DOCX as well', () => {
-    expect(mountMenu(true).slice(1, 4)).toEqual([
+    expect(mountMenu(true).slice(1, 5)).toEqual([
       'Export as DOCX',
       'Export as Markdown',
+      'Export as PDF',
       'Import DOCX',
     ])
+  })
+
+  // The editor prints the open tab with the saved header and footer, as Cmd+P does
+  it('prints the document from the menu', () => {
+    const print = vi.fn()
+    emitter.on('print-file', print)
+    mountMenu(false)
+
+    pick('Export as PDF')
+
+    emitter.off('print-file', print)
+    expect(print).toHaveBeenCalledOnce()
   })
 
   it('stars the document from the menu', () => {
@@ -188,7 +208,12 @@ describe('Writer document menu', () => {
 
   it('offers no Star to someone who cannot keep one, and still the link', () => {
     canStar.value = false
-    expect(mountMenu(false)).toEqual(['Copy link', 'Export as DOCX', 'Export as Markdown'])
+    expect(mountMenu(false)).toEqual([
+      'Copy link',
+      'Export as DOCX',
+      'Export as Markdown',
+      'Export as PDF',
+    ])
   })
 
   it('offers Save version first to someone who can save one, and picking it asks for a name', () => {
@@ -198,7 +223,15 @@ describe('Writer document menu', () => {
     pickSaveVersion()
 
     expect([items, onSaveVersion.mock.calls.length]).toEqual([
-      ['Save version', 'Copy link', 'Export as DOCX', 'Export as Markdown', 'Import DOCX', 'Star'],
+      [
+        'Save version',
+        'Copy link',
+        'Export as DOCX',
+        'Export as Markdown',
+        'Export as PDF',
+        'Import DOCX',
+        'Star',
+      ],
       1,
     ])
   })
