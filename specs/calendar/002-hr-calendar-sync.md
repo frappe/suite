@@ -42,8 +42,8 @@ The sync decides what is on a calendar. An administrator decides who sees it.
 - **Inside a list,** a holiday that HR no longer has is removed.
 - **Birthdays or Work anniversaries switched off** removes that calendar, with its events and its
   audience.
-- The settings name and colour the calendars: changed there, or a list renamed in HR, the change
-  reaches the calendar on the next run.
+- The settings name and colour the calendars: changed there, the change reaches the calendar on
+  the next run.
 
 ## When it runs
 
