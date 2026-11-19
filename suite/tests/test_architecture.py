@@ -199,13 +199,6 @@ BASELINE_DEBT = {
     ),
     **_debt(
         "Suite Writer",
-        "Remove when no migrated file node keeps `application/octet-stream` over a typed blob.",
-        # The embed case stores a picture node the way the migration left older
-        # rows; no Drive call writes a node type that differs from its blob's
-        ("suite/writer/api/tests/test_embed.py|drive-table-write|Drive Node",),
-    ),
-    **_debt(
-        "Suite Writer",
         "Remove when `suite.composition.lifecycle` can run one product's hooks for one test.",
         # The migrate cases stub every other step, which would alter the schema, seed
         # templates or check the whole site's content; the install cases stub the

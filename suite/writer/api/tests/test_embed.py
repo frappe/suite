@@ -173,11 +173,14 @@ class TestWriterEmbed(IntegrationTestCase):
         self.assertFalse(shown.headers.get("Content-Disposition", "").startswith("attachment"))
         self.assertEqual(shown.headers["X-Content-Type-Options"], "nosniff")
 
-        # A migrated embed can carry no stored type; the title still names one.
-        # Drive refuses a node type that differs from its blob's, so the row is
-        # written the way the migration wrote it.
-        frappe.db.set_value("Drive Node", picture, "mime", "application/octet-stream")
-        older = self.get(picture)
+        # An older embed can carry no stored type; the title still names one.
+        # Bytes Drive cannot recognise are stored that way.
+        with storage_v2():
+            untyped = drive.store_file(
+                self.document.name, f"{self.document.name} embed -photo.png", BytesIO(b"picture bytes")
+            )
+        self.assertEqual(frappe.db.get_value("Drive Node", untyped, "mime"), "application/octet-stream")
+        older = self.get(untyped)
         self.assertTrue(older.mimetype.startswith("image/"), older.mimetype)
         self.assertFalse(older.headers.get("Content-Disposition", "").startswith("attachment"))
 
