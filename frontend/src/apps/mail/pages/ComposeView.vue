@@ -316,6 +316,7 @@ import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
 import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
 import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
+import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
@@ -351,6 +352,12 @@ const ccSuggestions = useTemplateRef<HTMLElement>('ccSuggestions')
 const bccSuggestions = useTemplateRef<HTMLElement>('bccSuggestions')
 
 const mailDetails = takePendingCompose()
+const { requestThreadReload } = useThreadReload()
+
+// The thread the page goes back to, when it was opened from one: what the reader sees once the mail
+// is sent. Read from the history entry, as the page leaves by going back to it.
+const { back } = router.options.history.state
+const returnsToThread = typeof back === 'string' ? router.resolve(back).params.threadID : undefined
 
 // Leaving the page IS closing the composer, so both the header's close button and the system back
 // gesture land in the same place. `leaving` stops the guard from bouncing the programmatic pop.
@@ -387,7 +394,12 @@ const {
   onOpened,
 } = useComposeMail({
   mailDetails,
-  reloadMails: () => {},
+  // What changed reaches the thread the page goes back to: the sent reply in place of its draft, a
+  // draft saved, a send undone. The thread is off screen meanwhile, so it takes this when it is back.
+  reloadMails: () => {
+    if (typeof returnsToThread === 'string') requestThreadReload(returnsToThread)
+  },
+  shownThread: () => (typeof returnsToThread === 'string' ? returnsToThread : undefined),
   close: closeCompose,
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
