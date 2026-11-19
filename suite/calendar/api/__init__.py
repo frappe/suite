@@ -81,6 +81,7 @@ def _calendar_rows(account: str) -> list[dict]:
                 "visible",
                 "may_write_all",
                 "may_delete",
+                "include_in_availability",
             ]
         }
         for cal in calendars
@@ -812,6 +813,52 @@ def get_calendar_event_density_with_shared(
     # A holiday marks a day as much as a meeting does: the mini month ticks it too.
     external = external_events(frappe.session.user, from_date, to_date)
     return rows + [_density_row(event, own_emails) for event in external]
+
+
+# The mail server's own cap on the attendees of one event, and the longest stretch of an event's
+# time that is looked up: past either, the form looks nobody up rather than a part of them.
+MAX_AVAILABILITY_PEOPLE = 20
+MAX_AVAILABILITY_SPAN = timedelta(days=14)
+
+
+@frappe.whitelist()
+@dynamic_rate_limit()
+def get_participant_availability(account: str, emails: list[str], utc_start: str, utc_end: str) -> list[dict]:
+    """When each of the people invited is busy between the two instants, as the account may see.
+
+    Only people on this mail server are answered, and never the account itself. The server holds
+    back the calendars not shared with the account to read free/busy, and answers for them as for
+    an empty week, so an empty `busy` says nothing about whether someone is free.
+    """
+
+    start = datetime.fromisoformat(normalize_utc_z(utc_start))
+    end = datetime.fromisoformat(normalize_utc_z(utc_end))
+    if end <= start:
+        frappe.throw(_("The end must be after the start."), frappe.ValidationError)
+    if end - start > MAX_AVAILABILITY_SPAN:
+        frappe.throw(_("Availability is looked up for at most 14 days."), frappe.ValidationError)
+
+    own = _own_emails(account)
+    wanted = list(dict.fromkeys(e.strip().lower().removeprefix("mailto:") for e in emails if e))
+    wanted = [e for e in wanted if e not in own]
+    if len(wanted) > MAX_AVAILABILITY_PEOPLE:
+        frappe.throw(
+            _("Availability is looked up for at most {0} people.").format(MAX_AVAILABILITY_PEOPLE),
+            frappe.ValidationError,
+        )
+
+    client = get_account_client(account)
+    try:
+        principals = jmap_events.principal_ids_by_email(client, wanted)
+        # The account's own principal stands for every alias of it, and is not looked up either.
+        others = {email: id for email, id in principals.items() if id != account}
+        busy = jmap_events.busy_periods(
+            client, list(dict.fromkeys(others.values())), normalize_utc_z(start), normalize_utc_z(end)
+        )
+    except MethodError as e:
+        frappe.throw(_(format_method_error(e)), title=_("Availability Error"))
+
+    return [{"email": email, "busy": busy.get(id, [])} for email, id in others.items()]
 
 
 def _declined_by_viewer(event: dict, own_emails: set[str]) -> bool:

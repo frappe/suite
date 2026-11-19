@@ -155,6 +155,46 @@ def get_events(client: SuiteJMAPClient, ids: list[str] | None = None) -> list[di
     return [e.to_wire() for e in events]
 
 
+def principal_ids_by_email(client: SuiteJMAPClient, emails: list[str]) -> dict[str, str]:
+    """The principal on this mail server that each address belongs to, by address.
+
+    An address the server does not know (another company's, a Gmail one) is left out. An alias
+    finds the principal it is an alias of.
+    """
+
+    if not emails:
+        return {}
+    with client.batch() as b:
+        handles = {email: b.add("Principal/query", {"filter": {"email": email}}) for email in emails}
+    return {email: h.result.ids[0] for email, h in handles.items() if h.result.ids}
+
+
+def busy_periods(
+    client: SuiteJMAPClient, principal_ids: list[str], utc_start: str, utc_end: str
+) -> dict[str, list[dict]]:
+    """Each principal's busy time between the two instants, as the client's account may see it.
+
+    The server answers from the calendars the principal counts toward availability that are
+    shared with the account to read free/busy or more. One shared with nobody answers as an
+    empty week does.
+    """
+
+    if not principal_ids:
+        return {}
+    with client.batch() as b:
+        handles = {
+            id: b.add("Principal/getAvailability", {"id": id, "utcStart": utc_start, "utcEnd": utc_end})
+            for id in principal_ids
+        }
+    return {
+        id: [
+            {"utc_start": p.utc_start, "utc_end": p.utc_end, "busy_status": p.busy_status}
+            for p in h.result.items
+        ]
+        for id, h in handles.items()
+    }
+
+
 def get_calendars(client: SuiteJMAPClient, ids: list[str] | None = None) -> list[dict]:
     """Returns raw calendar objects for the client's account (all of them, or just `ids`)."""
 

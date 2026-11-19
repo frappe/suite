@@ -131,6 +131,11 @@
                     />
                   </div>
                 </div>
+                <!-- Under the labels of the rows above it: the note is about their time. -->
+                <div v-if="conflicts.length" class="flex gap-3 px-3.5 py-2.5">
+                  <span :class="ICON_BLANK" />
+                  <ConflictNote :conflicts="conflicts" class="min-w-0 flex-1" />
+                </div>
                 <button :class="ROW" @click="emit('toggleRepeat')">
                   <Repeat :class="ICON" />
                   <span class="shrink-0">{{ __('Repeat') }}</span>
@@ -159,6 +164,12 @@
                       class="-ml-2 ring-1 ring-outline-gray-2 first:ml-0"
                     />
                   </div>
+                  <Badge
+                    v-if="busyEmails.length"
+                    :label="__('{0} busy', [busyEmails.length])"
+                    theme="amber"
+                    size="sm"
+                  />
                   <span :class="VALUE">{{ participants.length }}</span>
                   <ChevronRight :class="CHEVRON" />
                 </button>
@@ -278,6 +289,7 @@
                 v-model="event.participants"
                 :account="event.account"
                 :display-participants="participants"
+                :busy-emails="busyEmails"
                 label=""
                 variant="inline"
               />
@@ -404,7 +416,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
+import { Avatar, Badge, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 import {
   Bell,
   Briefcase,
@@ -421,9 +433,11 @@ import {
 } from 'lucide-vue-next'
 import { computed, h, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 
+import ConflictNote from '@/apps/calendar/components/ConflictNote.vue'
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import { requestAlertPermission } from '@/apps/calendar/reminders'
+import type { BusyCandidate } from '@/apps/calendar/utils/availability'
 import { eventColor } from '@/apps/calendar/utils/color'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import {
@@ -438,13 +452,24 @@ import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import { meetLogo } from '@/platform/brand'
 
-const { event, isNew, participants, calendarChoices } = defineProps<{
+const {
+  event,
+  isNew,
+  participants,
+  calendarChoices,
+  conflicts = [],
+  busyEmails = [],
+} = defineProps<{
   /** The form state EventModal owns; the rows edit it in place. */
   event: any
   title: string
   isNew: boolean
   disableSave: boolean
   participants: any[]
+  /** The writer's own events in the event's time; see useAvailability. */
+  conflicts?: (BusyCandidate & { title?: string | null })[]
+  /** Who is busy at the event's time, by lower-cased address. */
+  busyEmails?: string[]
   /** The calendars the event can go on, as `account|id` options; see EventModal. */
   calendarChoices: { label: string; value: string; color: string }[]
   meetUrl?: string

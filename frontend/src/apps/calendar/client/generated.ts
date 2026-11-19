@@ -234,6 +234,7 @@ export type GetCalendarsWithSharedOutputCalendarRow = {
   visible: 0 | 1
   may_write_all: 0 | 1
   may_delete: 0 | 1
+  include_in_availability: 'All' | 'Attending' | 'None'
 }
 
 export type GetCalendarsWithSharedInput = { account: string }
@@ -407,6 +408,49 @@ const operationGetCalendarEventDensityWithShared: QueryRef<
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () =>
     (await import('./validators')).operationGetCalendarEventDensityWithShared,
+}
+
+export type GetParticipantAvailabilityOutputBusyPeriod = {
+  utc_start: string
+  utc_end: string
+  busy_status: string | null
+}
+
+export type GetParticipantAvailabilityOutputPersonAvailability = {
+  email: string
+  busy: Array<GetParticipantAvailabilityOutputBusyPeriod>
+}
+
+export type GetParticipantAvailabilityInput = {
+  account: string
+  emails: Array<string>
+  utc_start: string
+  utc_end: string
+}
+
+export type GetParticipantAvailabilityOutput =
+  Array<GetParticipantAvailabilityOutputPersonAvailability>
+
+export type GetParticipantAvailabilityError = 'PermissionError' | 'ValidationError'
+
+const operationGetParticipantAvailability: QueryRef<
+  GetParticipantAvailabilityInput,
+  GetParticipantAvailabilityOutput,
+  GetParticipantAvailabilityError
+> = {
+  id: 'get_participant_availability',
+  owner: 'calendar',
+  kind: 'query',
+  publicName: 'availability.participants',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.calendar.api.get_participant_availability',
+  prefix: '/api/suite/calendar/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationGetParticipantAvailability,
 }
 
 export type SearchCalendarEventsWithSharedOutputCalendarEvent = {
@@ -1232,6 +1276,9 @@ export const api = {
     create: operationCreateCalendar,
     update: operationEditCalendar,
     delete: operationDeleteCalendar,
+  },
+  availability: {
+    participants: operationGetParticipantAvailability,
   },
   invites: {
     get: operationGetInviteDetails,

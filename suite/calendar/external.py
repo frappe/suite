@@ -47,6 +47,8 @@ def calendar_rows(user: str) -> list[dict]:
             # Nobody writes to these here. What they say is the source's to change.
             "may_write_all": 0,
             "may_delete": 0,
+            # A holiday or a birthday is free time: nobody is busy on these calendars.
+            "include_in_availability": "None",
         }
         for calendar in calendars_for(user)
     ]
