@@ -3,7 +3,7 @@ from typing import Literal
 
 import frappe
 from frappe import _
-from frappe.utils import cint, get_datetime, get_system_timezone, get_url, now_datetime
+from frappe.utils import cint, get_datetime, get_email_address, get_system_timezone, get_url, now_datetime
 from frappe.utils.data import sha256_hash
 
 from suite.mail.api.mail import normalize_filter
@@ -392,14 +392,14 @@ def get_backup_email(user: str) -> str:
     frappe.throw(_("User {0} does not exist.").format(frappe.bold(user)))
 
 
-def set_reset_password_key(email: str) -> str:
+def set_reset_password_key(user: str) -> str:
     """Generate and store a reset password key for a user"""
 
     key = frappe.generate_hash()
     hashed_key = sha256_hash(key)
     frappe.db.set_value(
         "User",
-        email,
+        user,
         {"reset_password_key": hashed_key, "last_reset_password_key_generated_on": now_datetime()},
     )
     return key
@@ -416,15 +416,17 @@ def censor_email(email: str) -> str:
 @frappe.whitelist(allow_guest=True)
 @dynamic_rate_limit()
 def send_reset_password_link(user: str) -> str:
-    """Send reset password link to the user"""
+    """Send reset password link to the user, given by their ID or email"""
+
+    user_id = frappe.db.get_value("User", {"email": user, "name": ("not in", frappe.STANDARD_USERS)}) or user
 
     # Only an admin resetting somebody else's password is an administrative act; this same endpoint
     # backs the public "forgot password" form, and a user asking for their own link is not audited.
-    if frappe.session.user != user:
+    if frappe.session.user != user_id:
         log_admin_action("send reset password link", user)
 
-    email = get_backup_email(user)
-    key = set_reset_password_key(user)
+    email = get_backup_email(user_id)
+    key = set_reset_password_key(user_id)
 
     link = get_url("/mail/reset-password/" + key)
     suite_email.send(
@@ -446,7 +448,10 @@ def get_user_for_reset_password_key(key: str) -> str:
     """Return the user for a reset password key"""
 
     hashed_key = sha256_hash(key)
-    return frappe.db.get_value("User", {"reset_password_key": hashed_key}, "name")
+    user = frappe.db.get_value("User", {"reset_password_key": hashed_key})
+    if user and user not in frappe.STANDARD_USERS:
+        return get_email_address(user)
+    return user
 
 
 @frappe.whitelist()
