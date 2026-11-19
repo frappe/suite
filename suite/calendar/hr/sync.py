@@ -10,6 +10,8 @@ writes nothing.
 """
 
 from collections.abc import Callable
+from dataclasses import asdict, dataclass
+from typing import TYPE_CHECKING
 
 import frappe
 from frappe import _
@@ -17,7 +19,13 @@ from frappe.utils import now_datetime
 
 from suite.calendar.external_store import remove_calendar, replace_events, upsert_calendar
 from suite.calendar.hr.mapping import anniversary_events, birthday_events, holiday_events
+from suite.calendar.hr.source import HRSource
 from suite.utils.lock import acquire_lock, release_lock
+
+if TYPE_CHECKING:
+    from suite.calendar.doctype.hr_calendar_sync_settings.hr_calendar_sync_settings import (
+        HRCalendarSyncSettings,
+    )
 
 SETTINGS = "HR Calendar Sync Settings"
 
@@ -34,6 +42,20 @@ LOCK = "hr_calendar_sync"
 LOCK_TIMEOUT = 1800
 
 
+@dataclass(frozen=True)
+class RunResult:
+    """What one run did.
+
+    `calendars` is what was done to each calendar, by the key it is kept by: a holiday list is
+    named as HR names it, so its name alone could be a birthdays calendar's. `not_updated` is the
+    holiday calendars kept here that the run left as they were: lists HR no longer names, or that
+    the settings leave out.
+    """
+
+    calendars: dict[str, dict]
+    not_updated: list[str]
+
+
 def sync_hr_calendars_hourly() -> dict:
     """The scheduler's run, once the settings are enabled. Sync Now does not come through here: it
     runs whether or not the sync is enabled, so a site can try it before switching it on."""
@@ -44,14 +66,14 @@ def sync_hr_calendars_hourly() -> dict:
 
 
 def sync_hr_calendars() -> dict:
-    """One run, now, and what it did per calendar. One at a time, whoever asks: two at once
-    would each find a calendar missing and make it."""
+    """One run, now, and what it did, as the job's result. One at a time, whoever asks: two at
+    once would each find a calendar missing and make it."""
 
     identifier = acquire_lock(LOCK, lock_timeout=LOCK_TIMEOUT)
     if not identifier:
         return {}
     try:
-        return reported_plainly(_run, remember=True)
+        return asdict(reported_plainly(_run, remember=True))
     finally:
         release_lock(LOCK, identifier)
 
@@ -82,31 +104,26 @@ def reported_plainly[T](work: Callable[[], T], remember: bool = False) -> T:
         raise frappe.ValidationError(_("The HR calendar sync failed: {0}").format(message)) from None
 
 
-def _run() -> dict:
+def _run() -> RunResult:
     # Read fresh rather than from the cache: the run acts on what is saved now.
-    settings = frappe.get_doc(SETTINGS)
-    summary = sync(settings, settings.hr_source())
+    settings: HRCalendarSyncSettings = frappe.get_doc(SETTINGS)
+    result = sync(settings, settings.hr_source())
     frappe.db.set_single_value(
         SETTINGS,
         {
             "last_sync": now_datetime(),
             "last_error": None,
-            "lists_not_updated": "\n".join(summary.pop("not_updated", [])),
+            "lists_not_updated": "\n".join(result.not_updated),
         },
     )
-    return summary
+    return result
 
 
-def sync(settings, source) -> dict:
-    """Makes this site's HR calendars say what `source` says, as `settings` choose.
-
-    `source` answers `employees()`, `holiday_lists()` and `holidays(list)`. Returns what was done
-    per calendar, and under `not_updated` the holiday calendars kept here that this run left as
-    they were: lists HR no longer names, or that the settings leave out.
-    """
+def sync(settings: HRCalendarSyncSettings, source: HRSource) -> RunResult:
+    """Makes this site's HR calendars say what `source` says, as `settings` choose."""
 
     kept = dict(frappe.get_all("External Calendar", {"source": SOURCE}, ["source_key", "name"], as_list=True))
-    summary: dict = {}
+    calendars: dict[str, dict] = {}
 
     if settings.sync_birthdays or settings.sync_anniversaries:
         employees = source.employees()
@@ -125,12 +142,12 @@ def sync(settings, source) -> dict:
         if on:
             # Unticked until a reader asks: across a company there is one most days.
             calendar = upsert_calendar(SOURCE, key, name, color=color)
-            summary[name] = replace_events(calendar, events(employees))
+            calendars[key] = replace_events(calendar, events(employees))
         elif key in kept:
             # Switched off: an administrator's word that these should not be shown, birth dates
             # least of all, so the calendar goes with what is on it.
             remove_calendar(kept[key])
-            summary[name] = {"removed_calendar": True}
+            calendars[key] = {"removed_calendar": True}
 
     # Switched off, every holiday calendar stays as it was, so each one is not updated.
     lists: list[str] = []
@@ -139,24 +156,21 @@ def sync(settings, source) -> dict:
         lists = [name for name in source.holiday_lists() if not chosen or name in chosen]
         for holiday_list in lists:
             # Ticked from the start: a closed office is news to everyone it is drawn for.
+            key = f"{HOLIDAYS_KEY}{holiday_list}"
             calendar = upsert_calendar(
-                SOURCE,
-                f"{HOLIDAYS_KEY}{holiday_list}",
-                holiday_list,
-                color=settings.holidays_color,
-                starts_visible=True,
+                SOURCE, key, holiday_list, color=settings.holidays_color, starts_visible=True
             )
-            summary[holiday_list] = replace_events(
+            calendars[key] = replace_events(
                 calendar, holiday_events(holiday_list, source.holidays(holiday_list))
             )
 
     # Kept, and no longer updated. A list can drop out of HR's answer without being deleted
     # there (the key lost read on it, or it was renamed), and removing it would throw away
     # who an administrator assigned it to. They delete it when it should go.
-    summary["not_updated"] = sorted(
+    not_updated = sorted(
         key.removeprefix(HOLIDAYS_KEY)
         for key in kept
         if key.startswith(HOLIDAYS_KEY) and key.removeprefix(HOLIDAYS_KEY) not in lists
     )
 
-    return summary
+    return RunResult(calendars=calendars, not_updated=not_updated)

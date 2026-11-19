@@ -196,7 +196,7 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
         for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
             frappe.delete_doc("External Calendar", name, ignore_permissions=True, delete_permanently=True)
 
-    def run_sync(self) -> dict:
+    def run_sync(self) -> hr_sync.RunResult:
         with patch.object(hr_source.requests, "get", self.hr.get):
             return hr_sync.sync(self.settings, HRSource(HR, "a", "b"))
 
@@ -246,8 +246,8 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
 
     def test_a_second_run_with_nothing_changed_writes_nothing(self):
         self.run_sync()
-        summary = self.run_sync()
-        self.assertEqual(summary["India 2026"], {"created": 0, "updated": 0, "removed": 0})
+        result = self.run_sync()
+        self.assertEqual(result.calendars["holidays:India 2026"], {"created": 0, "updated": 0, "removed": 0})
 
     def test_a_holiday_gone_from_a_list_is_removed_and_a_moved_one_rewritten(self):
         self.run_sync()
@@ -263,25 +263,25 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
         frappe.db.set_value("External Calendar", self.calendar("holidays:Dubai 2026"), "site_wide", 1)
 
         del self.hr.lists["Dubai 2026"]
-        summary = self.run_sync()
+        result = self.run_sync()
 
-        self.assertEqual(summary["not_updated"], ["Dubai 2026"])
+        self.assertEqual(result.not_updated, ["Dubai 2026"])
         self.assertEqual(self.drawn(), {"Dubai 2026": 1})
         self.assertEqual(self.titles(), ["National Day"])
 
     def test_a_list_the_settings_leave_out_is_not_made_and_one_already_made_is_left_alone(self):
         self.settings.holiday_lists = "India 2026"
-        summary = self.run_sync()
+        result = self.run_sync()
         self.assertIsNone(self.calendar("holidays:Dubai 2026"))
-        self.assertEqual(summary["not_updated"], [])
+        self.assertEqual(result.not_updated, [])
 
         self.settings.holiday_lists = ""
         self.run_sync()
         self.settings.holiday_lists = "India 2026"
         self.hr.lists["Dubai 2026"] = []
-        summary = self.run_sync()
+        result = self.run_sync()
 
-        self.assertEqual(summary["not_updated"], ["Dubai 2026"])
+        self.assertEqual(result.not_updated, ["Dubai 2026"])
         self.assertEqual(
             frappe.db.count("External Calendar Event", {"calendar": self.calendar("holidays:Dubai 2026")}), 1
         )
@@ -290,9 +290,9 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
         self.run_sync()
 
         self.settings.sync_holidays = 0
-        summary = self.run_sync()
+        result = self.run_sync()
 
-        self.assertEqual(summary["not_updated"], ["Dubai 2026", "India 2026"])
+        self.assertEqual(result.not_updated, ["Dubai 2026", "India 2026"])
         self.assertIsNotNone(self.calendar("holidays:India 2026"))
         self.assertIsNotNone(self.calendar("holidays:Dubai 2026"))
 
