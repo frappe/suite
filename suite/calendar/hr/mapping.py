@@ -8,8 +8,10 @@ than adding a second one.
 
 from datetime import date, timedelta
 
+import frappe
+from babel.core import UnknownLocaleError
+from babel.dates import format_date
 from frappe import _
-from frappe.utils import format_date
 
 from suite.calendar.external import yearly_occurrence
 from suite.utils import convert_html_to_text
@@ -115,4 +117,10 @@ def _written_out(day: str) -> str:
     """The date as someone reads it, 15 September 2025, with the month as a word, so it is the
     same date to a reader who writes the day first as to one who writes the month first."""
 
-    return format_date(day, "d MMMM y")
+    value = date.fromisoformat(day)
+    try:
+        return format_date(value, "d MMMM y", locale=(frappe.local.lang or "en").replace("-", "_"))
+    except (UnknownLocaleError, ValueError):
+        # A language Babel does not know, such as one an administrator added: Frappe's own
+        # format_date would then write the pattern itself, so the month is written in English.
+        return format_date(value, "d MMMM y", locale="en")

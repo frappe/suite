@@ -124,6 +124,11 @@ class UnitTestCelebrationEvents(UnitTestCase):
         self.assertEqual(event["title"], "Akash Tom's work anniversary")
         self.assertEqual(event["description"], "Joined on 1 March 2020")
 
+    def test_an_anniversary_in_a_language_babel_does_not_know_still_names_the_month(self):
+        with patch.object(frappe.local, "lang", "xx-custom"):
+            [event] = anniversary_events([employee("EMP-1", date_of_joining="2020-03-01")])
+        self.assertEqual(event["description"], "Joined on 1 March 2020")
+
 
 class UnitTestTheHRSite(UnitTestCase):
     def test_a_plain_https_site_is_accepted(self):
