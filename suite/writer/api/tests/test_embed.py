@@ -161,6 +161,7 @@ class TestWriterEmbed(IntegrationTestCase):
         for filename, content in (
             ("notes.html", b"<html><body>notes</body></html>"),
             ("drawing.svg", b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+            ("drawing.png", b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
         ):
             with self.subTest(filename), self.assertRaises(frappe.ValidationError):
                 self.add(self.document.name, content, filename)
@@ -171,6 +172,14 @@ class TestWriterEmbed(IntegrationTestCase):
         self.assertTrue(shown.mimetype.startswith("image/"), shown.mimetype)
         self.assertFalse(shown.headers.get("Content-Disposition", "").startswith("attachment"))
         self.assertEqual(shown.headers["X-Content-Type-Options"], "nosniff")
+
+        # A migrated embed can carry no stored type; the title still names one.
+        # Drive refuses a node type that differs from its blob's, so the row is
+        # written the way the migration wrote it.
+        frappe.db.set_value("Drive Node", picture, "mime", "application/octet-stream")
+        older = self.get(picture)
+        self.assertTrue(older.mimetype.startswith("image/"), older.mimetype)
+        self.assertFalse(older.headers.get("Content-Disposition", "").startswith("attachment"))
 
         with storage_v2():
             page = drive.store_file(

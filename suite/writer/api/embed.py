@@ -2,6 +2,7 @@ import mimetypes
 
 import frappe
 from frappe import _
+from frappe.storage.blob import served_type, sniff_mime
 from werkzeug.wrappers import Response
 
 from suite import drive
@@ -35,9 +36,12 @@ def add(file_id: str):
     upload = frappe.request.files.get("file")
     if not upload or not upload.filename:
         frappe.throw(_("Choose a file to upload"), frappe.ValidationError)
-    # The browser declares one type and Drive may take another from the name
+    # The browser declares one type, Drive may take another from the name, and
+    # the stored type comes from the bytes when they can be recognised.
     named = mimetypes.guess_type(upload.filename)[0]
-    if not (is_media(upload.mimetype) and is_media(named)):
+    sniffed = sniff_mime(upload.stream)
+    recognised = sniffed != "application/octet-stream"
+    if not (is_media(upload.mimetype) and is_media(named)) or (recognised and not is_media(sniffed)):
         frappe.throw(_("A document can show only pictures and videos"), frappe.ValidationError)
     node = drive.store_file(file_id, f"{file_id} embed -{upload.filename}", upload.stream)
     return {"file_url": f"/api/method/suite.writer.api.embed.get?id={node}"}
@@ -56,16 +60,19 @@ def get(id: str | None = None) -> Response:
 
     The editor uploads through Drive's transfer, which takes any file, so the
     type is decided here too: a picture or video is shown inline, and anything
-    else downloads. `nosniff` keeps the browser from reading the bytes as a
-    type other than the one sent.
+    else downloads. The type decided on is the one the framework serves: the
+    node's stored type, or the type its title names when the stored one is
+    empty or `application/octet-stream`, as older uploads can leave it.
+    `nosniff` keeps the browser from reading the bytes as a type other than
+    the one sent.
     """
     if not id:
         frappe.throw(_("Writer argument id is required"), BadRequest)
     drive.check(id, drive.READ)
-    parent = frappe.db.get_value("Drive Node", id, "parent_node")
-    if frappe.db.get_value("Drive Node", parent, "content_doctype") != DOCTYPE:
+    node = frappe.db.get_value("Drive Node", id, ["parent_node", "mime", "title"], as_dict=True)
+    if frappe.db.get_value("Drive Node", node.parent_node, "content_doctype") != DOCTYPE:
         frappe.throw("This is not an embed", ValueError)
-    mime = frappe.db.get_value("Drive Node", id, "mime")
+    mime = served_type(node.title, node.mime)[0]
     response = drive.stream_file(id, as_attachment=not is_media(mime))
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
