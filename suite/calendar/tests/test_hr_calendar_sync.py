@@ -381,30 +381,92 @@ class IntegrationTestARunAsTheSchedulerStartsIt(IntegrationTestCase):
             return answer([private] if params["limit_start"] == 0 else [])
         raise requests.ConnectionError("no route")
 
-    def test_a_failed_run_logs_neither_the_key_nor_an_employee(self):
+    def logged_by_failing(self, work) -> list[str]:
+        """What `work` leaves in the Error Log, failing against an HR site that answers with an
+        employee and then can't be reached: what it logs itself, and what Frappe writes for the
+        error it raises, every frame with its variables."""
+
         logged = []
-        frappe.db.set_single_value("HR Calendar Sync Settings", "enabled", 1)
         with (
             patch.object(hr_source.requests, "get", side_effect=self.hr_that_fails_after_the_employees),
-            # the run commits what went wrong; the test's own transaction is what is rolled back
+            # a failure commits what went wrong; the test's own transaction is what is rolled back
             patch.object(hr_sync.frappe.db, "commit"),
             patch.object(hr_sync.frappe.db, "rollback"),
             patch.object(hr_sync.frappe, "log_error", side_effect=lambda **kw: logged.append(kw["message"])),
         ):
             try:
-                hr_sync.sync_hr_calendars_hourly()
+                work()
             except frappe.ValidationError:
-                # what Frappe writes to the Error Log for a failed job: every frame, with variables
                 logged.append(frappe.get_traceback(with_context=True))
             else:
-                self.fail("the run did not fail")
+                self.fail("it did not fail")
+        return logged
 
+    def assert_nothing_private(self, logged: list[str]) -> None:
         for written in logged:
             for private_value in (self.SECRET, "KEY-12345", "Priya Private", "1990-01-02"):
                 self.assertNotIn(private_value, written)
+
+    def test_a_failed_run_logs_neither_the_key_nor_an_employee(self):
+        frappe.db.set_single_value("HR Calendar Sync Settings", "enabled", 1)
+        self.assert_nothing_private(self.logged_by_failing(hr_sync.sync_hr_calendars_hourly))
         self.assertIn(
             "could not be reached", frappe.db.get_single_value("HR Calendar Sync Settings", "last_error")
         )
+
+    def test_a_failed_test_connection_logs_neither_the_key_nor_an_employee(self):
+        settings = frappe.get_doc("HR Calendar Sync Settings")
+        self.assert_nothing_private(self.logged_by_failing(settings.test_connection))
+
+    def asked_by(self, work, hr: FakeHRSite) -> list[str]:
+        """The hosts `work` asks, each answered as `hr` would."""
+
+        asked = []
+
+        def get(url, params=None, **kwargs):
+            asked.append(urlparse(url).netloc)
+            return hr.get(url, params, **kwargs)
+
+        with patch.object(hr_source.requests, "get", get):
+            work()
+        return asked
+
+    def test_test_connection_asks_the_saved_site_not_one_sent_with_the_request(self):
+        settings = frappe.get_doc("HR Calendar Sync Settings")
+        settings.hr_site_url = "https://elsewhere.example.com"
+
+        asked = self.asked_by(settings.test_connection, FakeHRSite([employee("EMP-1")], {"India 2026": []}))
+
+        self.assertEqual(set(asked), {"hr.example.com"})
+
+    def test_sync_now_runs_on_the_saved_site_not_one_sent_with_the_request(self):
+        self.addCleanup(self.remove_calendars)
+        settings = frappe.get_doc("HR Calendar Sync Settings")
+        settings.hr_site_url = "https://elsewhere.example.com"
+        hr = FakeHRSite([employee("EMP-1", date_of_birth="1990-07-09")], {"India 2026": []})
+
+        def run_here(method, queue, timeout, job_id, deduplicate, enqueue_after_commit, **kwargs):
+            # the job, run where it is queued, with whatever it is handed
+            return frappe.get_attr(method)(**kwargs)
+
+        with patch.object(frappe, "enqueue", run_here):
+            asked = self.asked_by(settings.sync_now, hr)
+
+        self.assertEqual(set(asked), {"hr.example.com"})
+
+    def test_test_connection_names_a_list_in_the_settings_that_hr_does_not_have(self):
+        frappe.db.set_single_value("HR Calendar Sync Settings", "holiday_lists", "India 2026\nMars 2026")
+        hr = FakeHRSite(lists={"India 2026": [], "Dubai 2026": []})
+
+        with patch.object(hr_source.requests, "get", hr.get):
+            report = frappe.get_doc("HR Calendar Sync Settings").test_connection()
+
+        self.assertEqual(report["unknown_holiday_lists"], ["Mars 2026"])
+
+    @staticmethod
+    def remove_calendars() -> None:
+        for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
+            frappe.delete_doc("External Calendar", name, ignore_permissions=True, delete_permanently=True)
 
     def test_a_run_stands_aside_while_another_holds_the_lock(self):
         with (
