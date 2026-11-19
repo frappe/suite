@@ -43,7 +43,7 @@ The sync decides what is on a calendar. An administrator decides who sees it.
   Last Sync names each.
 - **Inside a list,** a holiday that HR no longer has is removed.
 - **Birthdays or Work anniversaries switched off** removes that calendar, with its events and its
-  audience.
+  audience, as soon as the settings are saved. It does not wait for a run, which needs HR.
 - The settings name and colour the calendars: changed there, the change reaches the calendar on
   the next run.
 

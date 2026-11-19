@@ -122,8 +122,8 @@ def _run() -> RunResult:
 def sync(settings: HRCalendarSyncSettings, source: HRSource) -> RunResult:
     """Makes this site's HR calendars say what `source` says, as `settings` choose."""
 
+    calendars: dict[str, dict] = {key: {"removed_calendar": True} for key in remove_switched_off(settings)}
     kept = dict(frappe.get_all("External Calendar", {"source": SOURCE}, ["source_key", "name"], as_list=True))
-    calendars: dict[str, dict] = {}
 
     if settings.sync_birthdays or settings.sync_anniversaries:
         employees = source.employees()
@@ -143,11 +143,6 @@ def sync(settings: HRCalendarSyncSettings, source: HRSource) -> RunResult:
             # Unticked until a reader asks: across a company there is one most days.
             calendar = upsert_calendar(SOURCE, key, name, color=color)
             calendars[key] = replace_events(calendar, events(employees))
-        elif key in kept:
-            # Switched off: an administrator's word that these should not be shown, birth dates
-            # least of all, so the calendar goes with what is on it.
-            remove_calendar(kept[key])
-            calendars[key] = {"removed_calendar": True}
 
     # Switched off, every holiday calendar stays as it was, so each one is not updated.
     lists: list[str] = []
@@ -174,3 +169,27 @@ def sync(settings: HRCalendarSyncSettings, source: HRSource) -> RunResult:
     )
 
     return RunResult(calendars=calendars, not_updated=not_updated)
+
+
+def remove_switched_off(settings: HRCalendarSyncSettings) -> list[str]:
+    """Removes the Birthdays or Work anniversaries calendar the settings switch off, with what is
+    on it, and returns the keys removed. Switching one off is an administrator's word that it
+    should not be shown, birth dates least of all, so the settings call this when they are saved
+    too: it needs nothing from HR, and does not wait for a run that reaches it."""
+
+    off = [
+        key
+        for key, on in (
+            (BIRTHDAYS_KEY, settings.sync_birthdays),
+            (ANNIVERSARIES_KEY, settings.sync_anniversaries),
+        )
+        if not on
+    ]
+    if not off:
+        return []
+    removed = frappe.get_all(
+        "External Calendar", {"source": SOURCE, "source_key": ("in", off)}, ["source_key", "name"]
+    )
+    for calendar in removed:
+        remove_calendar(calendar.name)
+    return [calendar.source_key for calendar in removed]

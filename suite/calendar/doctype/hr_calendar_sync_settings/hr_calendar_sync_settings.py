@@ -6,7 +6,7 @@ from frappe import _
 from frappe.model.document import Document
 
 from suite.calendar.hr.source import HRSource, validate_site_url
-from suite.calendar.hr.sync import reported_plainly
+from suite.calendar.hr.sync import remove_switched_off, reported_plainly
 
 
 class HRCalendarSyncSettings(Document):
@@ -37,6 +37,9 @@ class HRCalendarSyncSettings(Document):
     def validate(self) -> None:
         self.hr_site_url = validate_site_url(self.hr_site_url)
         self.validate_key_goes_where_it_was_made_for()
+
+    def on_update(self) -> None:
+        remove_switched_off(self)
 
     def validate_key_goes_where_it_was_made_for(self) -> None:
         """A saved key is sent only to the site it was saved for. Pointed at another address, the

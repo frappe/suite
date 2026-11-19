@@ -333,6 +333,18 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
         self.assertIsNone(self.calendar("birthdays"))
         self.assertEqual(self.titles(), [])
 
+    def test_birthdays_switched_off_go_when_the_settings_are_saved_with_hr_out_of_reach(self):
+        self.settings.update({"sync_holidays": 0, "sync_birthdays": 1})
+        self.run_sync()
+        frappe.db.set_value("External Calendar", self.calendar("birthdays"), "site_wide", 1)
+
+        self.settings.sync_birthdays = 0
+        with patch.object(hr_source.requests, "get", side_effect=AssertionError("asked HR")):
+            self.settings.save(ignore_permissions=True)
+
+        self.assertIsNone(self.calendar("birthdays"))
+        self.assertEqual(self.titles(), [])
+
     def test_someone_who_leaves_drops_off_the_birthdays(self):
         self.settings.update({"sync_holidays": 0, "sync_birthdays": 1})
         self.run_sync()
