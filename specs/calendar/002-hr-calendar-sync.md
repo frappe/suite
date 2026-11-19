@@ -39,6 +39,8 @@ The sync decides what is on a calendar. An administrator decides who sees it.
   audience, and is no longer updated. Last Sync names it. An administrator deletes it when it
   should go. A list can drop out of HR's answer without being deleted (the key loses read on it,
   or it is renamed), and removing it would throw away who it was assigned to.
+- **Holidays switched off** keeps every holiday calendar the same way, no longer updated, and
+  Last Sync names each.
 - **Inside a list,** a holiday that HR no longer has is removed.
 - **Birthdays or Work anniversaries switched off** removes that calendar, with its events and its
   audience.

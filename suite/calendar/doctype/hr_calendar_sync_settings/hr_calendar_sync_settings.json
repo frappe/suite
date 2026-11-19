@@ -145,7 +145,7 @@
    "fieldtype": "Small Text",
    "label": "Holiday Lists Not Updated",
    "read_only": 1,
-   "description": "Kept with their last holidays: HR no longer names them, or the list above leaves them out. Delete one in External Calendar when it should go."
+   "description": "Kept with their last holidays: HR no longer names them, the list above leaves them out, or Sync Holidays is off. Delete one in External Calendar when it should go."
   },
   {
    "fieldname": "column_break_status",
@@ -161,7 +161,7 @@
  "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-11-19 12:00:00.000000",
+ "modified": "2026-11-19 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Calendar",
  "name": "HR Calendar Sync Settings",

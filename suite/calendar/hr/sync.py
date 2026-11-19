@@ -49,7 +49,7 @@ class RunResult:
     `calendars` is what was done to each calendar, by the key it is kept by: a holiday list is
     named as HR names it, so its name alone could be a birthdays calendar's. `not_updated` is the
     holiday calendars kept here that the run left as they were: lists HR no longer names, or that
-    the settings leave out.
+    the settings leave out, or every one while holidays are switched off.
     """
 
     calendars: dict[str, dict]
