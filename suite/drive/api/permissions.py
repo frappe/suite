@@ -1,5 +1,6 @@
 import frappe
 from frappe.model.document import Document
+from frappe.utils import get_email_address
 
 from suite.drive.utils import (
     APP_FOLDERS,
@@ -252,7 +253,7 @@ def drive_invitation_has_permission(doc, ptype="read", user=None):
         return True
     if isinstance(doc, str):
         doc = frappe.get_doc("Drive User Invitation", doc)
-    return ptype in ("read", "select") and doc.email == user
+    return ptype in ("read", "select") and doc.email == get_email_address(user)
 
 
 def activity_log_has_permission(doc, ptype="read", user=None):

@@ -2,7 +2,7 @@ import frappe
 from frappe import _
 from frappe.rate_limiter import rate_limit
 from frappe.translate import get_all_translations
-from frappe.utils import escape_html, split_emails, validate_email_address
+from frappe.utils import escape_html, get_email_address, split_emails, validate_email_address
 
 
 def access_app():
@@ -14,7 +14,7 @@ def get_my_invites():
     return frappe.db.get_list(
         "Drive User Invitation",
         fields=["creation", "status", "name"],
-        filters={"email": frappe.session.user, "status": ("in", ("Proposed", "Pending"))},
+        filters={"email": get_email_address(), "status": ("in", ("Proposed", "Pending"))},
     )
 
 
@@ -29,7 +29,7 @@ def get_pending_invites():
         filters={"status": ("in", ("Proposed", "Pending"))},
     )
     for i in invites:
-        i["user_name"] = frappe.db.get_value("User", i["email"], "full_name")
+        i["user_name"] = frappe.db.get_value("User", {"email": i["email"]}, "full_name")
     return invites
 
 
@@ -81,7 +81,7 @@ def create_user(email, first_name, password, last_name=None, login=False):
         frappe.throw("User already exists")
 
     if login:
-        frappe.local.login_manager.login_as(user.email)
+        frappe.local.login_manager.login_as(user.name)
     return user
 
 

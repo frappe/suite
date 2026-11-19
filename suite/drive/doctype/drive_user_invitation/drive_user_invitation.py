@@ -86,7 +86,7 @@ class DriveUserInvitation(Document):
                 }
             ).insert(ignore_permissions=True)
             frappe.db.commit()
-            user_exists = frappe.db.exists("User", self.email)
+            user_exists = frappe.db.exists("User", {"email": self.email})
 
             if not user_exists:
                 url = f"/drive/signup?e={self.email}&r={req.name}"
@@ -101,7 +101,7 @@ class DriveUserInvitation(Document):
         frappe.db.commit()
 
         if frappe.session.user == "Guest":
-            frappe.local.login_manager.login_as(self.email)
+            frappe.local.login_manager.login_as(frappe.db.get_value("User", {"email": self.email}))
 
         frappe.local.response["location"] = "/drive/"
         return "/drive/"
