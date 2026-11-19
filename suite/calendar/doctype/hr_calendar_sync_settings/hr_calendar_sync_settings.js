@@ -7,13 +7,8 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 		frm.add_custom_button(__('Sync Now'), () => frm.trigger('sync_now'))
 	},
 
-	// Both act on what is saved, so anything typed and not yet saved is saved first.
-	async save_first(frm) {
-		if (frm.is_dirty()) await frm.save()
-	},
-
 	async test_connection(frm) {
-		await frm.events.save_first(frm)
+		await saveFirst(frm)
 		const { message } = await frm.call({ doc: frm.doc, method: 'test_connection', freeze: true })
 		if (!message) return
 		// The names are HR's: escaped before any of it is markup.
@@ -33,7 +28,7 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 	},
 
 	async sync_now(frm) {
-		await frm.events.save_first(frm)
+		await saveFirst(frm)
 		await frm.call({ doc: frm.doc, method: 'sync_now', freeze: true })
 		frappe.msgprint({
 			title: __('Sync started'),
@@ -44,3 +39,8 @@ frappe.ui.form.on('HR Calendar Sync Settings', {
 		})
 	},
 })
+
+// Both buttons act on what is saved, so anything typed and not yet saved is saved first.
+async function saveFirst(frm) {
+	if (frm.is_dirty()) await frm.save()
+}
