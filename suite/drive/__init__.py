@@ -16,9 +16,9 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The twelve calls an app makes are `check`, `touch`, `take_version`,
+The thirteen calls an app makes are `check`, `touch`, `take_version`,
 `create_document`, `import_document`, `copy`, `adopt_media`, `read_file`,
-`push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
+`stream_file`, `push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
 imports its workflow inside the call, so importing `suite.drive` for byte
 accounting alone does not load the node, preview, and imaging modules.
@@ -240,7 +240,7 @@ def transfer_user_drive(
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import IO
+from typing import IO, TYPE_CHECKING
 
 from suite.drive._core.content import (
     ContentTypeSpec,
@@ -275,6 +275,9 @@ from suite.drive._core.roots import (
 from suite.drive._core.roots import (
     provision_personal_root as ensure_personal_root,
 )
+
+if TYPE_CHECKING:
+    from werkzeug.wrappers import Response
 
 
 def check(node: str, role: int) -> str | None:
@@ -441,6 +444,21 @@ def read_file(node: str) -> tuple[IO[bytes], str]:
     from suite.drive._core.nodes import read_file as _read_file
 
     return _read_file(_principals(), node)
+
+
+def stream_file(node: str, *, as_attachment: bool) -> Response:
+    """Answer one readable file node's bytes as an HTTP response, Range and all.
+
+    The bytes leave through the framework's `stream_blob`, so its content-type
+    rules apply: HTML, SVG, XML and script always download, whatever the
+    caller asks. `as_attachment` forces a download for anything else too.
+    """
+    from suite.drive._core.access import require
+    from suite.drive._core.nodes import _node, stream_content
+
+    row = _node(node)
+    require(row, READ, _principals())
+    return stream_content(row, as_attachment=as_attachment)
 
 
 def adopt_media(document_node: str, media_nodes) -> dict[str, str]:
@@ -706,6 +724,7 @@ __all__ = (
     "root_locations",
     "set_user_active",
     "store_file",
+    "stream_file",
     "take_version",
     "touch",
     "transfer_user_drive",

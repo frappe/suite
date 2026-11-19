@@ -779,6 +779,7 @@ class TestArchitecture(unittest.TestCase):
                 "root_locations",
                 "set_user_active",
                 "store_file",
+                "stream_file",
                 "take_version",
                 "touch",
                 "transfer_user_drive",
