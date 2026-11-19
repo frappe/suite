@@ -137,27 +137,32 @@ class UnitTestTheHRSite(UnitTestCase):
             with self.subTest(url=url):
                 self.assertRaises(frappe.ValidationError, validate_site_url, url)
 
+    def test_a_key_without_its_secret_is_refused(self):
+        for key, secret in (("a", None), (None, "b"), ("", "")):
+            with self.subTest(key=key, secret=secret):
+                self.assertRaises(frappe.ValidationError, HRSource, HR, key, secret)
+
     def test_redirects_are_not_followed(self):
         with patch.object(hr_source.requests, "get", return_value=answer([], status=302)) as get:
-            self.assertRaises(frappe.ValidationError, HRSource(HR, "token a:b").employees)
+            self.assertRaises(frappe.ValidationError, HRSource(HR, "a", "b").employees)
         self.assertFalse(get.call_args.kwargs["allow_redirects"])
 
     def test_an_answer_too_large_is_refused(self):
         response = answer([])
         response.raw.read.return_value = b"x" * (hr_source.MAX_RESPONSE_BYTES + 1)
         with patch.object(hr_source.requests, "get", return_value=response):
-            self.assertRaises(frappe.ValidationError, HRSource(HR, "token a:b").employees)
+            self.assertRaises(frappe.ValidationError, HRSource(HR, "a", "b").employees)
 
     def test_a_site_that_caps_its_pages_is_still_read_to_the_end(self):
         # a proxy or a hardened site hands back fewer than asked for; a reader that took a short
         # page as the last would stop at the cap, and the sync would drop everyone past it
         everyone = [employee(f"EMP-{n}") for n in range(1203)]
         with patch.object(hr_source.requests, "get", FakeHRSite(everyone, page_length=500).get):
-            self.assertEqual(len(HRSource(HR, "token a:b").employees()), 1203)
+            self.assertEqual(len(HRSource(HR, "a", "b").employees()), 1203)
 
     def test_a_holiday_list_name_cannot_lead_somewhere_else_on_the_site(self):
         with patch.object(hr_source.requests, "get", return_value=answer({"holidays": []})) as get:
-            HRSource(HR, "token a:b").holidays("../../method/ping?x=1#y")
+            HRSource(HR, "a", "b").holidays("../../method/ping?x=1#y")
         self.assertEqual(
             get.call_args.args[0], f"{HR}/api/resource/Holiday List/..%2F..%2Fmethod%2Fping%3Fx%3D1%23y"
         )
@@ -193,7 +198,7 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
 
     def run_sync(self) -> dict:
         with patch.object(hr_source.requests, "get", self.hr.get):
-            return hr_sync.sync(self.settings, HRSource(HR, "token a:b"))
+            return hr_sync.sync(self.settings, HRSource(HR, "a", "b"))
 
     def calendar(self, key: str) -> str:
         return frappe.db.get_value("External Calendar", {"source": TEST_SOURCE, "source_key": key})

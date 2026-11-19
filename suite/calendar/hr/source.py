@@ -25,15 +25,15 @@ MAX_RESPONSE_BYTES = 25 * 1024 * 1024
 
 
 class HRSource:
-    """Frappe HR on `site_url`, read with an `Authorization` header of an API key and secret."""
+    """Frappe HR on `site_url`, read with the API key and secret of a user there."""
 
-    def __init__(self, site_url: str | None, authorization: str):
+    def __init__(self, site_url: str | None, api_key: str | None, api_secret: str | None):
         self.site_url = validate_site_url(site_url)
         if not self.site_url:
             frappe.throw(_("Enter the HR site's URL."))
-        if not authorization:
+        if not api_key or not api_secret:
             frappe.throw(_("Enter an API key and secret for the HR site."))
-        self.authorization = authorization
+        self.authorization = f"token {api_key}:{api_secret}"
 
     def employees(self) -> list[dict]:
         """Every active employee, with the dates the calendars are made from."""

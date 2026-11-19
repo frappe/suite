@@ -49,9 +49,11 @@ class HRCalendarSyncSettings(Document):
             frappe.throw(_("Enter the API key and secret again: the saved ones are for another HR site."))
 
     def hr_source(self) -> HRSource:
-        key = self.get_password("api_key", raise_exception=False)
-        secret = self.get_password("api_secret", raise_exception=False)
-        return HRSource(self.hr_site_url, f"token {key}:{secret}" if key and secret else "")
+        return HRSource(
+            self.hr_site_url,
+            self.get_password("api_key", raise_exception=False),
+            self.get_password("api_secret", raise_exception=False),
+        )
 
     def chosen_holiday_lists(self) -> set[str]:
         """The lists named in the settings. None named is every list."""
