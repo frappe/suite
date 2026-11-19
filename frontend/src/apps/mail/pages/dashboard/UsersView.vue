@@ -45,9 +45,8 @@
 						<template v-if="column.key === 'user'">
 							<div class="flex items-center space-x-2">
 								<Avatar :image="row.user_image" :label="row.full_name" size="lg" />
-								<!-- A member row is a contact row: the User's docname is the address. -->
 								<ContactOption
-									:contact="{ email: row.name, display_name: row.full_name }"
+									:contact="{ email: row.email, display_name: row.full_name }"
 									class="text-sm"
 								/>
 							</div>
@@ -152,6 +151,7 @@ import StorageBar from '@/apps/mail/components/StorageBar.vue'
 
 type MemberRow = {
 	name: string
+	email: string
 	full_name: string
 	user_image?: string
 	last_active?: string | null
