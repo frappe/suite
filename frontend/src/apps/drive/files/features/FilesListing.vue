@@ -344,12 +344,14 @@
       </section>
     </template>
 
+    <!-- A successful refresh can leave a continuation error if there is still another window. -->
     <LoadFailed
-      v-if="query.status === 'error' && query.rows.length"
+      v-if="query.rows.length && (query.status === 'error' || (query.hasNext && query.error))"
       variant="section"
       class="mt-3"
       :title="__('Could not load files')"
       :retry="loadMore"
+      :retry-disabled="query.isFetching"
     />
     <div ref="sentinel" class="flex min-h-12 items-center justify-center py-3">
       <LoadingIndicator v-if="query.isFetchingNext" />
