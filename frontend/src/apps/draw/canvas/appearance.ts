@@ -1,6 +1,5 @@
 import { paletteColor } from './palette'
 
-// Default ink follows the canvas, or contrasts with an explicitly coloured text background.
 export function textInk(ink?: string, background?: string, dark = false): string {
   if (ink !== undefined) return paletteColor(ink, dark) ?? ink
   const match = background?.trim().match(/^#([\da-f]{3}|[\da-f]{6})$/i)

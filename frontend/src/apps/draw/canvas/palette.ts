@@ -90,7 +90,6 @@ const semanticFamilies = new Set([
 ])
 const surfaceSteps = [2, 4, 6, 8, 10]
 
-// Display the palette through Frappe's inverse ramps without rewriting the scene.
 export function paletteColor(color: string | undefined, dark: boolean): string | undefined {
   if (!dark || color === undefined) return color
   const normalized = color.toLowerCase()
