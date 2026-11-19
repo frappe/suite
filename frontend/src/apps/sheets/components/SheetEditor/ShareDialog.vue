@@ -46,7 +46,7 @@
         <div class="sd-stage-wrap sd-search-wrap" :class="{ 'sd-stage-wrap--has-chips': staged.length }">
           <div v-for="(c, i) in staged" :key="c.user" class="sd-chip">
             <Avatar :label="c.initials" :image="c.user_image || undefined" size="xs" />
-            <span class="sd-chip-text">{{ c.user }}</span>
+            <span class="sd-chip-text">{{ c.email }}</span>
             <button
               type="button"
               class="sd-chip-x"
@@ -74,7 +74,7 @@
               <Avatar :label="u.initials" :image="u.user_image || undefined" size="sm" />
               <div class="sd-result-info">
                 <span class="sd-primary-text">{{ u.full_name }}</span>
-                <span class="sd-secondary-text">{{ u.name }}</span>
+                <span class="sd-secondary-text">{{ u.email }}</span>
               </div>
             </button>
           </div>
@@ -98,7 +98,7 @@
           <Avatar :label="ownerInitials" :image="ownerImage || undefined" size="lg" :tooltip="ownerFullName" />
           <div class="sd-member-info">
             <span class="sd-primary-text">{{ ownerFullName }}</span>
-            <span v-if="props.ownerId !== ownerFullName" class="sd-secondary-text">{{ props.ownerId }}</span>
+            <span v-if="ownerEmail && ownerEmail !== ownerFullName" class="sd-secondary-text">{{ ownerEmail }}</span>
           </div>
           <span class="sd-role-static">{{ _ownerIsMe ? 'Owner (you)' : 'Owner' }}</span>
         </div>
@@ -242,6 +242,9 @@ const ownerFullName = computed(() =>
   || ownerInfo.value?.full_name
   || props.ownerId
   || 'You'
+)
+const ownerEmail = computed(() =>
+  _ownerIsMe.value ? currentUser.email.value : ownerInfo.value?.email
 )
 const ownerImage = computed(() =>
   (_ownerIsMe.value ? currentUser.imageURL.value : ownerInfo.value?.user_image) || ''
@@ -428,7 +431,7 @@ async function searchUsers(q) {
 // reduces notification noise (each invitee gets one email instead of N)
 // and makes the role choice deliberate.
 
-const staged      = ref([])         // [{ user, full_name, user_image, initials }]
+const staged      = ref([])         // [{ user, email, full_name, user_image, initials }]
 const pendingRole = ref('0')        // '0' = Can view, '1' = Can edit
 const inviting    = ref(false)
 
@@ -439,7 +442,7 @@ const pendingRoleOptions = [
 
 function addChip(u) {
   staged.value.push({
-    user: u.name, full_name: u.full_name, user_image: u.user_image, initials: u.initials,
+    user: u.name, email: u.email, full_name: u.full_name, user_image: u.user_image, initials: u.initials,
   })
   searchQuery.value   = ''
   searchResults.value = []
