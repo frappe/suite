@@ -7,6 +7,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ShortcutsModal from '@/apps/calendar/components/Modals/ShortcutsModal.vue'
 import { useCalendarBody } from '@/apps/calendar/composables/useCalendarBody'
 import { useShortcuts } from '@/apps/calendar/composables/useShortcuts'
+import { followRouteAccount } from '@/apps/calendar/router'
 import { useCalendarSocket } from '@/apps/calendar/socket'
 import { userStore } from '@/apps/calendar/stores/user'
 import dayjs from '@/apps/calendar/utils/dayjs'
@@ -22,6 +23,7 @@ import { provideAreaShortcuts } from '@/platform/shortcuts'
  *     injections that calendar components depend on,
  *   - holds Calendar's site socket while mounted (event reminders listen on the shell's
  *     connection, see `installEventReminders`),
+ *   - switches to the account a navigation names, which `beforeEnter` alone misses,
  *   - registers the app-wide shortcuts and the dialog that lists them,
  *   - on a phone, draws the new-event button above the shell's bottom nav,
  *   - renders the nested <router-view>.
@@ -32,6 +34,7 @@ const { showShortcuts, openShortcuts } = useShortcuts()
 const route = useRoute()
 const router = useRouter()
 
+followRouteAccount()
 provideAreaShortcuts(openShortcuts)
 provide('$user', userResource)
 provide('$dayjs', dayjs)

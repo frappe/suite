@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { api, useQuery } from '@/api'
 import type { GridEvent } from '@/apps/calendar/composables/useMonthGrid'
 import { userStore } from '@/apps/calendar/stores/user'
+import { onShownCalendar } from '@/apps/calendar/utils/calendars'
 import { fromEventZone } from '@/apps/calendar/utils/datetime'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
@@ -70,6 +71,12 @@ export const useEventDensity = (
   })
 
   return {
-    events: computed(() => (density.data ?? []).map((row) => toGridEvent(row, color))),
+    // A switched-off calendar's days are not ticked, as its events are not drawn. The rows are
+    // kept as they came, so a calendar switched back on is ticked again without a refetch.
+    events: computed(() =>
+      (density.data ?? [])
+        .filter(onShownCalendar(store.calendars.data))
+        .map((row) => toGridEvent(row, color)),
+    ),
   }
 }

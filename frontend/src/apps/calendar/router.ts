@@ -1,4 +1,4 @@
-import type { RouteLocationNormalized } from 'vue-router'
+import { onBeforeRouteUpdate, type RouteLocationNormalized } from 'vue-router'
 
 import { userStore } from '@/apps/calendar/stores/user'
 import { lastCalendarView } from '@/apps/calendar/utils/lastView'
@@ -63,3 +63,14 @@ export const calendarGuard = async (to: RouteLocationNormalized) => {
   if (to.meta.shortcut)
     return { ...resolveShortcut(to.name, to.params, accountId), query: to.query }
 }
+
+/**
+ * Follows a change of account inside Calendar. `beforeEnter` runs only when a route is
+ * entered from another one, and switching accounts stays on the same route with a new
+ * `accountId`, so without this the calendar kept showing the old account. Called from the
+ * layout that every calendar route nests under.
+ */
+export const followRouteAccount = () =>
+  onBeforeRouteUpdate((to, from) =>
+    to.params.accountId === from.params.accountId ? true : calendarGuard(to),
+  )

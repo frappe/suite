@@ -35,9 +35,7 @@ export const useCalendarActions = () => {
     const visible = calendar.visible ? 0 : 1
     calendar.visible = visible
     if (!calendar.may_write_all) {
-      store.hiddenShared = visible
-        ? store.hiddenShared.filter((name) => name !== calendar.name)
-        : [...store.hiddenShared, calendar.name]
+      store.sharedVisibility = { ...store.sharedVisibility, [calendar.name]: visible }
       return
     }
     void client
