@@ -57,19 +57,19 @@ const LaserPointerIcon = defineComponent(
 
 const overflowTools = computed(() => [
   {
-    label: __('Insert image'),
+    label: __('Insert Image'),
     icon: ImagePlus,
     selected: props.activeTool === 'image',
     onClick: () => emit('select', 'image'),
   },
   {
-    label: __('Laser pointer'),
+    label: __('Laser Pointer'),
     icon: LaserPointerIcon,
     selected: props.activeTool === 'laser',
     onClick: () => emit('select', 'laser'),
   },
   {
-    label: __('Lasso select'),
+    label: __('Lasso Select'),
     icon: LassoSelect,
     selected: props.activeTool === 'lasso',
     onClick: () => emit('select', 'lasso'),
@@ -86,7 +86,7 @@ const overflowTools = computed(() => [
           :key="tool.label"
           :text="
             tool.value === 'select'
-              ? `${tool.label} - Esc`
+              ? 'Pointer - Esc'
               : tool.shortcut
                 ? `${tool.label} - ${tool.shortcut}`
                 : tool.label
