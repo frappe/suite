@@ -88,7 +88,7 @@ answered 5 and 6 on his request, and he approved the whole resolution.
      component. Log out stays on those pages, because the shell avatar sheet
      is hidden in those areas. A merged shell `/profile` route was rejected
      because it would take the user out of the area.
-   - Tab ids are namespaced and typed, for example `'mail.screener'` or
+   - Tab ids are namespaced and typed, for example `'mail.inbox'` or
      `'files.storage'`. `openSettings(tab)` takes the union built from the
      composition list, so a typo fails at compile time. On phone it opens
      that tab's drill-in page. This replaces Mail's label lookups

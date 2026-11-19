@@ -11,7 +11,7 @@ import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell"
 const FIRST_TABS = [
 	{ heading: "Account", tab: "Profile" },
 	{ heading: "Drive", tab: "Storage" },
-	{ heading: "Mail", tab: "Credentials" },
+	{ heading: "Mail", tab: "General" },
 	{ heading: "Calendar", tab: "Calendars" },
 ];
 
@@ -58,8 +58,10 @@ test.describe("desktop", () => {
 		await page.goto("/home");
 		const settings = await openSettingsFromRail(page);
 
-		// The sidebar's group labels, in heading order.
-		const headings = settings.getByRole("tablist").locator(":scope > div > div > div:first-child:not([role='tab'])");
+		// The sidebar's group labels, in heading order. The search box is no group
+		const headings = settings
+			.getByRole("tablist")
+			.locator(":scope > div > div:not(:has(input)) > div:first-child:not([role='tab'])");
 		await expect(headings).toHaveText(FIRST_TABS.map(({ heading }) => heading));
 
 		for (const { tab } of FIRST_TABS) {
@@ -79,7 +81,7 @@ test.describe("desktop", () => {
 		for (const body of [
 			"PreferencesSettings.vue",
 			"StatisticsSettings.vue",
-			"CredentialsSettings.vue",
+			"MailGeneralSettings.vue",
 			"CalendarsSettings.vue",
 		]) {
 			expect(served.has(body), `${body} before its click`).toBe(false);
@@ -219,7 +221,7 @@ for (const phone of [false, true]) {
 			await expect(
 				panel.getByText("No active files. Files in the trash and their versions still count towards storage."),
 			).toBeVisible();
-			await expect(panel.getByText("No files", { exact: true })).toBeVisible();
+			await expect(panel.getByText("No files yet", { exact: true })).toBeVisible();
 			await expect(panel.getByText("4 KB used")).toBeVisible();
 		});
 	});
@@ -311,7 +313,7 @@ test.describe("phone", () => {
 		// A settings heading: a named section holding its rows.
 		const profileSections = page.locator(SETTINGS_SECTION);
 		const mail = page.getByRole("region", { name: "Mail", exact: true });
-		for (const tab of ["Credentials", "Automation", "Import", "Export"]) {
+		for (const tab of ["General", "Inbox", "Sending", "Import and export", "Advanced"]) {
 			await expect(mail.getByRole("button", { name: tab, exact: true })).toBeVisible();
 		}
 		const profileHeadings = await profileSections.evaluateAll((sections) =>
@@ -319,10 +321,10 @@ test.describe("phone", () => {
 		);
 
 		// A row opens its tab in Settings.
-		await mail.getByRole("button", { name: "Credentials", exact: true }).click();
+		await mail.getByRole("button", { name: "General", exact: true }).click();
 		const settings = page.getByRole("dialog", { name: "Settings" });
-		const tabPage = settings.getByRole("region", { name: "Credentials", exact: true });
-		await expect(tabPage.getByRole("heading", { name: "Credentials", exact: true })).toBeVisible();
+		const tabPage = settings.getByRole("region", { name: "General", exact: true });
+		await expect(tabPage.getByRole("heading", { name: "General", exact: true })).toBeVisible();
 
 		// Back shows the Settings list: the same headings as the Profile page.
 		await page.goBack();

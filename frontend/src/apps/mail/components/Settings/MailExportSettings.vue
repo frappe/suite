@@ -8,15 +8,15 @@
   />
   <FormControl
     v-model="mailExport.archive_type"
-    :label="__('Archive Type')"
+    :label="__('Archive type')"
     type="select"
     variant="outline"
     :options="ARCHIVE_TYPE_OPTIONS"
   />
   <SettingsRow
     class="!py-0"
-    :title="__('Custom Selection')"
-    :description="__('Apply filters to select specific emails for export.')"
+    :title="__('Custom selection')"
+    :description="__('Apply filters to select specific messages for export.')"
   >
     <Switch v-model="customSelection" />
   </SettingsRow>
@@ -28,8 +28,8 @@
       variant="outline"
       :options="mailboxOptions"
     />
-    <FormControl v-model="filter.after" type="date" variant="outline" :label="__('From Date')" />
-    <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To Date')" />
+    <FormControl v-model="filter.after" type="date" variant="outline" :label="__('From date')" />
+    <FormControl v-model="filter.before" type="date" variant="outline" :label="__('To date')" />
     <FormControl
       v-model="filter.hasAttachment"
       type="select"
@@ -41,12 +41,12 @@
       v-model="filter.isRead"
       type="select"
       variant="outline"
-      :label="__('Read Status')"
+      :label="__('Read status')"
       :options="getReadStatusOptions()"
     />
     <FormControl
       v-model="mailExport.limit"
-      :label="__('Max Number of Emails')"
+      :label="__('Max number of messages')"
       type="number"
       variant="outline"
       placeholder="1000"
@@ -54,37 +54,33 @@
     <FormControl
       v-if="mailExport.limit && mailExport.limit > 0"
       v-model="mailExport.sort"
-      :label="__('Start From')"
+      :label="__('Start from')"
       type="select"
       variant="outline"
       :options="sortOptions"
     />
   </template>
 
-  <Button
-    class="min-h-7"
-    :label="__('Create Export')"
-    :loading="Boolean(ongoingExport.data?.name) || createMailExport.isPending"
-    :disabled="
-      ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending
-    "
-    @click="createMailExportSubmit()"
+  <Alert
+    v-if="isExportRunning"
+    :title="__('Export in progress. We’ll email you when it’s ready.')"
   />
-  <div class="!mt-3 space-x-1 text-base">
-    <span class="text-ink-gray-5">{{ exportSubtitle }}</span>
-    <a class="hover:underline" :href="exportHref" target="_blank">
-      {{ exportLinkText }}
-    </a>
-  </div>
-  <ErrorMessage
-    v-if="createMailExport.error"
-    :message="createMailExport.error?.message"
-    class="mb-2.5"
-  />
+  <ErrorMessage :message="exportError" />
+  <!-- Both tabs' forms are mounted, and only the shown one's buttons go in the dialog -->
+  <SettingsDialogActions v-if="isActive">
+    <Button :label="exportLinkText" :href="exportHref" />
+    <Button
+      :label="__('Start export')"
+      variant="solid"
+      :loading="isExporting"
+      :disabled="isExportBlocked"
+      @click="createMailExportSubmit()"
+    />
+  </SettingsDialogActions>
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Alert, Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
 import { computed, onScopeDispose, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
@@ -92,6 +88,12 @@ import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constant
 import { useMailSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+
+const { isActive } = defineProps<{
+  /** Whether this is the form on show. Its buttons are the dialog's only while it is. */
+  isActive: boolean
+}>()
 
 const store = userStore()
 const { mailboxes } = store
@@ -126,11 +128,11 @@ const mailboxOptions = computed(() =>
 )
 const sortOptions = computed(() => [
   {
-    label: __('Oldest Emails'),
+    label: __('Oldest messages'),
     value: 'Received At (ASC)',
   },
   {
-    label: __('Newest Emails'),
+    label: __('Newest messages'),
     value: 'Received At (DESC)',
   },
 ])
@@ -172,10 +174,12 @@ const onExchangeCompleted = (payload: { action: 'Import' | 'Export' }) => {
 }
 socket.on('mail_exchange_completed', onExchangeCompleted)
 onScopeDispose(() => socket.off('mail_exchange_completed', onExchangeCompleted))
-const exportSubtitle = computed(() => {
-  if (ongoingExport.data?.name) return __("Export in progress. We'll email you when it's ready.")
-  return __('No exports in progress.')
-})
+const isExportRunning = computed(() => Boolean(ongoingExport.data?.name))
+const isExporting = computed(() => isExportRunning.value || createMailExport.isPending)
+const isExportBlocked = computed(
+  () => ongoingExport.isFetching || Boolean(ongoingExport.error) || createMailExport.isPending,
+)
+const exportError = computed(() => createMailExport.error?.message)
 const exportHref = computed(() => {
   if (ongoingExport.data?.name) return `/mail/mail-exchanges/${ongoingExport.data.name}`
   return '/mail/mail-exchanges?operation=Export'

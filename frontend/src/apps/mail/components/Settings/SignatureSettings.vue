@@ -1,21 +1,45 @@
 <template>
-  <AppSettingsHeader :title="__('Signatures')">
-    <template #actions>
+  <!-- One signature, written in place of the list: the arrow goes back to it -->
+  <div v-if="draft" class="flex flex-col gap-4">
+    <SettingsDialogBack :title="formTitle" :label="__('Back to signatures')" @back="showList" />
+    <FormControl
+      v-model="draft.signature_name"
+      :label="__('Name')"
+      :placeholder="__('Work signature')"
+      variant="outline"
+    />
+    <div class="space-y-1.5">
+      <label class="text-ink-gray-5 block text-xs">{{ __('Signature') }}</label>
+      <MailRichTextField v-model="draft.html_body" :placeholder="__('Write your signature here')" />
+    </div>
+    <ErrorMessage :message="saveError" />
+    <SettingsDialogActions>
       <Button
-        icon-left="lucide-plus"
-        :label="__('New')"
-        :size="isMobile ? 'md' : 'sm'"
-        @click="showAddSignature = true"
+        variant="solid"
+        :label="__('Save')"
+        :size="buttonSize"
+        :disabled="isSaveBlocked"
+        :loading="isSaving"
+        @click="save"
       />
-    </template>
-  </AppSettingsHeader>
-  <AppSettingsBody>
+    </SettingsDialogActions>
+  </div>
+  <div v-else class="flex flex-col gap-3">
+    <SettingsDialogActions>
+      <Button
+        variant="solid"
+        icon-left="lucide-plus"
+        :label="__('New signature')"
+        :size="buttonSize"
+        @click="addSignature"
+      />
+    </SettingsDialogActions>
     <div v-if="signatures?.data?.length">
       <div
         v-for="signature in signatures?.data"
         :key="signature.name"
         class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
-        @click="editSignature(signature.name)"
+        @click="editSignature(signature)"
       >
         <span class="text-base">{{ signature.signature_name }}</span>
         <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens
@@ -36,78 +60,111 @@
       </div>
     </div>
 
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base-medium">{{ __('No signatures found.') }}</p>
-
-      <p>
-        {{ __('Signatures let you automatically add personalized content to your emails.') }}
-      </p>
-    </div>
-
-    <AddSignatureModal
-      v-model="showAddSignature"
-      @reload-signatures="signatures.refetch().catch(() => {})"
+    <SettingsEmptyList
+      v-else
+      :title="__('No signatures yet')"
+      :description="
+        __('Signatures let you automatically add personalized content to your messages.')
+      "
     />
-    <SetDefaultSignatureModal v-model="showSetSignature" :signature="selectedSignature" />
-    <EditSignatureModal
-      v-model="showEditSignature"
-      :signature-i-d="selectedSignature"
-      @reload-signatures="signatures.refetch().catch(() => {})"
-    />
-  </AppSettingsBody>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
-import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { ref } from 'vue'
+import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { Edit2, Ellipsis, Trash2 } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
 
 import { api, useMutation, useQuery, type OutputOf } from '@/api'
-import AddSignatureModal from '@/apps/mail/components/Modals/AddSignatureModal.vue'
-import EditSignatureModal from '@/apps/mail/components/Modals/EditSignatureModal.vue'
-import SetDefaultSignatureModal from '@/apps/mail/components/Modals/SetDefaultSignatureModal.vue'
+import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
+import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import { failureLine } from '@/platform/feedback'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
+import { translate as __ } from '@/platform/translation'
+
+type Signature = OutputOf<typeof api.mail.signatures.list>[number]
 
 const { isMobile } = useScreenSize()
-
-const showAddSignature = ref(false)
-const selectedSignature = ref('')
-const showSetSignature = ref(false)
-const showEditSignature = ref(false)
+const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 
 const signatures = useQuery(api.mail.signatures.list)
+// A refused save is said on the signature that was saved, where the eyes are, so no toast says it
+const createSignature = useMutation(api.mail.signatures.create, { silent: true })
+const updateSignature = useMutation(api.mail.signatures.update, { silent: true })
+const saveError = computed(() => failureLine(createSignature.error ?? updateSignature.error))
 const deleteSignature = useMutation(api.mail.signatures.delete)
 
-const editSignature = (signature: string) => {
-  selectedSignature.value = signature
-  showEditSignature.value = true
+// The signature being written. Without a name it is a new one; unset, the list shows
+const draft = ref<{ name?: string; signature_name: string; html_body: string }>()
+const formTitle = computed(() => {
+  if (draft.value?.name) {
+    return __('Edit signature')
+  }
+
+  return __('New signature')
+})
+const isSaving = computed(() => createSignature.isPending || updateSignature.isPending)
+const isSaveBlocked = computed(() => !draft.value?.signature_name || !draft.value.html_body)
+
+function addSignature() {
+  draft.value = { signature_name: '', html_body: '' }
 }
 
-const signatureOptions = (signature: OutputOf<typeof api.mail.signatures.list>[number]) => [
-  {
-    label: __('Set Default'),
-    icon: Pin,
-    onClick: () => {
-      selectedSignature.value = signature.html_body!
-      showSetSignature.value = true
+function editSignature(signature: Signature) {
+  draft.value = {
+    name: signature.name,
+    signature_name: signature.signature_name,
+    html_body: signature.html_body ?? '',
+  }
+}
+
+function showList() {
+  draft.value = undefined
+  // What was refused is left behind with its signature, so the next one opens without it
+  createSignature.reset()
+  updateSignature.reset()
+}
+
+async function save() {
+  const form = draft.value
+  if (!form) {
+    return
+  }
+
+  const { name, ...content } = form
+  if (name) {
+    await updateSignature.run({ name, ...content })
+    raiseToast(__('Signature updated'))
+  } else {
+    await createSignature.run(content)
+    raiseToast(__('Signature created'))
+  }
+
+  // A slow save can end after another signature was opened, and that one stays
+  if (draft.value === form) {
+    showList()
+  }
+}
+
+function signatureOptions(signature: Signature) {
+  return [
+    {
+      label: __('Edit'),
+      icon: Edit2,
+      onClick: () => editSignature(signature),
     },
-    condition: () => Boolean(signature.html_body),
-  },
-  {
-    label: __('Edit'),
-    icon: Edit2,
-    onClick: () => editSignature(signature.name),
-  },
-  {
-    label: __('Delete'),
-    icon: Trash2,
-    theme: 'red' as const,
-    onClick: async () => {
-      await deleteSignature.run({ name: signature.name })
+    {
+      label: __('Delete'),
+      icon: Trash2,
+      theme: 'red' as const,
+      onClick: async () => {
+        await deleteSignature.run({ name: signature.name })
+      },
     },
-  },
-]
+  ]
+}
 </script>

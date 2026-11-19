@@ -1,272 +1,691 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
-import { installApiErrorHandler } from '@/platform/server-state'
+import { requireTestElement } from '@/platform/testing/dom'
 
 import IdentitySettings from './IdentitySettings.vue'
 
-// Deferred command replies let each scenario observe the form before and after settlement.
-const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
-
-const resources = vi.hoisted(() => new Map<string, FakeResource>())
-const toasts = vi.hoisted(() => vi.fn())
-const diagnostics = vi.hoisted(() => vi.fn())
-const state = vi.hoisted(() => ({ store: fromPartial<Store>({}) }))
-
-type FakeResource = {
-  loading: boolean
-  params: unknown
-  submit: () => void
-  onSuccess: (data?: unknown) => void
-  onError: (error: unknown) => void
-}
-type IdentityRow = { name: string; id: string; email: string; _name: string; may_delete: 0 | 1 }
-type Store = {
-  accountId: string
-  identities: { data: IdentityRow[]; loading: boolean; reload: () => void }
+interface Address {
+  name: string
+  id: string
+  account: string
+  email: string
+  _name: string
+  reply_to: { email: string; display_name: string }[]
+  bcc: { email: string; display_name: string }[]
+  html_signature: string
+  may_delete: 0 | 1
 }
 
-vi.mock('frappe-ui', async () => {
-  const { defineComponent, h } = await import('vue')
+const state = vi.hoisted(() => {
+  const addresses: Address[] = []
+
   return {
-    Button: defineComponent({
-      inheritAttrs: false,
-      setup(_props, { attrs, slots }) {
-        return () => h('button', attrs, slots.default?.() ?? fromPartial<string>(attrs.label))
-      },
-    }),
-    FormControl: defineComponent({
-      inheritAttrs: false,
-      setup(_props, { attrs }) {
-        return () => h('input', { 'data-label': attrs.label, value: attrs.modelValue })
-      },
-    }),
-    // Renders like the real one only in what the tests look at: nothing while closed,
-    // the message and one button per action while open.
-    Dialog: defineComponent({
-      inheritAttrs: false,
-      setup(_props, { attrs, slots }) {
-        return () => {
-          if (!attrs.open) return null
-          const actions = fromPartial<{ label: string; onClick: () => void }[]>(attrs.actions) || []
-          return h('div', { 'data-dialog': attrs.title }, [
-            attrs.message ? h('p', String(attrs.message)) : null,
-            slots.default?.(),
-            ...actions.map((a) => h('button', { onClick: a.onClick }, a.label)),
-          ])
-        }
-      },
-    }),
+    run: vi.fn(),
+    toast: vi.fn(),
+    failureToast: vi.fn(),
+    change: vi.fn(),
+    addresses,
+    savedDefault: '',
+    // Whether the account's preferences are read
+    isRead: true,
   }
 })
+vi.mock('@/apps/mail/composables/useAccountPreferences', () => ({
+  useAccountPreferences: () => {
+    const read = { default_outgoing_email: state.savedDefault }
+
+    return { preferences: { value: state.isRead ? read : undefined }, change: state.change }
+  },
+}))
+interface Option {
+  label: string
+  condition?: () => boolean
+  onClick: () => void
+}
+// As the real menu once opened, in what the tests look at: its button, then a line for each option
+// whose condition holds
+vi.mock('@/platform/feedback', () => ({
+  failureLine: (error: Error | null) => error?.message,
+  Dropdown: defineComponent({
+    props: { options: { type: Array<Option>, default: () => [] } },
+    setup(props, { slots }) {
+      return () =>
+        h('menu', [
+          slots.default?.(),
+          props.options
+            .filter((option) => option.condition?.() ?? true)
+            .map((option) => h('li', { onClick: option.onClick }, option.label)),
+        ])
+    },
+  }),
+}))
+vi.mock('@/apps/mail/utils', async (original) => ({
+  ...(await original()),
+  raiseToast: state.toast,
+}))
+vi.mock('@/apps/mail/utils/composables', () => ({
+  useScreenSize: () => ({ isMobile: { value: false } }),
+}))
+vi.mock('@/apps/mail/stores/user', () => ({
+  userStore: () => ({
+    accountId: 'oa',
+    identities: reactive({ isFetching: false, data: state.addresses }),
+  }),
+}))
+vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
+  default: defineComponent({
+    props: { modelValue: { type: String, default: '' } },
+    setup(props) {
+      return () => h('textarea', { value: props.modelValue })
+    },
+  }),
+}))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
+  const { fakeMutation } = await import('@/platform/testing/mutations')
   return {
     api: { mail: api },
-    useQuery: () => ({ data: [] }),
-    useMutation: (reference: { id: string }) => {
-      const url =
-        reference.id === 'delete_identity_names'
-          ? 'suite.mail.doctype.identity.identity.bulk_delete'
-          : reference.id
-      const resource: FakeResource = {
-        loading: false,
-        params: null,
-        submit: () => {},
-        onSuccess: () => {},
-        onError: () => {},
-      }
-      resources.set(url, resource)
-      return {
-        isPending: false,
-        error: null,
-        reset: () => {},
-        run: (input: unknown) => {
-          resource.params = input
-          return new Promise((resolve, reject) => {
-            resource.onSuccess = resolve
-            resource.onError = (error) => {
-              if (
-                !error ||
-                typeof error !== 'object' ||
-                !('messages' in error) ||
-                !Array.isArray(error.messages) ||
-                typeof error.messages[0] !== 'string'
-              )
-                throw new Error('Expected a refusal message')
-              const refusal = error
-              toasts(refusal.messages[0], 'error')
-              reject(new Error(refusal.messages[0]))
-            }
-          })
-        },
-      }
-    },
+    useQuery: () =>
+      reactive({
+        data: [
+          { name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>' },
+          { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>' },
+        ],
+      }),
+    useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
+      fakeMutation((input) => state.run(reference.id, input), state.failureToast, options),
   }
 })
-vi.mock('@/apps/mail/components/Controls/MailRichTextField.vue', () => ({
-  default: defineComponent({ render: () => h('div') }),
-}))
-vi.mock('@/components/settings/AppSettingsHeader.vue', () => ({
-  default: defineComponent({
+vi.mock('frappe-ui', () => ({
+  toast: vi.fn(),
+  Badge: defineComponent({
+    props: { label: { type: String, default: '' } },
+    setup(props) {
+      return () => h('span', props.label)
+    },
+  }),
+  Button: defineComponent({
+    props: { label: { type: String, default: '' }, disabled: Boolean },
+    setup(props) {
+      return () => h('button', { disabled: props.disabled }, props.label)
+    },
+  }),
+  ErrorMessage: defineComponent({
+    props: { message: { type: String, default: '' } },
+    setup(props) {
+      return () => props.message && h('p', { role: 'alert' }, props.message)
+    },
+  }),
+  FormControl: defineComponent({
+    props: {
+      modelValue: { type: String, default: '' },
+      label: { type: String, default: '' },
+      error: { type: String, default: '' },
+      type: { type: String, default: 'text' },
+      options: { type: Array<{ label: string; value: string }>, default: () => [] },
+    },
+    emits: ['update:modelValue'],
     inheritAttrs: false,
-    setup(_props, { slots }) {
-      return () => h('div', slots.actions?.())
+    setup(props, { emit, attrs }) {
+      return () => {
+        if (props.type === 'select') {
+          return h(
+            'select',
+            {
+              'aria-label': props.label,
+              value: props.modelValue,
+              onChange: (event: Event) =>
+                emit(
+                  'update:modelValue',
+                  requireTestElement(event.target, HTMLSelectElement).value,
+                ),
+            },
+            props.options.map((option) => h('option', { value: option.value }, option.label)),
+          )
+        }
+
+        return [
+          h('input', {
+            // A field without a label is named by the attribute, as a row's fields are
+            'aria-label': props.label || attrs['aria-label'],
+            value: props.modelValue,
+            onInput: (event: Event) =>
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).value),
+          }),
+          props.error && h('p', { role: 'alert' }, props.error),
+        ]
+      }
+    },
+  }),
+  // As the real one in what the tests look at: nothing while closed, the message and a button
+  // for each action while open
+  Dialog: defineComponent({
+    props: {
+      open: Boolean,
+      title: { type: String, default: '' },
+      message: { type: String, default: '' },
+      actions: { type: Array<{ label: string; onClick: () => void }>, default: () => [] },
+    },
+    setup(props, { slots }) {
+      return () => {
+        if (!props.open) {
+          return null
+        }
+
+        return h('dialog', { 'aria-label': props.title }, [
+          props.message,
+          slots.default?.(),
+          props.actions.map((action) => h('button', { onClick: action.onClick }, action.label)),
+        ])
+      }
     },
   }),
 }))
-vi.mock('@/components/settings/AppSettingsBody.vue', () => ({
-  default: defineComponent({
-    setup(_props, { slots }) {
-      return () => h('div', slots.default?.())
-    },
-  }),
-}))
-vi.mock('@/apps/mail/components/IdentitySettingsListView.vue', () => ({
-  default: defineComponent({ render: () => h('div') }),
-}))
-vi.mock('@/apps/mail/utils', () => ({ raiseToast: toasts }))
-vi.mock('@/apps/mail/utils/composables', async () => {
-  const { ref } = await import('vue')
-  return {
-    useScreenSize: () => ({ isMobile: ref(false) }),
-  }
-})
-vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))
 
-const DELETE_URL = 'suite.mail.doctype.identity.identity.bulk_delete'
-
-const primary: IdentityRow = {
+const me: Address = {
   name: 'oa|a',
   id: 'a',
+  account: 'oa',
   email: 'me@example.com',
   _name: 'Me',
-  may_delete: 1,
+  reply_to: [],
+  bcc: [],
+  html_signature: '',
+  may_delete: 0,
 }
-const alias: IdentityRow = {
+const sales: Address = {
+  ...me,
   name: 'oa|b',
   id: 'b',
-  email: 'me@example.com',
-  _name: 'Alias',
+  email: 'sales@example.com',
+  _name: 'Sales',
   may_delete: 1,
 }
 
-function mount(identities: IdentityRow[]) {
-  state.store = {
-    accountId: 'oa',
-    identities: reactive({
-      data: identities,
-      loading: false,
-      refetch: vi.fn().mockResolvedValue(undefined),
-    }),
-  }
-  const root = document.createElement('div')
-  const app = createApp(defineComponent({ render: () => h(IdentitySettings) }))
-  app.config.errorHandler = diagnostics
-  installApiErrorHandler(app)
-  app.config.globalProperties.__ = window.__
-  app.provide('$user', { data: { name: 'me@example.com' } })
+let app: ReturnType<typeof createApp>
+let root: HTMLElement
+function mount(addresses: Address[]) {
+  state.addresses.splice(0, Infinity, ...addresses)
+  root = document.createElement('div')
+  app = createApp(IdentitySettings)
+  app.config.globalProperties.__ = (text: string) => text
+  app.config.errorHandler = vi.fn()
   app.mount(root)
-  return { app, root, identities: state.store.identities }
 }
 
-const button = (root: HTMLElement, text: string) =>
-  [...root.querySelectorAll('button')].find((b) => b.textContent === text) ?? null
+function findButton(name: string) {
+  return Array.from(root.querySelectorAll('button')).find(
+    (candidate) =>
+      candidate.textContent.trim() === name || candidate.getAttribute('aria-label') === name,
+  )
+}
 
-const displayName = (root: HTMLElement) =>
-  root.querySelector<HTMLInputElement>('input[data-label="Display Name"]')?.value
+async function press(name: string) {
+  requireTestElement(findButton(name), HTMLButtonElement).click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
 
-const confirmDialog = (root: HTMLElement) => root.querySelector('[data-dialog="Delete Identity"]')
+function field(label: string) {
+  return root.querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)
+}
 
-let mounted: ReturnType<typeof mount> | null = null
+async function type(label: string, value: string) {
+  const input = requireTestElement(field(label), HTMLInputElement)
+  input.value = value
+  input.dispatchEvent(new Event('input'))
+  await nextTick()
+}
+
+/** The list of addresses under this label, such as "Reply-to". */
+function addressList(label: string) {
+  const name = Array.from(root.querySelectorAll('p')).find((part) => part.textContent === label)
+
+  return name?.parentElement ?? null
+}
+
+/** The rows of a list, each as its email and display name read. */
+function rows(label: string) {
+  const fields = Array.from(addressList(label)?.querySelectorAll('input') ?? [])
+  const emails = fields.filter((input) => input.getAttribute('aria-label') === 'Email address')
+
+  return emails.map((email) => [email.value, fields[fields.indexOf(email) + 1].value])
+}
+
+/** Types into the last row of a list: its email, and its display name when one is given. */
+async function typeInRow(label: string, email: string, name?: string) {
+  const fields = Array.from(addressList(label)?.querySelectorAll('input') ?? []).slice(-2)
+  const typed = [email, name]
+  for (const [index, input] of fields.entries()) {
+    const value = typed[index]
+    if (value !== undefined) {
+      input.value = value
+      input.dispatchEvent(new Event('input'))
+    }
+  }
+
+  await nextTick()
+}
+
+/** Presses a button of a list, such as "Add address", found by its words or its label. */
+async function pressIn(label: string, name: string) {
+  const button = Array.from(addressList(label)?.querySelectorAll('button') ?? []).find(
+    (candidate) =>
+      candidate.textContent.trim() === name || candidate.getAttribute('aria-label') === name,
+  )
+  requireTestElement(button, HTMLButtonElement).click()
+  await nextTick()
+}
+
+/** The signature picker's chosen words, such as "None". */
+function pickedSignature() {
+  const picker = requireTestElement(root.querySelector('select'), HTMLSelectElement)
+
+  return picker.selectedOptions[0]?.textContent
+}
+
+async function pickSignature(label: string) {
+  const picker = requireTestElement(root.querySelector('select'), HTMLSelectElement)
+  const option = Array.from(picker.options).find((candidate) => candidate.textContent === label)
+  picker.value = requireTestElement(option, HTMLOptionElement).value
+  picker.dispatchEvent(new Event('change'))
+  await nextTick()
+}
+
+/** The lines of the list, each as the words a reader sees on it. */
+function lines() {
+  return Array.from(root.querySelectorAll('button[type="button"]')).map((line) =>
+    Array.from(line.querySelectorAll('span'), (part) => part.textContent).join(' '),
+  )
+}
+
+/** The lines of an address's menu, the menu found by the button that opens it. */
+function menuLines(email: string) {
+  const opener = root.querySelector(`button[aria-label="More for ${email}"]`)
+
+  return Array.from(opener?.closest('menu')?.querySelectorAll('li') ?? [])
+}
+
+/** The words on an address's menu. */
+function menu(email: string) {
+  return menuLines(email).map((line) => line.textContent)
+}
+
+async function pressOnMenu(email: string, name: string) {
+  const line = menuLines(email).find((candidate) => candidate.textContent === name)
+  requireTestElement(line, HTMLLIElement).click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** Opens an address from the list, as a click on its line does. */
+async function openAddress(email: string) {
+  const line = Array.from(root.querySelectorAll('button[type="button"]')).find((candidate) =>
+    candidate.textContent.includes(email),
+  )
+  requireTestElement(line, HTMLButtonElement).click()
+  await nextTick()
+}
 
 beforeEach(() => {
-  window.__ = (message: string) => message
-  resources.clear()
-  toasts.mockReset()
-  diagnostics.mockReset()
+  window.__ = (text: string) => text
+  state.run.mockReset().mockResolvedValue(undefined)
+  state.toast.mockReset()
+  state.failureToast.mockReset()
+  state.change.mockReset()
+  state.savedDefault = ''
+  state.isRead = true
 })
-afterEach(() => mounted?.app.unmount())
+afterEach(() => app.unmount())
 
-describe('IdentitySettings delete', () => {
-  it('offers Delete only when the server says the identity may be deleted', async () => {
-    mounted = mount([{ ...primary, may_delete: 0 }, alias])
-    const { root } = mounted
-    expect(displayName(root)).toBe('Me')
-    expect(button(root, 'Delete')).toBeNull()
+it('opens on the list of addresses, each with its name and email', () => {
+  mount([me, sales])
+  expect(lines()).toEqual(['Me me@example.com Default', 'Sales sales@example.com'])
+  expect(field('Display name')).toBeNull()
+})
+it('marks the saved default address, whatever its letter case', () => {
+  state.savedDefault = 'SALES@example.com'
+  mount([me, sales])
+  expect(lines()).toEqual(['Me me@example.com', 'Sales sales@example.com Default'])
+})
+it('makes an address the default from its menu, and offers that only on the others', async () => {
+  mount([me, sales])
+  expect(menu('me@example.com')).not.toContain('Set as default')
 
-    mounted.app.unmount()
-    mounted = mount([primary, alias])
-    expect(button(mounted.root, 'Delete')).not.toBeNull()
+  await pressOnMenu('sales@example.com', 'Set as default')
+  expect(state.change).toHaveBeenCalledWith({ default_outgoing_email: 'sales@example.com' })
+})
+it('offers no default to set, and marks none, until the saved default is read', () => {
+  state.isRead = false
+  mount([me, sales])
+  expect(lines()).toEqual(['Me me@example.com', 'Sales sales@example.com'])
+  expect(menu('me@example.com')).toEqual(['Edit'])
+  expect(menu('sales@example.com')).toEqual(['Edit', 'Delete'])
+})
+it('opens an address from Edit on its menu', async () => {
+  mount([me, sales])
+  await pressOnMenu('sales@example.com', 'Edit')
+  expect(field('Display name')?.value).toBe('Sales')
+})
+it('opens an address in place of the list, and the arrow goes back to the list', async () => {
+  mount([me, sales])
+  await openAddress('sales@example.com')
+  expect(field('Display name')?.value).toBe('Sales')
+  expect(lines()).toEqual([])
+
+  await press('Back to addresses')
+  expect(field('Display name')).toBeNull()
+  expect(lines()).toHaveLength(2)
+  expect(state.run).not.toHaveBeenCalled()
+})
+it('saves the address that is open, then shows the list', async () => {
+  mount([me, sales])
+  await openAddress('sales@example.com')
+  await type('Display name', 'Sales team')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith('save_identity', {
+    account: 'oa',
+    id: 'b',
+    name: 'Sales team',
+    reply_to: [],
+    bcc: [],
+    html_signature: '',
   })
+  expect(state.toast).toHaveBeenCalledWith('Address updated')
+  expect(lines()).toHaveLength(2)
+})
+it('keeps Save off until the address is changed', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  expect(findButton('Save')?.disabled).toBe(true)
 
-  it('asks for confirmation, then deletes the selected identity by name', async () => {
-    mounted = mount([primary, alias])
-    const { root } = mounted
-    expect(confirmDialog(root)).toBeNull()
+  await type('Display name', 'Maya')
+  expect(findButton('Save')?.disabled).toBe(false)
+})
+it('keeps the address open, with what was typed, when the save is refused', async () => {
+  state.run.mockRejectedValue(new Error('Not your address'))
+  mount([me])
+  await openAddress('me@example.com')
+  await type('Display name', 'Maya')
+  await press('Save')
+  expect(field('Display name')?.value).toBe('Maya')
+  expect(state.toast).not.toHaveBeenCalled()
+})
+it('keeps another address open when a slow save of the first one ends', async () => {
+  const answer = Promise.withResolvers<void>()
+  state.run.mockReturnValue(answer.promise)
+  mount([me, sales])
+  await openAddress('me@example.com')
+  await type('Display name', 'Maya')
+  await press('Save')
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  await type('Display name', 'Sales team')
 
-    button(root, 'Delete')!.click()
-    await nextTick()
-    expect(confirmDialog(root)?.textContent).toContain(
-      'Are you sure you want to delete this identity?',
-    )
-    expect(resources.get(DELETE_URL)!.params).toBeNull()
+  answer.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(field('Display name')?.value).toBe('Sales team')
+})
+it('keeps an address open when a slow create ends after the new page was left', async () => {
+  const answer = Promise.withResolvers<void>()
+  state.run.mockReturnValue(answer.promise)
+  mount([me, sales])
+  await press('New address')
+  await type('Email address', 'new@example.com')
+  await press('Save')
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  await type('Display name', 'Sales team')
 
-    button(root, 'Confirm')!.click()
-    expect(resources.get(DELETE_URL)!.params).toEqual({ names: ['oa|a'] })
+  answer.resolve()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(field('Display name')?.value).toBe('Sales team')
+})
+it('keeps Reply-to and Bcc behind a button until the address uses one', async () => {
+  const support = { ...sales, bcc: [{ email: 'log@example.com', display_name: '' }] }
+  mount([me, support])
+  await openAddress('me@example.com')
+  expect(addressList('Reply-to')).toBeNull()
+
+  await press('Add reply-to or Bcc')
+  expect(rows('Reply-to')).toEqual([['', '']])
+  expect(rows('Bcc')).toEqual([['', '']])
+
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(rows('Reply-to')).toEqual([])
+  expect(rows('Bcc')).toEqual([['log@example.com', '']])
+})
+it('saves each address with the display name beside it, a new one and a changed one alike', async () => {
+  const support = { ...sales, reply_to: [{ email: 'help@example.com', display_name: 'Help desk' }] }
+  mount([support])
+  await openAddress('sales@example.com')
+  expect(rows('Reply-to')).toEqual([['help@example.com', 'Help desk']])
+
+  await typeInRow('Reply-to', 'help@example.com', 'Helpers')
+  await pressIn('Reply-to', 'Add address')
+  await typeInRow('Reply-to', 'desk@example.com', 'Front desk')
+  await pressIn('Bcc', 'Add address')
+  await typeInRow('Bcc', 'log@example.com')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({
+      reply_to: [
+        { email: 'help@example.com', display_name: 'Helpers' },
+        { email: 'desk@example.com', display_name: 'Front desk' },
+      ],
+      bcc: [{ email: 'log@example.com', display_name: '' }],
+    }),
+  )
+})
+it('saves an address removed from its list as gone', async () => {
+  const support = {
+    ...sales,
+    reply_to: [
+      { email: 'help@example.com', display_name: 'Help desk' },
+      { email: 'desk@example.com', display_name: '' },
+    ],
+  }
+  mount([support])
+  await openAddress('sales@example.com')
+  await pressIn('Reply-to', 'Remove help@example.com')
+  expect(rows('Reply-to')).toEqual([['desk@example.com', '']])
+
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ reply_to: [{ email: 'desk@example.com', display_name: '' }] }),
+  )
+})
+it('sends no row that was left empty, and counts none as a change', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await press('Add reply-to or Bcc')
+  expect(findButton('Save')?.disabled).toBe(true)
+
+  await typeInRow('Bcc', ' log@example.com ')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({
+      reply_to: [],
+      bcc: [{ email: 'log@example.com', display_name: '' }],
+    }),
+  )
+})
+it('says which row is no email address when Save is pressed, and sends nothing', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await press('Add reply-to or Bcc')
+  await typeInRow('Reply-to', 'not an address', 'Help desk')
+  expect(root.querySelector('[role="alert"]')).toBeNull()
+
+  await press('Save')
+  expect(addressList('Reply-to')?.querySelector('[role="alert"]')?.textContent).toBe(
+    'Enter a valid email address',
+  )
+  expect(addressList('Bcc')?.querySelector('[role="alert"]')).toBeNull()
+  expect(state.run).not.toHaveBeenCalled()
+
+  await typeInRow('Reply-to', 'help@example.com')
+  expect(root.querySelector('[role="alert"]')).toBeNull()
+})
+it('reads an address without a signature as None, with no editor', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  expect(pickedSignature()).toBe('None')
+  expect(root.querySelector('textarea')).toBeNull()
+})
+it('reads a signature that matches a saved one as that one, and any other as Custom', async () => {
+  mount([
+    { ...me, html_signature: '<p>Thanks</p>' },
+    { ...sales, html_signature: '<p>Sales desk</p>' },
+  ])
+  await openAddress('me@example.com')
+  expect(pickedSignature()).toBe('Short')
+  expect(root.querySelector('textarea')).toBeNull()
+
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(pickedSignature()).toBe('Custom')
+  expect(root.querySelector('textarea')?.value).toBe('<p>Sales desk</p>')
+})
+it('saves the words of the saved signature that is picked', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await pickSignature('Work')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '<p>Regards</p>' }),
+  )
+})
+it('saves no signature once None is picked', async () => {
+  mount([{ ...me, html_signature: '<p>Thanks</p>' }])
+  await openAddress('me@example.com')
+  await pickSignature('None')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '' }),
+  )
+})
+it('opens the editor on the words in use when Custom is picked', async () => {
+  mount([{ ...me, html_signature: '<p>Thanks</p>' }])
+  await openAddress('me@example.com')
+  await pickSignature('Custom')
+  expect(pickedSignature()).toBe('Custom')
+  expect(root.querySelector('textarea')?.value).toBe('<p>Thanks</p>')
+})
+it('creates an address on this account from New address, then shows the list', async () => {
+  mount([me])
+  await press('New address')
+  expect(findButton('Save')?.disabled).toBe(true)
+
+  await type('Email address', 'billing@example.com')
+  await type('Display name', 'Billing')
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith('add_identity', {
+    account: 'oa',
+    email: 'billing@example.com',
+    name: 'Billing',
   })
+  expect(state.toast).toHaveBeenCalledWith('Address created')
+  expect(field('Email address')).toBeNull()
+})
+it('says there are no addresses yet, and still offers New address', () => {
+  mount([])
+  expect(root.textContent).toContain('No send-as addresses yet')
+  expect(findButton('New address')).toBeDefined()
+})
+it('offers Delete only for an address the server lets go', () => {
+  mount([me, sales])
+  expect(menu('me@example.com')).not.toContain('Delete')
+  expect(menu('sales@example.com')).toContain('Delete')
+})
+it('asks first, then deletes the address by its name', async () => {
+  mount([me, sales])
+  await pressOnMenu('sales@example.com', 'Delete')
+  expect(root.querySelector('dialog')?.textContent).toContain('This cannot be undone.')
+  expect(state.run).not.toHaveBeenCalled()
 
-  it('falls back to the first remaining identity after a delete', async () => {
-    mounted = mount([primary, alias])
-    const { root, identities } = mounted
-    button(root, 'Delete')!.click()
-    await nextTick()
-    button(root, 'Confirm')!.click()
+  await press('Delete address')
+  expect(state.run).toHaveBeenCalledWith('delete_identity_names', { names: ['oa|b'] })
+  expect(state.toast).toHaveBeenCalledWith('Address deleted')
+  expect(root.querySelector('dialog')).toBeNull()
+})
+it('keeps the question open when the delete is refused', async () => {
+  state.run.mockRejectedValue(new Error('In use'))
+  mount([me, sales])
+  await pressOnMenu('sales@example.com', 'Delete')
+  await press('Delete address')
+  expect(root.querySelector('dialog')?.getAttribute('aria-label')).toBe('Delete this address?')
+  expect(state.toast).not.toHaveBeenCalled()
+})
+it('offers Delete on an open address only when the server lets it go', async () => {
+  mount([me, sales])
+  await openAddress('me@example.com')
+  expect(findButton('Delete')).toBeUndefined()
 
-    resources.get(DELETE_URL)!.onSuccess()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await nextTick()
-    expect(confirmDialog(root)).toBeNull()
-    expect(toasts).toHaveBeenCalledWith('Identity deleted')
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(findButton('Delete')).toBeDefined()
+})
+it('deletes the open address once the question is answered, then shows the list', async () => {
+  mount([me, sales])
+  await openAddress('sales@example.com')
+  await press('Delete')
+  expect(root.querySelector('dialog')?.textContent).toContain('This cannot be undone.')
+  expect(state.run).not.toHaveBeenCalled()
 
-    // The reload answers without the deleted row.
-    identities.data = [alias]
-    await nextTick()
-    await nextTick()
-    expect(displayName(root)).toBe('Alias')
-  })
+  await press('Delete address')
+  expect(state.run).toHaveBeenCalledWith('delete_identity_names', { names: ['oa|b'] })
+  expect(field('Display name')).toBeNull()
+  expect(lines()).toHaveLength(2)
+})
+it('keeps the address open when its delete is refused', async () => {
+  state.run.mockRejectedValue(new Error('In use'))
+  mount([me, sales])
+  await openAddress('sales@example.com')
+  await press('Delete')
+  await press('Delete address')
+  expect(field('Display name')?.value).toBe('Sales')
+})
+/** What the page says is wrong, as a reader with the page in front of them sees it. */
+function alertText() {
+  return root.querySelector('[role="alert"]')?.textContent
+}
 
-  it('shows the empty state once the last identity is gone', async () => {
-    mounted = mount([primary])
-    const { root, identities } = mounted
-    button(root, 'Delete')!.click()
-    await nextTick()
-    button(root, 'Confirm')!.click()
-    resources.get(DELETE_URL)!.onSuccess()
-    identities.data = []
-    await nextTick()
-    await nextTick()
+it('says why a new address was refused under its email, in place of a toast', async () => {
+  state.run.mockRejectedValue(new Error('That domain is not yours'))
+  mount([me])
+  await press('New address')
+  await type('Email address', 'me@elsewhere.com')
+  await press('Save')
+  expect(field('Email address')?.nextElementSibling?.textContent).toBe('That domain is not yours')
+  expect(state.failureToast).not.toHaveBeenCalled()
 
-    expect(root.textContent).toContain('No identities.')
-    expect(displayName(root)).toBeUndefined()
-    expect(button(root, 'Delete')).toBeNull()
-    expect(button(root, 'New')).not.toBeNull()
-  })
+  await type('Email address', 'me@example.com')
+  expect(alertText()).toBeUndefined()
+})
+it('asks for an email address before it sends one that is not', async () => {
+  mount([me])
+  await press('New address')
+  await type('Email address', 'billing')
+  await press('Save')
+  expect(alertText()).toBe('Enter a valid email address')
+  expect(state.run).not.toHaveBeenCalled()
+})
+it('says why a save was refused on the open address, in place of a toast', async () => {
+  state.run.mockRejectedValue(new Error('Not your address'))
+  mount([me, sales])
+  await openAddress('me@example.com')
+  await type('Display name', 'Maya')
+  await press('Save')
+  expect(alertText()).toBe('Not your address')
+  expect(state.failureToast).not.toHaveBeenCalled()
 
-  it('keeps the identity selected and reports the error when the server refuses', async () => {
-    mounted = mount([primary, alias])
-    const { root } = mounted
-    button(root, 'Delete')!.click()
-    await nextTick()
-    button(root, 'Confirm')!.click()
-
-    resources.get(DELETE_URL)!.onError({ messages: ['Identity Deletion Error'] })
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    await nextTick()
-    expect(confirmDialog(root)).not.toBeNull()
-    expect(toasts).toHaveBeenCalledWith('Identity Deletion Error', 'error')
-    expect(displayName(root)).toBe('Me')
-    // The fixture rejects with a plain Error, which still belongs to diagnostics.
-    expect(diagnostics.mock.calls[0]?.[0]).toEqual(new Error('Identity Deletion Error'))
-  })
+  await press('Back to addresses')
+  await openAddress('sales@example.com')
+  expect(alertText()).toBeUndefined()
 })

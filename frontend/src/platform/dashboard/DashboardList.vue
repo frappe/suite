@@ -78,13 +78,13 @@ const widthFor = (row: number, column: number) => `${45 + ((row * 7 + column * 1
       :columns="tracks"
       :row-height="rowHeight"
     >
-      <ListHeader>
+      <ListHeader :inert="loading">
         <ListHeaderCell v-for="column in columns" :key="column.key">
           {{ column.label }}
         </ListHeaderCell>
       </ListHeader>
       <ListRows v-if="loading" v-slot="{ index }" :items="placeholders" row-key="key">
-        <ListRow class="pointer-events-none" aria-hidden="true">
+        <ListRow class="pointer-events-none" aria-hidden="true" inert>
           <ListCell v-for="(column, columnIndex) in columns" :key="column.key">
             <DashboardSkeletonText :width="widthFor(index, columnIndex)" />
           </ListCell>

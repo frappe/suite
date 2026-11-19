@@ -792,6 +792,8 @@ const handleSelectionShortcut = (e: KeyboardEvent, key: string) => {
   return true
 }
 const handleKeyDown = (e: KeyboardEvent) => {
+  // Chrome fires a keydown with no key when it autofills a field.
+  if (!e.key) return
   const key = e.key.toLowerCase()
   if ((e.metaKey || e.ctrlKey) && key === 'a' && !shouldIgnoreKeypress(e, true)) {
     e.preventDefault()

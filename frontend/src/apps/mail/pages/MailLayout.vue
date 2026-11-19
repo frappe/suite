@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onScopeDispose, onUnmounted, provide, watch } from 'vue'
+import { computed, onMounted, onScopeDispose, onUnmounted, provide } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import DefaultLayout from '@/apps/mail/components/DefaultLayout.vue'
@@ -20,6 +20,7 @@ import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
 import { provideMailOverlayLayer } from '@/apps/mail/composables/mailOverlayLayer'
 import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
+import { useFollowOpenFolder } from '@/apps/mail/composables/useFollowOpenFolder'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
@@ -28,7 +29,6 @@ import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composable
 import dayjs from '@/apps/mail/utils/dayjs'
 import { useGoToShortcuts } from '@/apps/mail/utils/goToShortcuts'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
-import { currentMailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { mailServerUnavailable } from '@/boot/config'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { useRootStore } from '@/stores/root'
@@ -78,6 +78,8 @@ const { undo } = useUndo()
 const handleGlobalShortcuts = (e: KeyboardEvent) => {
   // The listener sits on window, so it only acts while a Mail route is active.
   if (!isMailRoute(route)) return
+  // Chrome fires a keydown with no key when it autofills a field.
+  if (!e.key) return
 
   const key = e.key.toLowerCase()
 
@@ -121,7 +123,7 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('mail-layou
               shortcut: 'Mod+Shift+Comma',
               enterHint: 'open settings',
               icon: 'lucide-settings',
-              run: () => openSettings('mail.credentials'),
+              run: () => openSettings('mail.general'),
             },
           ],
         },
@@ -154,29 +156,7 @@ const resetDocumentScroll = () => {
   })
 }
 
-// The URL names an account's folder by its slug, which a rename changes — or a delete takes away —
-// while the folder is open. Follow it to its new name, or out to the account's default folder, rather
-// than leave the URL naming nothing (see utils/unifiedFolders).
-const mailStore = userStore()
-watch(
-  () => [route.name, route.params.mailbox, mailStore.mailboxes.data] as const,
-  ([name, param, mailboxes]) => {
-    if ((name !== 'mail-mailbox' && name !== 'mail-mail') || !mailboxes) return
-    const next = currentMailboxParam(route.params.accountId, param, mailboxes)
-    if (next === param) return
-    if (next === null)
-      return router.replace({
-        name: 'mail-account-shortcut',
-        params: { accountId: route.params.accountId },
-      })
-    router.replace({
-      name,
-      params: { ...route.params, mailbox: next },
-      query: route.query,
-      hash: route.hash,
-    })
-  },
-)
+useFollowOpenFolder()
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalShortcuts)

@@ -5,6 +5,7 @@ import {
   Bold,
   BulletList,
   FontColor,
+  H2,
   InsertImage,
   InsertLink,
   Italic,
@@ -20,6 +21,8 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 
 const HEADINGS: MenuItem = {
   label: 'Heading',
+  // What stands for the menu where a toolbar shows its tools switched off
+  icon: H2.icon,
   action: () => {},
   component: EditorHeadingMenu,
 }

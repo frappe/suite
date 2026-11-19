@@ -52,6 +52,8 @@ const handleKeydown = (e: KeyboardEvent) => {
   const target = checkedEventTarget
   if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
     return
+  // Chrome fires a keydown with no key when it autofills a field.
+  if (!e.key) return
 
   const key = e.key.toLowerCase()
 

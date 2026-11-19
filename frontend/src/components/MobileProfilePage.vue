@@ -166,7 +166,7 @@ const orderedAccounts = computed(() =>
   [...props.accounts].sort((a, b) => Number(!!b.is_personal) - Number(!!a.is_personal)),
 )
 
-// A group's tabs share its app's prefix (`mail.screener`, `account.profile`).
+// A group's tabs share its app's prefix (`mail.inbox`, `account.profile`)
 const ownGroups = computed(() => {
   const groups = settings.groups.value
   if (!groups || !props.app) return groups

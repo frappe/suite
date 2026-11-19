@@ -1,76 +1,73 @@
 <template>
-  <AppSettingsHeader :title="__('Screener')" />
-  <div
-    class="flex min-h-0 flex-1 flex-col gap-5 overflow-hidden px-[4.4rem] pb-8 pt-6 max-sm:px-4 max-sm:pt-4"
+  <!-- Rows of the Inbox page's list. The screened senders are a long list, so they open in a dialog. -->
+  <SettingsRow
+    :title="__('Screen new senders')"
+    :description="__('New senders wait in the Screener until you accept them.')"
   >
-    <!-- The Screener's master switch, so this tab shows both the switch and the rules. Saves
-		     immediately (no Save button here) — same JMAP Account flag the Account tab edits. -->
-    <SettingsRow
-      class="shrink-0 !py-0"
-      :title="__('Screen New Senders')"
-      :description="
-        __(
-          'Emails from new senders go to the Screener instead of your Inbox. Only accepted senders reach your Inbox.',
-        )
-      "
-    >
-      <Switch
-        :model-value="screeningEnabled"
-        :disabled="setScreening.isPending"
-        @update:model-value="toggleScreening"
-      />
-    </SettingsRow>
-
-    <template v-if="screenedAddresses.data?.length">
-      <div class="flex shrink-0 items-center justify-between">
-        <h2 class="text-base-semibold text-ink-gray-8">{{ __('Screened Senders') }}</h2>
-        <Button icon-left="lucide-plus" :label="__('New')" @click="showAddModal = true" />
-      </div>
-      <div class="flex shrink-0 gap-2">
-        <FormControl
-          v-model="search"
-          type="text"
-          variant="outline"
-          :placeholder="__('Search screened senders')"
-          class="flex-1"
-        >
-          <template #prefix>
-            <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
-          </template>
-        </FormControl>
-        <!-- Segmented sort control: field picker + direction toggle share a seam
+    <Switch
+      :model-value="screeningEnabled"
+      :disabled="setScreening.isPending"
+      @update:model-value="toggleScreening"
+    />
+  </SettingsRow>
+  <SettingsRow
+    :title="__('When blocking a sender')"
+    :description="__('What to do with their mail already in your Inbox.')"
+  >
+    <Select
+      :model-value="activeAccount?.on_block_old_mail"
+      :options="ON_BLOCK_OLD_MAIL_OPTIONS"
+      :disabled="setScreening.isPending"
+      @update:model-value="setOnBlockOldMail"
+    />
+  </SettingsRow>
+  <SettingsDialogRow
+    :title="__('Screened senders')"
+    section="mail.inbox.screened-senders"
+    :description="__('The senders and domains you accept or block.')"
+    :action="__('Manage')"
+    size="3xl"
+  >
+    <div class="flex flex-col gap-5">
+      <template v-if="screenedAddresses.data?.length">
+        <div class="flex shrink-0 gap-2">
+          <FormControl
+            v-model="search"
+            type="text"
+            variant="outline"
+            :placeholder="__('Search screened senders')"
+            class="flex-1"
+          >
+            <template #prefix>
+              <FeatherIcon name="search" class="text-ink-gray-5 w-4" />
+            </template>
+          </FormControl>
+          <!-- Segmented sort control: field picker + direction toggle share a seam
 					(-ml-px collapses the doubled border). -->
-        <div class="flex">
-          <AdaptiveDropdown :options="sortOptions" :title="__('Sort By')">
+          <div class="flex">
+            <AdaptiveDropdown :options="sortOptions" :title="__('Sort by')">
+              <Button
+                variant="outline"
+                :label="sortLabel"
+                icon-right="lucide-chevron-down"
+                class="!rounded-r-none"
+              />
+            </AdaptiveDropdown>
             <Button
               variant="outline"
-              :label="sortLabel"
-              icon-right="lucide-chevron-down"
-              class="!rounded-r-none"
+              :icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
+              :tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
+              :aria-label="sortDir === 'asc' ? __('Ascending') : __('Descending')"
+              class="-ml-px !rounded-l-none"
+              @click="toggleSortDir"
             />
-          </AdaptiveDropdown>
-          <Button
-            variant="outline"
-            :icon="sortDir === 'asc' ? 'lucide-arrow-up' : 'lucide-arrow-down'"
-            :tooltip="sortDir === 'asc' ? __('Ascending') : __('Descending')"
-            :aria-label="sortDir === 'asc' ? __('Ascending') : __('Descending')"
-            class="-ml-px !rounded-l-none"
-            @click="toggleSortDir"
-          />
+          </div>
+          <Button icon-left="lucide-plus" :label="__('New sender')" @click="addSender" />
         </div>
-      </div>
 
-      <div v-if="rows.length" class="relative min-h-0 flex-1">
-        <div
-          class="absolute inset-0 flex min-h-0 flex-col overflow-hidden [&>div]:h-full [&>div]:min-h-0"
-        >
-          <ListView
-            ref="listView"
-            class="h-full min-h-0 !w-full"
-            :columns="COLUMNS"
-            :rows="rows"
-            row-key="email"
-          >
+        <!-- A long list scrolls in its own box, so the dialog keeps its size. -->
+        <div v-if="rows.length" class="flex max-h-80 flex-col">
+          <ListView ref="listView" class="!w-full" :columns="COLUMNS" :rows="rows" row-key="email">
             <ListHeader />
             <ListRows />
             <!-- Default-slot override: drops the banner's built-in "Select all"
@@ -82,10 +79,10 @@
                   {{ __('{0} selected', [String(selections.size)]) }}
                 </span>
                 <div class="ml-auto flex items-center gap-1">
-                  <AdaptiveDropdown :options="bulkActionOptions" :title="__('Change Action')">
+                  <AdaptiveDropdown :options="bulkActionOptions" :title="__('Change action')">
                     <Button
                       variant="ghost"
-                      :label="__('Change Action')"
+                      :label="__('Change action')"
                       icon-right="lucide-chevron-down"
                     />
                   </AdaptiveDropdown>
@@ -106,29 +103,22 @@
             </ListSelectBanner>
           </ListView>
         </div>
-      </div>
-      <div v-else class="text-ink-gray-6 text-sm">
-        <p>{{ __('No screened senders match your search.') }}</p>
-      </div>
-    </template>
-    <div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-      <p class="text-base font-medium">{{ __('No screened senders.') }}</p>
-      <p>{{ MESSAGE }}</p>
-      <Button
-        icon-left="lucide-plus"
-        :label="__('New')"
-        class="w-fit"
-        @click="showAddModal = true"
-      />
-    </div>
+        <div v-else class="text-ink-gray-6 text-sm">
+          <p>{{ __('No screened senders match your search.') }}</p>
+        </div>
+      </template>
+      <SettingsEmptyList v-else :title="__('No screened senders yet')" :description="MESSAGE">
+        <Button icon-left="lucide-plus" :label="__('New sender')" class="mt-1" @click="addSender" />
+      </SettingsEmptyList>
 
-    <AddScreenedSenderModal v-model="showAddModal" />
-    <Dialog v-model:open="showRemoveModal" v-bind="removeModalOptions" />
-  </div>
+      <AddScreenedSenderModal v-model="showAddModal" />
+      <Dialog v-model:open="showRemoveModal" v-bind="removeModalOptions" />
+    </div>
+  </SettingsDialogRow>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, Dialog, FormControl, Select, SettingsRow, Switch } from 'frappe-ui'
 import {
   Icon as FeatherIcon,
   ListHeader,
@@ -145,7 +135,8 @@ import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { getFormattedDate, raiseToast } from '@/apps/mail/utils'
 import { formatSystemDateTime } from '@/apps/mail/utils/datetime'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
@@ -153,6 +144,10 @@ const { screenedAddresses } = store
 const search = ref('')
 const listViewRef = useTemplateRef('listView')
 const showAddModal = ref(false)
+function addSender() {
+  showAddModal.value = true
+}
+
 const showRemoveModal = ref(false)
 
 // Read the flag from the shared user data (not a document draft) so the inbox reacts to a toggle
@@ -172,8 +167,25 @@ const toggleScreening = async (val: boolean) => {
       enable_screening: val ? 1 : 0,
     },
   })
-  raiseToast(val ? __('Screener turned on.') : __('Screener turned off.'))
+  raiseToast(val ? __('Screener turned on') : __('Screener turned off'))
 }
+
+// Future mail from a blocked sender always goes to Junk; this is only about what is already there
+const ON_BLOCK_OLD_MAIL_OPTIONS = [
+  { label: __('Ask each time'), value: 'Ask' as const },
+  { label: __('Move old mail to Junk'), value: 'Move to Junk' as const },
+  { label: __('Keep old mail'), value: 'Keep' as const },
+]
+async function setOnBlockOldMail(value: unknown) {
+  const choice = ON_BLOCK_OLD_MAIL_OPTIONS.find((option) => option.value === value)
+  if (!choice) return
+
+  await setScreening.run({
+    account: store.accountId,
+    changes: { on_block_old_mail: choice.value },
+  })
+}
+
 // Blocking a sender files their mail into Junk (the Spam action); nothing is discarded unseen.
 const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
   Accepted: __('Accept'),
@@ -184,7 +196,7 @@ const ACTION_LABELS: Partial<Record<ScreeningAction, string>> = {
 // Defaults to most-recently modified, matching the backend's default order.
 type SortField = 'modified' | 'creation' | 'email'
 const SORT_LABELS: Record<SortField, string> = {
-  modified: __('Last Modified'),
+  modified: __('Last modified'),
   creation: __('Created'),
   email: __('Email'),
 }
@@ -262,11 +274,11 @@ async function unscreenEmailAddressesSubmit() {
   listViewRef.value?.toggleAllRows()
 }
 const removeModalOptions = computed(() => ({
-  title: __('Remove Screened Senders'),
-  message: __('Are you sure you want to remove the selected senders from your screened list?'),
+  title: __('Remove the selected senders?'),
+  message: __('They are taken off your screened list.'),
   actions: [
     {
-      label: __('Confirm'),
+      label: __('Remove senders'),
       variant: 'solid' as const,
       onClick: () => unscreenEmailAddressesSubmit(),
       loading: unscreenEmailAddresses.isPending,
@@ -279,7 +291,7 @@ const removeModalOptions = computed(() => ({
 // instead, the table ran past the panel and clipped Last Modified.
 const COLUMNS = [
   {
-    label: __('Email or Domain'),
+    label: __('Email or domain'),
     key: 'email',
     width: 'minmax(0, 3fr)',
   },
@@ -289,12 +301,12 @@ const COLUMNS = [
     width: 'minmax(0, 1fr)',
   },
   {
-    label: __('Last Modified'),
+    label: __('Last modified'),
     key: 'modified',
     width: 'minmax(0, 1fr)',
   },
 ]
 const MESSAGE = __(
-  'Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Spam.',
+  'Screen specific senders — or a whole domain (e.g. @example.com) — to either reject their messages or send them straight to Junk.',
 )
 </script>

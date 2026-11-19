@@ -2,7 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createTransport, type Operation, type TransportError } from '@/platform/transport'
 
-import { confirm, failureText, hostChallenge, prompt, reportMutationError } from './index'
+import {
+  confirm,
+  failureLine,
+  failureText,
+  hostChallenge,
+  prompt,
+  reportMutationError,
+} from './index'
 
 const PROBE: Operation = {
   id: 'probe',
@@ -108,6 +115,14 @@ describe('feedback', () => {
     await registered?.({ type: 'DriveLocked', message: 'Locked', status: 403 }, retry)
     expect(resolve).not.toHaveBeenCalled()
     expect(retry).not.toHaveBeenCalled()
+  })
+
+  it('gives a form no line until a save has failed, then what the failure says', () => {
+    expect(failureLine(null)).toBeUndefined()
+    expect(failureLine(new Error('That name is taken'))).toBe('That name is taken')
+    expect(failureLine(new TypeError('x is not a function'))).toBe(
+      'Could not complete the request. Try again.',
+    )
   })
 
   describe('failureText', () => {

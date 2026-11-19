@@ -8,7 +8,7 @@ import { computed } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
-import { getScriptName, isSystemScript, raiseToast } from '@/apps/mail/utils'
+import { raiseToast, turnsOffLine } from '@/apps/mail/utils'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -25,6 +25,70 @@ const { script, action } = defineProps<{
 const store = userStore()
 const { sieveScripts } = store
 const activeScript = computed(() => sieveScripts.data?.find((s) => s.active)?._name)
+
+/** Every line of the question, as it is said of folder automation. */
+function folderAutomationWords() {
+  return {
+    askOn: __('Turn on folder automation?'),
+    askOff: __('Turn off folder automation?'),
+    turnOn: __('Turn on folder automation'),
+    turnOff: __('Turn off folder automation'),
+    starts: __('Folder automation starts sorting new mail right away.'),
+    stops: __('Folder automation stops sorting new mail right away.'),
+    turnedOn: __('Folder automation turned on'),
+    turnedOff: __('Folder automation turned off'),
+  }
+}
+
+/** Every line of the question, as it is said of a rule of the user's own. */
+function ruleWords(name: string) {
+  return {
+    askOn: __('Turn on “{0}”?', [name]),
+    askOff: __('Turn off “{0}”?', [name]),
+    turnOn: __('Turn on rule'),
+    turnOff: __('Turn off rule'),
+    starts: __('This rule starts running on new mail right away.'),
+    stops: __('This rule stops running on new mail right away.'),
+    turnedOn: __('Rule turned on'),
+    turnedOff: __('Rule turned off'),
+  }
+}
+
+const words = computed(() => {
+  if (script._name === 'frappe_mail_automation') {
+    return folderAutomationWords()
+  }
+
+  return ruleWords(script._name)
+})
+const title = computed(() => {
+  if (script.active) {
+    return words.value.askOff
+  }
+
+  return words.value.askOn
+})
+const confirmLabel = computed(() => {
+  if (script.active) {
+    return words.value.turnOff
+  }
+
+  return words.value.turnOn
+})
+const message = computed(() => {
+  if (script.active) {
+    return words.value.stops
+  }
+
+  if (!activeScript.value) {
+    return words.value.starts
+  }
+
+  // The mail server runs one script at a time, so this one takes the place of the one running
+  return __('{0} Only one of auto-reply, folder automation and your rules can be on at a time.', [
+    turnsOffLine(activeScript.value),
+  ])
+})
 const dialogOptions = computed(() => ({
   title: title.value,
   message: message.value,
@@ -32,13 +96,7 @@ const dialogOptions = computed(() => ({
   theme: 'amber' as const,
   actions: [
     {
-      label:
-        activeScript.value && !script.active
-          ? __('Yes, {0} {1}', [
-              isSystemScript(activeScript.value) ? __('enable') : __('activate'),
-              getScriptName(script._name),
-            ])
-          : __('Confirm'),
+      label: confirmLabel.value,
       variant: activeScript.value ? 'subtle' : 'solid',
       onClick: () => (action ? action() : setScriptStateSubmit()),
     },
@@ -49,31 +107,6 @@ const dialogOptions = computed(() => ({
     },
   ],
 }))
-const title = computed(() => {
-  if (activeScript.value)
-    return __('{0} {1}?', [
-      isSystemScript(activeScript.value) ? __('Disable') : __('Deactivate'),
-      getScriptName(activeScript.value),
-    ])
-  return __('{0} {1}?', [
-    isSystemScript(script._name) ? __('Enable') : __('Activate'),
-    getScriptName(script._name),
-  ])
-})
-const message = computed(() => {
-  if (script.active)
-    return __(
-      'All rules and filters associated with this script will stop functioning immediately.',
-    )
-  if (!activeScript.value)
-    return __('All rules and filters associated with this script will take effect immediately.')
-  return __('{0} {1} will {2} {3}. Do you want to proceed?', [
-    isSystemScript(script._name) ? __('Enabling') : __('Activating'),
-    getScriptName(script._name),
-    isSystemScript(activeScript.value) ? __('disable') : __('deactivate'),
-    getScriptName(activeScript.value),
-  ])
-})
 const setScriptState = useMutation(api.mail.sieve.update)
 async function setScriptStateSubmit() {
   const input: InputOf<typeof api.mail.sieve.update> = {
@@ -84,14 +117,12 @@ async function setScriptStateSubmit() {
     active: !script.active,
   }
   await setScriptState.run(input)
-  raiseToast(
-    script.active
-      ? __('{0} deactivated', [getScriptName(script._name)])
-      : __('{0} {1}.', [
-          getScriptName(script._name),
-          isSystemScript(script._name) ? __('enabled') : __('activated'),
-        ]),
-  )
+  if (script.active) {
+    raiseToast(words.value.turnedOff)
+  } else {
+    raiseToast(words.value.turnedOn)
+  }
+
   show.value = false
 }
 </script>

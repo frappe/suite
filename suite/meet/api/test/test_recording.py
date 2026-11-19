@@ -796,6 +796,15 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             get_state(self.room.name)
 
+    def test_a_guest_without_a_session_cannot_read_state(self):
+        # A guest learns of a recording from its join answer and its own realtime room instead.
+        started = start(self.room.name, str(uuid.uuid4()))
+        self.assertEqual(get_state(self.room.name)["name"], started["name"])
+
+        frappe.set_user("Guest")
+        with self.assertRaises(frappe.PermissionError):
+            get_state(self.room.name)
+
     def test_http_acceptance_persists_recorder_timestamp_and_key_then_delivers_grant(self):
         frappe.conf.recording_fixture_mode = False
         client = Mock()

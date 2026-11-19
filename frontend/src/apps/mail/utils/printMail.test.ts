@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import {
+  allowsInline,
+  allowsLoad,
+  headPolicy,
+  type Fetch,
+} from '@/apps/mail/utils/contentPolicy.test-support'
 import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 
 // Dates print in the zone from the user's Settings, here one that is neither UTC nor the machine's.
@@ -157,6 +163,31 @@ describe('the printed page', () => {
     expect(allowed.querySelector('img[alt="Logo"]')!.getAttribute('src')).toBe(
       'https://t.example/a.png',
     )
+  })
+
+  // The page takes the app's origin, which is where the server points inline (cid:) images.
+  it('has the browser refuse every remote load while any message on the page is withheld', () => {
+    const app = window.location.origin
+    const withheld = printPage('News', [message, { ...message, blockRemote: true }])
+    const shown = printPage('News', [message, { ...message, body: '<p>Thanks!</p>' }])
+    const fetches: Fetch[] = ['img', 'font', 'style', 'media', 'connect', 'frame', 'object']
+    const remote = 'https://t.example/a.png'
+
+    const refused = headPolicy(withheld)
+    for (const fetch of fetches) expect(allowsLoad(refused, fetch, remote, app), fetch).toBe(false)
+    expect(allowsLoad(refused, 'img', '/api/method/suite.mail.api.mail.get_attachment', app)).toBe(
+      true,
+    )
+    expect(allowsLoad(refused, 'img', 'data:image/gif;base64,R0lGODlhAQABAAAAACw=', app)).toBe(true)
+    expect(
+      allowsLoad(refused, 'img', '/api/method/suite.sheets.link_preview.get_link_preview', app),
+    ).toBe(false)
+    expect(allowsInline(refused, 'style')).toBe(true)
+
+    const allowed = headPolicy(shown)
+    for (const fetch of ['img', 'font', 'style'] as const)
+      expect(allowsLoad(allowed, fetch, remote, app), fetch).toBe(true)
+    expect(allowsInline(allowed, 'script')).toBe(false)
   })
 
   it('prints a conversation as one section per message, in order', () => {

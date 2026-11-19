@@ -474,14 +474,21 @@ export const extractNameFromEmail = (email: string) =>
     .replace(/[._-]/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase())
 
-export const getScriptName = (scriptName: string) => {
-  if (scriptName === 'vacation') return __('Vacation Response')
-  if (scriptName === 'frappe_mail_automation') return __('Folder Automation')
-  return `'${scriptName}'`
-}
+/**
+ * What turning on a rule or folder automation turns off: the script the mail server is running,
+ * of which it runs one at a time, named as the app names it.
+ */
+export function turnsOffLine(running: string) {
+  if (running === 'vacation') {
+    return __('This turns off auto-reply.')
+  }
 
-export const isSystemScript = (scriptName: string) =>
-  ['vacation', 'frappe_mail_automation'].includes(scriptName)
+  if (running === 'frappe_mail_automation') {
+    return __('This turns off folder automation.')
+  }
+
+  return __('This turns off your rule “{0}”.', [running])
+}
 
 export { decodeHtmlEntities, hasHtmlContent, plainTextToHtml } from '@/apps/mail/utils/html'
 export { analyzeRemoteAssets, blockRemoteAssets } from '@/apps/mail/utils/remoteAssets'

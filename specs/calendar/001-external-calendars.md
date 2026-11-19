@@ -47,9 +47,9 @@ replaces what was there, so a run is repeatable and what the source drops is rem
 - **Shared calendars start unticked**, these and the mail server's alike: a calendar someone
   else keeps is drawn over the reader's own week only once they switch it on. The choice is
   kept per browser, since the mail server lets only a writer change a calendar's visibility.
-  It is made with a tap in the sidebar or the phone's calendar sheet, or with Show/Hide in a
-  calendar's menu on the settings page. A
-  shared calendar a reader could already see before this change stays drawn.
+  It is made with a tap in the sidebar or the phone's calendar sheet, or with the Show or Hide
+  button on a calendar's row on the settings page. A shared calendar a reader could already see
+  before this change stays drawn.
 - A calendar that is switched off is not drawn in the grid and its days are not ticked in the
   mini month. Nothing is drawn until the calendar list has loaded, so a hidden calendar's
   events never flash up first.

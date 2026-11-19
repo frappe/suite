@@ -215,10 +215,17 @@ class TestWriterEmbed(IntegrationTestCase):
         with self.assertRaises(DriveNotFound):
             self.dispatch("writer.api.embed.get", node)
 
+    def test_an_image_url_without_an_id_is_a_bad_request(self):
+        for cmd in ("suite.writer.api.embed.get", "writer.api.embed.get"):
+            with self.subTest(cmd), self.assertRaises(frappe.ValidationError) as refused:
+                self.dispatch(cmd, None)
+            self.assertEqual(refused.exception.http_status_code, 400)
+
     @staticmethod
-    def dispatch(cmd: str, node: str):
+    def dispatch(cmd: str, node: str | None):
         frappe.local.request = Request(EnvironBuilder(path=f"/api/method/{cmd}", method="GET").get_environ())
-        frappe.form_dict.update({"id": node})
+        if node is not None:
+            frappe.form_dict.update({"id": node})
         try:
             return execute_cmd(cmd)
         finally:

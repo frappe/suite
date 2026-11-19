@@ -50,7 +50,8 @@
         "meet/network/*.test.mjs",
         "meet/network/compare.mjs",
         "meet/network/frappeUi.ts",
-        "unified-frontend/global-setup.ts"
+        "unified-frontend/global-setup.ts",
+        "ui-states/**/*.ts"
       ],
       "project": [
         "shared/**/*.ts",
@@ -63,7 +64,8 @@
           "{drive-backed-apps,meet}/playwright.config.ts",
           "unified-frontend/{shell,files}/playwright.config.ts"
         ]
-      }
+      },
+      "ignoreBinaries": ["mariadb", "mariadb-dump"]
     },
     "suite/meet/sfu-server": {
       "entry": ["src/server/RecordingGrantPersistenceFile.ts"],

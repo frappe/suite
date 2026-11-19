@@ -5,7 +5,7 @@
     :loading="report.status === 'pending'"
   >
     <template #loading>
-      <div class="w-full space-y-6 pb-10" aria-hidden="true">
+      <div class="w-full space-y-6 pb-10" aria-hidden="true" inert>
         <SiteStorageSummarySkeleton />
         <section class="space-y-4">
           <div class="flex flex-wrap items-center gap-2">

@@ -148,7 +148,7 @@ const machine = setupFlow<Event>().createMachine({
 			on: { EDIT_CALENDAR: "calendarEdit", DELETE_CALENDAR: "calendarDeleteConfirm" },
 		},
 		calendarEdit: {
-			meta: { description: "Edit Calendar: the same form, filled. Save is off until something changes." },
+			meta: { description: "Edit Calendar: the same form, filled, with a tick to make it the default and Delete at the start of the buttons. Save is off until something changes." },
 			on: { RENAME_CALENDAR: "calendarEditDirty" },
 		},
 		calendarEditDirty: {
@@ -343,7 +343,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "“No results for …”." },
 		},
 		phoneProfile: {
-			meta: { description: "The Profile tab: Maya's name and address, then Preferences, Calendars, Participant Identity, Import, Export, Advanced and Log Out." },
+			meta: { description: "The Profile tab: Maya's name and address, then Preferences, Calendars, Advanced and Log Out." },
 		},
 	},
 });
@@ -822,7 +822,7 @@ export const calendar = defineFlow<Event, BaseScene>({
 		},
 		async PROFILE_TAB(scene) {
 			await phoneTabs(scene).getByRole("button", { name: "Profile" }).click();
-			await expect(scene.page.getByRole("button", { name: "Participant Identity" })).toBeVisible();
+			await expect(scene.page.getByRole("button", { name: "Advanced" })).toBeVisible();
 		},
 	},
 });

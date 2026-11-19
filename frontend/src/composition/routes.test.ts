@@ -129,6 +129,16 @@ describe('a page whose code fails to load', () => {
     expect(root.textContent).toContain('This page did not load')
   })
 
+  it('reloads once by itself when a deploy removed its stylesheet', async () => {
+    // Vite loads a chunk's stylesheets before its script and words that failure itself.
+    const stale = new Error('Unable to preload CSS for /assets/Page-1a2b.css')
+    const { router } = mountRouter(stale)
+
+    await router.push('/broken').catch(() => {})
+
+    expect(assign).toHaveBeenCalledExactlyOnceWith('/broken')
+  })
+
   it('reloads by itself again after a page has loaded since', async () => {
     const stale = new TypeError('Importing a module script failed.')
     const { router } = mountRouter(stale)

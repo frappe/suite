@@ -4,7 +4,7 @@ import { ref } from 'vue'
 import { api, client } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
-import type { CalendarRow } from '@/apps/calendar/utils/calendars'
+import { isDeletableCalendar, type CalendarRow } from '@/apps/calendar/utils/calendars'
 import { translate as __ } from '@/platform/translation'
 
 /**
@@ -73,18 +73,23 @@ export const useCalendarActions = () => {
       condition: () => canEdit(calendar) && !calendar.default,
       onClick: () => makeDefault(calendar),
     },
-    // The default is where new events and invitations land, so it stays until another takes over.
     {
       label: __('Delete'),
       icon: Trash2,
       theme: 'red',
-      condition: () => !calendar.default && !!calendar.may_delete,
+      condition: () => isDeletableCalendar(calendar),
       onClick: () => {
         selected.value = calendar
         showDelete.value = true
       },
     },
   ]
+
+  // Delete pressed in the edit dialog, which gives way to the question
+  function deleteSelected() {
+    showEdit.value = false
+    showDelete.value = true
+  }
 
   // With nothing to offer, the options button is left out rather than opening an empty menu.
   const hasMenuOptions = (calendar: CalendarRow) =>
@@ -100,5 +105,6 @@ export const useCalendarActions = () => {
     toggleVisible,
     menuOptions,
     hasMenuOptions,
+    deleteSelected,
   }
 }

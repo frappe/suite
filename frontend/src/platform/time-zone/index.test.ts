@@ -6,7 +6,11 @@ import { nextTick } from 'vue'
 import { createSession } from '@/platform/session'
 import type { Transport } from '@/platform/transport'
 
+// Reaches past the alias on purpose: under test `frappe-ui` is a stub that keeps no time zone
+import { dayjsLocal } from '../../../../node_modules/frappe-ui/src/utils/dayjs'
 import { installUserTimeZone, userTimeZone } from './index'
+
+vi.mock('frappe-ui', () => import('../../../../node_modules/frappe-ui/src/utils/config'))
 
 const signedInAs = async (timeZone: string | null) => {
   document.cookie = 'user_id=maya%40example.com; path=/'
@@ -32,6 +36,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  vi.useRealTimers()
   vi.restoreAllMocks()
   document.cookie = 'user_id=Guest; path=/'
 })
@@ -49,5 +54,12 @@ describe('userTimeZone', () => {
     installUserTimeZone(await signedInAs('America/Los_Angeles'))
     await nextTick()
     expect(dayjs.tz('2026-07-28 09:00').toISOString()).toBe('2026-07-28T16:00:00.000Z')
+  })
+
+  it('makes the Settings zone the one a date picker takes Now from', async () => {
+    vi.useFakeTimers({ now: new Date('2026-07-28T16:00:00Z') })
+    installUserTimeZone(await signedInAs('America/Los_Angeles'))
+    await nextTick()
+    expect(dayjsLocal().format('YYYY-MM-DD HH:mm')).toBe('2026-07-28 09:00')
   })
 })

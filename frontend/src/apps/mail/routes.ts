@@ -25,8 +25,9 @@ import '@/apps/mail/runtime'
 
 // An account's folder is named by its slug in the URL (`mailbox/sent`), but MailboxView works in
 // mailbox ids, so the param is translated on the way in. The guard has already waited for the
-// account's mailboxes and turned an id in the URL into the slug (see ./router.ts), and MailLayout
-// moves the URL along when a rename changes the slug.
+// account's mailboxes and turned an id in the URL into the slug (see ./router.ts), and
+// useFollowOpenFolder (composables/useFollowOpenFolder.ts) moves the URL along when a rename changes
+// the slug.
 const mailboxProps = (route: RouteLocationNormalized) => ({
   ...route.params,
   mailbox: openedMailboxId(

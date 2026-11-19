@@ -357,6 +357,10 @@ const selectView = (view: MobileView) => {
       />
     </AreaSidebarFooter>
   </AreaSidebar>
-  <CalendarModal v-model="showCalendarModal" :calendar="selectedCalendar" />
+  <CalendarModal
+    v-model="showCalendarModal"
+    :calendar="selectedCalendar"
+    @delete="calendarActions.deleteSelected"
+  />
   <DeleteCalendarModal v-model="showDeleteCalendar" :calendar="selectedCalendar" />
 </template>

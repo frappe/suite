@@ -18,6 +18,7 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
+import type { SettingsTabIds } from '@/platform/settings'
 import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
 
@@ -56,7 +57,8 @@ export const useToggleReadingPane = () => {
 /**
  * Switching accounts stays in place wherever the view allows it — shared by the
  * sidebar's account submenu and the mobile profile sheet. Account-scoped routes
- * swap the accountId param in their own URL. Everything else goes through the
+ * swap the accountId param in their own URL, except an open thread, which gives way
+ * to its folder in the other account. Everything else goes through the
  * account shortcut, which the guard resolves to the new account's default mailbox.
  *
  * "All accounts" is a mode of the same switcher, and the folder carries across it
@@ -84,7 +86,14 @@ export const useAccountSwitch = () => {
       )
     }
     if (accountId === store.accountId) return
-    router.push(
+    // An open thread is left for its folder: thread ids are counted per account, so the same id
+    // in the other account is some other conversation, or none.
+    if (route.name === 'mail-mail')
+      return router.push({
+        name: 'mail-mailbox',
+        params: { accountId, mailbox: route.params.mailbox },
+      })
+    return router.push(
       route.params.accountId
         ? {
             name: route.name!,
@@ -442,13 +451,14 @@ export const useFilterBySender = () => {
   }
 }
 
-/** A Mail tab in the Suite Settings list, for example `'mail.screener'`. */
+/** A Mail tab in the Suite Settings list, for example `'mail.inbox'`. */
 export type MailSettingsTabId = (typeof mailSettings.tabs)[number]['id']
 
-// Every Mail entry point opens the Suite Settings dialog on a Mail tab. This is Mail's one
-// import of the shell's Settings [T018].
+// Every Mail entry point opens the Suite Settings dialog on a Mail tab, or on one section of it:
+// Mail's one import of the shell's Settings [T018]
 export const useSettings = () => ({
-  openSettings: (tab: MailSettingsTabId) => openSuiteSettings(tab),
+  openSettings: <Tab extends MailSettingsTabId>(tab: Tab, section?: SettingsTabIds[Tab] & string) =>
+    openSuiteSettings(tab, section),
 })
 const showShortcuts = ref(false)
 export const useShortcuts = () => ({

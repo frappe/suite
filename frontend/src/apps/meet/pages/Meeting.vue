@@ -425,7 +425,7 @@ const isCurrentUserHost = computed(() =>
 const isCurrentUserCohost = computed(() =>
   Boolean(session.user?.sessionUser && meetingCoHosts.value.includes(session.user.sessionUser)),
 )
-const recording = useRecording(meetingId.value)
+const recording = useRecording(meetingId.value, { signedIn: () => session.isLoggedIn })
 const recordingDialogOpen = ref(false)
 const recordingStopDialogOpen = ref(false)
 const recordingPreflight = ref<RecordingPreflight | null>(null)

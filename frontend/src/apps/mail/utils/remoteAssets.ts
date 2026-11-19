@@ -8,9 +8,10 @@
 const REMOTE_URL = /^\s*(?:https?:)?\/\//i
 const REMOTE_CSS_URL = /url\(\s*['"]?(?:https?:)?\/\//i
 // A stylesheet imported by a bare string (`@import "https://…"`) rather than a url(). The string
-// runs to its closing quote, or to a newline or the end of the stylesheet if it has none.
+// runs to its closing quote, or to a newline or the end of the stylesheet if it has none. A
+// backslash with nothing after it is dropped, and the string still ends there.
 const REMOTE_CSS_IMPORT =
-  /(@import\s*)(["'])\s*(?:https?:)?\/\/(?:(?!\2)[^\\\n\r\f]|\\[\s\S])*(?:\2|(?=[\n\r\f])|$)/gi
+  /(@import\s*)(["'])\s*(?:https?:)?\/\/(?:(?!\2)[^\\\n\r\f]|\\(?:[\s\S]|$))*(?:\2|(?=[\n\r\f])|$)/gi
 
 // Blank remote url(...) and imported stylesheets in a CSS string. Regex here is unavoidable — there's
 // no DOM API to rewrite a url() inside a style string without pulling in the full CSSOM.

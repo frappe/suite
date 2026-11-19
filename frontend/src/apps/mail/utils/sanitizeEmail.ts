@@ -4,7 +4,7 @@
  * no scripts, no forms, and none of the remote loads (`background`, `srcset`, `poster`, media)
  * the list leaves out. The whole document is kept, its `<head>` styles with it.
  */
-import DOMPurify, { type UponSanitizeElementHook } from 'dompurify'
+import DOMPurify, { type UponSanitizeAttributeHook, type UponSanitizeElementHook } from 'dompurify'
 
 import { blockRemoteAssets } from '@/apps/mail/utils'
 import { escapeBracketedAddresses } from '@/apps/mail/utils/html'
@@ -27,6 +27,17 @@ const unwrapStyleSheet: UponSanitizeElementHook = (node, { tagName }) => {
     if (child.nodeType === Node.TEXT_NODE && child.nodeValue)
       child.nodeValue = child.nodeValue.replace(STYLE_WRAPPER, '')
   })
+}
+
+// A <meta http-equiv> is a response header the sender writes. Only Content-Type and
+// Content-Language mean anything to a mail (the language picks its glyphs and hyphenation, and
+// the allow-list keeps no `lang`); the rest act on the reader's frame, and `refresh` navigates it
+// to any page the sender names, a load no Content-Security-Policy refuses.
+const MAIL_HEADERS = new Set(['content-type', 'content-language'])
+
+const keepMailHeadersOnly: UponSanitizeAttributeHook = (_node, data) => {
+  if (data.attrName === 'http-equiv' && !MAIL_HEADERS.has(data.attrValue.trim().toLowerCase()))
+    data.keepAttr = false
 }
 
 const DOMPURIFY_CONFIG = {
@@ -126,6 +137,7 @@ const DOMPURIFY_CONFIG = {
 // Mail's own instance, so the hook stays out of the HTML other code cleans with the shared one.
 const mailPurifier = DOMPurify(window)
 mailPurifier.addHook('uponSanitizeElement', unwrapStyleSheet)
+mailPurifier.addHook('uponSanitizeAttribute', keepMailHeadersOnly)
 
 /**
  * `html` cleaned for display, as a whole document. Remote images and CSS urls are held back when

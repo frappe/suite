@@ -63,6 +63,7 @@
         <FormControl
           v-model="nameDraft.first_name"
           :label="__('First name')"
+          variant="outline"
           class="w-full"
           autocomplete="given-name"
           :disabled="updateUser.isPending"
@@ -71,6 +72,7 @@
         <FormControl
           v-model="nameDraft.last_name"
           :label="__('Last name')"
+          variant="outline"
           class="w-full"
           autocomplete="family-name"
           :disabled="updateUser.isPending"
@@ -78,8 +80,8 @@
         />
       </div>
 
-      <SettingsRow :title="__('Password')" :description="__('Manage password and account access')">
-        <Button :label="__('Update password')" @click="showPasswordDialog = true" />
+      <SettingsRow :title="__('Password')" :description="__('Manage password and account access.')">
+        <Button :label="__('Change password')" @click="showPasswordDialog = true" />
       </SettingsRow>
     </div>
   </SettingsTabContent>
@@ -104,6 +106,7 @@
           name="current-password"
           autocomplete="current-password"
           :label="__('Current password')"
+          variant="outline"
           placeholder="••••••••"
         />
         <FormControl
@@ -112,6 +115,7 @@
           name="new-password"
           autocomplete="new-password"
           :label="__('New password')"
+          variant="outline"
           placeholder="••••••••"
         />
         <FormControl
@@ -120,6 +124,7 @@
           name="confirm-password"
           autocomplete="new-password"
           :label="__('Confirm new password')"
+          variant="outline"
           placeholder="••••••••"
         />
         <ErrorMessage :message="passwordError" />
@@ -144,6 +149,7 @@ import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
+import { onSettingsSectionAsked } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
 import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
@@ -166,6 +172,11 @@ watch(
 )
 
 const showPasswordDialog = ref(false)
+function showPassword() {
+  showPasswordDialog.value = true
+}
+
+onSettingsSectionAsked(() => 'account.profile.password', showPassword)
 const currentPassword = ref('')
 const newPassword = ref('')
 const confirmPassword = ref('')
@@ -180,12 +191,12 @@ const displayName = computed(() => {
 function avatarMenuOptions(openFileSelector: () => void) {
   return [
     {
-      label: __('Change image'),
+      label: __('Change picture'),
       icon: 'lucide-image-up',
       onClick: openFileSelector,
     },
     {
-      label: __('Remove image'),
+      label: __('Remove picture'),
       icon: 'lucide-trash-2',
       onClick: removeAvatar,
     },
@@ -259,7 +270,7 @@ const passwordDialogOptions = computed(() => ({
   title: __('Change password'),
   actions: [
     {
-      label: __('Confirm'),
+      label: __('Change password'),
       variant: 'solid' as const,
       onClick: () => changePassword(),
       disabled:

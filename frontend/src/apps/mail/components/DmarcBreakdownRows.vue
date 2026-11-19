@@ -1,6 +1,11 @@
 <template>
   <!-- A short ranked table: who or what sent the mail, how much, and how much of it passed. -->
-  <div v-if="rows.length" class="flex max-h-72 flex-col overflow-y-auto">
+  <DashboardRowsSkeleton
+    v-if="loading"
+    :rows="3"
+    row-class="min-h-12 border-b px-5 py-3 text-sm last:border-b-0"
+  />
+  <div v-else-if="rows.length" class="flex max-h-72 flex-col overflow-y-auto">
     <div
       v-for="row in rows"
       :key="row[labelKey]"
@@ -31,8 +36,9 @@ import { Badge } from 'frappe-ui'
 
 import type { DmarcTotals } from '@/apps/mail/utils/dmarc'
 import { formatRate, rateTheme } from '@/apps/mail/utils/reports'
+import { DashboardRowsSkeleton } from '@/platform/dashboard'
 
 type Row = DmarcTotals & Record<string, string | number | null>
 
-defineProps<{ rows: Row[]; labelKey: string; empty: string }>()
+defineProps<{ rows: Row[]; labelKey: string; empty: string; loading?: boolean }>()
 </script>

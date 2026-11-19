@@ -335,6 +335,22 @@ describe('printing the conversation', () => {
     ])
   })
 
+  it('keeps a reply to yourself as one message when its delivered copy lands', async () => {
+    await open()
+    const sent = conversation[1]
+
+    // Delivered: the server leads with the copy in the Inbox, the Sent one hanging off it.
+    query.current.data = [
+      conversation[0],
+      { ...sent, id: 'delivered', name: 'delivered', seen: 0, duplicates: [fromPartial(sent)] },
+    ]
+    await nextTick()
+    await nextTick()
+
+    press({ ctrlKey: true })
+    expect(printedMessages()).toHaveLength(2)
+  })
+
   it('prints on ⌘P on a Mac, where Ctrl+P is left to the browser', async () => {
     platform.mac = true
     await open()
@@ -351,6 +367,22 @@ describe('printing the conversation', () => {
 
     press({ ctrlKey: true })
     expect(printedMessages()?.map((message) => message.blockRemote)).toEqual([true, false])
+  })
+
+  // Chrome sends a keydown with no key when it autofills a field.
+  it('passes over a keydown with no key, and still prints on the next Ctrl+P', async () => {
+    await open()
+    const errors: unknown[] = []
+    const onError = (event: ErrorEvent) => {
+      errors.push(event.error)
+      event.preventDefault()
+    }
+    window.addEventListener('error', onError)
+    window.dispatchEvent(new Event('keydown'))
+    window.removeEventListener('error', onError)
+
+    expect(errors).toEqual([])
+    expect(press({ ctrlKey: true })).toBe(true)
   })
 
   it('leaves Ctrl+P to the browser in a read-only thread', async () => {

@@ -167,6 +167,13 @@ describe('Get started on Home', () => {
     expect(server.settings).toHaveBeenCalledWith('account.profile')
   })
 
+  it('opens the mail import itself in Settings for the old mail task', async () => {
+    server.admin = false
+    const root = mount()
+    task(root, 'Bring your old mail').click()
+    expect(server.settings).toHaveBeenCalledWith('mail.import-export', 'import')
+  })
+
   it('stays hidden for the person once they hide it', async () => {
     server.update.mockResolvedValue({})
     const root = mount()

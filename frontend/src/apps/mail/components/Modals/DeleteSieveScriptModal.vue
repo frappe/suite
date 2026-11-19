@@ -2,12 +2,12 @@
   <Dialog
     v-model:open="show"
     v-bind="{
-      title: __('Delete Sieve Script'),
-      message: __(`Are you sure you want to delete '{0}'? `, [script._name]),
+      title: __('Delete “{0}”?', [script._name]),
+      message: __('This cannot be undone.'),
       icon: 'lucide-alert-triangle',
       theme: 'amber' as const,
       actions: [
-        { label: __('Confirm'), theme: 'red' as const, onClick: () => deleteScriptSubmit() },
+        { label: __('Delete rule'), theme: 'red' as const, onClick: () => deleteScriptSubmit() },
       ],
     }"
   />
@@ -34,7 +34,7 @@ async function deleteScriptSubmit() {
     id: script.id,
   }
   await deleteScript.run(input)
-  raiseToast(__('Sieve script deleted'))
+  raiseToast(__('Rule deleted'))
   show.value = false
 }
 </script>

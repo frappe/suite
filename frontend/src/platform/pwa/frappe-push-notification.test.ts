@@ -1,3 +1,4 @@
+import { getMessaging, isSupported } from 'firebase/messaging'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import FrappePushNotification from './frappe-push-notification'
@@ -69,4 +70,15 @@ describe("a device's push subscriptions, per app", () => {
     expect([...relay.subscribed].sort()).toEqual(['calendar', 'mail'])
     expect(relay.calls).toEqual(['subscribe calendar'])
   })
+})
+
+// Firebase's getMessaging rejects, uncaught, where the browser lacks the APIs it needs.
+it('starts no messaging in a browser Firebase does not support, such as iPhone Safari', async () => {
+  vi.mocked(isSupported).mockResolvedValueOnce(false)
+  const push = new FrappePushNotification('mail', 'https://relay.test')
+
+  await push.initialize(fromPartial<ServiceWorkerRegistration>({}))
+
+  expect(getMessaging).not.toHaveBeenCalled()
+  expect(push.messaging).toBeNull()
 })
