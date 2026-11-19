@@ -140,6 +140,8 @@ class WriterDocument(Document):
 
 def notify_comments(file, mentions):
     for mention in mentions:
+        if not isinstance(mention.get("id"), str):
+            continue
         to_user = frappe.db.get_value("User", {"email": mention["id"]})
         if not to_user:
             continue
