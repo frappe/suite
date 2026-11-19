@@ -153,6 +153,47 @@ class TestWriterEmbed(IntegrationTestCase):
 
         self.assertEqual(self._children(theirs), [])
 
+    def test_only_pictures_and_videos_are_embedded_or_shown_inline(self):
+        """A document body is read on the site's own origin, so a file the
+        browser would run as a page must neither be accepted as an embed nor
+        be shown inline when one is already stored below the document, as an
+        older upload or Drive's own transfer can leave it."""
+        for filename, content in (
+            ("notes.html", b"<html><body>notes</body></html>"),
+            ("drawing.svg", b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+            ("drawing.png", b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+        ):
+            with self.subTest(filename), self.assertRaises(frappe.ValidationError):
+                self.add(self.document.name, content, filename)
+        self.assertEqual(self._children(self.document.name), [])
+
+        picture = self.add(self.document.name)["file_url"].rsplit("=", 1)[1]
+        shown = self.get(picture)
+        self.assertTrue(shown.mimetype.startswith("image/"), shown.mimetype)
+        self.assertFalse(shown.headers.get("Content-Disposition", "").startswith("attachment"))
+        self.assertEqual(shown.headers["X-Content-Type-Options"], "nosniff")
+
+        # An older embed can carry no stored type; the title still names one.
+        # Bytes Drive cannot recognise are stored that way.
+        with storage_v2():
+            untyped = drive.store_file(
+                self.document.name, f"{self.document.name} embed -photo.png", BytesIO(b"picture bytes")
+            )
+        self.assertEqual(frappe.db.get_value("Drive Node", untyped, "mime"), "application/octet-stream")
+        older = self.get(untyped)
+        self.assertTrue(older.mimetype.startswith("image/"), older.mimetype)
+        self.assertFalse(older.headers.get("Content-Disposition", "").startswith("attachment"))
+
+        with storage_v2():
+            page = drive.store_file(
+                self.document.name,
+                f"{self.document.name} embed -notes.html",
+                BytesIO(b"<html><body>notes</body></html>"),
+            )
+        served = self.get(page)
+        self.assertTrue(served.headers["Content-Disposition"].startswith("attachment"))
+        self.assertEqual(served.headers["X-Content-Type-Options"], "nosniff")
+
     # get
 
     def test_the_owner_reads_the_picture_back(self):
@@ -160,7 +201,7 @@ class TestWriterEmbed(IntegrationTestCase):
         `<img src>` needs."""
         node = self.add(self.document.name)["file_url"].rsplit("=", 1)[1]
 
-        response = embed.get(node)
+        response = self.get(node)
 
         self.assertTrue(response.mimetype.startswith("image/"), response.mimetype)
         self.assertEqual(b"".join(response.response), PNG)
@@ -171,7 +212,7 @@ class TestWriterEmbed(IntegrationTestCase):
 
         frappe.set_user(OTHER)
         with self.assertRaises(DriveNotFound):
-            embed.get(node)
+            self.get(node)
 
     def test_a_reader_of_the_document_reads_its_pictures(self):
         """An embed inherits the document's grants, because it hangs under it."""
@@ -180,7 +221,7 @@ class TestWriterEmbed(IntegrationTestCase):
         frappe.db.commit()
 
         frappe.set_user(OTHER)
-        response = embed.get(node)
+        response = self.get(node)
 
         self.assertEqual(b"".join(response.response), PNG)
 
@@ -198,7 +239,7 @@ class TestWriterEmbed(IntegrationTestCase):
 
         frappe.set_user(OWNER)
         with self.assertRaises(ValueError):
-            embed.get(deck)
+            self.get(deck)
 
     def test_an_old_writer_image_url_still_reads_the_picture(self):
         _, node = self.add(self.document.name)["file_url"].rsplit("=", 1)
@@ -220,6 +261,17 @@ class TestWriterEmbed(IntegrationTestCase):
             with self.subTest(cmd), self.assertRaises(frappe.ValidationError) as refused:
                 self.dispatch(cmd, None)
             self.assertEqual(refused.exception.http_status_code, 400)
+
+    @staticmethod
+    def get(node: str):
+        """Call `get` the way a browser's `<img src>` does: one GET request."""
+        frappe.local.request = Request(
+            EnvironBuilder(path="/api/method/suite.writer.api.embed.get", method="GET").get_environ()
+        )
+        try:
+            return embed.get(node)
+        finally:
+            del frappe.local.request
 
     @staticmethod
     def dispatch(cmd: str, node: str | None):
