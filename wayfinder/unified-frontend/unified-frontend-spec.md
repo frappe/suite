@@ -2010,23 +2010,19 @@ There is one Settings group per product, named after the product. Order
 
 | Surface | Items |
 |---|---|
-| Desktop rail avatar menu | Name and email header; People and Keyboard shortcuts; Open Desk (system managers) and Upgrade plan (system managers; not shown until ask S5); Log out. Settings is the rail's gear, directly above the avatar [Faris, 2026-11-16] |
+| Desktop rail avatar menu | Name and email header; People and Keyboard shortcuts; Upgrade plan (system managers; not shown until ask S5); Log out. Settings is the rail's gear, directly above the avatar [Faris, 2026-11-16]. There is no Open Desk [Gursheen, 2026-11-19] |
 | Phone avatar sheet | Header, People, Settings, Theme, Log out [Faris, 2026-11-16] |
 
 [T010, T016]
 
 - Theme is on the phone sheet to save a drill-in. It is not on the desktop
   menu [T016].
-- There is no Desk item on phone [T016].
-- The Desk item moves from `apps/registry.ts` into `shell/accountMenu.ts`.
-  The registry's Desk item is deleted [T016].
-- Open Desk and Upgrade plan both key on the `systemManager` capability
-  (section 3.8). There is no `systemUser` capability: Desk is the admin
-  console, and the Suite roles do not open it, so a "system user" is whoever
-  holds some other Desk role [T016, T021].
-- Open Desk is a plain `<a href="/app">`: a full page load in the same tab,
-  in its own group after Keyboard shortcuts and before Upgrade plan [T021,
-  Faris, 2026-11-16].
+- There is no Desk item on desktop or phone. A system manager opens Desk
+  by going to `/app` [Gursheen, 2026-11-19].
+- Upgrade plan keys on the `systemManager` capability (section 3.8). There
+  is no `systemUser` capability: Desk is the admin console, and the Suite
+  roles do not open it, so a "system user" is whoever holds some other Desk
+  role [T016, T021].
 - Upgrade plan stays disabled with the tooltip "Not available yet" until
   the site resource carries `upgrade_url` (ask S5) [T021].
 - Shortcuts stays in each app. Mail's mailbox switcher stays in Mail's

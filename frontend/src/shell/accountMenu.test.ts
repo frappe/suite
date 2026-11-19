@@ -79,20 +79,15 @@ describe('account menu', () => {
   it('holds who is signed in, People and Keyboard shortcuts, then Log out', () => {
     const menu = useAccountMenu(() => accountAreas(areas))
 
-    expect(rows(menu.value)).toEqual([
-      ['Maya Chen'],
-      ['People', 'Keyboard shortcuts'],
-      [],
-      ['Log out'],
-    ])
+    expect(rows(menu.value)).toEqual([['Maya Chen'], ['People', 'Keyboard shortcuts'], ['Log out']])
     expect(menuOption(menu.value, 'People').route).toBe('/people')
   })
 
-  it('adds Open Desk for a system manager', () => {
+  it('offers no Open Desk, even to a system manager', () => {
     capabilities.value = { jmap: true, systemManager: true }
     const menu = useAccountMenu(() => accountAreas(areas))
 
-    expect(rows(menu.value)[2]).toEqual(['Open Desk'])
+    expect(rows(menu.value).flat()).not.toContain('Open Desk')
   })
 
   it('opens the shortcuts list from Keyboard shortcuts', () => {
