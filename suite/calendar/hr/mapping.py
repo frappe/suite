@@ -1,14 +1,15 @@
 """HR records as calendar events.
 
-Pure functions from what HR returns to the events that should exist, apart from translating what
-a reader sees into the site's language. Each event carries a `uid`
-made from the HR record it came from: that is how a later run finds the event it wrote, and
-rewrites or removes it rather than adding a second one.
+Pure functions from what HR returns to the events that should exist, apart from writing what a
+reader sees in the language of the run. Each event carries a `uid` made from the HR record it
+came from: that is how a later run finds the event it wrote, and rewrites or removes it rather
+than adding a second one.
 """
 
 from datetime import date, timedelta
 
 from frappe import _
+from frappe.utils import format_date
 
 from suite.calendar.external import yearly_occurrence
 from suite.utils import convert_html_to_text
@@ -114,24 +115,4 @@ def _written_out(day: str) -> str:
     """The date as someone reads it, 15 September 2025, with the month as a word, so it is the
     same date to a reader who writes the day first as to one who writes the month first."""
 
-    value = date.fromisoformat(day)
-    return f"{value.day} {_month_name(value.month)} {value.year}"
-
-
-def _month_name(month: int) -> str:
-    """The month's name in the site's language, not the server process's locale."""
-
-    return (
-        _("January"),
-        _("February"),
-        _("March"),
-        _("April"),
-        _("May"),
-        _("June"),
-        _("July"),
-        _("August"),
-        _("September"),
-        _("October"),
-        _("November"),
-        _("December"),
-    )[month - 1]
+    return format_date(day, "d MMMM y")

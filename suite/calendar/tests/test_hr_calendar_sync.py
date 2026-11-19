@@ -38,6 +38,11 @@ def answer(data, status: int = 200) -> MagicMock:
     return response
 
 
+def remove_calendars() -> None:
+    for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
+        frappe.delete_doc("External Calendar", name, ignore_permissions=True, delete_permanently=True)
+
+
 class FakeHRSite:
     """An HR site as its REST API answers: employees and holiday lists, read in pages of at most
     `page_length` whatever was asked for, and one holiday list by its name."""
@@ -195,7 +200,7 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
         source = patch.object(hr_sync, "SOURCE", TEST_SOURCE)
         source.start()
         self.addCleanup(source.stop)
-        self.addCleanup(self.remove_calendars)
+        self.addCleanup(remove_calendars)
 
         self.settings = frappe.get_doc("HR Calendar Sync Settings")
         self.settings.update(
@@ -208,10 +213,6 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
                 "Dubai 2026": [holiday("2026-12-02", "National Day")],
             },
         )
-
-    def remove_calendars(self) -> None:
-        for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
-            frappe.delete_doc("External Calendar", name, ignore_permissions=True, delete_permanently=True)
 
     def run_sync(self) -> hr_sync.RunResult:
         with patch.object(hr_source.requests, "get", self.hr.get):
@@ -452,13 +453,15 @@ class IntegrationTestARunAsTheSchedulerStartsIt(IntegrationTestCase):
         self.assertEqual(set(asked), {"hr.example.com"})
 
     def test_sync_now_runs_on_the_saved_site_not_one_sent_with_the_request(self):
-        self.addCleanup(self.remove_calendars)
+        self.addCleanup(remove_calendars)
         settings = frappe.get_doc("HR Calendar Sync Settings")
         settings.hr_site_url = "https://elsewhere.example.com"
         hr = FakeHRSite([employee("EMP-1", date_of_birth="1990-07-09")], {"India 2026": []})
 
-        def run_here(method, queue, timeout, job_id, deduplicate, enqueue_after_commit, **kwargs):
+        def run_here(method, **kwargs):
             # the job, run where it is queued, with whatever it is handed
+            for option in ("queue", "timeout", "job_id", "deduplicate", "enqueue_after_commit"):
+                kwargs.pop(option, None)
             return frappe.get_attr(method)(**kwargs)
 
         with patch.object(frappe, "enqueue", run_here):
@@ -474,11 +477,6 @@ class IntegrationTestARunAsTheSchedulerStartsIt(IntegrationTestCase):
             report = frappe.get_doc("HR Calendar Sync Settings").test_connection()
 
         self.assertEqual(report["unknown_holiday_lists"], ["Mars 2026"])
-
-    @staticmethod
-    def remove_calendars() -> None:
-        for name in frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"):
-            frappe.delete_doc("External Calendar", name, ignore_permissions=True, delete_permanently=True)
 
     def test_a_run_stands_aside_while_another_holds_the_lock(self):
         with (
