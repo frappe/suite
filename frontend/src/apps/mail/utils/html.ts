@@ -7,6 +7,24 @@ export const escapeHtml = (s: string) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] ?? c,
   )
 
+// The page an image attachment is printed from. It is loaded as an iframe's srcdoc, which
+// runs as this site, so the title (the sender's filename) and the src must stay text.
+export const imagePrintDocument = (title: string, src: string) => `
+  <html>
+    <head>
+      <title>${escapeHtml(title)}</title>
+      <style>
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        img { max-width: 100%; height: auto; }
+        @media print { body { margin: 0; } img { max-width: 100%; height: auto; } }
+      </style>
+    </head>
+    <body>
+      <img src="${escapeHtml(src)}" />
+    </body>
+  </html>
+`
+
 // Only the entities a server escapes a body with. Anything else is left as written,
 // so `AT&T;` and a stray `&#5;` in real prose survive the round trip untouched.
 const NAMED_ENTITIES = new Map<string, string>([

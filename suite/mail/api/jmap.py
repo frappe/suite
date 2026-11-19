@@ -13,6 +13,7 @@ from suite.mail.doctype.push_subscription.push_subscription import (
     read_jmap_push,
     verify_push_subscription,
 )
+from suite.mail.doctype.user_account.user_account import is_jmap_account_belongs_to_user
 from suite.mail.jmap import invalidate_jmap_identities_cache, invalidate_jmap_mailboxes_cache
 from suite.mail.utils.logger import get_push_logger
 
@@ -37,6 +38,12 @@ def push_notification() -> dict:
 
         user = unquote(user)
         ctx["user"] = user
+
+        # Anyone can call this endpoint, and without push encryption nothing proves the mail server
+        # sent the push: it may only start work for a real user, on accounts that user holds.
+        if not frappe.db.get_value("User", user, "enabled"):
+            logger.warning("unknown-user")
+            return {"status": "error", "message": _("Unknown user.")}
 
         if is_jmap_push_notifications_frozen(user):
             logger.warning("push-frozen")
@@ -78,6 +85,10 @@ def push_notification() -> dict:
         if isinstance(pushed, CalendarAlert):
             ctx["account"] = pushed.account_id
 
+            if not is_jmap_account_belongs_to_user(pushed.account_id, user):
+                logger.warning("account-not-held-by-user")
+                return {"status": "error", "message": _("Unknown account.")}
+
             logger.info("calendar-alert-received")
             enqueue_send_event_alert_notification(user, pushed.to_wire(), ctx=ctx)
 
@@ -87,6 +98,10 @@ def push_notification() -> dict:
 
         for account, changes in pushed.changed.items():
             ctx["account"] = account
+
+            if not is_jmap_account_belongs_to_user(account, user):
+                logger.warning("account-not-held-by-user")
+                continue
 
             for entity, state in changes.items():
                 if entity == "Email":

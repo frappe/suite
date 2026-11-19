@@ -186,6 +186,7 @@ import { getAttachmentUrl } from '@/apps/mail/resources'
 import type { Attachment } from '@/apps/mail/types'
 import { getFileIcon, revokeObjectUrlAfterDownload } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { imagePrintDocument } from '@/apps/mail/utils/html'
 
 // pdf.js is megabytes — keep it lazy/code-split so it does not bloat the MailboxView route chunk
 // (only loaded when a PDF attachment is opened). The "essential" entry is the build that imports
@@ -324,21 +325,7 @@ const printAttachment = () => {
     return
   }
 
-  iframe.srcdoc = `
-			<html>
-				<head>
-					<title>${currentAttachment.value?.filename || 'Print'}</title>
-					<style>
-						body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
-						img { max-width: 100%; height: auto; }
-						@media print { body { margin: 0; } img { max-width: 100%; height: auto; } }
-					</style>
-				</head>
-				<body>
-					<img src="${previewUrl.value}" />
-				</body>
-			</html>
-		`
+  iframe.srcdoc = imagePrintDocument(currentAttachment.value?.filename || 'Print', previewUrl.value)
 
   iframe.onload = () => {
     iframe.contentWindow?.print()

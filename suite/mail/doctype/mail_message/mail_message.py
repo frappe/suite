@@ -1867,16 +1867,15 @@ def fetch_changes(
     ctx["email_state"] = email_state
 
     if not current_state:
-        if not email_state:
-            # A manual or scheduled run carries no state, and storing None would leave the
-            # account re-"initializing" on every run with changes never fetched — seed from
-            # the server's actual Email state instead.
-            try:
-                email_state = get_email_state(account_view(get_jmap_client(user), account))
-                ctx["email_state"] = email_state
-            except Exception:
-                logger.error("email-sync-state-init-failed")
-                raise
+        # Seeded from the server's own Email state, never the pushed one: the push endpoint is
+        # open to anyone, so a pushed state is only a hint that something changed. A manual or
+        # scheduled run carries none at all.
+        try:
+            email_state = get_email_state(account_view(get_jmap_client(user), account))
+            ctx["email_state"] = email_state
+        except Exception:
+            logger.error("email-sync-state-init-failed")
+            raise
 
         if not email_state:
             logger.warning("email-sync-state-unavailable")
