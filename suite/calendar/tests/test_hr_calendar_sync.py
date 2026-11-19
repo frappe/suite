@@ -281,6 +281,16 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
             frappe.db.count("External Calendar Event", {"calendar": self.calendar("holidays:Dubai 2026")}), 1
         )
 
+    def test_holidays_switched_off_keeps_every_holiday_calendar_and_names_each_as_not_updated(self):
+        self.run_sync()
+
+        self.settings.sync_holidays = 0
+        summary = self.run_sync()
+
+        self.assertEqual(summary["not_updated"], ["Dubai 2026", "India 2026"])
+        self.assertIsNotNone(self.calendar("holidays:India 2026"))
+        self.assertIsNotNone(self.calendar("holidays:Dubai 2026"))
+
     def test_birthdays_and_anniversaries_are_calendars_of_their_own_that_start_unticked(self):
         self.settings.update({"sync_holidays": 0, "sync_birthdays": 1, "sync_anniversaries": 1})
         self.run_sync()

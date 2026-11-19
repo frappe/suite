@@ -132,6 +132,8 @@ def sync(settings, source) -> dict:
             remove_calendar(kept[key])
             summary[name] = {"removed_calendar": True}
 
+    # Switched off, every holiday calendar stays as it was, so each one is not updated.
+    lists: list[str] = []
     if settings.sync_holidays:
         chosen = settings.chosen_holiday_lists()
         lists = [name for name in source.holiday_lists() if not chosen or name in chosen]
@@ -148,13 +150,13 @@ def sync(settings, source) -> dict:
                 calendar, holiday_events(holiday_list, source.holidays(holiday_list))
             )
 
-        # Kept, and no longer updated. A list can drop out of HR's answer without being deleted
-        # there (the key lost read on it, or it was renamed), and removing it would throw away
-        # who an administrator assigned it to. They delete it when it should go.
-        summary["not_updated"] = sorted(
-            key.removeprefix(HOLIDAYS_KEY)
-            for key in kept
-            if key.startswith(HOLIDAYS_KEY) and key.removeprefix(HOLIDAYS_KEY) not in lists
-        )
+    # Kept, and no longer updated. A list can drop out of HR's answer without being deleted
+    # there (the key lost read on it, or it was renamed), and removing it would throw away
+    # who an administrator assigned it to. They delete it when it should go.
+    summary["not_updated"] = sorted(
+        key.removeprefix(HOLIDAYS_KEY)
+        for key in kept
+        if key.startswith(HOLIDAYS_KEY) and key.removeprefix(HOLIDAYS_KEY) not in lists
+    )
 
     return summary
