@@ -97,7 +97,7 @@ const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
 const { selected, showEdit, showDelete, create, edit, canEdit, toggleVisible, deleteSelected } =
   useCalendarActions()
 
-// A calendar shared for reading only: it shows, and nothing about it can be changed
+// A calendar shared for reading only: nothing about it but whether it is drawn can be changed
 function isReadOnly(calendar: CalendarRow) {
   return !canEdit(calendar)
 }
