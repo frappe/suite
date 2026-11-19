@@ -249,6 +249,8 @@ class File(FrappeFile):
         elif user.startswith(GROUP_PREFIX):
             if not frappe.db.exists("User Group", user[len(GROUP_PREFIX) :]):
                 frappe.throw(f"No such group: {user[len(GROUP_PREFIX) :]}", frappe.DoesNotExistError)
+        elif user_id := frappe.db.get_value("User", {"email": user}):
+            user = user_id
         elif not frappe.db.exists("User", user):
             create_invites(user, auto=True)
 
