@@ -133,3 +133,77 @@ describe('heading anchors', () => {
     expect(viewer.anchors().map((anchor) => anchor.id)).toEqual(ids)
   })
 })
+
+const VIEW_TOP = 100
+const VIEW_HEIGHT = 600
+
+// Places each heading so that `tops` are its distances from the top of the visible area
+function openScrolledEditor(scroll: { top: number; height: number }) {
+  const scroller = document.createElement('div')
+  const element = document.createElement('div')
+  scroller.append(element)
+  document.body.append(scroller)
+  scroller.getBoundingClientRect = () =>
+    fromPartial({ top: VIEW_TOP, bottom: VIEW_TOP + VIEW_HEIGHT, height: VIEW_HEIGHT })
+  Object.defineProperties(scroller, {
+    scrollTop: { value: scroll.top },
+    clientHeight: { value: VIEW_HEIGHT },
+    scrollHeight: { value: scroll.height },
+  })
+
+  let anchors: { textContent: string; isActive: boolean }[] = []
+  const editor = new Editor({
+    element,
+    extensions: [
+      Document,
+      Paragraph,
+      Text,
+      Heading,
+      HeadingAnchors.configure({
+        scrollParent: () => scroller,
+        onUpdate: (items) => {
+          anchors = fromPartial(items)
+        },
+      }),
+    ],
+    content: ['A', 'B', 'C']
+      .map((name) => `<h2 data-toc-id="${name}">${name}</h2><p>body</p>`)
+      .join(''),
+  })
+  editors.push(editor)
+
+  function placeHeadings(tops: Record<string, number>) {
+    for (const [id, top] of Object.entries(tops)) {
+      const heading = editor.view.dom.querySelector<HTMLElement>(`[data-toc-id="${id}"]`)!
+      heading.getClientRects = () => fromPartial([{ top: VIEW_TOP + top }])
+      Object.defineProperty(heading, 'offsetTop', { value: scroll.top + top })
+    }
+    scroller.dispatchEvent(new Event('scroll'))
+  }
+
+  function activeHeading() {
+    return anchors.find((anchor) => anchor.isActive)?.textContent
+  }
+
+  return { placeHeadings, activeHeading }
+}
+
+describe('active heading', () => {
+  it('is the heading just below the top edge once its section fills the view', async () => {
+    const view = openScrolledEditor({ top: 1000, height: 4000 })
+    await waitForUpdates()
+
+    view.placeHeadings({ A: -900, B: 30, C: 900 })
+
+    expect(view.activeHeading()).toBe('B')
+  })
+
+  it('is the last heading at the bottom, even when it cannot reach the top', async () => {
+    const view = openScrolledEditor({ top: 1400, height: 2000 })
+    await waitForUpdates()
+
+    view.placeHeadings({ A: -900, B: -300, C: 450 })
+
+    expect(view.activeHeading()).toBe('C')
+  })
+})
