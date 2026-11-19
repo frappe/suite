@@ -1,12 +1,14 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+import io
 import json
 from unittest.mock import MagicMock, patch
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 import frappe
 import requests
+import urllib3
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
 from suite.calendar import external
@@ -46,7 +48,8 @@ class FakeHRSite:
         self.page_length = page_length
 
     def get(self, url, params=None, **kwargs):
-        path = url.removeprefix(HR)
+        # Whatever host is asked: which one was is the test's to check, not this site's to refuse.
+        path = urlparse(url).path
         if path.startswith("/api/resource/Holiday List/"):
             name = unquote(path.removeprefix("/api/resource/Holiday List/"))
             return answer({"name": name, "holidays": self.lists[name]})
@@ -143,9 +146,23 @@ class UnitTestTheHRSite(UnitTestCase):
                 self.assertRaises(frappe.ValidationError, HRSource, HR, key, secret)
 
     def test_redirects_are_not_followed(self):
-        with patch.object(hr_source.requests, "get", return_value=answer([], status=302)) as get:
+        # The HR site sends this server to an address on the inside network, which would answer.
+        inside = "http://169.254.169.254/latest/meta-data"
+        asked = []
+
+        def send(adapter, request, **kwargs):
+            asked.append(request.url)
+            if request.url.startswith(inside):
+                raw = urllib3.HTTPResponse(io.BytesIO(b'{"data": []}'), status=200, preload_content=False)
+            else:
+                raw = urllib3.HTTPResponse(
+                    io.BytesIO(b""), headers={"Location": inside}, status=302, preload_content=False
+                )
+            return adapter.build_response(request, raw)
+
+        with patch.object(requests.adapters.HTTPAdapter, "send", send):
             self.assertRaises(frappe.ValidationError, HRSource(HR, "a", "b").employees)
-        self.assertFalse(get.call_args.kwargs["allow_redirects"])
+        self.assertEqual([urlparse(url).netloc for url in asked], ["hr.example.com"])
 
     def test_an_answer_too_large_is_refused(self):
         response = answer([])
