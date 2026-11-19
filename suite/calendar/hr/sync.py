@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 import frappe
 from frappe import _
+from frappe.translate import print_language
 from frappe.utils import now_datetime
 
 from suite.calendar.external_store import remove_calendar, replace_events, upsert_calendar
@@ -107,7 +108,10 @@ def reported_plainly[T](work: Callable[[], T], remember: bool = False) -> T:
 def _run() -> RunResult:
     # Read fresh rather than from the cache: the run acts on what is saved now.
     settings: HRCalendarSyncSettings = frappe.get_doc(SETTINGS)
-    result = sync(settings, settings.hr_source())
+    # What the events say is read by everyone they are drawn for, so it is in the site's language
+    # (System Settings), not that of whoever asked for the run.
+    with print_language(frappe.db.get_default("lang") or "en"):
+        result = sync(settings, settings.hr_source())
     frappe.db.set_single_value(
         SETTINGS,
         {

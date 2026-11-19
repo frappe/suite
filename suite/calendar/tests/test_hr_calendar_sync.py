@@ -427,6 +427,22 @@ class IntegrationTestARunAsTheSchedulerStartsIt(IntegrationTestCase):
             "could not be reached", frappe.db.get_single_value("HR Calendar Sync Settings", "last_error")
         )
 
+    def test_a_run_writes_its_events_in_the_site_language_not_in_that_of_whoever_asked(self):
+        self.addCleanup(remove_calendars)
+        self.addCleanup(frappe.db.set_default, "lang", frappe.db.get_default("lang"))
+        frappe.db.set_default("lang", "de")
+        frappe.db.set_single_value("HR Calendar Sync Settings", "sync_anniversaries", 1)
+        hr = FakeHRSite([employee("EMP-1", date_of_joining="2020-10-01")], {})
+
+        with patch.object(hr_source.requests, "get", hr.get), patch.object(frappe.local, "lang", "en"):
+            hr_sync.sync_hr_calendars()
+
+        calendar = frappe.db.get_value(
+            "External Calendar", {"source": TEST_SOURCE, "source_key": "anniversaries"}
+        )
+        description = frappe.db.get_value("External Calendar Event", {"calendar": calendar}, "description")
+        self.assertIn("Oktober 2020", description)
+
     def test_a_failed_test_connection_logs_neither_the_key_nor_an_employee(self):
         settings = frappe.get_doc("HR Calendar Sync Settings")
         self.assert_nothing_private(self.logged_by_failing(settings.test_connection))
