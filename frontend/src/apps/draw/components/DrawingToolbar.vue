@@ -40,19 +40,36 @@ const tools: ReadonlyArray<{
 const props = defineProps<{ activeTool: DrawingTool | null }>()
 
 const emit = defineEmits<{ select: [tool: DrawingTool] }>()
+const overflowActive = computed(() => ['image', 'laser', 'lasso'].includes(props.activeTool ?? ''))
 
 const LaserPointerIcon = defineComponent(
   () => () =>
-    h('svg', { viewBox: '0 0 20 20', 'aria-hidden': 'true' }, [
-      h('use', { href: `${laserPointerIcon}#laser-pointer` }),
-    ]),
+    h(
+      'svg',
+      {
+        viewBox: '0 0 20 20',
+        'aria-hidden': 'true',
+        style: { color: 'var(--ink-gray-8)' },
+      },
+      [h('use', { href: `${laserPointerIcon}#laser-pointer` })],
+    ),
 )
 
 const overflowTools = computed(() => [
-  { label: __('Insert Image'), icon: ImagePlus, onClick: () => emit('select', 'image') },
-  { label: __('Laser Pointer'), icon: LaserPointerIcon, onClick: () => emit('select', 'laser') },
   {
-    label: __('Lasso Select'),
+    label: __('Insert image'),
+    icon: ImagePlus,
+    selected: props.activeTool === 'image',
+    onClick: () => emit('select', 'image'),
+  },
+  {
+    label: __('Laser pointer'),
+    icon: LaserPointerIcon,
+    selected: props.activeTool === 'laser',
+    onClick: () => emit('select', 'laser'),
+  },
+  {
+    label: __('Lasso select'),
     icon: LassoSelect,
     selected: props.activeTool === 'lasso',
     onClick: () => emit('select', 'lasso'),
@@ -69,7 +86,7 @@ const overflowTools = computed(() => [
           :key="tool.label"
           :text="
             tool.value === 'select'
-              ? 'Pointer - Esc'
+              ? `${tool.label} - Esc`
               : tool.shortcut
                 ? `${tool.label} - ${tool.shortcut}`
                 : tool.label
@@ -83,7 +100,7 @@ const overflowTools = computed(() => [
             theme="gray"
             :label="tool.label"
             :aria-label="tool.label"
-            :class="{ 'is-active': activeTool === tool.value }"
+            :data-state="activeTool === tool.value ? 'active' : undefined"
             :icon="tool.icon"
             :aria-pressed="activeTool === tool.value"
             :aria-keyshortcuts="tool.shortcut"
@@ -92,12 +109,15 @@ const overflowTools = computed(() => [
         </Tooltip>
         <Dropdown
           class="drawing-tool"
+          :class="{ 'is-active': overflowActive }"
+          :aria-label="__('More tools')"
+          :aria-pressed="overflowActive"
           align="end"
           :offset="12"
           :options="overflowTools"
           :button="{
             icon: 'lucide-more-horizontal',
-            label: 'More tools',
+            label: __('More tools'),
             size: 'md',
             variant: 'ghost',
             theme: 'gray',
@@ -129,9 +149,9 @@ const overflowTools = computed(() => [
   padding: 3px;
   overflow-x: auto;
   scrollbar-width: none;
-  border: 1px solid var(--outline-gray-1);
+  border: 1px solid var(--outline-elevation-2);
   border-radius: 10px;
-  background: var(--surface-base);
+  background: var(--surface-elevation-2);
   box-shadow: var(--shadow-sm);
   pointer-events: auto;
 }
@@ -155,9 +175,14 @@ const overflowTools = computed(() => [
   stroke-width: 1.5;
 }
 
-.drawing-tool.is-active {
+.drawing-toolbar__surface :deep(button.is-active) {
   color: var(--ink-gray-8);
-  background: var(--surface-gray-3);
+  background: var(--surface-gray-4);
+}
+
+.drawing-toolbar__surface :deep(button[data-state='active']),
+.drawing-toolbar__surface :deep(button.is-active) {
+  box-shadow: inset 0 0 0 1px var(--outline-gray-3);
 }
 
 @media (pointer: coarse) {
