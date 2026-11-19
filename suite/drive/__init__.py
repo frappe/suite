@@ -141,7 +141,7 @@ on the shared row itself, on a node column the shared row carries, and on the
 parent document a shared child row points at.
 
 The content workflows do check. `check`, `create_document`,
-`import_document`, `copy`, `adopt_media`, `read_file`, `touch`, `take_version`,
+`import_document`, `copy`, `adopt_media`, `read_file`, `stream_file`, `touch`, `take_version`,
 `push_preview`, `comment_threads`, and `install_threads` build the caller's
 principals from the current Frappe session and this request's `X-Drive-Links`
 header, then run the same point check every other Drive workflow runs. A caller never constructs
