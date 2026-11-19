@@ -40,6 +40,20 @@ Action = Literal["archive", "unarchive", "move", "junk", "not_junk", "trash", "s
 ACTIONS: tuple[Action, ...] = ("archive", "unarchive", "move", "junk", "not_junk", "trash", "snooze", "wake")
 
 
+# The folders each action files into or out of; without one the action can't be done. Any other
+# folder an action looks at is only checked for, so an account missing it is no matter.
+NEEDS: dict[Action, tuple[str, ...]] = {
+    "archive": ("inbox", "archive"),
+    "unarchive": ("inbox", "archive"),
+    "move": (),
+    "junk": ("junk",),
+    "not_junk": ("inbox",),
+    "trash": ("trash",),
+    "snooze": ("inbox",),
+    "wake": ("inbox", "snoozed"),
+}
+
+
 class Roles(TypedDict):
     inbox: str
     archive: str
@@ -182,10 +196,11 @@ def left_inbox(updates: dict[str, dict], emails: list[dict], roles: Roles) -> bo
 
 
 def account_roles(account: str, snoozing: bool = False) -> Roles:
-    """The account's folders the rules name, the ones filing into created if missing."""
+    """The account's folders the rules name, the ones filing into created if missing. One that can't
+    be created is None, for `file_messages` to refuse only the actions that need it."""
 
     def role(name: str, create: bool = False) -> str | None:
-        return get_mailbox_id_by_role(account, name, create_if_not_exists=create, raise_exception=create)
+        return get_mailbox_id_by_role(account, name, create_if_not_exists=create)
 
     return {
         "inbox": role("inbox", create=True),
@@ -220,6 +235,8 @@ def file_messages(account: str, ids: list[str], action: Action, target: str | No
         )
     ]
     roles = account_roles(account, snoozing=action == "snooze")
+    if missing := [name for name in NEEDS[action] if not roles.get(name)]:
+        frappe.throw(_("Your {0} folder could not be found or created.").format(_(missing[0].title())))
     try:
         updates = plan(action, emails, roles, target)
     except ValueError as error:

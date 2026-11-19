@@ -180,13 +180,28 @@ def get_mailbox_id_by_role(
             raise ValueError(f"No mailbox found with role '{role}'")
         return None
 
+    # A top-level folder of that name with no role, as imported mail often leaves, takes the role:
+    # the server would refuse a second folder of the same name.
+    name = role.title()
+    existing = next(
+        (
+            mailbox["id"]
+            for mailbox in get_cached_mailboxes(account)
+            if not mailbox.get("parentId")
+            and not mailbox.get("role")
+            and (mailbox.get("name") or "").casefold() == name.casefold()
+        ),
+        None,
+    )
     client = get_account_client(account)
     with client.batch() as b:
-        h = b.mail.mailbox.set(
-            create={str(uuid7()): {"name": role.title(), "role": role, "isSubscribed": True}}
-        )
+        if existing:
+            h = b.mail.mailbox.set(update={existing: {"role": role, "isSubscribed": True}})
+        else:
+            h = b.mail.mailbox.set(create={str(uuid7()): {"name": name, "role": role, "isSubscribed": True}})
 
-    if h.result.not_created and raise_exception:
+    failed = h.result.not_updated if existing else h.result.not_created
+    if failed and raise_exception:
         raise ValueError(f"Failed to create mailbox with role '{role}'")
 
     invalidate_jmap_mailboxes_cache(account)
