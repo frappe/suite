@@ -64,9 +64,9 @@ An operation with no local cache effects can say so without an empty adapter mod
 
 ## Related tickets
 
-- [Suite API catalog and product ownership](tickets/003-catalog-and-product-ownership.md)
-- [Reactive and imperative call semantics](tickets/004-call-and-error-semantics.md)
-- [Cache effects and product request policies](tickets/005-cache-and-product-policies.md)
-- [Pagination, uploads, and exceptional operations](tickets/006-paging-uploads-and-exceptions.md)
-- [Cross-product caller examples](tickets/007-cross-product-caller-prototype.md)
-- [Migration and verification contract](tickets/008-migration-and-verification.md)
+- Suite API catalog and product ownership
+- Reactive and imperative call semantics
+- Cache effects and product request policies
+- Pagination, uploads, and exceptional operations
+- Cross-product caller examples
+- Migration and verification contract

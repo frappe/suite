@@ -5,9 +5,9 @@
 | Status | Approved by Faris 2026-09-29. Decisions folded 2026-09-29 (tickets 017 to 021). Agents wrote it for ticket 015 and folded the decisions for ticket 022. |
 | Date | 2026-09-29 |
 | Spec | [`unified-frontend-spec.md`](unified-frontend-spec.md) |
-| Source map | [`MAP.md`](MAP.md) and the closed tickets in [`tickets/`](tickets/) |
+| Source map | [`MAP.md`](MAP.md) |
 | Architecture | [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) |
-| Drive program | [`../drive-layer-spec/drive-layer-plan.md`](../drive-layer-spec/drive-layer-plan.md), [`implementation/README.md`](../drive-layer-spec/implementation/README.md) |
+| Drive program | [`../drive-layer-spec/drive-layer-plan.md`](../drive-layer-spec/drive-layer-plan.md) |
 | Base prototype | [suite-shell-prototype](https://sketch.netchamp.dev/u/netchampfaris/suite-shell-prototype) |
 
 This plan executes the spec. The spec owns behavior. Each ticket's
@@ -23,7 +23,7 @@ six fixes and no new surface.
 
 Verified on 2026-09-29. The 2026-09-15 documents
 (`IMPLEMENTATION.md`, `HANDOFF-home-files-implementation.md`,
-`ACCOUNTING.md`) describe the earlier wave. They predate tickets 007, 008,
+`ACCOUNTING.md`, the last two now only in git history at `fd03f7c75`) describe the earlier wave. They predate tickets 007, 008,
 010, 011, 014 and 016. Where they differ from the code, this section wins.
 
 ### Branches

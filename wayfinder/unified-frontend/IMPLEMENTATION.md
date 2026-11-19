@@ -3,7 +3,7 @@
 Status: in progress, started 2026-09-15. Orchestrated by the Claude session
 on branch `forge/wayfinder-unified-frontend`; codex agents execute the work
 packages below. Source of truth for behavior stays in the ticket resolutions
-named by [`HANDOFF-home-files-implementation.md`](HANDOFF-home-files-implementation.md).
+named by `HANDOFF-home-files-implementation.md` (in git history at `fd03f7c75`).
 This file fixes the seams the packages share so they can run in parallel.
 
 ## Layout (decided by ticket 013)

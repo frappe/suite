@@ -6,11 +6,11 @@ These override the audit reports where they conflict. Each ruling is small and r
 
 Open items that belong to these tickets must point to them by name and link (`tickets/0NN-...md`), and say "blocks Stage N" where the plan needs it. Do not decide them.
 
-- 017 [Product methods and the zero-call gate](../tickets/017-product-methods-and-the-zero-call-gate.md): which `suite.drive.api.*` names the boundary check bans and the D26 counter counts; product methods in Files settings tabs; Drive §11.7 vs §14.10; whether the hold clock restarts. (Spec audit A finding 3 and 4 second half, audit C finding 1, plan O4, plan audit finding 11 line 598.) Fix the plain factual errors (19 product methods, 17 called by legacy UI) but leave the exemption undecided. The Stage 11 boundary-check extension (plan audit finding 2) stays, with "the names ticket 017 settles".
-- 018 [Flip 1 rollback with deleted app chrome](../tickets/018-flip-1-rollback-with-deleted-app-chrome.md): plan O1.
-- 019 [Branches, backend asks and the release path](../tickets/019-branches-backend-asks-and-release-path.md): plan O2, O6, merge vs rebase (plan audit finding 18: record the fact, do not add the "merge only" rule), Frappe Cloud `bench set-config` (map fog).
-- 020 [Unmapped legacy routes and the /files path](../tickets/020-unmapped-legacy-routes-and-the-files-path.md): spec open item 16 (routes with no row or wrong match, trailing slug, lookup finds no node) and 19 (`/files` clash).
-- 021 [Account menu, Files entry points and icons](../tickets/021-account-menu-files-entry-points-and-icons.md): spec open items 22 (Upgrade plan), 23 (Open Desk), 25 (folder upload and template entry points), 1 (icon source).
+- 017 Product methods and the zero-call gate: which `suite.drive.api.*` names the boundary check bans and the D26 counter counts; product methods in Files settings tabs; Drive §11.7 vs §14.10; whether the hold clock restarts. (Spec audit A finding 3 and 4 second half, audit C finding 1, plan O4, plan audit finding 11 line 598.) Fix the plain factual errors (19 product methods, 17 called by legacy UI) but leave the exemption undecided. The Stage 11 boundary-check extension (plan audit finding 2) stays, with "the names ticket 017 settles".
+- 018 Flip 1 rollback with deleted app chrome: plan O1.
+- 019 Branches, backend asks and the release path: plan O2, O6, merge vs rebase (plan audit finding 18: record the fact, do not add the "merge only" rule), Frappe Cloud `bench set-config` (map fog).
+- 020 Unmapped legacy routes and the /files path: spec open item 16 (routes with no row or wrong match, trailing slug, lookup finds no node) and 19 (`/files` clash).
+- 021 Account menu, Files entry points and icons: spec open items 22 (Upgrade plan), 23 (Open Desk), 25 (folder upload and template entry points), 1 (icon source).
 - 022 Fold decisions into the spec and plan: the task that folds 017 to 021 in later.
 
 ## Rulings (apply as rules)
