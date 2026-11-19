@@ -198,14 +198,24 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
     def calendar(self, key: str) -> str:
         return frappe.db.get_value("External Calendar", {"source": TEST_SOURCE, "source_key": key})
 
+    def ours(self) -> set[str]:
+        """This test's calendars. The site may draw its own for the reader too: those aren't the
+        sync under test's."""
+
+        return set(frappe.get_all("External Calendar", {"source": TEST_SOURCE}, pluck="name"))
+
     def drawn(self) -> dict[str, int]:
         """Each calendar drawn for the reader, and whether it starts ticked."""
 
-        return {row["_name"]: row["visible"] for row in external.calendar_rows(self.user)}
+        rows = external.calendar_rows(self.user)
+        return {row["_name"]: row["visible"] for row in rows if row["id"] in self.ours()}
+
+    def events(self) -> list[dict]:
+        events = external.events_in_window(self.user, "2026-01-01", "2026-12-31")
+        return [event for event in events if event["calendars"][0]["calendar_id"] in self.ours()]
 
     def titles(self) -> list[str]:
-        events = external.events_in_window(self.user, "2026-01-01", "2026-12-31")
-        return sorted(event["title"] for event in events)
+        return sorted(event["title"] for event in self.events())
 
     def test_each_holiday_list_is_a_calendar_drawn_for_nobody_until_assigned(self):
         self.run_sync()
@@ -241,8 +251,7 @@ class IntegrationTestHRCalendarSync(IntegrationTestCase):
         self.hr.lists["India 2026"] = [holiday("2026-11-09", "Diwali")]
         self.run_sync()
 
-        events = external.events_in_window(self.user, "2026-01-01", "2026-12-31")
-        self.assertEqual([(e["title"], e["start"][:10]) for e in events], [("Diwali", "2026-11-09")])
+        self.assertEqual([(e["title"], e["start"][:10]) for e in self.events()], [("Diwali", "2026-11-09")])
 
     def test_a_list_hr_no_longer_names_keeps_its_calendar_and_its_audience(self):
         self.run_sync()
