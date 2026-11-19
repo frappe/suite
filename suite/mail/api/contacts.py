@@ -100,9 +100,9 @@ def enrich_contacts_with_user_images(contacts: list[dict]) -> list[dict]:
     user_image_map = {}
     if unique_emails:
         user_data = frappe.get_all(
-            "User", filters={"name": ["in", list(unique_emails)]}, fields=["name", "user_image"]
+            "User", filters={"email": ["in", list(unique_emails)]}, fields=["email", "user_image"]
         )
-        user_image_map = {u.name: u.user_image for u in user_data if u.user_image}
+        user_image_map = {u.email: u.user_image for u in user_data if u.user_image}
 
     for contact in contacts:
         email = contact.get("email")
