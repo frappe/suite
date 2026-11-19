@@ -3,7 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import add_days, get_datetime, now, validate_email_address
+from frappe.utils import add_days, get_datetime, get_email_address, now, validate_email_address
 
 from suite.suite_core import suite_email
 
@@ -43,6 +43,9 @@ class DriveUserInvitation(Document):
         from suite.drive.api.notifications import drive_logo_inline_images
 
         link = frappe.utils.get_url(f"/api/method/suite.drive.api.product.accept_invite?key={self.name}")
+        inviter = frappe.session.user
+        if inviter not in frappe.STANDARD_USERS:
+            inviter = get_email_address(inviter)
         suite_email.send(
             "drive-invite",
             self.email,
@@ -50,7 +53,7 @@ class DriveUserInvitation(Document):
             local={
                 "subject": "Frappe Drive - Invitation",
                 "template": "drive_invitation",
-                "args": {"invite_link": link, "user": frappe.session.user},
+                "args": {"invite_link": link, "user": inviter},
                 "inline_images": drive_logo_inline_images(),
             },
         )
