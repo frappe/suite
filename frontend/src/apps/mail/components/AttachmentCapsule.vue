@@ -1,5 +1,42 @@
 <template>
+  <!-- A thread's card for a file: a tile with the file's type, its name over its size, and a
+       download of its own, wide enough to tap. Its width is the caller's. -->
   <div
+    v-if="row"
+    class="hover:bg-surface-gray-1 flex cursor-pointer items-center gap-3 rounded-6 border p-2"
+  >
+    <span
+      class="bg-surface-gray-2 flex size-9 shrink-0 items-center justify-center rounded-4"
+      aria-hidden="true"
+    >
+      <component :is="getFileIcon(type)" class="size-5" />
+    </span>
+    <span class="min-w-0 flex-1">
+      <!-- The whole name on hover, where the card's width cuts it. -->
+      <Tooltip :text="fileName" :disabled="isMobile">
+        <span v-if="nameParts" class="text-ink-gray-8 flex min-w-0 text-base">
+          <span class="truncate">{{ nameParts.head }}</span>
+          <span class="shrink-0 whitespace-pre">{{ nameParts.tail }}</span>
+        </span>
+        <span v-else class="text-ink-gray-8 block truncate text-base">{{ fileName }}</span>
+      </Tooltip>
+      <span v-if="size" class="text-ink-gray-5 block text-sm">{{ formatBytes(size) }}</span>
+    </span>
+    <Button
+      v-if="blobID"
+      variant="ghost"
+      class="touch-target shrink-0"
+      :loading="isDownloading"
+      :aria-label="__('Download {0}', [fileName])"
+      @click.stop.prevent="downloadAttachment"
+    >
+      <template #icon>
+        <Download class="text-ink-gray-5 icon" />
+      </template>
+    </Button>
+  </div>
+  <div
+    v-else
     class="group/capsule hover:border-outline-gray-3 flex cursor-pointer items-center rounded-full border"
     :class="compact ? 'h-7 gap-1.5 px-2.5' : 'space-x-1.5 px-2 py-1'"
   >
@@ -47,6 +84,7 @@
 </template>
 
 <script setup lang="ts">
+import { Button, Tooltip } from 'frappe-ui'
 import { Download, Loader } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
@@ -64,6 +102,7 @@ const {
   removable = false,
   truncateMiddle = false,
   compact = false,
+  row = false,
 } = defineProps<{
   fileName: string
   blobID?: string
@@ -79,6 +118,9 @@ const {
   truncateMiddle?: boolean
   // A mail list row's line of chips: the height, padding and type of the folder Badges beside it.
   compact?: boolean
+  // A card, with the file's size and a download button, as a thread lists them; its name is cut in
+  // the middle, so the extension shows.
+  row?: boolean
 }>()
 
 const emit = defineEmits<{ remove: [] }>()
@@ -93,7 +135,7 @@ const textSize = computed(() => (compact ? 'text-p-sm' : 'text-sm'))
 // where the cut falls is the browser's, so it is right at any width.
 const TAIL_BEFORE_EXTENSION = 4
 const nameParts = computed(() => {
-  if (!isMobile.value && !truncateMiddle) return null
+  if (!isMobile.value && !truncateMiddle && !row) return null
   const dot = fileName.lastIndexOf('.')
   const extension = dot > 0 && fileName.length - dot <= 10 ? fileName.length - dot : 0
   const tailLength = extension + TAIL_BEFORE_EXTENSION

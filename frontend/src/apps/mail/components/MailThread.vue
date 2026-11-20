@@ -7,6 +7,7 @@
       :thread
       :can-go-next="canGoNext"
       :remindable="replyReminder.remindable.value"
+      :failed="loadFailed"
       @set-seen="setThreadSeen"
       @set-pinned="onSetPinned"
       @snooze="(until: string) => emit('snoozeThread', until)"
@@ -30,10 +31,22 @@
     <div class="relative min-h-0 flex-1 overflow-hidden">
       <Transition :name="slide || ''" @after-enter="emit('slideDone')">
         <div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col">
+          <!-- A phone sets each message on a card of its own, outlined on the page's own ground. -->
           <div ref="threadContainer" class="flex-1 overflow-y-auto">
+            <!-- A thread that could not be fetched says so where it would have been, with a way to
+                 ask again: sending the reader back to the list told them nothing. -->
+            <LoadError
+              v-if="loadFailed"
+              :title="__('Couldn’t open this conversation')"
+              :error="threadFallback.error"
+              :retrying="threadFallback.isFetching"
+              @retry="retryThread"
+            >
+              <Button variant="ghost" :label="__('Back')" @click="goToMailbox" />
+            </LoadError>
             <!-- Until the thread's messages are in, from the list or fetched on their own (see
 			     loadThread), the thread stands in outline: the pane is never a blank half. -->
-            <MailThreadSkeleton v-if="!thread.length" />
+            <MailThreadSkeleton v-else-if="!thread.length" />
             <!-- The composer window floats over the app, so while one is up the thread keeps a
 			     little room under its last message — enough to scroll clear of a minimised bar
 			     rather than ending beneath it. Not reserved otherwise, or every thread would
@@ -45,9 +58,12 @@
 			     keeps its cap — there the thread is what scrolls. -->
             <div
               v-else
-              class="sm:space-y-2 sm:px-5 sm:pt-5"
+              class="space-y-2 sm:px-5 sm:pt-5"
               :class="{
-                'pb-16': isMobile && !thread?.at(-1)?.draft,
+                /* Clear of the reply bar over the foot (57px, and the phone's own inset under
+                   it), with a gutter's gap to spare. */
+                'pb-[calc(4.5rem+env(safe-area-inset-bottom))]': isMobile && !thread?.at(-1)?.draft,
+                'pb-3': isMobile && thread?.at(-1)?.draft,
                 'sm:pb-24': isComposeWindowOpen(),
                 'sm:pb-6': !isComposeWindowOpen(),
                 'sm:flex sm:h-full sm:flex-col': isDraftAlone,
@@ -59,37 +75,63 @@
 				     too, on its card. -->
               <!-- Not over a draft that is the whole thread: its own Subject field says it, a line
 				     below, and a heading there repeated it or read "[No subject]" mid-sentence. -->
-              <h1
+              <!-- On a phone the subject heads the cards on the grey they sit on, under the top
+                   bar's line, with any other folders the conversation is filed in under it. -->
+              <div
                 v-if="thread?.length && !isDraftAlone"
-                class="text-ink-gray-8 text-xl-semibold group/subject flex items-start gap-1 !leading-7 max-sm:px-3.5 max-sm:py-3"
-                :class="hasStrip ? 'sm:pb-1' : 'sm:pb-2'"
+                class="max-sm:px-4 max-sm:pb-2 max-sm:pt-4"
               >
-                <!-- break-words: an unbroken run (a long link, a code) wraps too. -->
-                <span v-if="thread[0].subject" class="min-w-0 flex-1 break-words">
-                  {{ thread[0].subject }}
-                  <!-- A subject is what gets pasted into a ticket or a chat: a button for it after
-                       its last word, shown on hover and always on touch, its kept room where nothing
-                       follows. align-top: as tall as the 28px line it ends, it fills that line from
-                       its top and doesn't make it taller, centred on the words. -->
-                  <Button
-                    variant="ghost"
-                    class="ml-1 align-top opacity-0 focus-visible:opacity-100 group-hover/subject:opacity-100 [@media(hover:none)]:opacity-100"
-                    :tooltip="__('Copy subject')"
-                    :aria-label="__('Copy subject')"
-                    @click="copyToClipBoard(thread[0].subject)"
+                <h1
+                  class="text-ink-gray-8 text-xl-semibold group/subject flex items-start gap-1 !leading-7"
+                  :class="hasStrip ? 'sm:pb-1' : 'sm:pb-2'"
+                >
+                  <!-- break-words: an unbroken run (a long link, a code) wraps too. -->
+                  <!-- On a phone a long press copies it instead of the button (see subjectText):
+                       the browser's own selection and callout would fight the press. -->
+                  <span
+                    v-if="thread[0].subject"
+                    ref="subjectText"
+                    class="min-w-0 flex-1 break-words max-sm:select-none max-sm:[-webkit-touch-callout:none]"
                   >
-                    <template #icon>
-                      <Copy class="icon" />
-                    </template>
-                  </Button>
-                </span>
-                <!-- A stand-in, not something anyone wrote: grey. -->
-                <span v-else class="text-ink-gray-4 min-w-0 flex-1">{{ __('[No subject]') }}</span>
-              </h1>
+                    {{ thread[0].subject }}
+                    <!-- A subject is what gets pasted into a ticket or a chat: a button for it after
+                       its last word, shown on hover, its kept room where nothing follows.
+                       align-top: as tall as the 28px line it ends, it fills that line from its top
+                       and doesn't make it taller, centred on the words. -->
+                    <Button
+                      v-if="!isMobile"
+                      variant="ghost"
+                      class="ml-1 align-top opacity-0 focus-visible:opacity-100 group-hover/subject:opacity-100"
+                      :tooltip="__('Copy subject')"
+                      :aria-label="__('Copy subject')"
+                      @click="copyToClipBoard(thread[0].subject)"
+                    >
+                      <template #icon>
+                        <Copy class="icon" />
+                      </template>
+                    </Button>
+                  </span>
+                  <!-- A stand-in, not something anyone wrote: grey. -->
+                  <span v-else class="text-ink-gray-4 min-w-0 flex-1">{{
+                    __('[No subject]')
+                  }}</span>
+                </h1>
+                <div
+                  v-if="isMobile && threadFolders.length"
+                  class="mt-2 flex flex-wrap items-center gap-1.5"
+                >
+                  <Badge
+                    v-for="folder in threadFolders"
+                    :key="folder.id"
+                    :label="folder.name"
+                    :theme="folder.own ? 'blue' : 'gray'"
+                  />
+                </div>
+              </div>
               <!-- One wrapper's margin, so two strips aren't parted by twice the gap. It collapses with
                    the next row's margin, so it sets the gap below on its own, sized to read even with
                    the space above the strip, where the subject's line has slack of its own. -->
-              <div v-if="hasStrip" class="sm:mb-4 sm:space-y-2">
+              <div v-if="hasStrip" class="space-y-2 max-sm:px-3 sm:mb-4">
                 <ThreadStrip v-if="returned" :icon="noReply ? 'lucide-bell' : 'lucide-clock'">
                   <span class="flex flex-wrap gap-x-2">
                     <span>{{ returnedText.text }}</span>
@@ -116,15 +158,14 @@
                 />
               </div>
               <!-- Rows carry their own date until a long thread's fold is opened; from then
-				     a quiet header names each day and the rows keep only the clock. On desktop
-				     the new and more-messages dividers drop the pill outline, as quiet as the
-				     rows around them. -->
+				     a quiet header names each day and the rows keep only the clock. The new and
+				     more-messages dividers are plain lines, as quiet as the rows around them. -->
               <template v-for="group in mailsByDay" :key="group.date">
                 <!-- The first sits straight under the subject: its gap is there to part one day from
 				     the last, and before the first day there is none. -->
                 <div
                   v-if="daysHeaded"
-                  class="text-ink-gray-5 text-sm-medium pb-1"
+                  class="text-ink-gray-5 text-sm-medium pb-1 max-sm:px-4"
                   :class="{ 'pt-3': group !== mailsByDay[0] }"
                 >
                   {{ getFormattedDate(group.date) }}
@@ -132,29 +173,23 @@
                 <template v-for="mail in group.mails" :key="mail.name">
                   <ThreadDivider
                     v-if="shouldShowUnseenMarker(mail.id)"
-                    class="!text-ink-blue-6 [&_.border-t]:border-[var(--outline-blue-3)] [&_span:not(.border-t)]:border-[var(--outline-blue-3)] sm:[&_span:not(.border-t)]:border-0 sm:[&_span:not(.border-t)]:text-xs"
+                    class="!text-ink-blue-6 max-sm:px-3 [&_.border-t]:border-[var(--outline-blue-3)]"
                     :message="unseenMessage"
                   />
 
+                  <!-- The quiet line, with an icon that says the count opens. A phone keeps it
+                       inside the cards' margin, its whole row tall enough to tap. -->
                   <button
                     v-if="mail.name === firstMailOfCollapsedGroup"
-                    class="w-full cursor-pointer transition-colors"
+                    class="text-ink-gray-5 hover:text-ink-gray-8 active:text-ink-gray-8 flex w-full cursor-pointer items-center transition-colors max-sm:px-3 max-sm:py-1.5"
                     @click="resetCollapsedGroup"
                   >
-                    <ThreadDivider
-                      v-if="isMobile"
-                      :message="__('{0} more messages', [String(collapsedMailNames.size)])"
-                      class="hover:text-ink-gray-8"
-                    />
-                    <!-- The quiet line, with an icon that says the count opens. -->
-                    <div v-else class="text-ink-gray-5 hover:text-ink-gray-8 flex items-center">
-                      <span class="flex-1 border-t" />
-                      <span class="flex items-center gap-1.5 px-2 py-1 text-xs">
-                        <span class="lucide-chevrons-up-down size-3.5" aria-hidden="true" />
-                        {{ __('{0} more messages', [String(collapsedMailNames.size)]) }}
-                      </span>
-                      <span class="flex-1 border-t" />
-                    </div>
+                    <span class="flex-1 border-t" />
+                    <span class="flex items-center gap-1.5 px-2 py-1 text-xs">
+                      <span class="lucide-chevrons-up-down size-3.5" aria-hidden="true" />
+                      {{ __('{0} more messages', [String(collapsedMailNames.size)]) }}
+                    </span>
+                    <span class="flex-1 border-t" />
                   </button>
                   <!-- A draft that is popped out drops out of the thread entirely: it is being
 						     written in the composer window, and it must be the card that goes, not
@@ -166,15 +201,16 @@
                     :data-mail-name="mail.name"
                     class="group/card"
                     :class="{
-                      'px-3.5': isMobile,
-                      // Same tightening the desktop rows got: reading padding for
-                      // open mail, slimmer rows for collapsed ones.
-                      'py-5': isMobile && !isCollapsed(mail),
-                      'py-3.5': isMobile && isCollapsed(mail),
-                      'max-sm:border-b':
-                        (thread.length > 1 || mail.draft) &&
-                        mail.name !== mailBeforeCollapsedGroup &&
-                        mail.name !== mailBeforeUnseenMarker,
+                      // A phone's card: inset from the screen's edges, outlined. A message alone
+                      // has none, as on a desktop: it sits on the page, on the subject's axis.
+                      'bg-surface-base mx-3 rounded-7 border px-3':
+                        isMobile && (thread.length > 1 || mail.draft),
+                      'px-4 pt-1': isMobile && thread.length === 1 && !mail.draft,
+                      // Reading padding for open mail, slimmer rows for collapsed ones.
+                      'pb-3.5 pt-2.5':
+                        isMobile && (thread.length > 1 || mail.draft) && !isCollapsed(mail),
+                      'pb-4': isMobile && thread.length === 1 && !mail.draft,
+                      'py-2.5': isMobile && isCollapsed(mail),
                       'sm:rounded-7': thread.length > 1 || mail.draft,
                       // A collapsed row only holds one line — reading-card padding
                       // around it is what made the thread feel loose. A draft's card
@@ -207,46 +243,6 @@
                     />
 
                     <template v-else-if="!mail.name.startsWith('draft')">
-                      <div
-                        v-if="isMobile && !isCollapsed(mail)"
-                        class="flex items-center justify-between pb-2"
-                        @click.stop="mail.collapsed = !mail.collapsed"
-                      >
-                        <div class="flex items-center space-x-2">
-                          <Badge
-                            v-if="mail.draft"
-                            :label="__('Draft')"
-                            theme="gray"
-                            class="w-fit"
-                          />
-                          <MailDate :datetime="mail.received_at" />
-                        </div>
-                        <MailActions
-                          v-if="!readonly"
-                          :mailbox
-                          :mail
-                          :draft-mail="draftMails[mail.name]"
-                          :is-collapsed="isCollapsed(mail)"
-                          :show-reply-all="showReplyAll(mail)"
-                          :pop-out-draft
-                          :reply
-                          :reply-all
-                          :forward
-                          :reload-mails="handleReload"
-                          :drop-mail
-                          :thread="thread"
-                          :body-view="bodyViews[mail.name]"
-                          @set-flagged="onSetFlagged"
-                          @toggle-as-sent="toggleAsSent(mail)"
-                          @sync-unseen="handleSyncUnseen"
-                          @move-mail="(m: Mail, target: string) => emit('moveMail', m, target)"
-                          @mark-mail-spam="
-                            (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
-                          "
-                          @delete-mail="(m: Mail) => emit('deleteMail', m)"
-                          @print="printMail"
-                        />
-                      </div>
                       <!-- An expanded mail always needs the gap between header and body —
 								     keying it on the preview alone left image-only mails (empty text
 								     preview) flush. Collapsed rows keep the preview-keyed padding. -->
@@ -259,17 +255,15 @@
                           'cursor-pointer': mail !== lastMessage,
                           'items-center': isCollapsed(mail),
                           'items-start': !isCollapsed(mail),
-                          'pb-6': !isCollapsed(mail),
-                          // Mobile collapsed rows: a step, not a chasm, between the
-                          // name row and its preview line.
-                          'pb-2': isCollapsed(mail) && isMobile && !!mail.preview,
+                          'pb-6': !isCollapsed(mail) && !isMobile,
+                          'pb-4': !isCollapsed(mail) && isMobile,
                         }"
                         @click.stop="mail.collapsed = !mail.collapsed"
                       >
                         <Avatar
                           :label="getSenderInitial(mail)"
                           :image="mail.user_image"
-                          :size="isCollapsed(mail) ? (isMobile ? 'lg' : 'md') : '2xl'"
+                          :size="isCollapsed(mail) ? (isMobile ? 'xl' : 'md') : '2xl'"
                           :class="{ 'cursor-pointer': !isCollapsed(mail) && !isMobile }"
                           @pointerdown="noteSenderCardPress(mail)"
                           @click="toggleSenderCard(mail, $event)"
@@ -286,16 +280,18 @@
                           :class="{ 'items-center': isCollapsed(mail) && !isMobile }"
                         >
                           <div
-                            class="mr-3 flex truncate"
+                            class="flex truncate"
                             :class="
                               isCollapsed(mail) && !isMobile
                                 ? /* h-5: on one baseline the smaller preview hangs 0.4px below the
                                      name, and the box grown by that sat the name higher than the
                                      open card's. Held to the name's 20px, it doesn't. */
-                                  'h-5 flex-1 items-baseline space-x-3'
+                                  'mr-3 h-5 flex-1 items-baseline space-x-3'
                                 : isCollapsed(mail)
-                                  ? 'flex-col space-y-1'
-                                  : 'flex-col'
+                                  ? /* A phone's folded card: the time is on the name's line, so the
+                                       preview under it runs the card's full width. */
+                                    'flex-1 flex-col'
+                                  : 'mr-3 flex-col'
                             "
                           >
                             <!-- An open message's sender — avatar, name or address — opens a card
@@ -305,7 +301,7 @@
 												     tooltip the moment the card appeared. -->
                             <div
                               class="flex min-w-0 items-center gap-2"
-                              :class="{ 'h-6': !isCollapsed(mail) }"
+                              :class="{ 'h-6': !isCollapsed(mail) || isMobile }"
                             >
                               <Popover
                                 trigger="manual"
@@ -324,7 +320,7 @@
                                     @click="toggleSenderCard(mail, $event)"
                                   >
                                     <span
-                                      class="max-w-full shrink-0 truncate text-[15px] !font-semibold sm:text-base"
+                                      class="max-w-full shrink-0 truncate text-[15px] !font-semibold"
                                       :class="{
                                         /* A collapsed row is centered against the taller avatar, so
   														   whatever sets the text block's height decides where the name
@@ -332,11 +328,9 @@
   														   the 20px hover actions that replace the timestamp — but a mail
   														   with no body has an empty preview, so the name's own 18.9px box
   														   set the height and the row rose ~1px under the cursor.
-  														   sm:, because the preset's font sizes carry a line-height of
-  														   their own: a bare leading-5 loses to the sm:text-base above.
   														   The open card's name takes the same box, so its glyphs sit at
   														   the same height in both. */
-                                        'sm:leading-5': !isMobile,
+                                        'leading-5': !isMobile,
                                       }"
                                     >
                                       {{ mail.from_name || mail.from_email }}
@@ -392,6 +386,15 @@
                                   {{ __('Unsubscribe') }}
                                 </button>
                               </span>
+                              <span
+                                v-if="isMobile && isCollapsed(mail)"
+                                class="ml-auto flex shrink-0 pl-2"
+                              >
+                                <MailDate
+                                  :datetime="mail.received_at"
+                                  :format="daysHeaded ? 'clock' : 'thread'"
+                                />
+                              </span>
                             </div>
                             <!-- Same 13px truncate, same shaved descenders. Collapsed
 											     mails keep just sender + preview — recipients belong to
@@ -420,6 +423,19 @@
                                 <MailDetailsPopover v-else :mail />
                               </template>
                             </div>
+                            <!-- An open message dates itself on a line of its own, under who it is to,
+                                 leaving the sender's line to who sent it; a draft says so there too. -->
+                            <div v-if="!isCollapsed(mail)" class="mt-1 flex h-5 items-center gap-2">
+                              <Badge v-if="mail.draft" :label="__('Draft')" theme="gray" />
+                              <MailDate :datetime="mail.received_at" />
+                            </div>
+                            <!-- A phone's folded row reads its first words under the sender's name. -->
+                            <span
+                              v-if="isCollapsed(mail) && isMobile"
+                              class="text-ink-gray-5 truncate text-base"
+                            >
+                              {{ mail.preview }}
+                            </span>
                             <!-- Desktop collapsed rows are one line: the preview rides
 											     beside the name instead of on a row of its own.
 											     leading-5 states a 20px box, the height of the hover
@@ -434,12 +450,13 @@
                           </div>
                           <!-- self-start suits the expanded card's two-line header; on a
 										     collapsed row the block is centred, as the parent centres it. -->
+                          <!-- A phone's folded card keeps its time on the name's line instead. -->
                           <div
+                            v-if="!(isMobile && isCollapsed(mail))"
                             class="flex items-center space-x-1"
                             :class="{
                               // The open card's first line, the name's.
-                              'h-6 self-start': !isCollapsed(mail),
-                              'self-center': isCollapsed(mail) && isMobile,
+                              'h-6 self-start': !isCollapsed(mail) || isMobile,
                               /* No change of alignment on hover: the time stays (only
 												   invisible) and keeps the block's height, so nothing beside
 												   it moves by a fraction of a pixel. */
@@ -463,7 +480,7 @@
 											     descenders, so in a full line box it sat high, and the
 											     star centred on that box read lower than the time. -->
                               <span
-                                v-if="!isMobile || isCollapsed(mail)"
+                                v-if="!isMobile && isCollapsed(mail)"
                                 class="flex [&_div]:[text-box:trim-both_cap_alphabetic]"
                                 :class="{
                                   'sm:group-hover/card:invisible sm:group-has-[[data-state=open]]/card:invisible':
@@ -523,8 +540,40 @@
 												     time when it came or left a gap beside it while it was away. h-5 for
 												     the same reason as the actions: the button overhangs rather than
 												     growing the row. -->
+                            <!-- A phone's open card: More, Reply and the star, as a desktop's. -->
                             <div
-                              v-if="isCollapsed(mail) && !readonly && !mail.draft"
+                              v-if="isMobile && !isCollapsed(mail) && !readonly"
+                              class="-mr-2 flex items-center"
+                            >
+                              <MailActions
+                                :mailbox
+                                :mail
+                                :draft-mail="draftMails[mail.name]"
+                                :is-collapsed="isCollapsed(mail)"
+                                :show-reply-all="showReplyAll(mail)"
+                                :pop-out-draft
+                                :reply
+                                :reply-all
+                                :forward
+                                :reload-mails="handleReload"
+                                :drop-mail
+                                :thread="thread"
+                                :body-view="bodyViews[mail.name]"
+                                @set-flagged="onSetFlagged"
+                                @toggle-as-sent="toggleAsSent(mail)"
+                                @sync-unseen="handleSyncUnseen"
+                                @move-mail="
+                                  (m: Mail, target: string) => emit('moveMail', m, target)
+                                "
+                                @mark-mail-spam="
+                                  (m: Mail, spam: boolean) => emit('markMailSpam', m, spam)
+                                "
+                                @delete-mail="(m: Mail) => emit('deleteMail', m)"
+                                @print="printMail"
+                              />
+                            </div>
+                            <div
+                              v-if="isCollapsed(mail) && !readonly && !mail.draft && !isMobile"
                               class="flex h-5 items-center"
                             >
                               <Button
@@ -550,10 +599,6 @@
                         :mail
                         class="mb-4"
                       />
-
-                      <div v-show="isCollapsed(mail) && isMobile" class="truncate text-base">
-                        {{ mail.preview }}
-                      </div>
 
                       <!-- The decision the conversation waits on, under the sender it asks
 										     about and above what they wrote, in their newest message. Outside the
@@ -656,7 +701,7 @@
                           />
                         </template>
 
-                        <div v-if="filteredAttachments(mail).length" class="mt-8">
+                        <div v-if="filteredAttachments(mail).length" class="mt-8 max-sm:mt-6">
                           <div
                             v-if="zippableAttachments(mail).length > 1"
                             class="text-ink-gray-5 mb-3 flex items-center gap-1.5 text-sm"
@@ -681,7 +726,9 @@
                               <Download v-else class="h-3.5 w-3.5" />
                             </button>
                           </div>
-                          <div class="flex flex-wrap">
+                          <!-- A file to a card, with its size: a phone's run the width, one to a row;
+                               a desktop's keep a set width and wrap. -->
+                          <div :class="isMobile ? 'space-y-2' : 'flex flex-wrap gap-2'">
                             <AttachmentCapsule
                               v-for="(attachment, idx) in filteredAttachments(mail)"
                               :key="idx"
@@ -689,7 +736,9 @@
                               :blob-i-d="attachment.blob_id"
                               :type="attachment.type"
                               :account="scopeAccountId"
-                              class="mb-2 mr-2"
+                              row
+                              :size="Number(attachment.size) || undefined"
+                              :class="{ 'w-64': !isMobile }"
                               @click.stop.prevent="
                                 openAttachment(filteredAttachments(mail), Number(idx))
                               "
@@ -736,14 +785,40 @@
                 </template>
               </template>
 
+              <!-- A phone answers from a bar along the screen's foot: a field that starts a reply to
+                   the newest message, then Reply All and Forward. -->
               <div
-                v-if="!readonly && thread.length && !thread?.at(-1)?.draft"
-                class="flex"
-                :class="
-                  isMobile
-                    ? 'bg-surface-base absolute bottom-0 left-0 right-0 z-20 items-stretch border-t'
-                    : 'items-center space-x-2'
-                "
+                v-if="!readonly && thread.length && !thread?.at(-1)?.draft && isMobile"
+                class="bg-surface-base absolute bottom-0 left-0 right-0 z-20 flex items-center gap-1 border-t px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+              >
+                <Button
+                  variant="subtle"
+                  size="lg"
+                  class="text-ink-gray-5 min-w-0 flex-1 !justify-start rounded-full"
+                  :label="replyLabel"
+                  @click="replyToNewest"
+                >
+                  <template #prefix>
+                    <Reply class="icon shrink-0" />
+                  </template>
+                </Button>
+                <Button
+                  v-for="action in replyForwardActions.filter((action) => action.icon !== Reply)"
+                  :key="action.label"
+                  variant="ghost"
+                  size="lg"
+                  class="touch-target"
+                  :aria-label="action.label"
+                  @click="action.onClick"
+                >
+                  <template #icon>
+                    <component :is="action.icon" class="icon" />
+                  </template>
+                </Button>
+              </div>
+              <div
+                v-else-if="!readonly && thread.length && !thread?.at(-1)?.draft"
+                class="flex items-center space-x-2"
               >
                 <Button
                   v-for="action in replyForwardActions"
@@ -751,8 +826,7 @@
                   :icon-left="action.icon"
                   :label="action.label"
                   :tooltip="action.tooltip"
-                  :variant="isMobile ? 'ghost' : 'outline'"
-                  :class="{ '!h-16 flex-1 rounded-none': isMobile }"
+                  variant="outline"
                   @click="action.onClick"
                 />
               </div>
@@ -792,6 +866,7 @@
 </template>
 
 <script setup lang="ts">
+import { onLongPress } from '@vueuse/core'
 import { Avatar, Badge, Button, Popover, toast } from 'frappe-ui'
 import {
   Ban,
@@ -828,6 +903,7 @@ import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vu
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import HiddenImagesBanner from '@/apps/mail/components/HiddenImagesBanner.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
+import LoadError from '@/apps/mail/components/LoadError.vue'
 import MailActions from '@/apps/mail/components/MailActions.vue'
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import MailDetails from '@/apps/mail/components/MailDetails.vue'
@@ -1060,6 +1136,21 @@ const { dataTheme } = useTheme()
 const route = useRoute()
 const router = useRouter()
 const threadContainerRef = useTemplateRef('threadContainer')
+
+// On a phone the subject has no copy button: holding it copies it. The copy waits for the finger
+// to lift, since browsers write to the clipboard only from a gesture, and the hold's timer isn't
+// one; a buzz tells the reader the hold took.
+onLongPress(
+  useTemplateRef<HTMLElement>('subjectText'),
+  () => isMobile.value && navigator.vibrate?.(10),
+  {
+    onMouseUp: (_duration, _distance, isLongPress) => {
+      const subject = thread.value[0]?.subject
+      if (isLongPress && isMobile.value && subject) copyToClipBoard(subject)
+    },
+  },
+)
+
 const draftMails = reactive<{
   [key: string]: ComposeMailData
 }>({})
@@ -1102,12 +1193,6 @@ const recipientsSummary = (mail: Mail) => {
 }
 
 const collapsedMailNames = computed(() => stillFolded(foldedAway.value, thread.value || []))
-const mailBeforeUnseenMarker = computed(() => {
-  if (!firstUnseenMail.value) return null
-  const data = thread.value || []
-  const idx = data.findIndex((m) => m.id === firstUnseenMail.value)
-  return idx > 0 ? data[idx - 1].name : null
-})
 const isSomeSeen = computed(() => (thread.value || []).some(isMailSeen))
 const unseenCount = computed(
   () => (thread.value || []).filter((m) => !isMailSeen(m) && !m.draft).length,
@@ -1175,15 +1260,33 @@ const threadFallback = useQuery(api.mail.threads.get, () => settledFallbackInput
 watch(
   () => [threadFallback.data, threadFallback.error],
   () => {
-    if (
-      (threadFallback.status === 'success' && !threadFallback.data?.length) ||
-      threadFallback.error
-    ) {
+    // A thread that is gone, its mail deleted or moved out of reach, has nothing to show: back to
+    // the list, which drops its row. One that could not be fetched stays, to say so (loadFailed).
+    if (threadFallback.status === 'success' && !threadFallback.data?.length) {
       goToMailbox()
       emit('reloadMails')
     } else if (threadFallback.data?.length) rederive()
   },
 )
+const loadFailed = computed(() => !!threadFallback.error && !thread.value.length)
+const retryThread = () => void threadFallback.refetch().catch(() => {})
+
+// Where else the conversation is filed, under its subject on a phone: every folder its mail sits in
+// but the one it was opened from, which the Back button names, and Sent and Drafts, which only say
+// that you wrote some of it. The built-in folders first, in grey; your own after them, in blue.
+const threadFolders = computed(() => {
+  const ids = new Set(
+    thread.value
+      .filter((mail) => !mail.draft)
+      .flatMap((mail) => mail.mailboxes.map((b) => b.mailbox_id)),
+  )
+  for (const skipped of [mailbox, mailboxIds.value.sent, mailboxIds.value.drafts])
+    if (skipped) ids.delete(skipped)
+  return (scope.mailboxes.value.data ?? [])
+    .filter((folder: MailboxData) => ids.has(folder.id))
+    .map((folder: MailboxData) => ({ id: folder.id, name: folder._name, own: !folder.role }))
+    .sort((a, b) => Number(a.own) - Number(b.own))
+})
 
 // Mails optimistically removed from the pane (per-message trash/junk/delete) whose request is still in
 // flight. The server still returns them for a moment, so any re-derive — our own reload, the 30s poll,
@@ -1460,11 +1563,6 @@ const setCollapsedGroup = (data: Mail[]) => (foldedAway.value = foldedNames(data
 const firstMailOfCollapsedGroup = computed(
   () => thread.value?.find((m) => collapsedMailNames.value.has(m.name))?.name ?? null,
 )
-const mailBeforeCollapsedGroup = computed(() => {
-  const data = thread.value || []
-  const index = data.findIndex((m) => m.name === firstMailOfCollapsedGroup.value)
-  return index > 0 ? data[index - 1].name : null
-})
 const filterRelevantMails = (mail: Mail) => {
   if (mailbox === 'search') return true
   const mailboxes = mail.mailboxes.map((m) => m.mailbox_id)
@@ -1739,6 +1837,17 @@ const handleReload = (isUndo = false) => {
 const ownEmails = computed(
   () => new Set((identities.value.data ?? []).map((identity) => identity.email.toLowerCase())),
 )
+const replyToNewest = () => {
+  const newest = thread.value.at(-1)
+  if (newest) reply(newest)
+}
+// The phone's reply field names who the reply goes to: the newest message's sender by first name,
+// or plain Reply when that is you, as a reply to your own mail goes to whoever it went to.
+const replyLabel = computed(() => {
+  const last = thread.value.at(-1)
+  if (!last || ownEmails.value.has(last.from_email.toLowerCase())) return __('Reply')
+  return __('Reply to {0}', [(last.from_name || last.from_email).split(/\s+/)[0]])
+})
 // Not `reload`, which rebuilds the pane: that folds an older message back up, taking the chip just
 // added to it out of sight.
 const { reactionsOn, react } = useMessageReactions(

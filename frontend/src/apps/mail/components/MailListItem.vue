@@ -134,6 +134,7 @@
             :type="attachment.type"
             :account="accountId"
             compact
+            truncate-middle
             class="min-w-0 shrink"
             :class="isFullWidth ? 'max-w-36' : 'max-w-44'"
             @click.stop.prevent="openAttachment(idx)"
