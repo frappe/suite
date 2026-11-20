@@ -5,12 +5,15 @@ import Heading from '@tiptap/extension-heading'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+import { EditorContent, Editor as VueEditor } from '@tiptap/vue-3'
 import { fromAny, fromPartial } from '@total-typescript/shoehorn'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, h } from 'vue'
 import * as yjs from 'yjs'
 
 import { HeadingAnchors } from './heading-anchors'
 import { ReceivedContentGuard } from './received-content-guard'
+import { TabsExtension } from './tabs'
 
 const editors: Editor[] = []
 
@@ -21,6 +24,7 @@ function destroyEditors() {
 }
 
 afterEach(destroyEditors)
+afterEach(() => vi.restoreAllMocks())
 
 function waitForUpdates() {
   return new Promise((resolve) => setTimeout(resolve, 20))
@@ -205,5 +209,74 @@ describe('active heading', () => {
     view.placeHeadings({ A: -900, B: -300, C: 450 })
 
     expect(view.activeHeading()).toBe('C')
+  })
+})
+
+// Two short tabs that fit the view, so changing tab neither scrolls nor edits
+function openTabbedEditor() {
+  const scroller = document.createElement('div')
+  const element = document.createElement('div')
+  scroller.append(element)
+  document.body.append(scroller)
+  scroller.getBoundingClientRect = () =>
+    fromPartial({ top: VIEW_TOP, bottom: VIEW_TOP + VIEW_HEIGHT, height: VIEW_HEIGHT })
+  Object.defineProperties(scroller, {
+    scrollTop: { value: 0, writable: true },
+    clientHeight: { value: VIEW_HEIGHT },
+    scrollHeight: { value: VIEW_HEIGHT },
+  })
+
+  // Each heading sits near the top of the view while its tab shows
+  const getClientRects = HTMLElement.prototype.getClientRects
+  function headingBoxes(this: HTMLElement) {
+    if (this.tagName !== 'H2') return getClientRects.call(this)
+    const isHidden = !!this.closest('[style*="display: none"]')
+    return fromPartial<DOMRectList>(isHidden ? [] : [{ top: VIEW_TOP + 30 }])
+  }
+  vi.spyOn(HTMLElement.prototype, 'getClientRects').mockImplementation(headingBoxes)
+
+  let anchors: { textContent: string; isActive: boolean }[] = []
+  const editor = new VueEditor({
+    extensions: [
+      Document,
+      Paragraph,
+      Text,
+      Heading,
+      TabsExtension,
+      HeadingAnchors.configure({
+        scrollParent: () => scroller,
+        onUpdate: (items) => {
+          anchors = fromPartial(items)
+        },
+      }),
+    ],
+    content:
+      '<h2 data-toc-id="A">A</h2><p>body</p>' +
+      '<div data-tab-id="tab-c" data-tab-label="C" data-tab-order="0"><h2 data-toc-id="C">C</h2><p>body</p></div>',
+  })
+  editors.push(editor)
+  const app = createApp(() => h(EditorContent, { editor }))
+  app.mount(element)
+
+  function activeHeading() {
+    return anchors.find((anchor) => anchor.isActive)?.textContent
+  }
+
+  return { editor, app, activeHeading }
+}
+
+describe('active heading across tabs', () => {
+  it('moves to the shown tab when the tab changes, with no scroll or edit', async () => {
+    const view = openTabbedEditor()
+    await waitForUpdates()
+    const before = view.activeHeading()
+
+    view.editor.commands.changeTab('tab-c')
+    await waitForUpdates()
+
+    const after = view.activeHeading()
+    view.app.unmount()
+    history.replaceState(null, '', location.pathname)
+    expect([before, after]).toEqual(['A', 'C'])
   })
 })

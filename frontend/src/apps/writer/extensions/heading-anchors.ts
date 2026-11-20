@@ -5,6 +5,7 @@ import TableOfContents, {
 import type { Node } from '@tiptap/pm/model'
 import { Plugin, PluginKey, type PluginSpec } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { nextTick } from 'vue'
 
 // Opening or watching a document must never write to it. Ids are assigned
 // only on the user's own edits; headings saved without one get an anchor drawn
@@ -149,6 +150,11 @@ export const HeadingAnchors = TableOfContents.extend({
     } finally {
       view.dispatch = originalDispatch
     }
+
+    // A tab change shows other headings with no scroll or edit; Vue applies it a tick later
+    view.dom.addEventListener('tab-changed', () => {
+      void nextTick(() => this.storage.scrollHandler())
+    })
   },
 
   addProseMirrorPlugins() {
