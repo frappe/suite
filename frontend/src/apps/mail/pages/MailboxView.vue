@@ -574,6 +574,7 @@ const {
   navigableRows,
   focusedRowKey,
   cursorRowKey,
+  showCursor,
   onListFocusIn,
   focusedRow,
   focusRow,
@@ -700,12 +701,15 @@ const handleEnter = (e: KeyboardEvent) => {
   toggleGroupCollapse(row.dateKey)
 }
 // Esc lets go of the nearest thing first: the ticks (the toolbar shows them, over the open thread
-// too), then the open thread, then the cursor.
+// too), then the open thread, then the cursor. Closing the thread leaves the cursor's bar on its row
+// (see showCursor).
 const handleEscape = (e: KeyboardEvent) => {
   e.preventDefault()
   if (selections.value.length) resetSelections()
-  else if (threadID) goToMailbox()
-  else focusedRowKey.value = undefined
+  else if (threadID) {
+    showCursor()
+    goToMailbox()
+  } else focusedRowKey.value = undefined
 }
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
   const thread_ids = selections.value.length ? selections.value : [threadID!]

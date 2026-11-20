@@ -249,3 +249,21 @@ export const selectActions = (
     },
   ]
 }
+
+/**
+ * The toolbar folded, where the reading pane leaves it little room: the actions that keep a button,
+ * and the More menu's groups, in the toolbar's order with a line between them. What is done to the
+ * mail, read or taken away, keeps its buttons: a selection is most often ticked for those. Move To
+ * and Folders go in the menu, each a submenu; they had the only buttons, and the rest was a menu
+ * away. Snooze, Pin and Star share one group: a menu this short needs no more lines. The count
+ * beside the buttons gives way to them (see MailListToolbar).
+ */
+export const foldedToolbar = (actions: SelectAction[], filing: FilingMenu[]) => {
+  const shown = actions.filter((action) => action.condition())
+  const inGroup = (group: SelectAction['group']) => shown.filter((action) => action.group === group)
+  const menu: (SelectAction | FilingMenu)[][] = [
+    filing,
+    [...inGroup('later'), ...inGroup('selection')],
+  ]
+  return { buttons: inGroup('act'), menu: menu.filter((group) => group.length) }
+}

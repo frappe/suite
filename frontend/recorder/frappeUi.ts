@@ -12,6 +12,13 @@ const passthrough = (tag = 'div') =>
 export const useKeyboardShortcut = () => {}
 
 export const Button = passthrough('button')
+/** The trigger alone: the bubble is frappe-ui's to draw. */
+export const Tooltip = defineComponent({
+  setup:
+    (_props, { slots }) =>
+    () =>
+      slots.default?.(),
+})
 export const Dialog = passthrough()
 export const FormControl = passthrough('input')
 export const Avatar = defineComponent({

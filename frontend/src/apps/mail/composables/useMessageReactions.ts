@@ -85,7 +85,7 @@ export function useMessageReactions(
     }
     setUndoAction(undoNow, { outlivesView: true })
     const shown = raiseToast(
-      __('Reacted with {0}.', [emoji]),
+      __('Reacted with {0}', [emoji]),
       'success',
       { label: __('Undo'), onClick: undoNow },
       windowMs,

@@ -24,12 +24,12 @@ const thread = (id: string, sender: string) =>
   })
 
 let scope: ReturnType<typeof effectScope>
-const mountRows = () =>
+const mountRows = (openThreadID: () => string | undefined = () => undefined) =>
   scope.run(() =>
     useListRows({
       threads: () => [thread('one', 'a@example.com'), thread('two', 'b@example.com')],
       rowKey: (row) => row.thread_id,
-      openThreadID: () => undefined,
+      openThreadID,
       onOpenThreadHidden: () => {},
       container: ref(null),
     }),
@@ -74,6 +74,27 @@ it('leaves no bar on the row of a thread opened with the mouse', () => {
   // The next key carries on from that row, and draws the bar where it lands.
   rows.focusRow(rows.navigableRows.value[1])
   expect(rows.cursorRowKey.value).toBe('two')
+})
+
+// A thread opened with a click, stepped to the next one, then closed with Esc: the reader is on the
+// keys, so the cursor's bar is on the row the step reached.
+it('draws the bar on the row of a thread Esc closes', () => {
+  vi.useFakeTimers()
+  const open = ref<string | undefined>('two')
+  const rows = mountRows(() => open.value)
+  window.dispatchEvent(new PointerEvent('pointerdown'))
+  rows.revealThread('two')
+  vi.runAllTimers()
+
+  rows.showCursor()
+  open.value = 'one'
+  rows.revealThread('one')
+  vi.runAllTimers()
+  // The open row has its own bar, and the cursor's is not drawn over it.
+  expect(barOnFirstRow(rows)).toBe(false)
+
+  open.value = undefined
+  expect(barOnFirstRow(rows)).toBe(true)
 })
 
 // Opening one mail after another down the list: each click opens a row already on screen. Centring it
