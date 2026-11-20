@@ -122,6 +122,8 @@ export const mailEditorKit = ({
     image: false,
     // A mail's files sit beside its body as attachments, never inside it.
     attachment: false,
+    // A mail can't carry an embed: mail clients strip iframes. A pasted link stays a link.
+    iframe: false,
     // The composer brings its own `@`, searching the account's contacts.
     mention: false,
     tag: false,
