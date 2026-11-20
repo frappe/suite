@@ -72,6 +72,6 @@ describe('the rail unread dot', () => {
         { label: 'team@example.com', count: 4 },
       ],
     })
-    expect(item.tooltip).toBe('me@example.com · 5 unread\nteam@example.com · 4 unread')
+    expect(item.tooltip).toBe('me@example.com · 5\nteam@example.com · 4')
   })
 })

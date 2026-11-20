@@ -56,7 +56,7 @@ const props = withDefaults(
     badgeStyle?: 'count' | 'dot'
     /** The dot is gray rather than red: what it counts is not the reader's alone. */
     badgeQuiet?: boolean
-    /** Where the dot's count is, one tooltip line each: "suite@example.com · 4 unread". */
+    /** Where the dot's count is, one tooltip line each: "suite@example.com · 4". */
     badgeParts?: readonly { label: string; count: number }[]
     variant?: 'subtle' | 'ghost'
     /** Background work of this item's area, drawn as a dot on the icon. */
@@ -85,11 +85,12 @@ const progressDescription = computed(() => progressDetail(props.progress))
 const unreadDot = computed(() => props.badgeStyle === 'dot' && props.badge > 0 && !props.progress)
 const counted = (count: number) => `${count} ${props.badgeNoun ?? __('unread')}`
 // Spread over several places (Mail's accounts), it names each with its count, one to a line: the
-// tooltip's second line keeps line breaks (see index.css).
+// tooltip's second line keeps line breaks (see index.css). The dot already says what it counts, so
+// the lines are only where and how many.
 const unreadDescription = computed(() => {
   if (!unreadDot.value) return undefined
   if (props.badgeParts?.length)
-    return props.badgeParts.map((part) => `${part.label} · ${counted(part.count)}`).join('\n')
+    return props.badgeParts.map((part) => `${part.label} · ${part.count}`).join('\n')
   return counted(props.badge)
 })
 // The item is active on every route its area's route group holds, also on a
