@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from 'vitest'
+import { h, render } from 'vue'
 
 import { accountSubmenu } from './accountSubmenu'
+
+// A row's end as the menu draws it.
+const endOf = (row: { slots: { suffix: () => unknown } }) => {
+  const el = document.createElement('div')
+  render(
+    h(() => row.slots.suffix()),
+    el,
+  )
+  return { text: el.textContent?.trim() ?? '', ticked: !!el.querySelector('svg') }
+}
 
 const accounts = [
   { id: 'one', _name: 'one@example.com' },
@@ -81,6 +92,49 @@ describe('accountSubmenu with an all-accounts row', () => {
 
   it('is left out when there is only one account to merge', () => {
     expect(accountSubmenu(accounts.slice(0, 1), 'one', () => {}, all(false))).toHaveLength(1)
+  })
+})
+
+// The count is the reason to switch, so it is on the accounts the reader is not in. The one in
+// use has its folders' counts in the sidebar, and its row's end is the tick.
+describe('accountSubmenu unread counts', () => {
+  const all = (active: boolean, unread?: number) => ({
+    label: 'All accounts',
+    active,
+    onSelect: () => {},
+    unread,
+  })
+
+  it('says what is unread in an account that is not in use', () => {
+    const rows = accountSubmenu(accounts, 'one', () => {}, undefined, { one: 5, two: 3 })
+    expect(rows.map(endOf)).toEqual([
+      { text: '', ticked: true },
+      { text: '3 unread', ticked: false },
+    ])
+  })
+
+  it('leaves the end empty for an account with nothing unread', () => {
+    const rows = accountSubmenu(accounts, 'one', () => {}, undefined, { two: 0 })
+    expect(endOf(rows[1]!)).toEqual({ text: '', ticked: false })
+  })
+
+  it('stops a count at 99+', () => {
+    const rows = accountSubmenu(accounts, 'one', () => {}, undefined, { two: 5106 })
+    expect(endOf(rows[1]!).text).toBe('99+ unread')
+  })
+
+  it('says what is unread across every account on the all-accounts row', () => {
+    const rows = accountSubmenu(accounts, 'one', () => {}, all(false, 8), { one: 5, two: 3 })
+    expect(endOf(rows.at(-1)!)).toEqual({ text: '8 unread', ticked: false })
+  })
+
+  it('counts every account while all of them are showing', () => {
+    const rows = accountSubmenu(accounts, 'one', () => {}, all(true, 8), { one: 5, two: 3 })
+    expect(rows.map(endOf)).toEqual([
+      { text: '5 unread', ticked: false },
+      { text: '3 unread', ticked: false },
+      { text: '', ticked: true },
+    ])
   })
 })
 

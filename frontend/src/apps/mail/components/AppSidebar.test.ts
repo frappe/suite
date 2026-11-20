@@ -63,7 +63,7 @@ vi.mock('@/platform/area-sidebar', async () => {
       () =>
         h('div', slots.default?.()),
   })
-  return { AreaSidebar: passThrough, AreaSidebarFooter: passThrough, accountSubmenu: () => [] }
+  return { AreaSidebar: passThrough, AreaSidebarFooter: passThrough, AccountSwitcher: passThrough }
 })
 vi.mock('@/apps/mail/components/Modals/DeleteFolderModal.vue', () => ({
   default: { render: () => null },
@@ -207,8 +207,9 @@ describe('sidebar rows on a touch screen', () => {
   it('keep their height and take the hit area that yields to the rows beside them', async () => {
     const sidebar = await mount()
     const labels = sidebar.labels()
-    // The account row and the folders' rows both, with More opening the rest.
-    expect(labels).toEqual(expect.arrayContaining(['Account', 'Starred', 'More']))
+    // The folders' rows, with More opening the rest. The account row is the switcher's own (see
+    // AccountSwitcher.test.ts).
+    expect(labels).toEqual(expect.arrayContaining(['Starred', 'More']))
     await sidebar.openMore()
     const rows = sidebar.labels().map((label) => sidebar.row(label!)!)
     expect(rows.length).toBeGreaterThan(labels.length)

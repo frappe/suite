@@ -69,6 +69,9 @@ class TestMailSendReceive(StalwartIntegrationTestCase):
         with self.set_user(self.receiver.email):
             inbox = next(f for f in get_unified_folders() if f["slug"] == "inbox")
             self.assertGreaterEqual(inbox["unread_threads"], 1)
+            # The split by account names the account the mail is in, and adds up to the total.
+            self.assertGreaterEqual(inbox["unread_by_account"][self.receiver_account], 1)
+            self.assertEqual(sum(inbox["unread_by_account"].values()), inbox["unread_threads"])
             self.assertIn(self.receiver_account, inbox["accounts"])
             merged = get_unified_threads("inbox", limit=10)["rows"]
             self.assertIn(subject, [t["subject"] for t in merged])

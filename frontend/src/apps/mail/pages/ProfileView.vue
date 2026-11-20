@@ -12,10 +12,11 @@
     :accounts
     :account-id="store.accountId"
     app="mail"
-    :all-accounts="{ active: showingAll }"
+    :all-accounts="{ active: showingAll, unread: unifiedInbox?.unread_threads }"
+    :unread="unifiedInbox?.unread_by_account"
     :logout
     @switch-account="onSwitchAccount"
-    @switch-to-all="switchToAll"
+    @switch-to-all="onSwitchToAll"
   >
     <!-- Same title row AND the same header box as the other tab destinations — this is
 		     one of the four, not a pushed page. The wrapper's paddings are copied verbatim
@@ -46,15 +47,23 @@ const store = userStore()
 const { logout } = sessionStore()
 
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])
+// What is unread in each account's Inbox, and across them all. A system folder's slug is its role.
+const unifiedInbox = computed(() =>
+  store.unifiedFolders.data?.find((folder) => folder.slug === 'inbox'),
+)
 
 // Shared with the sidebar's account submenu. This route carries an accountId, so
 // switching stays on Profile with the new account (see useAccountSwitch).
 const { switchAccount, switchToAll } = useAccountSwitch()
 // Whether the reader has every account showing at once: the lists open that way until an account
-// is picked. "All accounts" opens the merged Inbox.
+// is picked. Picking either stays here, as switching does on any page.
 const showingAll = ref(prefersUnified())
 const onSwitchAccount = (accountId: string) => {
   showingAll.value = false
   void switchAccount(accountId)
+}
+const onSwitchToAll = () => {
+  showingAll.value = true
+  switchToAll()
 }
 </script>

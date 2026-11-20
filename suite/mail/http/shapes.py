@@ -82,6 +82,8 @@ class UnifiedFolder(TypedDict):
     name: str
     role: str | None
     unread_threads: int
+    # The same count split by account: account id to its unread threads in this folder.
+    unread_by_account: dict[str, int]
     accounts: list[str]
     icon: str | None
     color: Literal["Gray", "Blue", "Green", "Amber", "Red", "Purple"] | None

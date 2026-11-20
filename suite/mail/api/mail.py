@@ -1041,11 +1041,17 @@ def get_unified_folders() -> list[dict]:
                     "name": mailbox["name"],
                     "role": (mailbox.get("role") or "").lower() or None,
                     "unread_threads": 0,
+                    "unread_by_account": {},
                     "accounts": [],
                     "_mailbox": (account["name"], mailbox["id"]),
                 },
             )
-            folder["unread_threads"] += cint(mailbox.get("unreadThreads"))
+            unread = cint(mailbox.get("unreadThreads"))
+            folder["unread_threads"] += unread
+            # What each account adds to the sum, for the account switcher to say where the unread
+            # mail is. Two folders of one account can share a slug, so this adds up too.
+            by_account = folder["unread_by_account"]
+            by_account[account["name"]] = by_account.get(account["name"], 0) + unread
             if account["name"] not in folder["accounts"]:
                 folder["accounts"].append(account["name"])
 
@@ -1076,19 +1082,21 @@ def get_unified_folders() -> list[dict]:
     return sorted(folders.values(), key=order)
 
 
-@frappe.whitelist()
-def get_all_inbox_unread_count() -> int:
-    """Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge).
+def get_inbox_unread_by_account() -> list[dict]:
+    """Returns the unread Inbox thread count of each of the user's accounts, personal first.
+
+    Each entry is the account's id (`account`), its address (`name`) and its count (`unread`). An
+    account whose mailboxes cannot be read is left out.
 
     Mailbox is a JMAP-backed virtual DocType, so it can't be queried across accounts with a table
     filter. Each account's Inbox unread count is fetched live (a fresh Mailbox/get, bypassing the
-    1-hour mailboxes cache) — the same source the per-account inbox badge uses — and summed.
+    1-hour mailboxes cache) — the same source the per-account inbox badge uses.
     """
 
     if not can_use_mail(frappe.session.user):
-        return 0
+        return []
 
-    total = 0
+    unread: list[dict] = []
     for account in get_user_jmap_accounts():
         client = get_account_client(account["name"])
         try:
@@ -1102,10 +1110,23 @@ def get_all_inbox_unread_count() -> int:
         for mailbox in mailboxes:
             wire = mailbox.to_wire()
             if (wire.get("role") or "").lower() == "inbox":
-                total += cint(wire.get("unreadThreads"))
+                unread.append(
+                    {
+                        "account": account["name"],
+                        "name": account["_name"],
+                        "unread": cint(wire.get("unreadThreads")),
+                    }
+                )
                 break
 
-    return total
+    return unread
+
+
+@frappe.whitelist()
+def get_all_inbox_unread_count() -> int:
+    """Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge)."""
+
+    return sum(account["unread"] for account in get_inbox_unread_by_account())
 
 
 @frappe.whitelist()

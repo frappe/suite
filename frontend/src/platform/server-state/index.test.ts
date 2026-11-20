@@ -280,12 +280,15 @@ describe('Suite API references and shared client', () => {
     fetcher.mockImplementation(async (url) => {
       const path = String(url)
       if (path.endsWith('/account')) return answer(null)
-      if (path.includes('inbox-summary')) return answer({ unread: 7 })
+      if (path.includes('inbox-summary')) return answer({ unread: 7, accounts: [] })
       if (path.includes('nodes/old')) return old.promise
       return answer(node('Forecast', 'new'))
     })
     expect(await engine.client.query(api.suite.account.get)).toBeNull()
-    expect(await engine.client.query(api.mail.inbox.summary)).toEqual({ unread: 7 })
+    expect(await engine.client.query(api.mail.inbox.summary)).toEqual({
+      unread: 7,
+      accounts: [],
+    })
     const selection = ref('old')
     const detail = observe(() =>
       engine.useQuery(api.drive.nodes.get, () =>

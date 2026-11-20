@@ -43,6 +43,15 @@ declare module 'vue-router' {
   }
 }
 
+/** What an area has waiting for the reader, drawn on its entry in the rail and the phone's menus. */
+export interface AreaBadge {
+  count: number
+  /** None of it is the reader's alone to deal with, so it is drawn without the alarm of red. */
+  quiet: boolean
+  /** Where the count is, when it is spread over more than one place: each, with its share. */
+  parts?: readonly { label: string; count: number }[]
+}
+
 interface AreaBase {
   id: string
   /** Translated label, evaluated at render time. */

@@ -19,12 +19,14 @@
       <slot v-else />
       <AreaProgressDot :progress="progress" :label="label" />
       <!-- The unread dot sits on the icon's corner, where the progress dot sits,
-           rather than on the item's: frappe-ui places its own at the item's. -->
+           rather than on the item's: frappe-ui places its own at the item's. Red asks for the
+           reader; gray says there is something, and none of it is theirs alone. -->
       <span
         v-if="unreadDot"
         data-icon-dot
         aria-hidden="true"
-        :class="[ICON_DOT, 'bg-surface-red-6']"
+        :data-quiet="badgeQuiet || undefined"
+        :class="[ICON_DOT, badgeQuiet ? 'bg-surface-gray-6' : 'bg-surface-red-6']"
       />
       <span v-if="hasBadgeSlot" class="absolute -right-2.5 -top-2.5">
         <slot name="badge" />
@@ -52,6 +54,10 @@ const props = withDefaults(
     active?: boolean
     badge?: number
     badgeStyle?: 'count' | 'dot'
+    /** The dot is gray rather than red: what it counts is not the reader's alone. */
+    badgeQuiet?: boolean
+    /** Where the dot's count is, one tooltip line each: "suite@example.com · 4 unread". */
+    badgeParts?: readonly { label: string; count: number }[]
     variant?: 'subtle' | 'ghost'
     /** Background work of this item's area, drawn as a dot on the icon. */
     progress?: AreaProgress | null
@@ -62,6 +68,7 @@ const props = withDefaults(
     active: undefined,
     badge: 0,
     badgeStyle: 'count',
+    badgeQuiet: false,
     variant: 'ghost',
     progress: null,
   },
@@ -76,9 +83,15 @@ const progressDescription = computed(() => progressDetail(props.progress))
 // A dot drawn here rather than by frappe-ui, so the count it hides is spelled out in the tooltip
 // as frappe-ui does for its own. Progress takes the corner when there is some.
 const unreadDot = computed(() => props.badgeStyle === 'dot' && props.badge > 0 && !props.progress)
-const unreadDescription = computed(() =>
-  unreadDot.value ? `${props.badge} ${props.badgeNoun ?? __('unread')}` : undefined,
-)
+const counted = (count: number) => `${count} ${props.badgeNoun ?? __('unread')}`
+// Spread over several places (Mail's accounts), it names each with its count, one to a line: the
+// tooltip's second line keeps line breaks (see index.css).
+const unreadDescription = computed(() => {
+  if (!unreadDot.value) return undefined
+  if (props.badgeParts?.length)
+    return props.badgeParts.map((part) => `${part.label} · ${counted(part.count)}`).join('\n')
+  return counted(props.badge)
+})
 // The item is active on every route its area's route group holds, also on a
 // child that clears `area` to skip the capability gate (Mail's admin dashboard).
 const resolvedActive = computed(

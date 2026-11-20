@@ -30,7 +30,9 @@
             :label="area.label()"
             :icon="area.icon"
             :to="area.to"
-            :badge="badges[area.id] ?? 0"
+            :badge="badges[area.id]?.count ?? 0"
+            :badge-quiet="badges[area.id]?.quiet"
+            :badge-parts="badges[area.id]?.parts"
             badge-style="dot"
             :badge-noun="area.badgeNoun?.()"
             :progress="areaProgress?.progress(area.id) ?? null"
@@ -76,7 +78,7 @@ import {
   type ComponentPublicInstance,
 } from 'vue'
 
-import type { AreaDefinition } from '@/platform/contracts'
+import type { AreaBadge, AreaDefinition } from '@/platform/contracts'
 import { useWorkspace } from '@/platform/workspace'
 import { accountAreas } from '@/shell/accountMenu'
 import AccountMenu from '@/shell/AccountMenu.vue'
@@ -89,7 +91,7 @@ import { useRootStore } from '@/stores/root'
 
 const props = defineProps<{
   areas: readonly AreaDefinition[]
-  badges: Readonly<Record<string, number>>
+  badges: Readonly<Record<string, AreaBadge | undefined>>
 }>()
 
 const railAreas = computed(() =>
