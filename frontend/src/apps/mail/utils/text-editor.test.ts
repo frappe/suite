@@ -82,8 +82,12 @@ describe('mailEditorKit', () => {
     const url = 'https://drive.google.com/file/d/1AbC/view?usp=sharing'
     const editor = new Editor({ element: document.createElement('div'), extensions: extensions() })
     try {
-      const clipboardData = { getData: (type: string) => (type === 'text/plain' ? url : '') }
-      editor.view.pasteText(url, { clipboardData } as unknown as ClipboardEvent)
+      // jsdom has no clipboard, so the paste carries a stand-in holding just the copied text.
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', {
+        value: { getData: (type: string) => (type === 'text/plain' ? url : '') },
+      })
+      editor.view.dom.dispatchEvent(paste)
       const host = document.createElement('div')
       host.innerHTML = editor.getHTML()
       expect(host.querySelector('iframe')).toBeNull()
