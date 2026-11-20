@@ -1,13 +1,9 @@
-import type { Server, Socket } from 'socket.io';
+import type { Server } from 'socket.io';
 import type { SFUConfig } from '../../config';
 import type { MediasoupManager } from '../../mediasoup/MediasoupManager';
 import type { SttManager } from '../../stt/SttManager';
 import type { Telemetry } from '../../telemetry/Telemetry';
-import type {
-	ClientToServerEvents,
-	ServerToClientEvents,
-	SocketData,
-} from '../../types';
+import type { ClientToServerEvents, ServerToClientEvents } from '../../types';
 import type { RateLimiter } from '../../utils/rateLimiter';
 import type { AuthManager } from '../AuthManager';
 import type { E2EEEpochRelay } from '../E2EEEpochRelay';
@@ -15,13 +11,6 @@ import type { E2eeRosterStore } from '../E2eeRosterStore';
 import type { ParticipantConnectionLifecycle } from '../ParticipantConnectionLifecycle';
 import type { RoomLifecycleCoordinator } from '../RoomLifecycleCoordinator';
 import type { RoomRegistry } from '../RoomRegistry';
-
-export type TypedSocket = Socket<
-	ClientToServerEvents,
-	ServerToClientEvents,
-	Record<string, never>,
-	SocketData
->;
 
 export interface HandlerDeps {
 	io: Server<ClientToServerEvents, ServerToClientEvents>;

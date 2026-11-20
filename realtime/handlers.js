@@ -1,7 +1,12 @@
+const send_reply = require("./acknowledge");
+
 const suite_handlers = (socket) => {
 	// guest specific rooms
 	socket.on("guest_subscribe", async (payload, untrustedAcknowledge) => {
-		const acknowledge = safe_acknowledge(untrustedAcknowledge);
+		function acknowledge(reply) {
+			send_reply(untrustedAcknowledge, reply);
+		}
+
 		try {
 			const validation = await validate_guest(socket, payload);
 			if (!validation.ok) {
@@ -16,13 +21,17 @@ const suite_handlers = (socket) => {
 				return;
 			}
 			acknowledge(currentValidation);
-		} catch {
+		} catch (error) {
+			console.error("[suite realtime] guest subscribe failed", error);
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
 
 	socket.on("guest_unsubscribe", async (payload, untrustedAcknowledge) => {
-		const acknowledge = safe_acknowledge(untrustedAcknowledge);
+		function acknowledge(reply) {
+			send_reply(untrustedAcknowledge, reply);
+		}
+
 		try {
 			const validation = await validate_guest(socket, payload);
 			if (!validation.ok && !validation.status) {
@@ -34,10 +43,18 @@ const suite_handlers = (socket) => {
 				ok: true,
 				...(validation.status && { status: validation.status }),
 			});
-		} catch {
+		} catch (error) {
+			console.error("[suite realtime] guest unsubscribe failed", error);
 			acknowledge({ ok: false, error: "validation_failed" });
 		}
 	});
+
+	// A fault in collab must not keep Meet's handlers from loading
+	try {
+		require("./collab")(socket);
+	} catch (error) {
+		console.error("collab handlers failed", error);
+	}
 };
 
 const GUEST_STATUSES = new Set([
@@ -47,13 +64,6 @@ const GUEST_STATUSES = new Set([
 	"rejected",
 	"banned",
 ]);
-
-const safe_acknowledge = (acknowledge) => (value) => {
-	if (typeof acknowledge !== "function") return;
-	try {
-		Promise.resolve(acknowledge(value)).catch(() => {});
-	} catch {}
-};
 
 const validate_guest = async (socket, payload) => {
 	if (
@@ -84,7 +94,8 @@ const validate_guest = async (socket, payload) => {
 		return bodyData?.data?.valid === true
 			? { ok: true, ...(status && { status }) }
 			: { ok: false, error: "unauthorized", ...(status && { status }) };
-	} catch {
+	} catch (error) {
+		console.error("[suite realtime] guest validation failed", error);
 		return { ok: false, error: "validation_failed" };
 	}
 };

@@ -199,8 +199,9 @@ export function parseClaims(payload: unknown): RecordingGrantClaims {
 	}
 	const protocolVersion = property(payload, 'protocol_version');
 	if (
+		typeof protocolVersion !== 'number' ||
 		!Number.isSafeInteger(protocolVersion) ||
-		!ACCEPTED_PROTOCOL_VERSIONS.has(protocolVersion as number)
+		!ACCEPTED_PROTOCOL_VERSIONS.has(protocolVersion)
 	) {
 		throw new Error('Unsupported recording grant protocol version');
 	}
@@ -241,11 +242,18 @@ export function parseClaims(payload: unknown): RecordingGrantClaims {
 	};
 }
 
-function property(value: object, key: string): unknown {
-	return key in value ? value[key as keyof typeof value] : undefined;
+type GrantClaimFields = Partial<Record<keyof RecordingGrantClaims, unknown>>;
+
+function isClaimRecord(value: unknown): value is GrantClaimFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function hasExactKeys(value: object, expected: readonly string[]): boolean {
+function property(value: unknown, key: keyof GrantClaimFields): unknown {
+	return isClaimRecord(value) && key in value ? value[key] : undefined;
+}
+
+function hasExactKeys(value: unknown, expected: readonly string[]): boolean {
+	if (!value || typeof value !== 'object') return false;
 	const keys = Object.keys(value);
 	return (
 		keys.length === expected.length &&
@@ -267,7 +275,7 @@ function requiredClaimInteger(value: unknown, name: string): number {
 	return value;
 }
 
-function parseConfirmation(value: unknown): { jwk: JsonWebKey; jkt: string } {
+function parseConfirmation(value: unknown): RecordingGrantClaims['cnf'] {
 	if (!value || typeof value !== 'object' || Array.isArray(value)) {
 		throw new Error('Missing recording grant claim: cnf');
 	}

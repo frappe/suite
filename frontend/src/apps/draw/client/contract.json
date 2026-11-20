@@ -1,0 +1,129 @@
+{
+  "owner": "draw",
+  "prefix": "/api/suite/draw/",
+  "operations": [
+    {
+      "id": "document",
+      "kind": "query",
+      "publicName": "documents.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "documents/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "modified": {
+            "title": "Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "content",
+          "modified"
+        ],
+        "title": "DrawingBody",
+        "type": "object"
+      },
+      "errors": [
+        "DrawingNotFound",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "save_document",
+      "kind": "mutation",
+      "publicName": "documents.save",
+      "page": null,
+      "envelope": "data",
+      "method": "PUT",
+      "path": "documents/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "base_modified": {
+            "title": "Base Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "content",
+          "base_modified"
+        ],
+        "title": "SaveDrawing",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          },
+          "modified": {
+            "title": "Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "node",
+          "content",
+          "modified"
+        ],
+        "title": "DrawingBody",
+        "type": "object"
+      },
+      "errors": [
+        "DrawingNotFound",
+        "DrawingConflict",
+        "PermissionError",
+        "ValidationError"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    }
+  ]
+}

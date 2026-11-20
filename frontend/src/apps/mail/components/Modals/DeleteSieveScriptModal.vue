@@ -1,38 +1,40 @@
 <template>
-	<Dialog
-		v-model:open="show"
-	 v-bind="{
-			title: __('Delete Sieve Script'),
-			message: __(`Are you sure you want to delete '{0}'? `, [script._name]),
-			icon: 'lucide-alert-triangle', theme: 'amber',
-			actions: [
-				{ label: __('Confirm'), theme: 'red', onClick: () => deleteScript.submit() },
-			],
-		}"
-	/>
+  <Dialog
+    v-model:open="show"
+    v-bind="{
+      title: __('Delete “{0}”?', [script._name]),
+      message: __('This cannot be undone.'),
+      icon: 'lucide-alert-triangle',
+      theme: 'amber' as const,
+      actions: [
+        { label: __('Delete rule'), theme: 'red' as const, onClick: () => deleteScriptSubmit() },
+      ],
+    }"
+  />
 </template>
 
 <script setup lang="ts">
-import { Dialog, createResource } from 'frappe-ui'
+import { Dialog } from 'frappe-ui'
 
-import { raiseToast } from '@/apps/mail/utils'
+import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
-
 import type { SieveScript } from '@/apps/mail/types'
+import { raiseToast } from '@/apps/mail/utils'
+import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
-const { script } = defineProps<{ script: SieveScript }>()
-
+const { script } = defineProps<{
+  script: SieveScript
+}>()
 const store = userStore()
-
-const deleteScript = createResource({
-	url: 'suite.mail.api.sieve.delete_sieve_script',
-	makeParams: () => ({ account: store.accountId, id: script.id }),
-	onSuccess: () => {
-		raiseToast(__('Sieve script deleted.'))
-		store.sieveScripts.reload()
-		show.value = false
-	},
-	onError: (error) => raiseToast(error.message, 'error'),
-})
+const deleteScript = useMutation(api.mail.sieve.delete)
+async function deleteScriptSubmit() {
+  const input: InputOf<typeof api.mail.sieve.delete> = {
+    account: store.accountId,
+    id: script.id,
+  }
+  await deleteScript.run(input)
+  raiseToast(__('Rule deleted'))
+  show.value = false
+}
 </script>

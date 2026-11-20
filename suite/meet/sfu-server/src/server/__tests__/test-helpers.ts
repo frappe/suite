@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Server, Socket } from 'socket.io';
 import { vi } from 'vitest';
 import type { SFUConfig } from '../../config';
@@ -7,7 +8,6 @@ import { Telemetry } from '../../telemetry/Telemetry';
 import type {
 	ClientToServerEvents,
 	ServerToClientEvents,
-	SFUScope,
 	SocketData,
 } from '../../types';
 import type { AuthManager } from '../AuthManager';
@@ -36,11 +36,21 @@ const SOCKET_DEFAULTS = {
 	userId: 'user-1',
 	userName: 'Alice',
 	meetingId: 'room-1',
-	site: undefined as string | undefined,
+	site: undefined,
 	isHost: false,
 	isCohost: false,
-	scope: 'full' as SFUScope,
-};
+	scope: 'full',
+} satisfies Pick<
+	TypedSocket,
+	| 'id'
+	| 'userId'
+	| 'userName'
+	| 'meetingId'
+	| 'site'
+	| 'isHost'
+	| 'isCohost'
+	| 'scope'
+>;
 
 export function createMockSocket(
 	partial: Partial<TypedSocket> = {},
@@ -51,11 +61,11 @@ export function createMockSocket(
 	const toEmits: { roomId: string; event: string; data: unknown }[] = [];
 	const joinCalls: string[] = [];
 
-	const socket = {
+	const socket = fromPartial<MockSocket>({
 		...SOCKET_DEFAULTS,
 		handshake: {
 			address: '127.0.0.1',
-			headers: {} as Record<string, string | string[] | undefined>,
+			headers: {},
 		},
 		connected: true,
 		...partial,
@@ -124,7 +134,7 @@ export function createMockSocket(
 		emitCalls,
 		toEmits,
 		joinCalls,
-	} as unknown as MockSocket;
+	});
 
 	return socket;
 }
@@ -142,17 +152,16 @@ function createMockServer(): MockServer {
 	const socketsMap = new Map<string, Socket>();
 
 	const mock: MockServer = {
-		io: undefined as unknown as Server<
-			ClientToServerEvents,
-			ServerToClientEvents
-		>,
+		io: fromPartial<Server<ClientToServerEvents, ServerToClientEvents>>(
+			undefined,
+		),
 		middlewareFn: null,
 		connectionFn: null,
 		socketsAdapterRooms,
 		socketsMap,
 	};
 
-	const io = {
+	const io = fromPartial<Server<ClientToServerEvents, ServerToClientEvents>>({
 		use(fn: (s: Socket, next: (err?: Error) => void) => void) {
 			mock.middlewareFn = fn;
 			return io;
@@ -165,7 +174,7 @@ function createMockServer(): MockServer {
 			adapter: { rooms: socketsAdapterRooms },
 			sockets: socketsMap,
 		},
-	} as unknown as Server<ClientToServerEvents, ServerToClientEvents>;
+	});
 
 	mock.io = io;
 	return mock;
@@ -175,7 +184,7 @@ function createMockMediasoupManager(): MediasoupManager {
 	let producerClosedListener:
 		| Parameters<MediasoupManager['onProducerClosed']>[0]
 		| undefined;
-	return {
+	return fromPartial<MediasoupManager>({
 		onCameraLayerDemand: vi.fn(),
 		getCameraLayerDemand: vi.fn().mockReturnValue(null),
 		onNetworkQualityUpdate: vi.fn().mockReturnValue(() => {}),
@@ -236,7 +245,7 @@ function createMockMediasoupManager(): MediasoupManager {
 			paused: false,
 		}),
 		applyMediaControl: vi.fn(),
-	} as unknown as MediasoupManager;
+	});
 }
 
 function createMockAuthManager() {
@@ -283,7 +292,7 @@ export function createManager(
 	const manager = new SocketHandlerManager(
 		io.io,
 		mediasoup,
-		authManager as unknown as AuthManager,
+		fromPartial<AuthManager>(authManager),
 		telemetry,
 		roster,
 		runtime,
@@ -303,9 +312,7 @@ export function createManager(
 		const socket = createMockSocket(overrides, io.socketsAdapterRooms);
 		io.socketsMap.set(socket.id, socket);
 		const origDisconnect = socket.disconnect.bind(socket);
-		(socket as { disconnect: (close: boolean) => void }).disconnect = (
-			close: boolean,
-		) => {
+		socket['disconnect'] = (close: boolean) => {
 			// Mirror socket.io's auto-leave-on-disconnect: remove the socket
 			// from every adapter room it joined.
 			for (const [roomId, ids] of io.socketsAdapterRooms) {

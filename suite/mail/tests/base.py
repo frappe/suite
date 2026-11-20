@@ -203,7 +203,7 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         with cls.set_user(member.email):
             account = get_user_personal_jmap_account(member.email, raise_exception=True)
             inbox = get_mailbox_id_by_role(account, "inbox", raise_exception=True)
-            threads, _mailbox = get_threads(account, inbox, limit=20)
+            threads = get_threads(account, inbox, limit=20)["rows"]
             return threads
 
     @classmethod
@@ -270,9 +270,11 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         """Provisions a member end-to-end through the admin API and returns its details.
 
         With ``send_invite`` the account is completed the way an invited user would - via the
-        request key as Guest - otherwise it is force-created like the dashboard's non-invite path.
+        request key as Guest - otherwise it is force-created like the dashboard's non-invite path,
+        and its user replaces the temporary password with ``password``.
         """
 
+        from suite.mail.account_lifecycle import complete_password_change
         from suite.mail.api.account import create_account as complete_signup
         from suite.mail.api.admin import add_member
 
@@ -301,6 +303,9 @@ class StalwartIntegrationTestCase(IntegrationTestCase):
         if send_invite:
             with cls.set_user("Guest"):
                 complete_signup(request.request_key, first_name, last_name, password)
+        else:
+            # A created account stays locked until its user replaces the temporary password.
+            complete_password_change(request.suite_user, password)
 
         return frappe._dict(
             user=email,

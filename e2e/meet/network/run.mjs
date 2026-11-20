@@ -288,17 +288,9 @@ try {
 		headless: true,
 		args: ["--no-sandbox", "--autoplay-policy=no-user-gesture-required"],
 	});
-	page = await browser.newPage({
-		viewport,
-		...(videoDemo
-			? {
-					recordVideo: {
-						dir: output + "/video",
-						size: viewport,
-					},
-				}
-			: {}),
-	});
+	const pageOptions = { viewport };
+	if (videoDemo) pageOptions.recordVideo = { dir: output + '/video', size: viewport };
+	page = await browser.newPage(pageOptions);
 	page.on("console", (m) => {
 		if (m.text().startsWith("CAMERA")) console.log(m.text());
 	});

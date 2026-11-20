@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { registerScreenShareHandlers } from '../ScreenShareHandlers';
 
@@ -24,7 +25,7 @@ function setup() {
 		mediasoup: { assertProducerAccess },
 		registry: { emitScreenShare },
 	};
-	registerScreenShareHandlers(deps as never)(socket as never);
+	registerScreenShareHandlers(fromPartial(deps))(fromPartial(socket));
 	return { assertProducerAccess, emitScreenShare, handlers };
 }
 

@@ -19,6 +19,30 @@ import type { Mail, MailCopy, Thread } from '@/apps/mail/types'
  */
 export const mailCopies = (mail: Mail): MailCopy[] => [mail, ...(mail.duplicates ?? [])]
 
+/**
+ * Whether the reader has read `mail`: any copy of it read counts. A reply sent to yourself is
+ * delivered unread, and that delivered copy is the one the thread shows, but its copy in Sent was
+ * read as it was written — it is not news to the person who just sent it.
+ */
+export const isMailSeen = (mail: Mail): boolean => mailCopies(mail).some((copy) => !!copy.seen)
+
+/**
+ * Each row of `mails` under the id of every copy it stands for, with that copy. Which copy the server
+ * leads with changes: a reply to yourself is its Sent copy until it is delivered, and the delivered
+ * copy from then on. A thread already showing one finds the same message under the other here, and
+ * the copy it shows, whose folders and star are its own.
+ */
+export const byCopyId = (mails: Mail[]): Map<string, { message: Mail; copy: MailCopy }> =>
+  new Map(
+    mails.flatMap((message) =>
+      mailCopies(message).map((copy) => [copy.id, { message, copy }] as const),
+    ),
+  )
+
+/** The copies of `fresh` other than the one shown under `id`: what that row's actions also reach. */
+export const copiesBeside = (fresh: Mail, id: string): MailCopy[] =>
+  mailCopies(fresh).filter((copy) => copy.id !== id)
+
 /** The mail ids an action on `mail` should carry: its own, and those of the copies it stands for. */
 export const mailCopyIds = (mail: Mail): string[] => mailCopies(mail).map((copy) => copy.id)
 
@@ -33,6 +57,30 @@ export const mailCopyNames = (mail: Mail): string[] => mailCopies(mail).map((cop
  * the open thread disagreeing about the same message: starred in the list, hollow in the pane.
  */
 export const rowMailIds = (thread: Thread): string[] => {
-	const shown = (thread.messages ?? []).find((mail) => mailCopyIds(mail).includes(thread.id))
-	return shown ? mailCopyIds(shown) : [thread.id]
+  const shown = (thread.messages ?? []).find((mail) => mailCopyIds(mail).includes(thread.id))
+  return shown ? mailCopyIds(shown) : [thread.id]
+}
+
+/**
+ * The mail ids pinning or unpinning a conversation carries: all of them, since the pin is the
+ * conversation's. The server keeps to those in the Inbox when pinning (see suite/mail/pins.py).
+ */
+export const threadPinIds = (thread: Thread): string[] =>
+  thread.messages?.length ? thread.messages.flatMap(mailCopyIds) : [thread.id]
+
+/**
+ * The mail ids starring or unstarring a whole thread carries. A thread is starred while any message
+ * in it is (as the Starred folder reads it), so unstarring clears every starred message — clearing
+ * only the row's own left the thread in Starred, starred by an older message. Starring marks the
+ * row's own message alone: marking them all filled every message's star in the open thread.
+ */
+export const threadStarIds = (thread: Thread, flagged: boolean): string[] => {
+  if (flagged) return rowMailIds(thread)
+  // Every copy that is starred, hidden ones too: a message you sent yourself keeps a copy in Sent
+  // the thread does not show, and a star left on it kept the conversation in Starred.
+  const starred = (thread.messages ?? [])
+    .flatMap(mailCopies)
+    .filter((copy) => copy.flagged)
+    .map((copy) => copy.id)
+  return [...new Set([...rowMailIds(thread), ...starred])]
 }

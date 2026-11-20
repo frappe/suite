@@ -1,0 +1,120 @@
+<template>
+  <!-- The toolbar's actions on the ticked threads, in the thread toolbar's groups with a line between
+       those that show (see ThreadHeader): what is done to them, where they are filed, what holds them
+       for later, then what only a selection offers. Folded where the reading pane leaves the toolbar
+       too little room: the first group keeps its buttons, and the rest goes in one menu, in the
+       same order (see foldedToolbar). Folded, one with a menu of its own asks as a submenu where it
+       has one, or reads "…" and asks in its dialog. -->
+  <div class="flex items-center gap-2">
+    <template v-for="(group, index) in groups" :key="group.key">
+      <Divider v-if="index" v-bind="GROUP_LINE" />
+      <div class="flex items-center space-x-2">
+        <template v-if="group.key === 'filing'">
+          <!-- Folders, the thread toolbar's menu of ticks, for every ticked thread at once: stays
+               open, to file them in several. -->
+          <Dropdown v-for="menu in filing" :key="menu.label" :options="menu.options">
+            <Button variant="ghost" :tooltip="menu.label" :aria-label="menu.label">
+              <template #icon>
+                <component :is="menu.icon" class="icon" />
+              </template>
+            </Button>
+          </Dropdown>
+        </template>
+        <Dropdown
+          v-else-if="group.key === 'folded'"
+          v-model:open="foldedOpen"
+          :options="foldedOptions"
+        >
+          <Button variant="ghost" :tooltip="__('Actions')" :aria-label="__('Actions')">
+            <template #icon>
+              <Ellipsis class="icon" />
+            </template>
+          </Button>
+        </Dropdown>
+        <template v-else>
+          <component
+            :is="action.menu ?? Passthrough"
+            v-for="action in group.actions"
+            :key="action.label"
+          >
+            <Button
+              :tooltip="action.label"
+              :aria-label="action.label"
+              variant="ghost"
+              @click="action.menu ? undefined : action.onClick()"
+            >
+              <template #icon>
+                <component :is="action.icon" class="icon" />
+              </template>
+            </Button>
+          </component>
+        </template>
+      </div>
+    </template>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Button, Divider, Dropdown } from 'frappe-ui'
+import { Ellipsis } from 'lucide-vue-next'
+import { computed, ref, type FunctionalComponent } from 'vue'
+
+import { foldedToolbar, type FilingMenu, type SelectAction } from '@/apps/mail/utils/selectActions'
+import { GROUP_LINE } from '@/apps/mail/utils/toolbarGroups'
+
+const {
+  actions,
+  filing = [],
+  collapsed = false,
+} = defineProps<{
+  actions: SelectAction[]
+  // Where the ticked threads are filed (Move To, Folders), where the list files them.
+  filing?: FilingMenu[]
+  collapsed?: boolean
+}>()
+
+const shownIn = (key: SelectAction['group']) =>
+  actions.filter((action) => action.group === key && action.condition())
+
+const folded = computed(() => foldedToolbar(actions, filing))
+
+type Group = { key: SelectAction['group'] | 'filing' | 'kept' | 'folded'; actions: SelectAction[] }
+const groups = computed(() => {
+  if (collapsed) {
+    const all: Group[] = [
+      { key: 'kept', actions: folded.value.buttons },
+      { key: 'folded', actions: [] },
+    ]
+    return all.filter((group) =>
+      group.key === 'folded' ? folded.value.menu.length : group.actions.length,
+    )
+  }
+  const all: Group[] = [
+    { key: 'act', actions: shownIn('act') },
+    { key: 'filing', actions: [] },
+    { key: 'later', actions: shownIn('later') },
+    { key: 'selection', actions: shownIn('selection') },
+  ]
+  return all.filter((group) => (group.key === 'filing' ? filing.length : group.actions.length))
+})
+
+const foldedOpen = ref(false)
+const foldedItem = (entry: SelectAction | FilingMenu) => {
+  // Move To and Folders: their own menus, as submenus.
+  if ('options' in entry) return { label: entry.label, icon: entry.icon, submenu: entry.options }
+  const { label, icon, onClick, menu, submenu } = entry
+  return submenu
+    ? { label, icon, submenu: foldedOpen.value ? submenu() : [] }
+    : { label: menu ? __('{0}…', [label]) : label, icon, onClick }
+}
+// A group of the menu's own for each of the toolbar's, a line between them.
+const foldedOptions = computed(() =>
+  folded.value.menu.map((entries) => ({
+    group: '',
+    hideLabel: true,
+    options: entries.map(foldedItem),
+  })),
+)
+
+const Passthrough: FunctionalComponent = (_, { slots }) => slots.default?.()
+</script>

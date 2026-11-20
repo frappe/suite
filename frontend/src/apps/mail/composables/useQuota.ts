@@ -1,47 +1,38 @@
-import { computed, watch } from 'vue'
-import { createResource } from 'frappe-ui'
+import { computed } from 'vue'
 
-import { formatBytes } from '@/apps/mail/utils'
+import { api, useQuery } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
+import { formatBytes } from '@/apps/mail/utils'
 
 /**
  * The active account's storage quota, shared by the sidebar meter and the
- * Account settings page. The resource is cached per account, so both read one
- * fetch.
+ * Account settings page. Both observers share the active account’s query.
  */
 export function useQuota() {
-	const store = userStore()
+  const store = userStore()
 
-	const quota = createResource({
-		url: 'suite.mail.api.account.get_quota',
-		auto: true,
-		makeParams: () => ({ account: store.accountId }),
-		cache: ['quota', store.accountId],
-	})
+  const quota = useQuery(api.mail.settings.quota, () =>
+    store.accountId ? { account: store.accountId } : false,
+  )
 
-	watch(
-		() => store.accountId,
-		() => quota.reload(),
-	)
+  /** Whether the account has a ceiling at all; an unlimited one has nothing to meter. */
+  const isLimited = computed(() => (quota.data?.disk_quota ?? 0) > 0)
 
-	/** Whether the account has a ceiling at all; an unlimited one has nothing to meter. */
-	const isLimited = computed(() => (quota.data?.disk_quota ?? 0) > 0)
+  const usedPercentage = computed(() => quota.data?.used_percentage ?? 0)
 
-	const usedPercentage = computed(() => quota.data?.used_percentage ?? 0)
+  /** Nearly full: the meter turns red, and the sidebar starts showing it. */
+  const isCritical = computed(() => isLimited.value && usedPercentage.value > CRITICAL_FROM)
 
-	/** Nearly full: the meter turns red, and the sidebar starts showing it. */
-	const isCritical = computed(() => isLimited.value && usedPercentage.value > CRITICAL_FROM)
+  const label = computed(() => {
+    if (!quota.data) return ''
+    if (!isLimited.value) return __('Unlimited ({0} used)', [formatBytes(quota.data.used_quota)])
+    return __('{0}% of {1} used', [
+      quota.data.used_percentage.toFixed(2),
+      formatBytes(quota.data.disk_quota),
+    ])
+  })
 
-	const label = computed(() => {
-		if (!quota.data) return ''
-		if (!isLimited.value) return __('Unlimited ({0} used)', [formatBytes(quota.data.used_quota)])
-		return __('{0}% of {1} used', [
-			quota.data.used_percentage.toFixed(2),
-			formatBytes(quota.data.disk_quota),
-		])
-	})
-
-	return { quota, isLimited, usedPercentage, isCritical, label }
+  return { quota, isLimited, usedPercentage, isCritical, label }
 }
 
 /** Percent used past which storage counts as critical. */

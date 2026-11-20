@@ -141,13 +141,13 @@ class TestMailMailboxes(StalwartIntegrationTestCase):
             mailboxes = {(m["role"] or "").lower(): m["id"] for m in get_mailboxes(self.account)}
             move_mails(self.account, [thread["id"]], mailboxes["trash"])
             self.wait_until(
-                lambda: get_threads(self.account, mailboxes["trash"], limit=20)[0],
+                lambda: get_threads(self.account, mailboxes["trash"], limit=20)["rows"],
                 message="Moved mail did not appear in Trash.",
             )
 
             empty_user_mailbox(self.account, mailboxes["trash"])
             self.wait_until(
-                lambda: not get_threads(self.account, mailboxes["trash"], limit=20)[0],
+                lambda: not get_threads(self.account, mailboxes["trash"], limit=20)["rows"],
                 message="Trash still has threads after emptying.",
             )
 

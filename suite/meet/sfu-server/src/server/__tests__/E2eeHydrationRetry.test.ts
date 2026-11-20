@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import {
@@ -55,7 +56,7 @@ describe('E2EE hydration retry', () => {
 	it('retries coordinator hydration after a transient load failure', async () => {
 		const persistence = new FlakyCoordinatorPersistence();
 		const relay = new E2EEEpochRelay(
-			{} as never,
+			fromPartial({}),
 			new Map(),
 			new Map(),
 			persistence,

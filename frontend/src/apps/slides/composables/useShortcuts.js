@@ -1,523 +1,505 @@
-import { ref, onMounted, onUnmounted } from 'vue'
 import { useKeyboardShortcut } from 'frappe-ui'
+import { onMounted, onUnmounted, toValue } from 'vue'
 
 import { useNavigationPanel } from '@/apps/slides/composables/useNavigationPanel'
-import { commandHistory } from '@/apps/slides/stores/historyMeta'
 import { useTextEditor } from '@/apps/slides/composables/useTextEditor'
-
 import {
-	slideIndex,
-	changeSlide,
-	saveSlide,
-	selectionBounds,
-	updateSelectionBounds,
-	deleteSlide,
-	changeEditorSlide,
-	duplicateSlide,
-	addEmptySlide,
+  activeElementIds,
+  activeElements,
+  deleteElements,
+  duplicateElements,
+  exitTextEditing,
+  focusElementId,
+  isSelectionLocked,
+  isTextSelection,
+  pendingShapePreset,
+  pendingShapeType,
+  resetFocus,
+  selectAllElements,
+  startTextEditing,
+  toggleLock,
+} from '@/apps/slides/stores/element'
+import { commandHistory } from '@/apps/slides/stores/historyMeta'
+import { cancelCrop, commitCrop, inCropMode } from '@/apps/slides/stores/imageCrop'
+import { commitInteraction, interactionOffset } from '@/apps/slides/stores/interaction'
+import { flushLive } from '@/apps/slides/stores/liveDeck'
+import {
+  addEmptySlide,
+  changeEditorSlide,
+  changeSlide,
+  deleteSlide,
+  duplicateSlide,
+  selectionBounds,
+  slideIndex,
+  updateSelectionBounds,
 } from '@/apps/slides/stores/slide'
 import {
-	resetFocus,
-	exitTextEditing,
-	startTextEditing,
-	focusElementId,
-	addTextElement,
-	pendingShapeType,
-	pendingShapePreset,
-	selectAllElements,
-	activeElementIds,
-	activeElements,
-	deleteElements,
-	duplicateElements,
-	isSelectionLocked,
-	isTextSelection,
-	toggleLock,
-} from '@/apps/slides/stores/element'
-import {
-	changeSlideInSlideshow,
-	startSlideShow,
-	performNextStep,
-	performPreviousStep,
+  performNextStep,
+  performPreviousStep,
+  startSlideShow,
 } from '@/apps/slides/stores/slideshow'
-
-import { interactionOffset, commitInteraction } from '@/apps/slides/stores/interaction'
-import { inCropMode, commitCrop, cancelCrop } from '@/apps/slides/stores/imageCrop'
 
 const { toggleNavigationPanel } = useNavigationPanel()
 const { activeEditor, toggleMark } = useTextEditor()
 
-export const showShortcutsModal = ref(false)
-
 export const useShortcuts = (inReadonlyMode, inSlideShowMode) => {
-	const inEditMode = () => !inReadonlyMode.value && !inSlideShowMode.value && !inCropMode.value
-	const inReadonly = () => inReadonlyMode.value && !inSlideShowMode.value
-	const inSlideShow = () => inSlideShowMode.value
-	const hasElements = () => activeElementIds.value.length > 0
-	const hasActiveTextEditor = () =>
-		hasElements() && (!!activeEditor.value || isTextSelection.value)
+  const inEditMode = () => !inReadonlyMode.value && !inSlideShowMode.value && !inCropMode.value
+  const inReadonly = () => inReadonlyMode.value && !inSlideShowMode.value
+  const inSlideShow = () => inSlideShowMode.value
+  const hasElements = () => activeElementIds.value.length > 0
+  const hasActiveTextEditor = () => hasElements() && (!!activeEditor.value || isTextSelection.value)
 
-	const nudge = (key, step = 1) => {
-		if (isSelectionLocked.value) return
+  const nudge = (key, step = 1) => {
+    if (isSelectionLocked.value) return
 
-		let dx = 0
-		let dy = 0
+    let dx = 0
+    let dy = 0
 
-		if (key == 'ArrowLeft') dx = -step
-		else if (key == 'ArrowRight') dx = step
-		else if (key == 'ArrowUp') dy = -step
-		else if (key == 'ArrowDown') dy = step
+    if (key == 'ArrowLeft') dx = -step
+    else if (key == 'ArrowRight') dx = step
+    else if (key == 'ArrowUp') dy = -step
+    else if (key == 'ArrowDown') dy = step
 
-		interactionOffset.left = dx
-		interactionOffset.top = dy
-		commitInteraction()
+    interactionOffset.left = dx
+    interactionOffset.top = dy
+    commitInteraction()
 
-		updateSelectionBounds({
-			left: selectionBounds.left + dx,
-			top: selectionBounds.top + dy,
-		})
-	}
+    updateSelectionBounds({
+      left: selectionBounds.left + dx,
+      top: selectionBounds.top + dy,
+    })
+  }
 
-	const isPlainInput = (e) => {
-		const target = e?.target
-		return (
-			target &&
-			!target.isContentEditable &&
-			(target.tagName == 'INPUT' || target.tagName == 'TEXTAREA')
-		)
-	}
+  const isPlainInput = (e) => {
+    const target = e?.target
+    return (
+      target &&
+      !target.isContentEditable &&
+      (target.tagName == 'INPUT' || target.tagName == 'TEXTAREA')
+    )
+  }
 
-	// every editable field except the slide editor keeps its own text undo. this
-	// has to gate the shortcut rather than its handler: a matched shortcut is
-	// preventDefaulted before the handler runs, which would kill the native undo too
-	const ownsNativeUndo = () => {
-		const target = document.activeElement
-		if (!target || target.closest('.ProseMirror')) return false
-		return (
-			target.isContentEditable ||
-			target.tagName == 'INPUT' ||
-			target.tagName == 'TEXTAREA'
-		)
-	}
+  // every editable field except the slide editor keeps its own text undo. this
+  // has to gate the shortcut rather than its handler: a matched shortcut is
+  // preventDefaulted before the handler runs, which would kill the native undo too
+  const ownsNativeUndo = () => {
+    const target = document.activeElement
+    if (!target || target.closest('.ProseMirror')) return false
+    return target.isContentEditable || target.tagName == 'INPUT' || target.tagName == 'TEXTAREA'
+  }
 
-	// only keyboard focus: a clicked button keeps focus while the canvas is in use
-	const isControlFocused = () =>
-		!!document.querySelector(':is(button, a[href], [role="button"]):focus-visible')
+  // keys pressed in Drive's side panel, on its buttons or in its comment boxes, are the panel's own
+  function isFocusInSidePanel() {
+    return !!document.activeElement?.closest('[data-document-side-panel]')
+  }
 
-	const performHistory = (e, operation) => {
-		// an undo mid-composition destroys the IME node
-		if (e.isComposing || activeEditor.value?.view.composing) return
+  // only keyboard focus: a clicked button keeps focus while the canvas is in use
+  const isControlFocused = () =>
+    !!document.querySelector(':is(button, a[href], [role="button"]):focus-visible')
 
-		if (operation == 'undo') commandHistory.undo()
-		else commandHistory.redo()
-	}
+  const performHistory = (e, operation) => {
+    // an undo mid-composition destroys the IME node
+    if (e.isComposing || activeEditor.value?.view.composing) return
 
-	const handleBold = (e) => {
-		if (inEditMode() && hasActiveTextEditor()) {
-			if (!isSelectionLocked.value) toggleMark('bold')
-			return
-		}
-		if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
-	}
+    if (operation == 'undo') commandHistory.undo()
+    else commandHistory.redo()
+  }
 
-	const nudgeStep = (e) => (e?.shiftKey ? 10 : 1)
+  const handleBold = (e) => {
+    if (inEditMode() && hasActiveTextEditor()) {
+      if (!isSelectionLocked.value) toggleMark('bold')
+      return
+    }
+    if (inEditMode() || inReadonly()) toggleNavigationPanel(e)
+  }
 
-	const handleArrowUp = (e) => {
-		if (isArrowNavActive()) return
-		if (inSlideShow()) return performPreviousStep()
-		if (inReadonly()) return changeSlide(slideIndex.value - 1)
-		if (!inEditMode()) return
-		if (hasElements()) nudge('ArrowUp', nudgeStep(e))
-		else changeEditorSlide(slideIndex.value - 1)
-	}
+  const nudgeStep = (e) => (e?.shiftKey ? 10 : 1)
 
-	const handleArrowDown = (e) => {
-		if (isArrowNavActive()) return
-		if (inSlideShow()) return performNextStep()
-		if (inReadonly()) return changeSlide(slideIndex.value + 1)
-		if (!inEditMode()) return
-		if (hasElements()) nudge('ArrowDown', nudgeStep(e))
-		else changeEditorSlide(slideIndex.value + 1)
-	}
+  const handleArrowUp = (e) => {
+    if (isArrowNavActive()) return
+    if (inSlideShow()) return performPreviousStep()
+    if (inReadonly()) return changeSlide(slideIndex.value - 1)
+    if (!inEditMode()) return
+    if (hasElements()) nudge('ArrowUp', nudgeStep(e))
+    else changeEditorSlide(slideIndex.value - 1)
+  }
 
-	const handleArrowLeft = (e) => {
-		if (isArrowNavActive()) return
-		if (inSlideShow()) return performPreviousStep()
-		if (inEditMode() && hasElements()) nudge('ArrowLeft', nudgeStep(e))
-	}
+  const handleArrowDown = (e) => {
+    if (isArrowNavActive()) return
+    if (inSlideShow()) return performNextStep()
+    if (inReadonly()) return changeSlide(slideIndex.value + 1)
+    if (!inEditMode()) return
+    if (hasElements()) nudge('ArrowDown', nudgeStep(e))
+    else changeEditorSlide(slideIndex.value + 1)
+  }
 
-	const handleArrowRight = (e) => {
-		if (isArrowNavActive()) return
-		if (inSlideShow()) return performNextStep()
-		if (inEditMode() && hasElements()) nudge('ArrowRight', nudgeStep(e))
-	}
+  const handleArrowLeft = (e) => {
+    if (isArrowNavActive()) return
+    if (inSlideShow()) return performPreviousStep()
+    if (inEditMode() && hasElements()) nudge('ArrowLeft', nudgeStep(e))
+  }
 
-	const deleteElementOrSlide = (e) => {
-		if (hasElements()) deleteElements(e)
-		else deleteSlide()
-	}
+  const handleArrowRight = (e) => {
+    if (isArrowNavActive()) return
+    if (inSlideShow()) return performNextStep()
+    if (inEditMode() && hasElements()) nudge('ArrowRight', nudgeStep(e))
+  }
 
-	const addShape = (shapeType) => {
-		pendingShapePreset.value = {}
-		pendingShapeType.value = shapeType
-	}
+  const deleteElementOrSlide = (e) => {
+    if (hasElements()) deleteElements(e)
+    else deleteSlide()
+  }
 
-	// overlays dismiss on Escape only if the event wasn't defaultPrevented,
-	// and matching a shortcut always prevents — so don't match while one is open
-	const hasOpenOverlay = () =>
-		!!document.querySelector('[data-dismissable-layer][data-state="open"]')
+  // A tool letter arms a placement tool; nothing is drawn until the next click.
+  // A key pressed within TYPING_GAP_MS of the one before is typing, not a command:
+  // it arms nothing, and it disarms a tool the previous key armed.
+  const TYPING_GAP_MS = 1000
+  let lastKeyAt = Number.NEGATIVE_INFINITY
+  let typing = false
+  let armedByLastKey = false
 
-	// keys meant for an open list never reach the canvas behind it
-	const skipInOverlay = (handler) => (e) => {
-		if (!hasOpenOverlay()) handler(e)
-	}
+  const trackTyping = (e) => {
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
 
-	// menus and radio groups like TabButtons move between options with the arrows
-	const isArrowNavActive = () =>
-		hasOpenOverlay() || !!document.activeElement?.closest('[role="radiogroup"]')
+    if (isFocusInSidePanel()) return
+    if (isPlainInput(e) || e.target?.isContentEditable) return
+    typing = e.timeStamp - lastKeyAt < TYPING_GAP_MS
+    lastKeyAt = e.timeStamp
+    if (typing && armedByLastKey) pendingShapeType.value = null
+    armedByLastKey = false
+  }
 
-	const hasTextCapableSelection = () => {
-		if (activeElements.value.length !== 1) return false
-		const [element] = activeElements.value
-		return element.type === 'text' || (element.type === 'shape' && element.shapeType !== 'line')
-	}
+  const armTool = (tool) => {
+    if (typing) return
+    pendingShapePreset.value = {}
+    pendingShapeType.value = tool
+    armedByLastKey = true
+  }
 
-	const canStartTextEditing = () =>
-		inEditMode() &&
-		hasTextCapableSelection() &&
-		!focusElementId.value &&
-		!isSelectionLocked.value &&
-		!hasOpenOverlay()
+  // overlays dismiss on Escape only if the event wasn't defaultPrevented,
+  // and matching a shortcut always prevents — so don't match while one is open
+  const hasOpenOverlay = () =>
+    !!document.querySelector('[data-dismissable-layer][data-state="open"]')
 
-	// capture phase, so single-letter tool shortcuts don't fire over an editable selection
-	const handleTypeToEdit = (e) => {
-		if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
-		if (e.key === '?') return
-		if (e.key === ' ' && isControlFocused()) return
-		if (isPlainInput(e) || e.target?.isContentEditable) return
-		if (!canStartTextEditing()) return
-		e.preventDefault()
-		e.stopPropagation()
-		startTextEditing(e.key)
-	}
+  // keys meant for an open list never reach the canvas behind it
+  const skipInOverlay = (handler) => (e) => {
+    if (!hasOpenOverlay()) handler(e)
+  }
 
-	onMounted(() => window.addEventListener('keydown', handleTypeToEdit, true))
-	onUnmounted(() => window.removeEventListener('keydown', handleTypeToEdit, true))
+  // menus and radio groups like TabButtons move between options with the arrows
+  const isArrowNavActive = () =>
+    hasOpenOverlay() || !!document.activeElement?.closest('[role="radiogroup"]')
 
-	const handleEscape = (e) => {
-		if (isPlainInput(e)) return e.target.blur()
-		if (focusElementId.value) return exitTextEditing()
-		if (e.target?.isContentEditable) return e.target.blur()
-		resetFocus()
-	}
+  const hasTextCapableSelection = () => {
+    if (activeElements.value.length !== 1) return false
+    const [element] = activeElements.value
+    return element.type === 'text' || (element.type === 'shape' && element.shapeType !== 'line')
+  }
 
-	const shortcuts = [
-		{
-			combo: 'Shift+Slash',
-			description: 'Show keyboard shortcuts',
-			group: 'General',
-			allowInDialog: true,
-			handler: () => (showShortcutsModal.value = true),
-		},
-		{
-			combo: 'Mod+B',
-			description: 'Toggle navigation panel',
-			group: 'General',
-			handler: handleBold,
-		},
-		{
-			combo: 'Mod+S',
-			description: 'Save',
-			group: 'General',
-			enabled: inEditMode,
-			handler: (e) => saveSlide(e),
-		},
-		{
-			combo: 'Mod+Z',
-			description: 'Undo',
-			group: 'General',
-			allowInInput: true,
-			enabled: () => inEditMode() && !ownsNativeUndo(),
-			handler: (e) => performHistory(e, 'undo'),
-		},
-		{
-			combo: 'Mod+Y',
-			description: 'Redo',
-			group: 'General',
-			allowInInput: true,
-			enabled: () => inEditMode() && !ownsNativeUndo(),
-			handler: (e) => performHistory(e, 'redo'),
-		},
-		{
-			combo: 'Mod+Shift+Z',
-			description: 'Redo',
-			group: 'General',
-			allowInInput: true,
-			enabled: () => inEditMode() && !ownsNativeUndo(),
-			handler: (e) => performHistory(e, 'redo'),
-		},
+  const canStartTextEditing = () =>
+    inEditMode() &&
+    hasTextCapableSelection() &&
+    !focusElementId.value &&
+    !isSelectionLocked.value &&
+    !hasOpenOverlay()
 
-		{
-			combo: 'Enter',
-			description: 'Edit text of selected element',
-			group: 'Edit',
-			enabled: () => canStartTextEditing() && !isControlFocused(),
-			handler: () => startTextEditing(),
-		},
-		{
-			combo: 'Enter',
-			description: 'Add slide below',
-			group: 'Insert',
-			enabled: () =>
-				inEditMode() && !canStartTextEditing() && !hasOpenOverlay() && !isControlFocused(),
-			handler: (e) => addEmptySlide(e),
-		},
-		{
-			combo: 'T',
-			description: 'Add text box',
-			group: 'Insert',
-			enabled: inEditMode,
-			handler: skipInOverlay(() => addTextElement()),
-		},
-		{
-			combo: 'R',
-			description: 'Add rectangle',
-			group: 'Insert',
-			enabled: inEditMode,
-			handler: skipInOverlay(() => addShape('rectangle')),
-		},
-		{
-			combo: 'O',
-			description: 'Add oval',
-			group: 'Insert',
-			enabled: inEditMode,
-			handler: skipInOverlay(() => addShape('oval')),
-		},
-		{
-			combo: 'L',
-			description: 'Add line',
-			group: 'Insert',
-			enabled: inEditMode,
-			handler: skipInOverlay(() => addShape('line')),
-		},
-		{
-			combo: 'C',
-			description: 'Add connector',
-			group: 'Insert',
-			enabled: inEditMode,
-			handler: skipInOverlay(() => addShape('connector')),
-		},
-		{
-			combo: 'Mod+A',
-			description: 'Select all elements',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: (e) => selectAllElements(e),
-		},
-		{
-			combo: 'Escape',
-			description: 'Deselect',
-			group: 'Edit',
-			allowInInput: true,
-			enabled: () => inEditMode() && !hasOpenOverlay(),
-			handler: handleEscape,
-		},
-		{
-			combo: 'Escape',
-			description: 'Exit crop mode',
-			group: 'Edit',
-			allowInInput: true,
-			enabled: () => inCropMode.value && !hasOpenOverlay(),
-			handler: () => cancelCrop(),
-		},
-		{
-			combo: 'Enter',
-			description: 'Apply crop',
-			group: 'Edit',
-			allowInInput: true,
-			enabled: () => inCropMode.value && !hasOpenOverlay() && !isControlFocused(),
-			handler: () => commitCrop(),
-		},
-		{
-			combo: 'Mod+D',
-			description: 'Duplicate element / slide',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: (e) => {
-				if (hasElements()) duplicateElements(e, activeElements.value)
-				else duplicateSlide()
-			},
-		},
-		{
-			combo: 'Delete',
-			description: 'Delete element / slide',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: skipInOverlay(deleteElementOrSlide),
-		},
-		{
-			combo: 'Backspace',
-			description: 'Delete element / slide',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: skipInOverlay(deleteElementOrSlide),
-		},
-		{
-			combo: 'Mod+Shift+L',
-			description: 'Lock or unlock element',
-			group: 'Edit',
-			allowInInput: true,
-			enabled: inEditMode,
-			handler: (e) => {
-				if (isPlainInput(e)) return
-				toggleLock()
-			},
-		},
-		{
-			combo: 'ArrowUp',
-			description: 'Move element',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowUp,
-		},
-		{
-			combo: 'ArrowDown',
-			description: 'Move element',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowDown,
-		},
-		{
-			combo: 'ArrowLeft',
-			description: 'Move element',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowLeft,
-		},
-		{
-			combo: 'ArrowRight',
-			description: 'Move element',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowRight,
-		},
-		{
-			combo: 'Shift+ArrowUp',
-			description: 'Move element by 10px',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowUp,
-		},
-		{
-			combo: 'Shift+ArrowDown',
-			description: 'Move element by 10px',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowDown,
-		},
-		{
-			combo: 'Shift+ArrowLeft',
-			description: 'Move element by 10px',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowLeft,
-		},
-		{
-			combo: 'Shift+ArrowRight',
-			description: 'Move element by 10px',
-			group: 'Edit',
-			enabled: inEditMode,
-			handler: handleArrowRight,
-		},
-		{
-			combo: 'ArrowUp',
-			description: 'Change slide',
-			group: 'Edit',
-			handler: handleArrowUp,
-		},
-		{
-			combo: 'ArrowDown',
-			description: 'Change slide',
-			group: 'Edit',
-			handler: handleArrowDown,
-		},
+  // capture phase, so single-letter tool shortcuts don't fire over an editable selection
+  const handleTypeToEdit = (e) => {
+    if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+    if (e.key === '?') return
 
-		{
-			combo: 'Mod+B',
-			description: 'Bold',
-			group: 'Format Text',
-			enabled: inEditMode,
-			handler: handleBold,
-		},
-		{
-			combo: 'Mod+I',
-			description: 'Italic',
-			group: 'Format Text',
-			enabled: inEditMode,
-			handler: () => {
-				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('italic')
-			},
-		},
-		{
-			combo: 'Mod+U',
-			description: 'Underline',
-			group: 'Format Text',
-			enabled: inEditMode,
-			handler: () => {
-				if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('underline')
-			},
-		},
+    if (isFocusInSidePanel()) return
+    if (e.key === ' ' && isControlFocused()) return
+    if (isPlainInput(e) || e.target?.isContentEditable) return
+    if (!canStartTextEditing()) return
+    e.preventDefault()
+    e.stopPropagation()
+    startTextEditing(e.key)
+  }
 
-		{
-			combo: 'Mod+P',
-			description: 'Start',
-			group: 'Slideshow',
-			handler: () => {
-				if (inEditMode() || inReadonly()) startSlideShow()
-			},
-		},
-		{
-			combo: 'F5',
-			description: 'Restart',
-			group: 'Slideshow',
-			enabled: inSlideShow,
-			handler: () => changeSlideInSlideshow(0),
-		},
-		{
-			combo: 'ArrowLeft',
-			description: 'Previous step',
-			group: 'Slideshow',
-			handler: handleArrowLeft,
-		},
-		{
-			combo: 'PageUp',
-			description: 'Previous step',
-			group: 'Slideshow',
-			handler: () => {
-				if (inSlideShow()) performPreviousStep()
-			},
-		},
-		{
-			combo: 'Space',
-			description: 'Next step',
-			group: 'Slideshow',
-			enabled: inSlideShow,
-			handler: () => performNextStep(),
-		},
-		{
-			combo: 'ArrowRight',
-			description: 'Next step',
-			group: 'Slideshow',
-			handler: handleArrowRight,
-		},
-		{
-			combo: 'PageDown',
-			description: 'Next step',
-			group: 'Slideshow',
-			handler: () => {
-				if (inSlideShow()) performNextStep()
-			},
-		},
-	]
+  onMounted(() => {
+    window.addEventListener('keydown', trackTyping, true)
+    window.addEventListener('keydown', handleTypeToEdit, true)
+  })
+  onUnmounted(() => {
+    window.removeEventListener('keydown', trackTyping, true)
+    window.removeEventListener('keydown', handleTypeToEdit, true)
+  })
 
-	useKeyboardShortcut(shortcuts)
+  const handleEscape = (e) => {
+    if (isPlainInput(e)) return e.target.blur()
+    if (focusElementId.value) return exitTextEditing()
+    if (e.target?.isContentEditable) return e.target.blur()
+    resetFocus()
+  }
+
+  const shortcuts = [
+    {
+      combo: 'Mod+B',
+      description: 'Toggle navigation panel',
+      group: 'General',
+      handler: handleBold,
+    },
+    {
+      combo: 'Mod+S',
+      description: 'Save',
+      group: 'General',
+      enabled: inEditMode,
+      handler: (e) => {
+        e.preventDefault()
+        flushLive()
+      },
+    },
+    {
+      combo: 'Mod+Z',
+      description: 'Undo',
+      group: 'General',
+      allowInInput: true,
+      enabled: () => inEditMode() && !ownsNativeUndo(),
+      handler: (e) => performHistory(e, 'undo'),
+    },
+    {
+      combo: 'Mod+Y',
+      description: 'Redo',
+      group: 'General',
+      allowInInput: true,
+      enabled: () => inEditMode() && !ownsNativeUndo(),
+      handler: (e) => performHistory(e, 'redo'),
+    },
+    {
+      combo: 'Mod+Shift+Z',
+      description: 'Redo',
+      group: 'General',
+      allowInInput: true,
+      enabled: () => inEditMode() && !ownsNativeUndo(),
+      handler: (e) => performHistory(e, 'redo'),
+    },
+
+    {
+      combo: 'Enter',
+      description: 'Edit text of selected element',
+      group: 'Edit',
+      enabled: () => canStartTextEditing() && !isControlFocused(),
+      handler: () => startTextEditing(),
+    },
+    {
+      combo: 'Enter',
+      description: 'Add slide below',
+      group: 'Insert',
+      enabled: () =>
+        inEditMode() && !canStartTextEditing() && !hasOpenOverlay() && !isControlFocused(),
+      handler: (e) => addEmptySlide(e),
+    },
+    {
+      combo: 'T',
+      description: 'Add text box',
+      group: 'Insert',
+      enabled: inEditMode,
+      handler: skipInOverlay(() => armTool('text')),
+    },
+    {
+      combo: 'R',
+      description: 'Add rectangle',
+      group: 'Insert',
+      enabled: inEditMode,
+      handler: skipInOverlay(() => armTool('rectangle')),
+    },
+    {
+      combo: 'O',
+      description: 'Add oval',
+      group: 'Insert',
+      enabled: inEditMode,
+      handler: skipInOverlay(() => armTool('oval')),
+    },
+    {
+      combo: 'L',
+      description: 'Add line',
+      group: 'Insert',
+      enabled: inEditMode,
+      handler: skipInOverlay(() => armTool('line')),
+    },
+    {
+      combo: 'C',
+      description: 'Add connector',
+      group: 'Insert',
+      enabled: inEditMode,
+      handler: skipInOverlay(() => armTool('connector')),
+    },
+    {
+      combo: 'Mod+A',
+      description: 'Select all elements',
+      group: 'Edit',
+      enabled: inEditMode,
+      handler: (e) => selectAllElements(e),
+    },
+    {
+      combo: 'Escape',
+      description: 'Deselect',
+      group: 'Edit',
+      allowInInput: true,
+      enabled: () => inEditMode() && !hasOpenOverlay(),
+      handler: handleEscape,
+    },
+    {
+      combo: 'Escape',
+      description: 'Exit crop mode',
+      group: 'Edit',
+      allowInInput: true,
+      enabled: () => inCropMode.value && !hasOpenOverlay(),
+      handler: () => cancelCrop(),
+    },
+    {
+      combo: 'Enter',
+      description: 'Apply crop',
+      group: 'Edit',
+      allowInInput: true,
+      enabled: () => inCropMode.value && !hasOpenOverlay() && !isControlFocused(),
+      handler: () => commitCrop(),
+    },
+    {
+      combo: 'Mod+D',
+      description: 'Duplicate element / slide',
+      group: 'Edit',
+      enabled: inEditMode,
+      handler: (e) => {
+        if (hasElements()) duplicateElements(e, activeElements.value)
+        else duplicateSlide()
+      },
+    },
+    {
+      combo: 'Delete',
+      description: 'Delete element / slide',
+      group: 'Edit',
+      enabled: inEditMode,
+      handler: skipInOverlay(deleteElementOrSlide),
+    },
+    {
+      combo: 'Backspace',
+      description: 'Delete element / slide',
+      group: 'Edit',
+      enabled: inEditMode,
+      handler: skipInOverlay(deleteElementOrSlide),
+    },
+    {
+      combo: 'Mod+Shift+L',
+      description: 'Lock or unlock element',
+      group: 'Edit',
+      allowInInput: true,
+      enabled: inEditMode,
+      handler: (e) => {
+        if (isPlainInput(e)) return
+        toggleLock()
+      },
+    },
+    {
+      combo: 'ArrowUp',
+      description: 'Move element',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowUp,
+    },
+    {
+      combo: 'ArrowDown',
+      description: 'Move element',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowDown,
+    },
+    {
+      combo: 'ArrowLeft',
+      description: 'Move element',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowLeft,
+    },
+    {
+      combo: 'ArrowRight',
+      description: 'Move element',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowRight,
+    },
+    {
+      combo: 'Shift+ArrowUp',
+      description: 'Move element 10px up or down',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowUp,
+    },
+    {
+      combo: 'Shift+ArrowDown',
+      description: 'Move element 10px up or down',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowDown,
+    },
+    {
+      combo: 'Shift+ArrowLeft',
+      description: 'Move element 10px left or right',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowLeft,
+    },
+    {
+      combo: 'Shift+ArrowRight',
+      description: 'Move element 10px left or right',
+      group: 'Move',
+      enabled: inEditMode,
+      handler: handleArrowRight,
+    },
+    {
+      combo: 'ArrowUp',
+      description: 'Change slide',
+      group: 'Edit',
+      handler: handleArrowUp,
+    },
+    {
+      combo: 'ArrowDown',
+      description: 'Change slide',
+      group: 'Edit',
+      handler: handleArrowDown,
+    },
+
+    {
+      combo: 'Mod+B',
+      description: 'Bold',
+      group: 'Format text',
+      enabled: inEditMode,
+      handler: handleBold,
+    },
+    {
+      combo: 'Mod+I',
+      description: 'Italic',
+      group: 'Format text',
+      enabled: inEditMode,
+      handler: () => {
+        if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('italic')
+      },
+    },
+    {
+      combo: 'Mod+U',
+      description: 'Underline',
+      group: 'Format text',
+      enabled: inEditMode,
+      handler: () => {
+        if (hasActiveTextEditor() && !isSelectionLocked.value) toggleMark('underline')
+      },
+    },
+
+    {
+      combo: 'Mod+P',
+      description: 'Start',
+      group: 'Slideshow',
+      handler: () => {
+        if (inEditMode() || inReadonly()) startSlideShow()
+      },
+    },
+  ]
+
+  useKeyboardShortcut(
+    shortcuts.map((shortcut) => ({
+      ...shortcut,
+      enabled: () => !isFocusInSidePanel() && toValue(shortcut.enabled ?? true),
+    })),
+  )
 }

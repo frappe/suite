@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from './config';
 
@@ -100,7 +101,7 @@ describe('loadConfig', () => {
 				system,
 			);
 		} catch (error) {
-			expect((error as ConfigError).issues).toHaveLength(3);
+			expect(fromPartial<ConfigError>(error).issues).toHaveLength(3);
 		}
 	});
 
@@ -117,7 +118,7 @@ describe('loadConfig', () => {
 			);
 			throw new Error('Expected loadConfig to fail');
 		} catch (error) {
-			const configError = error as ConfigError;
+			const configError = fromPartial<ConfigError>(error);
 			expect(configError.issues).toEqual([
 				'JWT_SECRET is required',
 				'WEBRTC_LISTEN_IP must be an IPv4 address',

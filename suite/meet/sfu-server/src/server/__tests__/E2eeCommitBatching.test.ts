@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 // Smoke tests for the commit-request batching window. Run via:
 //   yarn test
 //
@@ -8,7 +9,7 @@
 //   2. The batched request has joiningSenderIds = [first, second].
 //   3. flushPendingCommitRequests cancels pending timers.
 
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import {
 	InMemoryRosterPersistence,
@@ -16,7 +17,10 @@ import {
 } from '../E2eeRosterPersistence';
 import { E2eeRosterStore } from '../E2eeRosterStore';
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert<Condition>(
+	condition: Condition,
+	message: string,
+): asserts condition {
 	if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
@@ -38,15 +42,6 @@ type CommitRequestEnvelope = {
 	epochNumber?: number;
 };
 
-type TestRelay = {
-	enqueueCommitRequest: (
-		roomId: string,
-		joiningSenderIds: number[],
-		epochNumber: number,
-	) => void;
-	flushPendingCommitRequests: (roomId: string) => void;
-};
-
 async function main(): Promise<void> {
 	const sent: Array<{ room: string; senderId: number; epoch: number }> = [];
 	const hostSocket = {
@@ -62,7 +57,7 @@ async function main(): Promise<void> {
 			}
 		},
 	};
-	const fakeIo = {
+	const fakeIo = fromPartial<ConstructorParameters<typeof E2EEEpochRelay>[0]>({
 		sockets: {
 			adapter: {
 				rooms: new Map<string, Set<string>>([
@@ -71,7 +66,7 @@ async function main(): Promise<void> {
 			},
 			sockets: new Map<string, unknown>([['host-socket', hostSocket]]),
 		},
-	} as never;
+	});
 
 	const relay = new E2EEEpochRelay(
 		fakeIo,
@@ -86,40 +81,39 @@ async function main(): Promise<void> {
 		makeEntry(7, { participantId: 'host-1', isHost: true }),
 	);
 	relay.setRoster(roster);
-	const testRelay = relay as unknown as TestRelay;
+	const testRelay = relay;
 
 	// Two rapid key-package events for the same room+epoch.
-	testRelay.enqueueCommitRequest('meeting-1', [9], 1);
+	testRelay['enqueueCommitRequest']('meeting-1', [9], 1);
 	// Second joiner arrives within the batching window.
-	testRelay.enqueueCommitRequest('meeting-1', [11], 1);
+	testRelay['enqueueCommitRequest']('meeting-1', [11], 1);
 
 	// Within the window, no commit-request should have been emitted yet.
-	assert(
-		sent.length === 0,
+	expect(
+		sent,
 		`expected no commit-request yet, got ${sent.length}`,
-	);
+	).toHaveLength(0);
 
 	// Wait for the window to close.
 	await new Promise((resolve) => setTimeout(resolve, 400));
 
-	const emittedCount = (sent as { length: number }).length;
-	assert(
-		emittedCount === 1,
-		`expected exactly one commit-request after window, got ${emittedCount}`,
-	);
+	expect(
+		sent,
+		`expected exactly one commit-request after window, got ${sent.length}`,
+	).toHaveLength(1);
 	const first = sent[0] ?? {};
 	assert(first.room === 'meeting-1', 'commit-request should target meeting-1');
 	relay.clearRoom('meeting-1');
 
 	// flushPendingCommitRequests cancels the timer.
 	sent.splice(0, sent.length);
-	testRelay.enqueueCommitRequest('meeting-1', [13], 2);
-	testRelay.flushPendingCommitRequests('meeting-1');
+	testRelay['enqueueCommitRequest']('meeting-1', [13], 2);
+	testRelay['flushPendingCommitRequests']('meeting-1');
 	await new Promise((resolve) => setTimeout(resolve, 400));
-	assert(
-		sent.length === 0,
+	expect(
+		sent,
 		`flush should have cancelled the pending commit-request, got ${sent.length}`,
-	);
+	).toHaveLength(0);
 
 	console.log('Commit-request batching tests passed');
 }

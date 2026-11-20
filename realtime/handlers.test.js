@@ -172,7 +172,8 @@ test("guest_subscribe acknowledges malformed and legacy validation responses", a
 	assert.deepEqual(acknowledgement, { ok: false, error: "unauthorized" });
 });
 
-test("guest_subscribe catches request and JSON errors", async () => {
+test("guest_subscribe catches request and JSON errors and logs them", async (t) => {
+	const logged = t.mock.method(console, "error", () => {});
 	for (const options of [
 		{ requestError: new Error("offline") },
 		{ jsonError: new Error("bad json") },
@@ -186,6 +187,10 @@ test("guest_subscribe catches request and JSON errors", async () => {
 		assert.deepEqual(fixture.joinedRooms, []);
 		assert.deepEqual(acknowledgement, { ok: false, error: "validation_failed" });
 	}
+	assert.deepEqual(
+		logged.mock.calls.map((call) => call.arguments[1].message),
+		["offline", "bad json", "join failed"],
+	);
 });
 
 test("guest handlers ignore non-function and throwing acknowledgements", async () => {

@@ -168,40 +168,59 @@ export function parseClientTelemetry(
 			: null;
 	}
 	if (data.event === 'media_repair') {
-		return hasOnlyKeys(data, [
-			'event',
-			'media',
-			'source',
-			'stage',
-			'action',
-			'attempt',
-			'outcome',
-			'durationMs',
-		]) &&
-			isMedia(data.media) &&
-			['camera', 'microphone', 'screen', 'remote'].includes(
-				String(data.source),
-			) &&
-			['capture', 'publication', 'subscription', 'rtp', 'decode'].includes(
-				String(data.stage),
-			) &&
+		const source = (['camera', 'microphone', 'screen', 'remote'] as const).find(
+			(value) => value === data.source,
+		);
+		const stage = (
+			['capture', 'publication', 'subscription', 'rtp', 'decode'] as const
+		).find((value) => value === data.stage);
+		const action = (
 			[
 				'reacquire',
 				'recreate_producer',
 				'subscribe',
 				'recreate_consumer',
 				'request_keyframe',
-			].includes(String(data.action)) &&
-			Number.isInteger(data.attempt) &&
-			(data.attempt as number) >= 1 &&
-			(data.attempt as number) <= 3 &&
-			['success', 'failure', 'exhausted', 'cancelled'].includes(
-				String(data.outcome),
-			) &&
-			isDuration(data.durationMs)
-			? (data as ClientTelemetryEvent)
-			: null;
+			] as const
+		).find((value) => value === data.action);
+		const outcome = (
+			['success', 'failure', 'exhausted', 'cancelled'] as const
+		).find((value) => value === data.outcome);
+		if (
+			!hasOnlyKeys(data, [
+				'event',
+				'media',
+				'source',
+				'stage',
+				'action',
+				'attempt',
+				'outcome',
+				'durationMs',
+			]) ||
+			!isMedia(data.media) ||
+			!source ||
+			!stage ||
+			!action ||
+			typeof data.attempt !== 'number' ||
+			!Number.isInteger(data.attempt) ||
+			data.attempt < 1 ||
+			data.attempt > 3 ||
+			!outcome ||
+			!isDuration(data.durationMs)
+		)
+			return null;
+		return {
+			event: data.event,
+			media: data.media,
+			source,
+			stage,
+			action,
+			attempt: data.attempt,
+			outcome,
+			durationMs: data.durationMs,
+		};
 	}
+
 	return null;
 }
 

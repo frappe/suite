@@ -104,7 +104,7 @@ class InviteEventResolution(unittest.TestCase):
         self.server.handle("CalendarEvent/set", answer)
 
     def ensure(self, *events: dict) -> str:
-        return invites._ensure_on_calendar(self.client, ACCOUNT, list(events))
+        return invites.ensure_on_calendar(self.client, ACCOUNT, list(events))
 
     def test_a_new_invite_resolves_to_the_event_it_created(self):
         self.searchable([])

@@ -432,6 +432,7 @@ class FakeSuiteCloud:
         locale=None,
         time_zone=None,
         disable_receiving=None,
+        description=None,
         **_,
     ) -> dict:
         self._require_active_domain(email)
@@ -443,6 +444,7 @@ class FakeSuiteCloud:
             "email": email,
             "enabled": 1,
             "disable_receiving": bool(disable_receiving),
+            "description": description,
             "display_name": display_name,
             "disk_quota_gb": disk_quota_gb or 0,
             "used_disk_bytes": 0,
@@ -469,6 +471,10 @@ class FakeSuiteCloud:
     def accounts__set_password(self, email, password) -> None:
         self._require(self.accounts, email)
         self.passwords[email] = password
+
+    def accounts__rotate_app_password(self, email) -> dict:
+        self._require(self.accounts, email)
+        return {"app_password": f"apppassword-rotated-{email}"}
 
     def accounts__set_aliases(self, email, aliases=None) -> dict:
         self._require(self.accounts, email)["aliases"] = self._alias_rows(aliases)
@@ -741,6 +747,9 @@ def fake_suite_cloud(fake: FakeSuiteCloud | None = None):
         "suite.mail.suite_cloud.get_client",
         "suite.mail.directory.get_client",
         "suite.mail.api.admin.get_client",
+        "suite.mail.account_lifecycle.get_client",
+        "suite.mail.health.get_client",
+        "suite.mail.storage.get_client",
     )
     patches = [patch(target, return_value=fake) for target in targets]
     # User Settings checks the app password against the JMAP server on save; there is none here.

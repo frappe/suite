@@ -1,4 +1,5 @@
 import { Extension } from '@tiptap/core'
+
 function extractEntityName(url) {
   try {
     const query = url.split('?')[1]

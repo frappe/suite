@@ -82,7 +82,7 @@ export class ProducerManager extends EventEmitter {
 				loggers.producerManager.warn(
 					'Error closing producer %s: %s',
 					producerId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}
@@ -123,7 +123,7 @@ export class ProducerManager extends EventEmitter {
 			loggers.producerManager.warn(
 				'Failed to pause producer %s: %s',
 				producerId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			return false;
 		}
@@ -148,7 +148,7 @@ export class ProducerManager extends EventEmitter {
 			loggers.producerManager.warn(
 				'Failed to resume producer %s: %s',
 				producerId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			return false;
 		}
@@ -195,7 +195,7 @@ export class ProducerManager extends EventEmitter {
 				loggers.producerManager.warn(
 					'Error closing producer %s: %s',
 					producerId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}

@@ -1,5 +1,4 @@
-import type { Page } from "@playwright/test";
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 type MediaKind = "audio" | "video";
 type ReceiverFault = "zero-bytes" | "decode-stall";
@@ -17,13 +16,12 @@ function remoteVideo(page: Page, participantName: string) {
 		.first();
 }
 
-export async function readRemoteVideoProgress(
-	page: Page,
-	participantName: string,
-): Promise<VideoProgress> {
+export async function readRemoteVideoProgress(page: Page, participantName: string): Promise<VideoProgress> {
 	return remoteVideo(page, participantName).evaluate((element, name) => {
-		const video = element as HTMLVideoElement;
-		const stream = video.srcObject as MediaStream | null;
+		if (!(element instanceof HTMLVideoElement)) throw new Error("Expected a video element");
+		const video = element;
+		const stream = video.srcObject;
+		if (stream !== null && !(stream instanceof MediaStream)) throw new Error("Expected a media stream");
 		const track = stream?.getVideoTracks()[0];
 		if (!track) throw new Error(`No remote video track for ${name}`);
 		return {
@@ -34,10 +32,7 @@ export async function readRemoteVideoProgress(
 	}, participantName);
 }
 
-export function monitorRemoteVideoContinuity(
-	page: Page,
-	participantName: string,
-): { stop: () => Promise<void> } {
+export function monitorRemoteVideoContinuity(page: Page, participantName: string) {
 	let stopped = false;
 	let failure: unknown;
 	const monitoring = (async () => {
@@ -74,10 +69,7 @@ export function monitorRemoteVideoContinuity(
 	};
 }
 
-export async function stopLatestLocalTrack(
-	page: Page,
-	kind: MediaKind,
-): Promise<string> {
+export async function stopLatestLocalTrack(page: Page, kind: MediaKind): Promise<string> {
 	const trackId = await page.evaluate((mediaKind) => {
 		return window.__meetMediaFaults?.stopLatestLocalTrack(mediaKind) ?? null;
 	}, kind);
@@ -85,11 +77,7 @@ export async function stopLatestLocalTrack(
 	return trackId;
 }
 
-export async function expectLocalTrackReplaced(
-	page: Page,
-	kind: MediaKind,
-	previousTrackId: string,
-): Promise<void> {
+export async function expectLocalTrackReplaced(page: Page, kind: MediaKind, previousTrackId: string): Promise<void> {
 	await expect
 		.poll(
 			async () => {
@@ -120,20 +108,15 @@ export async function injectRemoteVideoFault(
 	return baseline;
 }
 
-export async function armNextRemoteVideoFault(
-	page: Page,
-	fault: ReceiverFault,
-): Promise<void> {
+export async function armNextRemoteVideoFault(page: Page, fault: ReceiverFault): Promise<void> {
 	await page.evaluate((faultName) => {
-		if (!window.__meetMediaFaults) throw new Error("Media fault bridge unavailable");
+		if (!window.__meetMediaFaults)
+			throw new Error("Media fault bridge unavailable");
 		window.__meetMediaFaults.armNextVideoReceiverFault(faultName);
 	}, fault);
 }
 
-export async function setBrowserLifecycle(
-	page: Page,
-	state: { hidden: boolean; online: boolean },
-): Promise<void> {
+export async function setBrowserLifecycle(page: Page, state: { hidden: boolean; online: boolean }): Promise<void> {
 	await page.evaluate((next) => {
 		if (!window.__meetMediaFaults)
 			throw new Error("Media fault bridge unavailable");
@@ -148,11 +131,7 @@ export async function expectRemoteTrackReplaced(
 	timeoutMs = 90_000,
 ): Promise<void> {
 	await expect
-		.poll(
-			async () =>
-				(await readRemoteVideoProgress(page, participantName)).trackId,
-			{ timeout: timeoutMs },
-		)
+		.poll(async () => (await readRemoteVideoProgress(page, participantName)).trackId, { timeout: timeoutMs })
 		.not.toBe(previousTrackId);
 }
 

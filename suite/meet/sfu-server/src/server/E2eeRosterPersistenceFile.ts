@@ -24,6 +24,12 @@ type FileShape = {
 	rooms: Record<string, RosterEntry[]>;
 };
 
+type RosterFileFields = Partial<Record<keyof FileShape, unknown>>;
+
+function isRecord(value: unknown): value is RosterFileFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 export class FileRosterPersistence implements RosterPersistence {
 	private cache: Map<string, RosterEntry[]>;
 
@@ -36,8 +42,8 @@ export class FileRosterPersistence implements RosterPersistence {
 			return new Map();
 		}
 		const raw = await readFile(this.filePath, 'utf8');
-		const parsed = JSON.parse(raw) as Partial<FileShape>;
-		if (typeof parsed !== 'object' || parsed === null) {
+		const parsed: unknown = JSON.parse(raw);
+		if (!isRecord(parsed)) {
 			throw new Error(
 				`FileRosterPersistence: corrupt file at ${this.filePath}`,
 			);
@@ -47,8 +53,13 @@ export class FileRosterPersistence implements RosterPersistence {
 				`FileRosterPersistence: unsupported schemaVersion=${parsed.schemaVersion} at ${this.filePath}`,
 			);
 		}
+		const rooms = parsed.rooms;
+		if (rooms !== undefined && !isRecord(rooms))
+			throw new Error(
+				`FileRosterPersistence: corrupt rooms at ${this.filePath}`,
+			);
 		const out = new Map<string, RosterEntry[]>();
-		for (const [roomId, entries] of Object.entries(parsed.rooms ?? {})) {
+		for (const [roomId, entries] of Object.entries(rooms ?? {})) {
 			if (!Array.isArray(entries)) continue;
 			out.set(
 				roomId,

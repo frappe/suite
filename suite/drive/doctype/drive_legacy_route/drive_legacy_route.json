@@ -23,7 +23,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Entity",
-   "options": "File",
+   "options": "Drive Node",
    "reqd": 1
   }
  ],

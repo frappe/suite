@@ -4,6 +4,7 @@ import { access } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { resolve } from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { Server as SocketIOServer } from 'socket.io';
 import { describe, expect, it } from 'vitest';
 import {
@@ -70,12 +71,14 @@ describe('recorder vertical chain', () => {
 	browserTest(
 		'proves its browser key before joining and becomes capture-ready with an empty SFU sync',
 		async () => {
+			if (!chromium)
+				throw new Error('Chromium is required for the recorder browser test');
 			const httpServer = createServer();
 			const io = new SocketIOServer(httpServer, { path: '/socket.io' });
 			await new Promise<void>((resolve) =>
 				httpServer.listen(0, '127.0.0.1', resolve),
 			);
-			const port = (httpServer.address() as AddressInfo).port;
+			const port = fromPartial<AddressInfo>(httpServer.address()).port;
 			const packets: Array<{ event: string; data: unknown }> = [];
 			const ordering: string[] = [];
 			let publicJwk: PublicJwk | undefined;
@@ -177,7 +180,7 @@ describe('recorder vertical chain', () => {
 
 			const lifecycle: RendererLifecycleEvent[] = [];
 			const bridge = new ChromiumRendererBridge({
-				executablePath: chromium as string,
+				executablePath: chromium,
 				assetDirectory: resolve(
 					process.cwd(),
 					'../../../frontend/dist-recorder',
