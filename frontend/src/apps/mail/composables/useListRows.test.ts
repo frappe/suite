@@ -75,3 +75,39 @@ it('leaves no bar on the row of a thread opened with the mouse', () => {
   rows.focusRow(rows.navigableRows.value[1])
   expect(rows.cursorRowKey.value).toBe('two')
 })
+
+// Opening one mail after another down the list: each click opens a row already on screen. Centring it
+// moved the list under the pointer with every click; only a row out of view is brought in.
+it('scrolls to an opened thread only when its row is out of view', async () => {
+  vi.useFakeTimers()
+  const list = document.createElement('div')
+  const box = (top: number, bottom: number) => () => fromPartial<DOMRect>({ top, bottom })
+  list.getBoundingClientRect = box(0, 400)
+  const scrolled: string[] = []
+  for (const [key, top] of [
+    ['one', 100],
+    ['two', 420],
+  ] as const) {
+    const row = document.createElement('div')
+    row.dataset.rowKey = key
+    row.getBoundingClientRect = box(top, top + 80)
+    row.scrollIntoView = () => scrolled.push(key)
+    list.append(row)
+  }
+  const rows = scope.run(() =>
+    useListRows({
+      threads: () => [thread('one', 'a@example.com'), thread('two', 'b@example.com')],
+      rowKey: (row) => row.thread_id,
+      openThreadID: () => undefined,
+      onOpenThreadHidden: () => {},
+      container: ref(list),
+    }),
+  )!
+
+  rows.revealThread('one')
+  await vi.runAllTimersAsync()
+  rows.revealThread('two')
+  await vi.runAllTimersAsync()
+  expect(scrolled).toEqual(['two'])
+  expect(rows.focusedRowKey.value).toBe('two')
+})

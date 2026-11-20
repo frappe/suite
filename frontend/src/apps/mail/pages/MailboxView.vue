@@ -1011,14 +1011,15 @@ const threadRows = computed(() =>
 )
 watch(threadRows, keptRead.keep)
 
-// The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so show it whenever the
-// mailbox has threads — or a filter is applied (the filtered view may be empty while the mailbox isn't).
+// The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so it goes by the
+// folder's own count, not by the list: it stays up while the list loads, pages or is read again (each
+// read, Refresh and poll did that, and the banner went and came back, moving the list by its height),
+// and under a filter that shows nothing. Only an empty folder has nothing to say it about.
 // The layout below reserves height for it only when it's actually rendered, so the two stay in sync.
 const showDeleteBanner = computed(
   () =>
     [store.mailboxIds.trash, store.mailboxIds.junk].includes(mailbox) &&
-    !activeThreads.value.isFetching &&
-    (!!threadRows.value?.length || !!filter.value) &&
+    !!mailboxObj.value?.total_emails &&
     (showReadingPane.value || !threadID),
 )
 
