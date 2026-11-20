@@ -2,9 +2,11 @@
 import { Button, Popover, TextInput } from 'frappe-ui'
 import { computed, nextTick, ref, watch } from 'vue'
 
+import { useTheme } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
 
-type Family = { name: string; base: string; shades: string[] }
+import { DRAW_PALETTE, paletteColor } from '../canvas/palette'
+
 type ColorTarget = 'border' | 'fill'
 type PickerMode = 'sidebar' | 'property-object' | 'property-solid'
 type PropertyKind = 'shape' | 'text' | 'draw' | 'arrow' | 'line'
@@ -30,79 +32,9 @@ const emit = defineEmits<{
   'update:open': [open: boolean]
 }>()
 
-const families: Family[] = [
-  {
-    name: 'Gray',
-    base: '#383838',
-    shades: ['#f3f3f3', '#e2e2e2', '#999999', '#525252', '#171717'],
-  },
-  {
-    name: 'Blue',
-    base: '#0289f7',
-    shades: ['#e6f4ff', '#a7d7fd', '#0289f7', '#0070cc', '#004880'],
-  },
-  {
-    name: 'Green',
-    base: '#30a66d',
-    shades: ['#e4faeb', '#b9eecc', '#59ba8b', '#278f5e', '#173b2c'],
-  },
-  { name: 'Red', base: '#e03636', shades: ['#ffe7e7', '#fdc2c2', '#e03636', '#b52a2a', '#6b1515'] },
-  {
-    name: 'Orange',
-    base: '#e86c13',
-    shades: ['#ffefe4', '#ffcba3', '#e86c13', '#bd3e0c', '#6b2711'],
-  },
-  {
-    name: 'Yellow',
-    base: '#edba13',
-    shades: ['#fff7d3', '#f5e171', '#edba13', '#ab6e05', '#733f12'],
-  },
-  {
-    name: 'Purple',
-    base: '#9c45e3',
-    shades: ['#f6e9ff', '#e2b9fc', '#9c45e3', '#6e399d', '#401863'],
-  },
-  {
-    name: 'Pink',
-    base: '#e34aa6',
-    shades: ['#fde8f5', '#f9b9e0', '#e34aa6', '#9c2671', '#570f3e'],
-  },
-  {
-    name: 'Teal',
-    base: '#36baad',
-    shades: ['#e6f7f4', '#97ded4', '#36baad', '#0f736b', '#114541'],
-  },
-  {
-    name: 'Cyan',
-    base: '#3bbde5',
-    shades: ['#ddf7ff', '#99e2f8', '#3bbde5', '#267a94', '#164759'],
-  },
-  {
-    name: 'Amber',
-    base: '#e79913',
-    shades: ['#fdf8ed', '#fbdb73', '#e79913', '#b35309', '#763813'],
-  },
-  {
-    name: 'Violet',
-    base: '#6846e3',
-    shades: ['#f0ebff', '#c9bafb', '#6846e3', '#4f3da1', '#251959'],
-  },
-  {
-    name: 'Lime',
-    base: '#8db20c',
-    shades: ['#f3fadf', '#dfeeb2', '#a9cf4d', '#6f8b0a', '#374505'],
-  },
-  {
-    name: 'Brown',
-    base: '#9a624a',
-    shades: ['#f7eee9', '#e8c8b8', '#b97c62', '#744532', '#3d2117'],
-  },
-  {
-    name: 'Rose',
-    base: '#e6577a',
-    shades: ['#ffeaef', '#ffc4d2', '#e6577a', '#b73455', '#651526'],
-  },
-]
+const { resolvedMode } = useTheme()
+const dark = computed(() => resolvedMode.value === 'dark')
+
 const propertyFamilies = [
   'Gray',
   'Red',
@@ -115,7 +47,7 @@ const propertyFamilies = [
   'Blue',
   'Purple',
   'Pink',
-].map((name) => families.find((option) => option.name === name)!)
+].map((name) => DRAW_PALETTE.find((option) => option.name === name)!)
 
 const colorKeys = ['q', 'w', 's', 'g', 'h', 'j', 'u', 'y', 'b', 'v', 'n', 'm']
 
@@ -127,12 +59,12 @@ async function focusPicker() {
 }
 
 const recent = ref(['#383838', '#0289f7', '#30a66d', '#e86c13', '#9c45e3'])
-const family = ref(families[6]!)
+const family = ref(DRAW_PALETTE[6]!)
 const hex = ref(props.color ?? '')
 const selectionTarget = ref<ColorTarget>(props.target)
 const shades = computed(() => family.value.shades)
 const palette = computed(() =>
-  families.map((family) => ({ family, color: family.shades[props.target === 'fill' ? 1 : 3] })),
+  DRAW_PALETTE.map((family) => ({ family, color: family.shades[props.target === 'fill' ? 1 : 3] })),
 )
 const propertyPalette = computed(() =>
   propertyFamilies.map((family) => ({
@@ -232,7 +164,7 @@ function isSelectedColor(color: string | undefined, target = selectionTarget.val
 function selectExistingFamily(color: string | null | undefined) {
   hex.value = color ?? ''
   family.value =
-    families.find(
+    DRAW_PALETTE.find(
       (option) =>
         option.base === color ||
         option.shades.some((shade) => shade.toLowerCase() === color?.toLowerCase()),
@@ -241,7 +173,7 @@ function selectExistingFamily(color: string | null | undefined) {
 
 function selectColor(
   color: string | undefined,
-  nextFamily = families.find((option) => option.base === color),
+  nextFamily = DRAW_PALETTE.find((option) => option.base === color),
   target = selectionTarget.value,
 ) {
   selectionTarget.value = target
@@ -276,10 +208,28 @@ function onColorShortcut(event: KeyboardEvent) {
   selectColor(option?.color, option?.family, colorTarget)
 }
 
+function displayColor(color: string | undefined | null) {
+  return paletteColor(color ?? undefined, dark.value)
+}
+
 function shortcutTextColor(color: string) {
-  const value = Number.parseInt(color.slice(1), 16)
-  const brightness = ((value >> 16) * 299 + ((value >> 8) & 255) * 587 + (value & 255) * 114) / 1000
-  return brightness > 150 && color.toLowerCase() !== '#999999' ? '#999999' : '#e2e2e2'
+  const displayed = displayColor(color)
+  if (dark.value && displayed !== color) {
+    const step = displayed?.match(/^var\(--surface-\w+-(\d+)\)$/)?.[1]
+    if (step) return Number(step) <= 4 ? 'var(--ink-gray-9)' : 'var(--ink-base)'
+    if (displayed === 'var(--surface-base)') return 'var(--ink-gray-9)'
+    const family = DRAW_PALETTE.find(
+      (family) => family.base === color || family.shades.includes(color),
+    )
+    const shadeIndex = family?.shades.indexOf(color) ?? -1
+    return shadeIndex >= 3 ? 'var(--ink-base)' : 'var(--ink-gray-9)'
+  }
+  const channels = [1, 3, 5].map((start) => {
+    const channel = Number.parseInt(color.slice(start, start + 2), 16) / 255
+    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
+  })
+  const luminance = channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
+  return luminance > 0.179 ? '#000000' : '#ffffff'
 }
 
 function updateHex(value: string) {
@@ -321,7 +271,12 @@ async function pickScreenColor() {
           size="xs"
           variant="ghost"
           theme="gray"
-          :style="{ '--color': color }"
+          :style="{
+            '--color':
+              color === undefined && target === 'border'
+                ? 'var(--ink-gray-9)'
+                : (displayColor(color) ?? 'transparent'),
+          }"
           :label="label"
           :tooltip="isProperty ? 'Custom' : label"
         />
@@ -344,7 +299,9 @@ async function pickScreenColor() {
             <button
               v-for="color in recent"
               :key="color"
-              :style="{ background: color }"
+              :style="{ background: displayColor(color) }"
+              :class="{ selected: isSelectedColor(color) }"
+              :aria-pressed="isSelectedColor(color)"
               :aria-label="color"
               @click="selectColor(color)"
             />
@@ -368,7 +325,11 @@ async function pickScreenColor() {
                 v-for="(option, index) in primaryPalette"
                 :key="option.family.name"
                 :class="{ selected: isSelectedColor(option.color, primaryTarget) }"
-                :style="{ background: option.color, color: shortcutTextColor(option.color) }"
+                :aria-pressed="isSelectedColor(option.color, primaryTarget)"
+                :style="{
+                  background: displayColor(option.color),
+                  color: shortcutTextColor(option.color),
+                }"
                 :aria-label="`${option.family.name} ${primaryLabel.toLowerCase()} (${colorKeys[index + 1]})`"
                 :aria-keyshortcuts="colorKeys[index + 1]"
                 :title="colorKeys[index + 1]"
@@ -396,7 +357,11 @@ async function pickScreenColor() {
                 v-for="(option, index) in propertyBorderPalette"
                 :key="option.family.name"
                 :class="{ selected: isSelectedColor(option.color, secondaryTarget) }"
-                :style="{ background: option.color, color: shortcutTextColor(option.color) }"
+                :aria-pressed="isSelectedColor(option.color, secondaryTarget)"
+                :style="{
+                  background: displayColor(option.color),
+                  color: shortcutTextColor(option.color),
+                }"
                 :aria-label="`${option.family.name} ${secondaryLabel.toLowerCase()} (Shift+${colorKeys[index + 1]})`"
                 :aria-keyshortcuts="`Shift+${colorKeys[index + 1]}`"
                 :title="`Shift+${colorKeys[index + 1]}`"
@@ -413,7 +378,8 @@ async function pickScreenColor() {
           <h3>{{ __('Colors') }}</h3>
           <div class="color-grid">
             <button
-              class="none-color"
+              :class="['none-color', { selected: isSelectedColor(undefined) }]"
+              :aria-pressed="isSelectedColor(undefined)"
               :aria-label="`No ${selectionTarget} color`"
               @click="selectColor(undefined)"
             >
@@ -423,7 +389,11 @@ async function pickScreenColor() {
               v-for="option in isProperty ? propertyPalette : palette"
               :key="option.family.name"
               :class="{ selected: isSelectedColor(option.color) }"
-              :style="{ background: option.color, color: shortcutTextColor(option.color) }"
+              :aria-pressed="isSelectedColor(option.color)"
+              :style="{
+                background: displayColor(option.color),
+                color: shortcutTextColor(option.color),
+              }"
               :aria-label="option.family.name"
               @click="selectColor(option.color, option.family)"
             />
@@ -436,7 +406,8 @@ async function pickScreenColor() {
               v-for="(color, index) in shades"
               :key="color"
               :class="{ selected: isSelectedColor(color) }"
-              :style="{ background: color, color: shortcutTextColor(color) }"
+              :aria-pressed="isSelectedColor(color)"
+              :style="{ background: displayColor(color), color: shortcutTextColor(color) }"
               :aria-label="`${color} (Shift+${index + 1})`"
               :aria-keyshortcuts="`Shift+${index + 1}`"
               :title="`Shift+${index + 1}`"
@@ -480,6 +451,7 @@ async function pickScreenColor() {
               v-for="option in borderWidths"
               :key="option.label"
               :class="['stroke-option', { selected: props.strokeWidth === option.value }]"
+              :aria-pressed="props.strokeWidth === option.value"
               :aria-label="option.label"
               @click="emit('style', { strokeWidth: option.value })"
             >
@@ -496,6 +468,7 @@ async function pickScreenColor() {
               v-for="option in borderStyles"
               :key="option.value"
               :class="['stroke-option', { selected: props.strokeStyle === option.value }]"
+              :aria-pressed="props.strokeStyle === option.value"
               :aria-label="option.label"
               @click="emit('style', { strokeStyle: option.value })"
             >
@@ -519,6 +492,7 @@ async function pickScreenColor() {
   height: 26px !important;
   padding: 0;
   border-radius: 5px !important;
+  border: 1px solid var(--outline-gray-2);
   background: var(--color) !important;
 }
 .color-trigger-anchor :deep(.color-trigger--property) {
@@ -535,7 +509,7 @@ async function pickScreenColor() {
     #a855f7,
     #ef4444
   ) !important;
-  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 12%);
+  box-shadow: inset 0 0 0 1px var(--outline-gray-2);
 }
 .color-trigger-anchor :deep(.color-trigger .truncate) {
   display: none;
@@ -544,7 +518,9 @@ async function pickScreenColor() {
   outline: none;
   width: 264px;
   padding: 18px;
-  color: var(--ink-gray-7);
+  color: var(--ink-gray-8);
+  background: var(--surface-elevation-2);
+  border-radius: 12px;
 }
 .color-picker--property {
   width: 198px;
@@ -601,7 +577,7 @@ h3 {
   width: 34px;
   height: 34px;
   padding: 0;
-  border: 0;
+  border: 1px solid var(--outline-gray-2);
   border-radius: 6px;
   cursor: pointer;
 }
@@ -625,35 +601,39 @@ h3 {
   height: 26px;
 }
 .none-color {
+  --checker-color: color-mix(in srgb, var(--ink-gray-9) 18%, transparent);
   border: 1px solid var(--outline-gray-2) !important;
   background:
-    linear-gradient(45deg, rgb(82 82 82 / 42%) 25%, transparent 25%) 0 0 / 8px 8px,
-    linear-gradient(-45deg, rgb(82 82 82 / 42%) 25%, transparent 25%) 0 4px / 8px 8px,
-    linear-gradient(45deg, transparent 75%, rgb(82 82 82 / 42%) 75%) 4px -4px / 8px 8px,
-    linear-gradient(-45deg, transparent 75%, rgb(82 82 82 / 42%) 75%) -4px 0 / 8px 8px,
-    var(--surface-base) !important;
+    linear-gradient(45deg, var(--checker-color) 25%, transparent 25%) 0 0 / 8px 8px,
+    linear-gradient(-45deg, var(--checker-color) 25%, transparent 25%) 0 4px / 8px 8px,
+    linear-gradient(45deg, transparent 75%, var(--checker-color) 75%) 4px -4px / 8px 8px,
+    linear-gradient(-45deg, transparent 75%, var(--checker-color) 75%) -4px 0 / 8px 8px,
+    var(--surface-elevation-2) !important;
   color: transparent;
   font-size: 0;
 }
 .none-color .color-shortcut {
-  color: #999999;
-  background: var(--surface-base);
+  color: var(--ink-gray-8);
+  background: var(--surface-elevation-2);
   border-radius: 2px;
 }
 .none-color:hover {
   color: var(--ink-gray-9);
 }
 .color-row button:hover,
-.color-grid button:hover,
+.color-grid button:hover {
+  outline: 1px solid var(--ink-gray-7);
+  outline-offset: 1px;
+}
 .color-row button.selected,
 .color-grid button.selected {
-  outline: 1px solid var(--outline-gray-4);
-  outline-offset: 1px;
+  outline: 2px solid var(--ink-gray-9);
+  outline-offset: 2px;
 }
 .color-row button:focus-visible,
 .color-grid button:focus-visible {
-  outline: 2px solid var(--outline-gray-4);
-  outline-offset: 2px;
+  outline: var(--focus-outline-default);
+  outline-offset: 3px;
 }
 .color-picker :deep(.hex-field) {
   margin-top: 0;
@@ -678,15 +658,20 @@ h3 {
   border: 1px solid transparent;
   border-radius: 5px;
   background: var(--surface-gray-2);
-  color: var(--ink-gray-7);
+  color: var(--ink-gray-8);
   cursor: pointer;
 }
-.stroke-option.selected,
 .stroke-option:hover {
-  border-color: var(--outline-gray-4);
+  background: var(--surface-gray-3);
+  border-color: var(--outline-gray-3);
+}
+.stroke-option.selected {
+  color: var(--ink-gray-9);
+  border-color: var(--ink-gray-8);
+  background: var(--surface-gray-3);
 }
 .stroke-option:focus-visible {
-  outline: 2px solid var(--outline-gray-4);
+  outline: var(--focus-outline-default);
   outline-offset: 2px;
 }
 .stroke-option svg {
