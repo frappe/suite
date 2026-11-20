@@ -22,7 +22,6 @@ from suite.calendar.api import (
     get_calendar_events,
     get_calendar_events_with_shared,
     get_calendars_with_shared,
-    get_participant_availability,
     rsvp_calendar_event,
     search_calendar_events_with_shared,
     split_calendar_event_series,
@@ -227,24 +226,6 @@ class EventSearch(BaseModel):
     filters: dict | None = None
 
 
-class AvailabilityQuery(TypedDict):
-    account: str
-    emails: list[str]
-    utc_start: str
-    utc_end: str
-
-
-class BusyPeriod(TypedDict):
-    utc_start: str
-    utc_end: str
-    busy_status: str | None
-
-
-class PersonAvailability(TypedDict):
-    email: str
-    busy: list[BusyPeriod]
-
-
 class DensityRow(TypedDict):
     start: str
     duration: str
@@ -306,21 +287,6 @@ CONTRACT_ROUTES: tuple[Route, ...] = (
         envelope="message",
         body=CalendarWindow,
         output=list[DensityRow],
-        errors=(
-            frappe.PermissionError,
-            frappe.ValidationError,
-        ),
-    ),
-    Route(
-        "POST",
-        "/api/method/suite.calendar.api.get_participant_availability",
-        "get_participant_availability",
-        id="get_participant_availability",
-        kind="query",
-        public_name="availability.participants",
-        envelope="message",
-        body=AvailabilityQuery,
-        output=list[PersonAvailability],
         errors=(
             frappe.PermissionError,
             frappe.ValidationError,

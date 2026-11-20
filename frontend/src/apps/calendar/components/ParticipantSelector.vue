@@ -27,8 +27,6 @@ const props = withDefaults(
     placeholder?: string
     displayParticipants?: any[]
     excludedEmails?: string[]
-    /** The people the mail server says are busy at the event's time, by lower-cased address. */
-    busyEmails?: string[]
     /**
      * How the matches are offered. `dropdown` is the combobox: a popover over
      * whatever is beneath the field, which is what a form with rows under it
@@ -285,7 +283,6 @@ const removeParticipant = (email: string) => {
       <EventParticipantList
         v-else
         :participants="visibleParticipants"
-        :busy-emails="busyEmails"
         @remove-participant="removeParticipant"
       />
     </div>

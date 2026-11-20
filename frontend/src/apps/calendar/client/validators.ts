@@ -31,8 +31,6 @@ import type {
   GetCalendarsWithSharedOutput,
   GetInviteDetailsInput,
   GetInviteDetailsOutput,
-  GetParticipantAvailabilityInput,
-  GetParticipantAvailabilityOutput,
   RsvpCalendarEventInput,
   RsvpCalendarEventOutput,
   RsvpToInviteInput,
@@ -860,61 +858,6 @@ export const operationGetCalendarEventDensityWithShared: Validators<
         type: 'array',
       },
       'get_calendar_event_density_with_shared output',
-    )
-  },
-}
-
-export const operationGetParticipantAvailability: Validators<
-  GetParticipantAvailabilityInput,
-  GetParticipantAvailabilityOutput
-> = {
-  validateInput(value: unknown): asserts value is GetParticipantAvailabilityInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: {
-          account: { title: 'Account', type: 'string' },
-          emails: { items: { type: 'string' }, title: 'Emails', type: 'array' },
-          utc_start: { title: 'Utc Start', type: 'string' },
-          utc_end: { title: 'Utc End', type: 'string' },
-        },
-        required: ['account', 'emails', 'utc_start', 'utc_end'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'get_participant_availability input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is GetParticipantAvailabilityOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          BusyPeriod: {
-            properties: {
-              utc_start: { title: 'Utc Start', type: 'string' },
-              utc_end: { title: 'Utc End', type: 'string' },
-              busy_status: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Busy Status' },
-            },
-            required: ['utc_start', 'utc_end', 'busy_status'],
-            title: 'BusyPeriod',
-            type: 'object',
-          },
-          PersonAvailability: {
-            properties: {
-              email: { title: 'Email', type: 'string' },
-              busy: { items: { $ref: '#/$defs/BusyPeriod' }, title: 'Busy', type: 'array' },
-            },
-            required: ['email', 'busy'],
-            title: 'PersonAvailability',
-            type: 'object',
-          },
-        },
-        items: { $ref: '#/$defs/PersonAvailability' },
-        type: 'array',
-      },
-      'get_participant_availability output',
     )
   },
 }

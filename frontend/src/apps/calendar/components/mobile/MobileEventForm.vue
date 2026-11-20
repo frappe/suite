@@ -164,12 +164,6 @@
                       class="-ml-2 ring-1 ring-outline-gray-2 first:ml-0"
                     />
                   </div>
-                  <Badge
-                    v-if="busyEmails.length"
-                    :label="__('{0} busy', [busyEmails.length])"
-                    theme="amber"
-                    size="sm"
-                  />
                   <span :class="VALUE">{{ participants.length }}</span>
                   <ChevronRight :class="CHEVRON" />
                 </button>
@@ -289,7 +283,6 @@
                 v-model="event.participants"
                 :account="event.account"
                 :display-participants="participants"
-                :busy-emails="busyEmails"
                 label=""
                 variant="inline"
               />
@@ -416,7 +409,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, Badge, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
+import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 import {
   Bell,
   Briefcase,
@@ -458,7 +451,6 @@ const {
   participants,
   calendarChoices,
   conflicts = [],
-  busyEmails = [],
 } = defineProps<{
   /** The form state EventModal owns; the rows edit it in place. */
   event: any
@@ -468,8 +460,6 @@ const {
   participants: any[]
   /** The writer's own events in the event's time; see useAvailability. */
   conflicts?: (BusyCandidate & { title?: string | null })[]
-  /** Who is busy at the event's time, by lower-cased address. */
-  busyEmails?: string[]
   /** The calendars the event can go on, as `account|id` options; see EventModal. */
   calendarChoices: { label: string; value: string; color: string }[]
   meetUrl?: string

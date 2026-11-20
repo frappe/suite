@@ -1,6 +1,6 @@
 /**
- * Whether time is already taken: the writer's own, from their events, and the people they invite,
- * from the mail server's busy periods. See specs/calendar/002-availability.md.
+ * Whether the writer's own time is already taken, from their events. See
+ * specs/calendar/002-availability.md.
  */
 import dayjs from '@/apps/calendar/utils/dayjs'
 import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
@@ -137,25 +137,6 @@ export function ownConflicts<T extends BusyCandidate>(
   })
   found.sort((a, b) => a.at.start.valueOf() - b.at.start.valueOf())
   return found.map(({ event }) => event)
-}
-
-/** A person's busy time as the mail server answers it, in UTC. */
-export interface PersonBusy {
-  email: string
-  busy: { utc_start: string; utc_end: string }[]
-}
-
-/** The addresses of the people busy at some point of `span`. */
-export function busyEmails(answer: PersonBusy[], span: Span): Set<string> {
-  return new Set(
-    answer.flatMap((person) =>
-      person.busy.some((period) =>
-        overlaps({ start: dayjs.utc(period.utc_start), end: dayjs.utc(period.utc_end) }, span),
-      )
-        ? [address(person.email)]
-        : [],
-    ),
-  )
 }
 
 /**

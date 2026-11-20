@@ -274,14 +274,13 @@ const isDateTimeValid = computed(() => {
   if (event.isAllDay) return !endsAt.value.isBefore(startsAt.value, 'day')
   return endsAt.value.isAfter(startsAt.value)
 })
-const { conflicts, busy } = useAvailability({
+const { conflicts } = useAvailability({
   form: () => event,
   account: () => event.account,
   uid: () => selectedEvent?.calendarEvent?.uid,
   calendars: () => calendars.data,
   ownEmails: ownAddresses,
 })
-const busyEmails = computed(() => [...busy.value])
 const participants = computed(() =>
   getReorderedParticipants(
     event.participants,
@@ -1349,7 +1348,6 @@ const recurringScopeModalProps = computed(() => ({
               v-model="event.participants"
               :account="event.account"
               :display-participants="participants"
-              :busy-emails="busyEmails"
               label=""
             />
           </div>
@@ -1413,7 +1411,6 @@ const recurringScopeModalProps = computed(() => ({
     :disable-save="disableSave"
     :participants="participants"
     :conflicts="conflicts"
-    :busy-emails="busyEmails"
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"

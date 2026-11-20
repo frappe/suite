@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  busyEmails,
-  defaultFreeBusy,
   formSpan,
   ownConflicts,
   type BusyCandidate,
@@ -132,31 +130,5 @@ describe('formSpan', () => {
     expect(
       formSpan({ isAllDay: true, startDate: '2026-11-24', endDate: '2026-11-23' }, ZONE),
     ).toBeNull()
-  })
-})
-
-describe('busyEmails', () => {
-  it('names the people busy at some point of the time, and no one else', () => {
-    const answer = [
-      // 14:30–15:30 in Kolkata.
-      {
-        email: 'Busy@Example.com',
-        busy: [{ utc_start: '2026-11-24T09:00:00Z', utc_end: '2026-11-24T10:00:00Z' }],
-      },
-      // Ends at 14:00 in Kolkata, as the event starts.
-      {
-        email: 'touching@example.com',
-        busy: [{ utc_start: '2026-11-24T07:30:00Z', utc_end: '2026-11-24T08:30:00Z' }],
-      },
-      { email: 'empty@example.com', busy: [] },
-    ]
-    expect([...busyEmails(answer, span)]).toEqual(['busy@example.com'])
-  })
-})
-
-describe('defaultFreeBusy', () => {
-  it('starts a new all-day event as free and a timed one as busy', () => {
-    expect(defaultFreeBusy(true)).toBe('Free')
-    expect(defaultFreeBusy(false)).toBe('Busy')
   })
 })

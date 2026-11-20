@@ -1,9 +1,7 @@
-import { refDebounced } from '@vueuse/core'
 import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
 import {
-  busyEmails,
   eventSpan,
   formSpan,
   ownConflicts,
@@ -15,14 +13,8 @@ import { utcDayEnd, utcDayStart } from '@/apps/calendar/utils/datetime'
 import { isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { userTimeZone } from '@/platform/time-zone'
 
-/** The mail server's own cap on an event's attendees, and the longest stretch looked up. */
-const MAX_PEOPLE = 20
-const MAX_SPAN_DAYS = 14
-
-const UTC = 'YYYY-MM-DDTHH:mm:ss[Z]'
-
 export interface AvailabilitySource {
-  form: () => FormTimes & { participants?: { email: string }[] }
+  form: () => FormTimes
   /** The account the form writes to. */
   account: () => string | undefined
   /** The event being edited, which never conflicts with itself. */
@@ -32,8 +24,8 @@ export interface AvailabilitySource {
 }
 
 /**
- * What the event form says about time already taken: the writer's own events in it, and which
- * of the people invited are busy then. See specs/calendar/002-availability.md.
+ * The writer's own events in the time the event form holds. See
+ * specs/calendar/002-availability.md.
  */
 export function useAvailability(source: AvailabilitySource) {
   const span = computed(() => formSpan(source.form()))
@@ -63,35 +55,7 @@ export function useAvailability(source: AvailabilitySource) {
     })
   })
 
-  const lookup = computed(() => {
-    const account = source.account()
-    if (!account || !span.value) return false
-    if (span.value.end.diff(span.value.start, 'day', true) > MAX_SPAN_DAYS) return false
-    const own = new Set(source.ownEmails().map((email) => email.toLowerCase()))
-    const emails = [
-      ...new Set((source.form().participants ?? []).map((p) => p.email.toLowerCase())),
-    ].filter((email) => !own.has(email))
-    if (!emails.length || emails.length > MAX_PEOPLE) return false
-    return JSON.stringify({
-      account,
-      emails: emails.sort(),
-      utc_start: span.value.start.utc().format(UTC),
-      utc_end: span.value.end.utc().format(UTC),
-    })
-  })
-  // Asked once the time and the people stop changing, not on every step of a picker.
-  const settled = refDebounced(lookup, 500)
-  const people = useQuery(api.calendar.availability.participants, () =>
-    settled.value && settled.value === lookup.value ? JSON.parse(settled.value) : false,
-  )
-
-  const busy = computed(() =>
-    span.value && people.data && lookup.value
-      ? busyEmails(people.data, span.value)
-      : new Set<string>(),
-  )
-
-  return { conflicts, busy }
+  return { conflicts }
 }
 
 /** When a conflict is, on the writer's own clock: its hours, or "all day". */

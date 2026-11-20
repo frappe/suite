@@ -1,20 +1,14 @@
 <script setup lang="ts">
-import { Avatar, Badge, Button } from 'frappe-ui'
+import { Avatar, Button } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { userStore } from '@/apps/calendar/stores/user'
 import { participationStatusDisplay } from '@/apps/calendar/utils'
 import { extractNameFromEmail } from '@/apps/calendar/utils/format'
 
-const {
-  participants,
-  dontShowRemove,
-  busyEmails = [],
-} = defineProps<{
+const { participants, dontShowRemove } = defineProps<{
   participants: any[]
   dontShowRemove?: boolean
-  /** Who is busy at the event's time, by lower-cased address. Nobody else is said to be free. */
-  busyEmails?: string[]
 }>()
 
 defineEmits(['removeParticipant'])
@@ -29,9 +23,6 @@ const isUserOrganizer = computed(
       (id) => id.email === organizer.value?.replace('mailto:', ''),
     ) ?? false,
 )
-
-const isBusy = (participant: { email?: string }) =>
-  busyEmails.includes((participant.email ?? '').replace('mailto:', '').toLowerCase())
 
 const showRemoveParticipant = (participant: any) =>
   !participant.isOrganizer && (isUserOrganizer.value || participant.isNew) && !dontShowRemove
@@ -62,7 +53,6 @@ const showRemoveParticipant = (participant: any) =>
                 class="h-3 w-3"
               />
             </div>
-            <Badge v-if="isBusy(p)" :label="__('Busy')" theme="amber" size="sm" />
           </div>
           <!-- The paragraph variant, not `text-sm`: its taller line box keeps the
 					     descender of a g or a y well inside the participants list's scroll edge. -->
