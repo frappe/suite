@@ -15,9 +15,9 @@
       <TabList variant="underline" size="md" class="h-full data-[slot=tab-list]:border-b-0">
         <TabTrigger
           v-for="tab in tabs"
-          :key="tab.category"
-          :value="tab.category"
-          :route="routeFor(tab.category)"
+          :key="tab.id"
+          :value="tab.id"
+          :route="routeFor(tab.id)"
           :icon-left="tab.icon"
           :label="tab.label"
           class="shrink-0 items-center self-stretch"
@@ -35,13 +35,13 @@
 import { Badge, TabList, Tabs, TabTrigger } from 'frappe-ui'
 import type { RouteLocationRaw } from 'vue-router'
 
-import type { InboxCategory, InboxTab } from '@/apps/mail/composables/useInboxTabs'
+import type { InboxTab, InboxTabId } from '@/apps/mail/composables/useInboxTabs'
 import { useOverflowFade } from '@/apps/mail/composables/useOverflowFade'
 
 defineProps<{
   tabs: InboxTab[]
-  active: InboxCategory
-  routeFor: (category: InboxCategory) => RouteLocationRaw
+  active: InboxTabId
+  routeFor: (tab: InboxTabId) => RouteLocationRaw
 }>()
 
 const { scroller, fade } = useOverflowFade()

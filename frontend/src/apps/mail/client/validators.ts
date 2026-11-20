@@ -921,6 +921,7 @@ export const operationUpdatePreferences: Validators<
             type: 'array',
           },
           split_inbox: { enum: [0, 1], title: 'Split Inbox', type: 'integer' },
+          all_mail_tab: { enum: [0, 1], title: 'All Mail Tab', type: 'integer' },
         },
         required: [],
         additionalProperties: false,
@@ -1742,6 +1743,7 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
                 type: 'array',
               },
               split_inbox: { enum: [0, 1], title: 'Split Inbox', type: 'integer' },
+              all_mail_tab: { enum: [0, 1], title: 'All Mail Tab', type: 'integer' },
               email_classification: { title: 'Email Classification', type: 'boolean' },
               is_suite_cloud_configured: { title: 'Is Suite Cloud Configured', type: 'boolean' },
               accounts: {
@@ -1773,6 +1775,7 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
               'max_attachment_size',
               'inbox_tabs',
               'split_inbox',
+              'all_mail_tab',
               'email_classification',
               'is_suite_cloud_configured',
               'accounts',

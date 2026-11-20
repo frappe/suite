@@ -1,7 +1,7 @@
 <template>
   <!-- A part of the Inbox page: whether the Inbox is split into categories, and which; off, it is
-       one list, and the choice is kept for when it is on again. Nothing where the site doesn't
-       sort mail into them. -->
+       one list, and the choice is kept for when it is on again. While it is split, whether the tabs
+       end with All mail. Nothing where the site doesn't sort mail into them. -->
   <SettingsSection v-if="offered" :title="__('Categories')">
     <SettingsRow
       :title="__('Split Inbox into categories')"
@@ -33,6 +33,13 @@
         </span>
       </label>
     </div>
+    <SettingsRow
+      v-if="split"
+      :title="__('All mail tab')"
+      :description="__('Every category in one list, after the other tabs.')"
+    >
+      <Switch :model-value="allMail" @update:model-value="setAllMail" />
+    </SettingsRow>
   </SettingsSection>
 </template>
 
@@ -44,7 +51,7 @@ import { useTabChoice, type InboxCategory } from '@/apps/mail/composables/useInb
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
-const { offered, split, choices, setTab, setSplit } = useTabChoice()
+const { offered, split, allMail, choices, setTab, setSplit, setAllMail } = useTabChoice()
 const onCount = computed(() => choices.value.filter((choice) => choice.on).length)
 // The last one on stays on: turning the split off is the way to one list
 function isLastOn(choice: { on: boolean }) {

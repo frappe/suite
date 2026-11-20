@@ -13,9 +13,9 @@
   >
     <Button
       v-for="tab in others"
-      :key="tab.category"
+      :key="tab.id"
       variant="ghost"
-      :route="routeFor(tab.category)"
+      :route="routeFor(tab.id)"
       class="touch-target shrink-0"
     >
       <template #prefix>
@@ -49,24 +49,23 @@ import type { RouteLocationRaw } from 'vue-router'
 
 import {
   useTabChoiceMenu,
-  type InboxCategory,
   type InboxTab,
+  type InboxTabId,
 } from '@/apps/mail/composables/useInboxTabs'
 
 const props = defineProps<{
   tabs: InboxTab[]
-  active: InboxCategory
-  routeFor: (category: InboxCategory) => RouteLocationRaw
+  active: InboxTabId
+  routeFor: (tab: InboxTabId) => RouteLocationRaw
 }>()
 
-const others = computed(() => props.tabs.filter((tab) => tab.category !== 'primary'))
+const others = computed(() => props.tabs.filter((tab) => tab.id !== 'primary'))
 
 // Categories on or off, and which get a tab (see useTabChoiceMenu). The phone has no Split View, so
-// the layout group holds the one switch.
-const { categoriesSwitch, tabGroups } = useTabChoiceMenu()
+// the layout group holds only these.
+const { rows: tabRows } = useTabChoiceMenu()
 const choiceMenu = computed(() => [
-  ...(categoriesSwitch.value ? [{ group: __('Layout'), options: [categoriesSwitch.value] }] : []),
-  ...tabGroups.value,
+  ...(tabRows.value.length ? [{ group: __('Layout'), options: tabRows.value }] : []),
 ])
 // A count stops at 99+: past that the number only widens the button.
 const countOf = (tab: InboxTab) => (tab.unread > 99 ? '99+' : String(tab.unread))

@@ -108,7 +108,7 @@ export const useListFilter = ({
   /** What the toolbar's filter selector reads: the ticked filter's own label, as the menu shows
    *  it. Callers may show something else instead — a selection count, a result count. */
   const filterTitle = computed(() => {
-    if (!active.value.length) return __('All mail')
+    if (!active.value.length) return __('All')
     // Several at once: the first by name and a count of the rest ("Unread +1"); the menu's ticks
     // say which the rest are.
     if (active.value.length > 1)

@@ -144,7 +144,7 @@
               {{
                 filter
                   ? __('No mails found for the selected filter.')
-                  : __('No mails in {0}.', [inboxTab ? tabName(inboxTab) : folderLabel])
+                  : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : folderLabel])
               }}
             </p>
             <div v-for="(rows, key) in groupedRows" :key="key">
@@ -532,10 +532,12 @@ const {
 })
 
 // The Inbox's category tabs, across every account; `inboxTab` is the open one, and undefined in any
-// other folder or when the Inbox isn't split.
+// other folder or when the Inbox isn't split. `inboxCategory` is what the list asks for: none in All
+// mail, the whole Inbox.
 const {
   tabs: inboxTabs,
   active: inboxTab,
+  category: inboxCategory,
   routeFor: routeForTab,
 } = useInboxTabs(
   () => folder === INBOX_FOLDER && 'unified',
@@ -547,7 +549,7 @@ const {
 const clearScope = computed(() =>
   folder === STARRED_FOLDER || isOutgoingFolder.value
     ? undefined
-    : listScope(inboxTab.value, folderLabel.value, filter.value),
+    : listScope(inboxCategory.value, folderLabel.value, filter.value),
 )
 
 // The engine owns loaded windows and refreshes their rows together.
@@ -556,7 +558,7 @@ const threads = useInfiniteQuery(api.mail.unified.threads, () => ({
   limit: PAGE_LENGTH,
   start: 0,
   filter_by: filter.value,
-  category: inboxTab.value,
+  category: inboxCategory.value,
 }))
 // Drafts discarded but still inside their Undo window are off the list, not yet off the server.
 // Held by message id, so only a row made of those drafts goes: the conversation a reply draft

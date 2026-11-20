@@ -379,6 +379,7 @@ export type UpdatePreferencesInput = {
   undo_send_period?: '5' | '10' | '20' | '30'
   inbox_tabs?: Array<'primary' | 'updates' | 'forums' | 'promotions' | 'social'>
   split_inbox?: 0 | 1
+  all_mail_tab?: 0 | 1
 }
 
 export type UpdatePreferencesOutput = null
@@ -977,6 +978,7 @@ export type GetUserInfoOutputUserInfo = {
   max_attachment_size: number
   inbox_tabs: Array<'primary' | 'updates' | 'forums' | 'promotions' | 'social'>
   split_inbox: 0 | 1
+  all_mail_tab: 0 | 1
   email_classification: boolean
   is_suite_cloud_configured: boolean
   accounts: Array<GetUserInfoOutputUserAccount>

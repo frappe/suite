@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reactive } from 'vue'
+import { nextTick, reactive } from 'vue'
 
-import { useClearList } from './useClearList'
-import { useInboxTabs, useTabChoice, type InboxCategory } from './useInboxTabs'
+import { listScope, useClearList } from './useClearList'
+import { useInboxTabs, useTabChoice, useTabChoiceMenu, type InboxCategory } from './useInboxTabs'
 
 type Counts = { category: InboxCategory; unread_threads: number }[]
 
@@ -12,8 +12,16 @@ type InboxTabsStore = {
   inboxTabs: InboxCategory[]
   tabCounts: { data: Counts | null }
   unifiedTabCounts: { data: Counts | null }
+  mailboxIds: { inbox?: string }
+  mailboxes: { data: { id: string; unread_threads: number }[] | null }
+  unifiedFolders: { data: { slug: string; unread_threads: number }[] | null }
   userResource: {
-    data: { email_classification: boolean; split_inbox: 0 | 1; inbox_tabs: InboxCategory[] }
+    data: {
+      email_classification: boolean
+      split_inbox: 0 | 1
+      inbox_tabs: InboxCategory[]
+      all_mail_tab: 0 | 1
+    }
   }
 }
 
@@ -92,12 +100,14 @@ describe('the Inbox tabs', () => {
     screen.isMobile.value = false
     saved.length = 0
     toasts.length = 0
+    localStorage.clear()
     state.store = reactive({
       userResource: {
         data: {
           email_classification: true,
           split_inbox: 1,
           inbox_tabs: ['primary', 'updates', 'forums', 'promotions'],
+          all_mail_tab: 1,
         },
       },
       inboxTabs: ['primary', 'updates', 'forums', 'promotions'],
@@ -110,10 +120,25 @@ describe('the Inbox tabs', () => {
         ],
       },
       unifiedTabCounts: { data: [{ category: 'updates', unread_threads: 90 }] },
+      // A thread can hold mail of more than one category, so the Inbox's own count is not the sum of
+      // its tabs'.
+      mailboxIds: { inbox: 'i1' },
+      mailboxes: {
+        data: [
+          { id: 'a1', unread_threads: 4 },
+          { id: 'i1', unread_threads: 88 },
+        ],
+      },
+      unifiedFolders: {
+        data: [
+          { slug: 'archive', unread_threads: 5 },
+          { slug: 'inbox', unread_threads: 140 },
+        ],
+      },
     })
   })
 
-  it('are the categories the server splits the Inbox into, in its order, with their unread', () => {
+  it('are the categories the server splits the Inbox into, in its order, with their unread, then All mail', () => {
     const { tabs } = tabsFor('account')
 
     expect(tabs.value.map((tab) => [tab.label, tab.unread])).toEqual([
@@ -121,26 +146,147 @@ describe('the Inbox tabs', () => {
       ['Updates', 79],
       ['Forums', 0],
       ['Promotions', 2],
+      // The whole Inbox, as the sidebar counts it.
+      ['All mail', 88],
     ])
   })
 
   it('count every account at once in All accounts', () => {
     const { tabs } = tabsFor('unified')
 
-    expect(tabs.value.find((tab) => tab.category === 'updates')?.unread).toBe(90)
-    expect(tabs.value.find((tab) => tab.category === 'primary')?.unread).toBe(0)
+    expect(tabs.value.find((tab) => tab.id === 'updates')?.unread).toBe(90)
+    expect(tabs.value.find((tab) => tab.id === 'primary')?.unread).toBe(0)
+    expect(tabs.value.find((tab) => tab.id === 'all')?.unread).toBe(140)
   })
 
-  it('open Primary unless the route names another tab', () => {
+  it('ask for the open category, and for none in All mail, the whole Inbox', () => {
+    const { active, category } = tabsFor('account')
+    expect([active.value, category.value]).toEqual(['primary', 'primary'])
+
+    state.route.query = { category: 'updates' }
+    expect([active.value, category.value]).toEqual(['updates', 'updates'])
+
+    state.route.query = { category: 'all' }
+    expect([active.value, category.value]).toEqual(['all', undefined])
+  })
+
+  it('refetch the list when All mail opens, as any other tab does', async () => {
+    let switches = 0
+    useInboxTabs(
+      () => 'account',
+      () => INBOX,
+      () => switches++,
+    )
+
+    state.route.query = { category: 'all' }
+    await nextTick()
+    state.route.query = { category: 'primary' }
+    await nextTick()
+
+    expect(switches).toBe(2)
+  })
+
+  it('clear All mail as the whole Inbox: marked read, never archived or trashed in one go', async () => {
+    state.route.query = { category: 'all' }
+    const { category } = tabsFor('account')
+    const { menuFor, clear } = useClearList(() => ({ account: 'ih', mailbox: 'inbox' }))
+    const scope = listScope(category.value, 'Inbox', null)
+
+    expect(menuFor(scope).flatMap((group) => group.options.map((option) => option.label))).toEqual([
+      'Mark all as read',
+    ])
+    answers.set(routes.clearList, { cleared: [{ account: 'ih', ids: ['a'] }], failed: [] })
+    await clear('read', scope)
+    expect(saved).toContainEqual({
+      action: 'read',
+      account: 'ih',
+      mailbox: 'inbox',
+      category: undefined,
+      filter_by: null,
+    })
+    expect(toasts).toEqual(['Inbox mail marked as read'])
+  })
+
+  it('open the tab the route names, and Primary the first time it names none', () => {
     const { active } = tabsFor('account')
     expect(active.value).toBe('primary')
 
     state.route.query = { category: 'forums' }
     expect(active.value).toBe('forums')
 
-    // Social has no tab here, so a link to it opens Primary rather than an empty list.
+    state.route.query = { category: 'all' }
+    expect(active.value).toBe('all')
+  })
+
+  it('reopen the tab last opened when the route names none, in this list or All accounts', async () => {
+    state.route.query = { category: 'all' }
+    tabsFor('account')
+    await nextTick()
+
+    // Back to the Inbox later, by a link that names no tab (the sidebar's, say).
+    state.route.query = {}
+    expect(tabsFor('account').active.value).toBe('all')
+    expect(tabsFor('unified').active.value).toBe('all')
+
+    // A link that names a tab still opens it, and is the one remembered next.
+    state.route.query = { category: 'updates' }
+    tabsFor('account')
+    await nextTick()
+    state.route.query = {}
+    expect(tabsFor('account').active.value).toBe('updates')
+  })
+
+  it('open Primary when the tab last opened has none now', async () => {
+    state.route.query = { category: 'all' }
+    tabsFor('account')
+    await nextTick()
+
+    state.store.userResource.data.all_mail_tab = 0
+    state.route.query = {}
+    expect(tabsFor('account').active.value).toBe('primary')
+
+    // Nor does a link to a tab that isn't there open an empty list.
     state.route.query = { category: 'social' }
+    expect(tabsFor('account').active.value).toBe('primary')
+  })
+
+  it('end with All mail only while it is on', () => {
+    state.store.userResource.data.all_mail_tab = 0
+    const { tabs, active } = tabsFor('account')
+    expect(tabs.value.map((tab) => tab.id)).toEqual(['primary', 'updates', 'forums', 'promotions'])
+
+    state.route.query = { category: 'all' }
     expect(active.value).toBe('primary')
+  })
+
+  it('offer their switches in one Tabs submenu, under Categories, only while it is on', () => {
+    const { rows } = useTabChoiceMenu()
+    expect(rows.value.map((row) => row.label)).toEqual(['Categories', 'Tabs'])
+
+    state.store.userResource.data.split_inbox = 0
+    expect(rows.value.map((row) => row.label)).toEqual(['Categories'])
+
+    // Nothing to choose where the site doesn't sort mail into categories.
+    state.store.userResource.data.email_classification = false
+    expect(rows.value).toEqual([])
+  })
+
+  it('turn All mail on and off from the Tabs submenu, after the categories', async () => {
+    const { rows } = useTabChoiceMenu()
+    const options = rows.value.flatMap((row) => ('submenu' in row ? row.submenu : []))
+    expect(options.map((option) => [option.label, option.switchValue])).toEqual([
+      ['Updates', true],
+      ['Forums', true],
+      ['Promotions', true],
+      ['Social', false],
+      ['All mail', true],
+    ])
+
+    // Not held on like the last category: without it the categories are still there.
+    expect(options.at(-1)?.disabled).toBe(false)
+    options.at(-1)?.onClick(false)
+    await nextTick()
+    expect(saved).toEqual([{ all_mail_tab: 0 }])
   })
 
   it('are absent on a phone, whose Inbox is one list of every category', () => {
@@ -159,15 +305,26 @@ describe('the Inbox tabs', () => {
     expect(tabsFor(false).tabs.value).toEqual([])
     expect(tabsFor(false).active.value).toBeUndefined()
 
+    // Nor is there an All mail tab, alone over the list it already is.
     state.store.inboxTabs = []
+    state.route.query = { category: 'all' }
+    expect(tabsFor('account').tabs.value).toEqual([])
     expect(tabsFor('account').active.value).toBeUndefined()
+    expect(tabsFor('account').category.value).toBeUndefined()
   })
 
-  it('lead to the list itself, Primary without a category', () => {
+  it('lead to the list itself, naming the tab, Primary too', async () => {
     const { routeFor } = tabsFor('account')
 
     expect(routeFor('updates')).toEqual({ ...INBOX, query: { category: 'updates' } })
-    expect(routeFor('primary')).toEqual({ ...INBOX, query: {} })
+    expect(routeFor('all')).toEqual({ ...INBOX, query: { category: 'all' } })
+    expect(routeFor('primary')).toEqual({ ...INBOX, query: { category: 'primary' } })
+
+    // So Primary opens from another tab, whichever was last.
+    state.route.query = { category: 'updates' }
+    await nextTick()
+    state.route.query = { category: 'primary' }
+    expect(tabsFor('account').active.value).toBe('primary')
   })
 
   it('are chosen by turning categories on and off, Primary leading any that are on', async () => {

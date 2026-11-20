@@ -1035,6 +1035,14 @@
             ],
             "title": "Split Inbox",
             "type": "integer"
+          },
+          "all_mail_tab": {
+            "enum": [
+              0,
+              1
+            ],
+            "title": "All Mail Tab",
+            "type": "integer"
           }
         },
         "title": "UserPreferences",
@@ -3128,6 +3136,14 @@
                 "title": "Split Inbox",
                 "type": "integer"
               },
+              "all_mail_tab": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "All Mail Tab",
+                "type": "integer"
+              },
               "email_classification": {
                 "title": "Email Classification",
                 "type": "boolean"
@@ -3167,6 +3183,7 @@
               "max_attachment_size",
               "inbox_tabs",
               "split_inbox",
+              "all_mail_tab",
               "email_classification",
               "is_suite_cloud_configured",
               "accounts"

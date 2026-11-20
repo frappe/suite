@@ -22,6 +22,8 @@ class UserPreferences(TypedDict, total=False):
     inbox_tabs: list[Literal["primary", "updates", "forums", "promotions", "social"]]
     # Off, the Inbox is one list; the choice of tabs is kept for when it is on again.
     split_inbox: Flag
+    # Whether a split Inbox ends with All mail, every category in one list.
+    all_mail_tab: Flag
 
 
 class Credentials(TypedDict):
@@ -150,6 +152,7 @@ def update_preferences(
     undo_send_period: str | None = None,
     inbox_tabs: list[str] | None = None,
     split_inbox: Flag | None = None,
+    all_mail_tab: Flag | None = None,
 ) -> None:
     changes = {
         key: value
@@ -158,6 +161,7 @@ def update_preferences(
             "show_reading_pane": show_reading_pane,
             "undo_send_period": undo_send_period,
             "split_inbox": split_inbox,
+            "all_mail_tab": all_mail_tab,
         }.items()
         if value is not None
     }

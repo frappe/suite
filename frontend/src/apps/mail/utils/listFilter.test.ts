@@ -28,7 +28,7 @@ describe('useListFilter', () => {
   it('shows everything with nothing ticked', () => {
     const { filter, filterTitle } = filterFor()
     expect(filter.value).toBeNull()
-    expect(filterTitle.value).toBe('All mail')
+    expect(filterTitle.value).toBe('All')
   })
 
   it('combines ticked filters, in menu order, as a filtered list', () => {
@@ -44,7 +44,7 @@ describe('useListFilter', () => {
     tick('Unread')
     tick('Unread')
     expect(filter.value).toBeNull()
-    expect(filterTitle.value).toBe('All mail')
+    expect(filterTitle.value).toBe('All')
     expect(onChange).toHaveBeenCalledTimes(2)
   })
 
