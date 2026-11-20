@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypedDict
 from urllib.parse import urlparse
 
@@ -11,6 +12,7 @@ from frappe import _
 from frappe.utils import get_system_timezone, get_url
 from pydantic import BaseModel
 
+from suite.calendar import booking
 from suite.calendar.api import (
     _declined_by_viewer,
     _own_emails,
@@ -35,11 +37,12 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     update_calendar_event_instance,
 )
 from suite.calendar.doctype.calendar_event.fields import EventFields
-from suite.composition.http import BadRequest, Route
+from suite.composition.http import BadRequest, Route, refusals_as_bad_request
 from suite.mail.doctype.user_account.user_account import (
     get_user_jmap_accounts,
     is_jmap_account_belongs_to_user,
 )
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 Given = str | int | float | bool | list | dict | None
 
@@ -126,6 +129,31 @@ EventsQuery = TypedDict(
 )
 
 UpcomingQuery = TypedDict("UpcomingQuery", {"from": str, "to": str})
+
+# The window a booker's browser asks slots for: two instants with their zone, `to` exclusive.
+SlotWindow = TypedDict("SlotWindow", {"from": str, "to": str})
+
+
+class BookingHost(TypedDict):
+    full_name: str
+    user_image: str | None
+
+
+class BookingPage(TypedDict):
+    """What a booker sees of a page. Nothing of what the host is doing."""
+
+    slug: str
+    title: str
+    description: str | None
+    length_minutes: int
+    hosts: list[BookingHost]
+
+
+class BookingSlots(TypedDict):
+    # Slot starts as UTC instants, `...Z`, earliest first, inside the window asked for.
+    slots: list[str]
+    # No slot starts at or after this UTC instant.
+    bookable_until: str
 
 
 class UpcomingSummary(TypedDict):
@@ -481,6 +509,27 @@ ROUTES = (
         kind="query",
         public_name="events.upcoming",
     ),
+    Route(
+        "GET",
+        "booking-pages/{slug}",
+        "booking_page_get",
+        allow_guest=True,
+        errors=(frappe.DoesNotExistError, frappe.RateLimitExceededError),
+        output=BookingPage,
+        kind="query",
+        public_name="bookingPages.get",
+    ),
+    Route(
+        "GET",
+        "booking-pages/{slug}/slots",
+        "booking_page_slots",
+        allow_guest=True,
+        errors=(BadRequest, frappe.DoesNotExistError, frappe.RateLimitExceededError),
+        query=SlotWindow,
+        output=BookingSlots,
+        kind="query",
+        public_name="bookingPages.slots",
+    ),
 )
 
 
@@ -532,6 +581,48 @@ def upcoming_summary(to: Given = None, **kwargs: Given) -> UpcomingSummary:
                 continue
             upcoming += 1
     return {"upcoming": upcoming}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@dynamic_rate_limit()
+def booking_page_get(slug: Given = None) -> BookingPage:
+    """A public booking page, for anyone with the link. Rate limited per IP address
+    (003 §Abuse). A page that is missing or switched off answers 404 alike."""
+
+    return booking.public_page(_required_text(slug, "slug"))
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@dynamic_rate_limit()
+@refusals_as_bad_request
+def booking_page_slots(slug: Given = None, to: Given = None, **kwargs: Given) -> BookingSlots:
+    """A public booking page's free slots in [from, to), at most 42 days. Rate limited per IP
+    address, and 404 for a missing or switched-off page, as `booking_page_get`."""
+
+    answer = booking.public_slots(
+        _required_text(slug, "slug"),
+        _instant(kwargs.get("from"), "from"),
+        _instant(to, "to"),
+    )
+    return {
+        "slots": [_utc(slot) for slot in answer["slots"]],
+        "bookable_until": _utc(answer["bookable_until"]),
+    }
+
+
+def _utc(instant: datetime) -> str:
+    return instant.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _instant(value: Given, name: str) -> datetime:
+    text = _required_text(value, name)
+    try:
+        instant = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        instant = None
+    if instant is None or instant.tzinfo is None:
+        frappe.throw(_("Calendar argument {0} must be a time with its zone").format(name), BadRequest)
+    return instant
 
 
 def _conferencing(links: list[dict]) -> Conferencing | None:

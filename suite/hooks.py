@@ -189,6 +189,8 @@ permission_query_conditions = {
     "Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
     "Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
     "Screened Email Address": "suite.mail.doctype.screened_email_address.screened_email_address.get_permission_query_condition",
+    # calendar
+    "Booking Page": "suite.calendar.doctype.booking_page.booking_page.get_permission_query_conditions",
 }
 
 # ============================================================================
@@ -215,6 +217,7 @@ has_permission = {
     # mail
     "JMAP Account": "suite.mail.doctype.jmap_account.jmap_account.has_permission",
     "Address Book": "suite.mail.doctype.address_book.address_book.has_permission",
+    "Booking Page": "suite.calendar.doctype.booking_page.booking_page.has_permission",
     "Calendar": "suite.calendar.doctype.calendar.calendar.has_permission",
     "Calendar Event": "suite.calendar.doctype.calendar_event.calendar_event.has_permission",
     "Contact Card": "suite.mail.doctype.contact_card.contact_card.has_permission",

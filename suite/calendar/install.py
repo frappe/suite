@@ -1,5 +1,13 @@
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
 
+# The public booking page answers anyone with the link, and each slot lookup is a mail-server
+# read, so both are limited per IP address (specs/calendar/003 §Abuse). A booker opens a page
+# once and pages through a few months of slots.
+BOOKING_PAGE_RATE_LIMITS = [
+    {"method_path": "suite.calendar.http.routes.booking_page_get", "limit": 30, "seconds": 60},
+    {"method_path": "suite.calendar.http.routes.booking_page_slots", "limit": 30, "seconds": 60},
+]
+
 
 def after_install() -> None:
     add_rate_limits()
@@ -73,6 +81,7 @@ def add_rate_limits() -> None:
             "limit": 20,
             "seconds": 60,
         },
+        *BOOKING_PAGE_RATE_LIMITS,
     ]
 
     for rl in rate_limits:

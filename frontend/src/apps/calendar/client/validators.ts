@@ -7,6 +7,10 @@ import type {
   AddCalendarEventOutput,
   AddInviteToCalendarInput,
   AddInviteToCalendarOutput,
+  BookingPageGetInput,
+  BookingPageGetOutput,
+  BookingPageSlotsInput,
+  BookingPageSlotsOutput,
   CalendarGetCalendarEventsInput,
   CalendarGetCalendarEventsOutput,
   CreateCalendarInput,
@@ -296,6 +300,88 @@ export const operationUpcomingSummary: Validators<UpcomingSummaryInput, Upcoming
     )
   },
 }
+
+export const operationBookingPageGet: Validators<BookingPageGetInput, BookingPageGetOutput> = {
+  validateInput(value: unknown): asserts value is BookingPageGetInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { slug: { type: 'string' } },
+        required: ['slug'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'booking_page_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is BookingPageGetOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          BookingHost: {
+            properties: {
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['full_name', 'user_image'],
+            title: 'BookingHost',
+            type: 'object',
+          },
+        },
+        description: 'What a booker sees of a page. Nothing of what the host is doing.',
+        properties: {
+          slug: { title: 'Slug', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          description: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Description' },
+          length_minutes: { title: 'Length Minutes', type: 'integer' },
+          hosts: { items: { $ref: '#/$defs/BookingHost' }, title: 'Hosts', type: 'array' },
+        },
+        required: ['slug', 'title', 'description', 'length_minutes', 'hosts'],
+        title: 'BookingPage',
+        type: 'object',
+      },
+      'booking_page_get output',
+    )
+  },
+}
+
+export const operationBookingPageSlots: Validators<BookingPageSlotsInput, BookingPageSlotsOutput> =
+  {
+    validateInput(value: unknown): asserts value is BookingPageSlotsInput {
+      assertSchema(
+        value,
+        {
+          type: 'object',
+          properties: {
+            from: { title: 'From', type: 'string' },
+            to: { title: 'To', type: 'string' },
+            slug: { type: 'string' },
+          },
+          required: ['from', 'to', 'slug'],
+          additionalProperties: false,
+          $defs: {},
+        },
+        'booking_page_slots input',
+      )
+    },
+    validateOutput(value: unknown): asserts value is BookingPageSlotsOutput {
+      assertSchema(
+        value,
+        {
+          properties: {
+            slots: { items: { type: 'string' }, title: 'Slots', type: 'array' },
+            bookable_until: { title: 'Bookable Until', type: 'string' },
+          },
+          required: ['slots', 'bookable_until'],
+          title: 'BookingSlots',
+          type: 'object',
+        },
+        'booking_page_slots output',
+      )
+    },
+  }
 
 export const operationCalendarGetCalendarEvents: Validators<
   CalendarGetCalendarEventsInput,
