@@ -279,4 +279,15 @@ describe('active heading across tabs', () => {
     history.replaceState(null, '', location.pathname)
     expect([before, after]).toEqual(['A', 'C'])
   })
+
+  it('is in the tab the link opens, with no scroll, edit or tab change', async () => {
+    history.replaceState(null, '', '#tab-c')
+    const view = openTabbedEditor()
+    await waitForUpdates()
+
+    const active = view.activeHeading()
+    view.app.unmount()
+    history.replaceState(null, '', location.pathname)
+    expect(active).toBe('C')
+  })
 })

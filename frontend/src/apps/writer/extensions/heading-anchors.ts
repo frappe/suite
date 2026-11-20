@@ -151,10 +151,11 @@ export const HeadingAnchors = TableOfContents.extend({
       view.dispatch = originalDispatch
     }
 
-    // A tab change shows other headings with no scroll or edit; Vue applies it a tick later
-    view.dom.addEventListener('tab-changed', () => {
-      void nextTick(() => this.storage.scrollHandler())
-    })
+    // Opening at a tab, or changing tab, shows other headings with no scroll
+    // or edit; Vue applies it a tick later
+    const remeasure = () => void nextTick(() => this.storage.scrollHandler())
+    remeasure()
+    view.dom.addEventListener('tab-changed', remeasure)
   },
 
   addProseMirrorPlugins() {
