@@ -27,16 +27,19 @@ import { DialogDescription, DialogTitle } from 'reka-ui'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
+import ConflictNote from '@/apps/calendar/components/ConflictNote.vue'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
 import MobileEventForm from '@/apps/calendar/components/mobile/MobileEventForm.vue'
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
 import RecurringScopeModal from '@/apps/calendar/components/Modals/RecurringScopeModal.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
+import { useAvailability } from '@/apps/calendar/composables/useAvailability'
 import { useEventDelete } from '@/apps/calendar/composables/useEventDelete'
 import { userStore } from '@/apps/calendar/stores/user'
 import type { ParticipantIdentity } from '@/apps/calendar/types/doctypes'
 import { getMeetUrl, getReorderedParticipants } from '@/apps/calendar/utils'
+import { defaultFreeBusy } from '@/apps/calendar/utils/availability'
 import { defaultCalendar, destinationOptions } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { inUserTimeZone } from '@/apps/calendar/utils/datetime'
@@ -226,7 +229,7 @@ const getDefaultEventData = () => {
     alerts: [defaultAlert(isAllDay, startDate)],
     followsDefaults: false,
     description: '',
-    free_busy_status: 'Busy',
+    free_busy_status: defaultFreeBusy(isAllDay),
     privacy: 'Public',
     participants: identity ? seatOrganizer(guests, organizerParticipant(identity)) : guests,
     recurrence_rule: {},
@@ -270,6 +273,13 @@ const isDateTimeValid = computed(() => {
   if (!startsAt.value.isValid() || !endsAt.value.isValid()) return false
   if (event.isAllDay) return !endsAt.value.isBefore(startsAt.value, 'day')
   return endsAt.value.isAfter(startsAt.value)
+})
+const { conflicts } = useAvailability({
+  form: () => event,
+  account: () => event.account,
+  uid: () => selectedEvent?.calendarEvent?.uid,
+  calendars: () => calendars.data,
+  ownEmails: ownAddresses,
 })
 const participants = computed(() =>
   getReorderedParticipants(
@@ -876,6 +886,9 @@ const setAllDay = (isAllDay: boolean) => {
     event.alerts?.length === 1 &&
     JSON.stringify(event.alerts[0]) ===
       JSON.stringify(defaultAlert(event.isAllDay, event.startDate))
+  // A new event's Availability follows the switch until the writer picks one.
+  if (isNew.value && event.free_busy_status === defaultFreeBusy(event.isAllDay))
+    event.free_busy_status = defaultFreeBusy(isAllDay)
   event.isAllDay = isAllDay
   if (untouched) event.alerts = [defaultAlert(isAllDay, event.startDate)]
 
@@ -1172,6 +1185,7 @@ const recurringScopeModalProps = computed(() => ({
                   </div>
                 </div>
               </div>
+              <ConflictNote v-if="conflicts.length" :conflicts="conflicts" class="px-3.5 pb-2" />
               <div class="px-3.5 pb-3.5">
                 <div
                   class="group -mx-1.5 flex cursor-pointer items-center gap-2 rounded-6 px-1.5 py-1.5 hover:bg-surface-gray-2"
@@ -1396,6 +1410,7 @@ const recurringScopeModalProps = computed(() => ({
     :is-new="isNew"
     :disable-save="disableSave"
     :participants="participants"
+    :conflicts="conflicts"
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"

@@ -153,6 +153,7 @@ class CalendarRow(TypedDict):
     visible: Literal[0, 1]
     may_write_all: Literal[0, 1]
     may_delete: Literal[0, 1]
+    include_in_availability: Literal["All", "Attending", "None"]
 
 
 class CalendarCreate(BaseModel):

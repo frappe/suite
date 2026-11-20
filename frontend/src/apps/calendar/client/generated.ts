@@ -234,6 +234,7 @@ export type GetCalendarsWithSharedOutputCalendarRow = {
   visible: 0 | 1
   may_write_all: 0 | 1
   may_delete: 0 | 1
+  include_in_availability: 'All' | 'Attending' | 'None'
 }
 
 export type GetCalendarsWithSharedInput = { account: string }

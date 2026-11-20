@@ -553,6 +553,11 @@ export const operationGetCalendarsWithShared: Validators<
               visible: { enum: [0, 1], title: 'Visible', type: 'integer' },
               may_write_all: { enum: [0, 1], title: 'May Write All', type: 'integer' },
               may_delete: { enum: [0, 1], title: 'May Delete', type: 'integer' },
+              include_in_availability: {
+                enum: ['All', 'Attending', 'None'],
+                title: 'Include In Availability',
+                type: 'string',
+              },
             },
             required: [
               'name',
@@ -564,6 +569,7 @@ export const operationGetCalendarsWithShared: Validators<
               'visible',
               'may_write_all',
               'may_delete',
+              'include_in_availability',
             ],
             title: 'CalendarRow',
             type: 'object',

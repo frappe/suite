@@ -1227,6 +1227,15 @@
                 ],
                 "title": "May Delete",
                 "type": "integer"
+              },
+              "include_in_availability": {
+                "enum": [
+                  "All",
+                  "Attending",
+                  "None"
+                ],
+                "title": "Include In Availability",
+                "type": "string"
               }
             },
             "required": [
@@ -1238,7 +1247,8 @@
               "default",
               "visible",
               "may_write_all",
-              "may_delete"
+              "may_delete",
+              "include_in_availability"
             ],
             "title": "CalendarRow",
             "type": "object"
