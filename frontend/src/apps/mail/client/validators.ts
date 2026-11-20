@@ -7255,7 +7255,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -7303,7 +7303,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -7417,7 +7417,7 @@ export const operationGetThreads: Validators<GetThreadsInput, GetThreadsOutput> 
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -7555,7 +7555,7 @@ export const operationGetUnifiedThreads: Validators<
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -7603,7 +7603,7 @@ export const operationGetUnifiedThreads: Validators<
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -7717,7 +7717,7 @@ export const operationGetUnifiedThreads: Validators<
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -7996,7 +7996,7 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -8044,7 +8044,7 @@ export const operationGetThread: Validators<GetThreadInput, GetThreadOutput> = {
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -8253,7 +8253,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -8301,7 +8301,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },
@@ -8415,7 +8415,7 @@ export const operationSearchMails: Validators<SearchMailsInput, SearchMailsOutpu
               id: { title: 'Id', type: 'string' },
               thread_id: { title: 'Thread Id', type: 'string' },
               from_name: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Name' },
-              from_email: { title: 'From Email', type: 'string' },
+              from_email: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'From Email' },
               received_at: { title: 'Received At', type: 'string' },
               mailboxes: {
                 items: { $ref: '#/$defs/MailboxRef' },

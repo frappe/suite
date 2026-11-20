@@ -46,7 +46,8 @@ class Copy(TypedDict):
     id: str
     thread_id: str
     from_name: str | None
-    from_email: str
+    # None for mail that came with no From header at all.
+    from_email: str | None
     received_at: str
     mailboxes: list[MailboxRef]
     seen: Flag
