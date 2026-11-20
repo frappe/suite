@@ -274,7 +274,9 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   const openQuotedContent = () => {
     const editor = host()?.editor
     const caret = editor?.state.selection
-    mail.html_body += `<br>${mail.quoted_content}`
+    // One blank line above the quote. A bare `<br>` between blocks became a line holding a break,
+    // drawn two lines tall.
+    mail.html_body += `<div><br></div>${mail.quoted_content}`
     mail.quoted_content = ''
     if (editor && caret)
       nextTick(() => editor.commands.setTextSelection({ from: caret.from, to: caret.to }))
