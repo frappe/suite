@@ -12,11 +12,12 @@
     role="region"
     :aria-label="__('Notifications')"
   >
-    <span
-      class="lucide-bell text-ink-gray-5 mt-0.5 size-4 shrink-0 self-start"
-      aria-hidden="true"
-    />
-    <p class="min-w-0 flex-1">{{ __('Be notified by {0} on this device?', [label]) }}</p>
+    <!-- The icon with the words, on their first line; the two centred in the strip together, as
+         its buttons are taller than one line. -->
+    <div class="flex min-w-0 flex-1 items-start gap-3">
+      <span class="lucide-bell text-ink-gray-5 mt-0.5 size-4 shrink-0" aria-hidden="true" />
+      <p class="min-w-0 flex-1">{{ __('Be notified by {0} on this device?', [label]) }}</p>
+    </div>
     <Button variant="solid" :label="__('Turn on')" @click="turnOn" />
     <Button variant="ghost" class="shrink-0" :aria-label="__('Dismiss')" @click="push.dismissAsk()">
       <template #icon><span class="lucide-x text-ink-gray-6 size-4" aria-hidden="true" /></template>
@@ -28,22 +29,25 @@
     role="region"
     :aria-label="note ? __('Apps of their own') : __('Install {0}', [label])"
   >
-    <span
-      :class="note ? 'lucide-layout-grid' : 'lucide-download'"
-      class="text-ink-gray-5 size-4 shrink-0 self-start mt-0.5"
-      aria-hidden="true"
-    />
-    <p v-if="note" class="min-w-0 flex-1">
-      {{
-        __('Mail and Calendar are apps of their own now: open one in your browser to install it.')
-      }}
-    </p>
-    <p v-else-if="how === 'steps'" class="min-w-0 flex-1">
-      {{ __('Install {0}: tap', [label]) }}
-      <span class="lucide-share size-4 inline-block align-[-3px]" :aria-label="__('Share')" />
-      {{ __('then Add to Home Screen.') }}
-    </p>
-    <p v-else class="min-w-0 flex-1">{{ __('Install {0} as an app.', [label]) }}</p>
+    <!-- The icon with the words, as above. -->
+    <div class="flex min-w-0 flex-1 items-start gap-3">
+      <span
+        :class="note ? 'lucide-layout-grid' : 'lucide-download'"
+        class="text-ink-gray-5 mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <p v-if="note" class="min-w-0 flex-1">
+        {{
+          __('Mail and Calendar are apps of their own now: open one in your browser to install it.')
+        }}
+      </p>
+      <p v-else-if="how === 'steps'" class="min-w-0 flex-1">
+        {{ __('Install {0}: tap', [label]) }}
+        <span class="lucide-share size-4 inline-block align-[-3px]" :aria-label="__('Share')" />
+        {{ __('then Add to Home Screen.') }}
+      </p>
+      <p v-else class="min-w-0 flex-1">{{ __('Install {0} as an app.', [label]) }}</p>
+    </div>
     <Button
       v-if="!note && how === 'prompt'"
       variant="solid"

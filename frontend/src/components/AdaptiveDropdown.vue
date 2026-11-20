@@ -29,7 +29,7 @@
             <component
               :is="iconOf(item.icon)"
               v-else-if="item.icon"
-              class="h-4 w-4 shrink-0"
+              class="h-[18px] w-[18px] shrink-0"
               :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-6'"
             />
             <span class="flex-1 truncate text-left">{{ sheetLabel(item.label) }}</span>

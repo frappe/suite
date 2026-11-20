@@ -31,6 +31,6 @@ const { drafts = false } = defineProps<{ drafts?: boolean }>()
 const { isMobile } = useScreenSize()
 
 // How many buttons each group holds: the row an Inbox thread gets (act on it, file it, hold it for
-// later), where a phone keeps the last group in its More sheet.
-const groups = computed(() => (drafts ? [1] : isMobile.value ? [4, 2] : [5, 2, 2]))
+// later), where a phone keeps only the first group and the rest in its More sheet.
+const groups = computed(() => (drafts ? [1] : isMobile.value ? [4] : [5, 2, 2]))
 </script>

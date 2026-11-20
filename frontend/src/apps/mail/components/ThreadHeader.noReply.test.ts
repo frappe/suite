@@ -264,7 +264,8 @@ describe('the clock', () => {
     await show(ONLY_IN_SENT, true)
     root.querySelector<HTMLElement>('[aria-label="More"]')!.click()
     await nextTick()
-    expect(rows().map((item) => item.textContent)).toEqual(['Print'])
+    // Filing stays (a phone moves the thread from here); nothing to snooze or remind.
+    expect(rows().map((item) => item.textContent)).toEqual(['Move To', 'Print'])
   })
 })
 
@@ -345,7 +346,7 @@ describe('the toolbar', () => {
     screen.mobile = true
     await show(THEIR_LAST_WORD, false)
     expect(names()).not.toContain(null)
-    expect(names()).toEqual(expect.arrayContaining(['Back', 'Move To', 'More']))
+    expect(names()).toEqual(expect.arrayContaining(['Back', 'Move to Trash (Delete)', 'More']))
   })
 })
 

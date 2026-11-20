@@ -57,9 +57,24 @@
   <!-- px-3.5 matches the body/subject axis; the max-sm negative margins cancel the
 	     ghost buttons' own padding so the edge glyphs land on that axis too. -->
   <div
-    class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b"
+    class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 border-b"
   >
+    <!-- A phone names the list Back returns to, as its own apps do; cut short before the actions
+         are. -->
     <Button
+      v-if="isMobile && backLabel"
+      variant="ghost"
+      class="-ml-2 mr-1 min-w-0 max-w-28 shrink !px-1.5 touch-target"
+      :aria-label="__('Back to {0}', [backLabel])"
+      @click="$router.push(backRoute)"
+    >
+      <template #prefix>
+        <ChevronLeft class="icon shrink-0 !h-[18px] !w-[18px]" />
+      </template>
+      <span class="truncate text-base">{{ backLabel }}</span>
+    </Button>
+    <Button
+      v-else
       variant="ghost"
       class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
       :aria-label="__('Back')"
@@ -71,7 +86,8 @@
     </Button>
     <!-- Only actions up here, on a phone as on a desktop: the subject heads the thread below,
 	     where it can wrap. -->
-    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
+    <!-- On a phone the actions stand at the far end, away from Back. -->
+    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:justify-end max-sm:gap-3">
       <template v-if="thread?.length">
         <!-- Three groups, apart a step more than their buttons, with a line halfway: what is done to
              it, read or taken away; where it is filed; what holds it for later, the order of a row's
@@ -81,8 +97,9 @@
           <div v-if="visibleActions.length" class="flex items-center space-x-2">
             <ReuseAction v-for="action in visibleActions" :key="action.label" :action />
           </div>
-          <Divider v-if="visibleActions.length && !inDrafts" v-bind="GROUP_LINE" />
-          <div v-if="!inDrafts" class="flex items-center space-x-2">
+          <!-- On a phone where it is filed is changed from the More sheet. -->
+          <Divider v-if="visibleActions.length && !inDrafts && !isMobile" v-bind="GROUP_LINE" />
+          <div v-if="!inDrafts && !isMobile" class="flex items-center space-x-2">
             <AdaptiveDropdown :options="moveToOptions" :title="__('Move To')">
               <Button
                 variant="ghost"
@@ -138,14 +155,23 @@
                row's flow. -->
           <div v-if="isMobile" class="absolute">
             <ReuseLater />
+            <AdaptiveDropdown
+              v-if="!inDrafts"
+              v-model:open="moveToOpen"
+              :options="moveToOptions"
+              :title="__('Move To')"
+            />
+            <AdaptiveDropdown
+              v-if="!inDrafts && folderOptions.length"
+              v-model:open="foldersOpen"
+              :options="folderOptions"
+              :title="__('Folders')"
+            />
           </div>
         </div>
-        <!-- A phone's toolbar is full: what is left goes in a sheet. -->
-        <AdaptiveDropdown
-          v-if="isMobile && laterOptions.length"
-          :options="laterOptions"
-          :title="__('More')"
-        >
+        <!-- A phone's toolbar keeps the first group: what is left goes in a sheet, untitled, its
+             rows say enough. -->
+        <AdaptiveDropdown v-if="isMobile && moreSheetOptions.length" :options="moreSheetOptions">
           <Button
             variant="ghost"
             class="max-sm:!h-8 max-sm:!w-8 touch-target"
@@ -158,8 +184,8 @@
         </AdaptiveDropdown>
       </template>
       <!-- A thread on its way: its buttons in outline. Nothing to press yet: what a button does
-           depends on where the thread's mail is filed. -->
-      <ThreadActionsOutline v-else class="animate-pulse" :drafts="inDrafts" />
+           depends on where the thread's mail is filed. None once it has failed to load. -->
+      <ThreadActionsOutline v-else-if="!failed" class="animate-pulse" :drafts="inDrafts" />
       <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). They don't wait for the
            thread: the reader can step on past one that is slow to load. -->
       <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
@@ -248,6 +274,7 @@ import {
   INBOX_FOLDER,
   mailboxForUnifiedFolder,
   mailboxIdForParam,
+  STARRED_FOLDER,
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
 } from '@/apps/mail/utils/unifiedFolders'
@@ -261,6 +288,8 @@ const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   canGoNext?: boolean
   // The last word is yours and nothing is set to chase it (see useReplyReminder).
   remindable?: boolean
+  // The thread couldn't be loaded: there is nothing on its way to outline.
+  failed?: boolean
 }>()
 const emit = defineEmits([
   'setSeen',
@@ -297,6 +326,13 @@ const mailbox = computed(() =>
 const threadID = computed(() =>
   Array.isArray(route.params.threadID) ? (route.params.threadID[0] ?? '') : route.params.threadID,
 )
+
+// The name of that list, for a phone's Back: the folder's, Starred's or Search's.
+const backLabel = computed(() => {
+  if (route.params.mailbox === STARRED_FOLDER) return __('Starred')
+  if (route.params.mailbox === 'search') return __('Search')
+  return mailboxes.value.data?.find((folder) => folder.id === mailbox.value)?._name ?? ''
+})
 
 // Back returns to the list the thread was opened from: the merged folder
 // list on its thread route, the mailbox list otherwise.
@@ -372,6 +408,23 @@ const laterOpen = ref(false)
 const laterLabel = computed(() => {
   if (inSnoozed.value) return __('Change snooze time')
   return remindOnly.value ? __('Remind me if no reply') : __('Snooze')
+})
+
+const moveToOpen = ref(false)
+const foldersOpen = ref(false)
+
+// The phone's More sheet: where it is filed, then the later group, apart.
+const moreSheetOptions = computed(() => {
+  const filing = inDrafts.value
+    ? []
+    : [
+        { label: __('Move To'), icon: FolderInput, onClick: () => (moveToOpen.value = true) },
+        ...(folderOptions.value.length
+          ? [{ label: __('Folders'), icon: Folders, onClick: () => (foldersOpen.value = true) }]
+          : []),
+      ]
+  const later = laterOptions.value
+  return [...filing, ...(later.length ? [{ group: '', options: later }] : [])]
 })
 
 const laterOptions = computed(() => [
