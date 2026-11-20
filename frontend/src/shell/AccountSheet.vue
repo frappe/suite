@@ -26,7 +26,7 @@
               :label="area.label()"
               :icon="area.menuIcon"
               :route="area.to"
-              :suffix="badges[area.id] ? String(badges[area.id]) : undefined"
+              :suffix="badges[area.id]?.count ? String(badges[area.id]!.count) : undefined"
               @click="close"
             />
             <SidebarItem :label="__('Settings')" icon="lucide-settings" @click="showSettings" />
@@ -59,7 +59,7 @@ import { Avatar, BottomSheet, SidebarItem, TabButtons } from 'frappe-ui'
 import { DialogTitle } from 'reka-ui'
 import { computed } from 'vue'
 
-import type { AccountSheetArea } from '@/platform/contracts'
+import type { AccountSheetArea, AreaBadge } from '@/platform/contracts'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
@@ -70,7 +70,7 @@ defineProps<{
   /** The areas listed as rows here, already filtered by capability. */
   areas: readonly AccountSheetArea[]
   /** Each area's count, as the rail's dot counts it. */
-  badges: Readonly<Record<string, number>>
+  badges: Readonly<Record<string, AreaBadge | undefined>>
 }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
 

@@ -1,9 +1,14 @@
 // Generated from src/apps/mail/client/contract.json. Do not edit.
 import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
+export type InboxSummaryOutputAccountUnread = { name: string; unread: number; personal: boolean }
+
 export type InboxSummaryInput = Record<string, never>
 
-export type InboxSummaryOutput = { unread: number }
+export type InboxSummaryOutput = {
+  unread: number
+  accounts: Array<InboxSummaryOutputAccountUnread>
+}
 
 export type InboxSummaryError = never
 
@@ -1030,6 +1035,7 @@ export type GetUnifiedFoldersOutputUnifiedFolder = {
   name: string
   role: string | null
   unread_threads: number
+  unread_by_account: { [key: string]: number }
   accounts: Array<string>
   icon: string | null
   color: ('Gray' | 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null

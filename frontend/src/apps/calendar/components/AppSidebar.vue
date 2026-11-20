@@ -23,7 +23,7 @@ import {
   viewLabel,
   type MobileView,
 } from '@/apps/calendar/utils/mobileView'
-import { accountSubmenu, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
+import { AccountSwitcher, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
 import { Dropdown } from '@/platform/feedback'
 
 const { events, selectedEvent, isMobile } = defineProps<{
@@ -134,14 +134,9 @@ const {
   showDelete: showDeleteCalendar,
 } = calendarActions
 
-// The account menu lists the accounts themselves. With one account there is nothing to pick.
-const accountMenu = computed(() =>
-  user.data.accounts?.length > 1
-    ? accountSubmenu(user.data.accounts, store.accountId, (accountId) =>
-        router.push({ name: route.name, params: { ...route.params, accountId } }),
-      )
-    : [],
-)
+// Another account's calendar opens on the view and day this one was on.
+const switchAccount = (accountId: string) =>
+  router.push({ name: route.name, params: { ...route.params, accountId } })
 
 // --- The phone's view switcher, in the sheet the bottom nav opens ---
 // The URL is the source of truth for the view, so switching is a navigation, not
@@ -175,19 +170,13 @@ const selectView = (view: MobileView) => {
   <AreaSidebar area="calendar" :title="__('Calendar')" :sheet-title="false" sheet-flush>
     <!-- The active account leads. Its menu lists the accounts; with one account it is just
          named. On a phone the accounts are in Profile. -->
-    <SidebarSection v-if="!isMobile" class="!mt-0">
-      <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
-        <SidebarItem :label="subtitle" icon="lucide-circle-user-round">
-          <template #suffix>
-            <span
-              class="lucide-chevrons-up-down mr-2 size-3.5 text-ink-gray-5"
-              aria-hidden="true"
-            />
-          </template>
-        </SidebarItem>
-      </Dropdown>
-      <SidebarItem v-else :label="subtitle" icon="lucide-circle-user-round" />
-    </SidebarSection>
+    <AccountSwitcher
+      v-if="!isMobile"
+      :accounts="user.data.accounts"
+      :active-id="store.accountId"
+      :label="subtitle"
+      @select="switchAccount"
+    />
 
     <!-- On a phone, the sheet the Calendar tab and the header's menu button open, as develop's
          was: the views as a row of tiles, a glyph in a square and the name beneath, the square

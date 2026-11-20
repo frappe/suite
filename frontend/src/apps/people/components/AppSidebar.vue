@@ -3,19 +3,12 @@
 	     bottom nav's sheet on a phone. -->
   <AreaSidebar area="people" :title="__('People')">
     <!-- The active account leads. With one account there is nothing to pick: it is just named. -->
-    <SidebarSection class="!mt-0">
-      <Dropdown v-if="accounts.length > 1" :options="accountMenu" :match-trigger-width="true">
-        <SidebarItem :label="accountName || __('Account')" icon="lucide-circle-user-round">
-          <template #suffix>
-            <span
-              class="lucide-chevrons-up-down mr-2 size-3.5 text-ink-gray-5"
-              aria-hidden="true"
-            />
-          </template>
-        </SidebarItem>
-      </Dropdown>
-      <SidebarItem v-else :label="accountName || __('Account')" icon="lucide-circle-user-round" />
-    </SidebarSection>
+    <AccountSwitcher
+      :accounts="accounts"
+      :active-id="store.accountId"
+      :label="accountName || __('Account')"
+      @select="switchAccount"
+    />
     <SidebarSection class="!mt-4">
       <SidebarItem
         v-for="item in items"
@@ -32,12 +25,12 @@
 <script setup lang="ts">
 import BookUser from '~icons/lucide/book-user'
 import ContactRound from '~icons/lucide/contact-round'
-import { Dropdown, SidebarItem, SidebarSection } from 'frappe-ui'
+import { SidebarItem, SidebarSection } from 'frappe-ui'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { userStore } from '@/apps/people/stores/user'
-import { accountSubmenu, AreaSidebar } from '@/platform/area-sidebar'
+import { AccountSwitcher, AreaSidebar } from '@/platform/area-sidebar'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,11 +45,8 @@ const accountName = computed(
 // the list it was in.
 const listFor = (name: string) =>
   name.startsWith('people-address-book') ? 'people-address-books' : 'people-contacts'
-const accountMenu = computed(() =>
-  accountSubmenu(accounts.value, store.accountId, (accountId) =>
-    router.push({ name: listFor(String(route.name)), params: { accountId } }),
-  ),
-)
+const switchAccount = (accountId: string) =>
+  router.push({ name: listFor(String(route.name)), params: { accountId } })
 
 const items = computed(() => [
   {

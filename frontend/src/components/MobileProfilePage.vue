@@ -50,11 +50,16 @@
           <template #leading>
             <Avatar :label="account._name" size="md" />
           </template>
+          <!-- The tick on the account in use; on any other, what is unread there. -->
           <template #trailing>
             <Check
               v-if="!allAccounts?.active && account.id === accountId"
               class="text-ink-gray-6 size-4 shrink-0"
             />
+            <span v-else-if="unread?.[account.id]" class="text-ink-gray-5 shrink-0 tabular-nums">
+              {{ accountUnreadLabel(unread[account.id]!) }}
+              <span class="sr-only">{{ __('unread') }}</span>
+            </span>
           </template>
         </MobileSettingsRow>
         <MobileSettingsRow
@@ -72,6 +77,10 @@
           </template>
           <template #trailing>
             <Check v-if="allAccounts.active" class="text-ink-gray-6 size-4 shrink-0" />
+            <span v-else-if="allAccounts.unread" class="text-ink-gray-5 shrink-0 tabular-nums">
+              {{ accountUnreadLabel(allAccounts.unread) }}
+              <span class="sr-only">{{ __('unread') }}</span>
+            </span>
           </template>
         </MobileSettingsRow>
       </MobileSettingsCard>
@@ -140,6 +149,7 @@ import { computed, inject, onMounted, ref } from 'vue'
 // The two shells are mail's: a settings card and its rows. They carry no mail in them.
 import MobileSettingsCard from '@/apps/mail/components/mobile/MobileSettingsCard.vue'
 import MobileSettingsRow from '@/apps/mail/components/mobile/MobileSettingsRow.vue'
+import { accountUnreadLabel, type AccountUnread } from '@/platform/area-sidebar'
 import { toast } from '@/platform/feedback'
 import { useDevicePush } from '@/platform/pwa'
 import { translate as __ } from '@/platform/translation'
@@ -150,8 +160,13 @@ import { openSettings, useSettingsGroups } from '@/shell/settings/useSettingsDia
 const props = defineProps<{
   accounts: any[]
   accountId?: string
-  /** Offers every account at once above the accounts, and whether that is what is showing. */
-  allAccounts?: { active: boolean }
+  /**
+   * Offers every account at once below the accounts, whether that is what is showing, and what is
+   * unread across them all.
+   */
+  allAccounts?: { active: boolean; unread?: number }
+  /** What is unread in each account, by account id, shown on the accounts not in use. */
+  unread?: AccountUnread
   logout: { submit: () => void }
   /**
    * The app this page is the Profile of. Its settings are listed with the account's and the

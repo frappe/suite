@@ -114,8 +114,11 @@ export const useAccountSwitch = () => {
   const switchToAll = () => {
     if (isUnifiedRoute(route.name)) return
     rememberUnified(true)
+    // Profile stays Profile, as it does for an account: the choice is made, and the Inbox tab
+    // opens every account's Inbox from it (see MailTabBar).
+    if (route.name === 'mail-profile') return
     const inMailbox = route.name === 'mail-mailbox' || route.name === 'mail-mail'
-    router.push(
+    return router.push(
       unifiedFolderRoute(
         inMailbox ? unifiedFolderFor(route.params.mailbox, store.mailboxes.data) : INBOX_FOLDER,
       ),

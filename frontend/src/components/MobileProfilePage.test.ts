@@ -9,6 +9,7 @@ const mail = await vi.hoisted(async () => {
   const { ref } = await import('vue')
   return {
     accounts: ref<{ id: string; _name: string }[]>([]),
+    unifiedFolders: ref<{ slug: string; unread_threads: number; unread_by_account: object }[]>([]),
     switchAccount: vi.fn(),
     switchToAll: vi.fn(),
   }
@@ -16,6 +17,11 @@ const mail = await vi.hoisted(async () => {
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'one',
+    unifiedFolders: {
+      get data() {
+        return mail.unifiedFolders.value
+      },
+    },
     userResource: {
       data: {
         get accounts() {
@@ -109,3 +115,48 @@ for (const appName of ['mail', 'calendar']) {
     })
   })
 }
+
+// The accounts the reader is not in say what is unread there, as the sidebar's account menu does:
+// that is what tells them to switch.
+describe('mail account unread counts', () => {
+  const mountProfile = () => {
+    const root = document.createElement('div')
+    document.body.appendChild(root)
+    const app = createApp({ setup: () => () => h(MailProfile) })
+    app.config.globalProperties.__ = (text: string) => text
+    app.provide('$user', { data: { full_name: 'Reader', name: 'reader@example.com' } })
+    app.mount(root)
+    cleanup = () => {
+      app.unmount()
+      root.remove()
+    }
+    // What a row ends with, after its name.
+    return (label: string) => {
+      const parts = [...root.querySelectorAll('button')].flatMap((item) => [...item.children])
+      const name = parts.findIndex((part) => part.textContent?.trim() === label)
+      const rest = [...(parts[name]?.parentElement?.children ?? [])]
+      return rest
+        .slice(rest.indexOf(parts[name]!) + 1)
+        .map((part) => part.textContent?.replace(/\s+/g, ' ').trim())
+        .join('')
+    }
+  }
+
+  it("shows each account's unread mail, and stops a count at 99+", () => {
+    mail.accounts.value = [
+      { id: 'one', _name: 'First account' },
+      { id: 'two', _name: 'Second account' },
+      { id: 'three', _name: 'Third account' },
+    ]
+    mail.unifiedFolders.value = [
+      { slug: 'sent', unread_threads: 7, unread_by_account: { one: 7 } },
+      { slug: 'inbox', unread_threads: 203, unread_by_account: { one: 3, two: 200, three: 0 } },
+    ]
+    // prefersUnified is mocked on, so All accounts is what is in use: its row has no count.
+    const row = mountProfile()
+    expect(row('First account')).toBe('3 unread')
+    expect(row('Second account')).toBe('99+ unread')
+    expect(row('Third account')).toBe('')
+    expect(row('All accounts')).toBe('')
+  })
+})

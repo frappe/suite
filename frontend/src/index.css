@@ -107,6 +107,13 @@ body {
   }
 }
 
+/* A tooltip's text keeps the line breaks it is given. The rail's Mail item puts each account with
+   unread mail on a line of its own. `bubble` is the hook frappe-ui offers for styling its tooltips;
+   text without a line break looks as it did. */
+[data-slot='bubble'] {
+  white-space: pre-line;
+}
+
 /* frappe-ui's toast centres its icon on the whole message, so a two-line message
    leaves the icon between its lines. The icon and message start at the top
    instead, so the icon sits on the first line. The margin centres one text line

@@ -3,12 +3,12 @@ import { useRoute } from 'vue-router'
 
 import { calendarArea, useUpcomingSummary } from '@/apps/calendar'
 import { driveUploadProgress, filesArea } from '@/apps/drive'
-import { mailArea, useInboxSummary } from '@/apps/mail'
+import { mailArea, useInboxSummary, type InboxSummary } from '@/apps/mail'
 import { meetArea } from '@/apps/meet'
 import { peopleArea } from '@/apps/people'
 import { adminArea } from '@/composition/admin'
 import { homeArea } from '@/composition/home'
-import type { AreaDefinition } from '@/platform/contracts'
+import type { AreaBadge, AreaDefinition } from '@/platform/contracts'
 import { hasCapabilities, useSession, type Session } from '@/platform/session'
 import type { AreaProgressSource } from '@/shell/areaProgress'
 
@@ -74,18 +74,33 @@ export function useAreaWork(): AreaWork {
 }
 
 interface AreaBadges {
-  readonly mail: number
-  readonly calendar: number
-  readonly [area: string]: number | undefined
+  readonly mail: AreaBadge
+  readonly calendar: AreaBadge
+  readonly [area: string]: AreaBadge | undefined
 }
 
+/**
+ * Mail's badge counts every account's unread Inbox. It is quiet while none of that is in the
+ * reader's own account: mail to a shared account is someone's to read, not theirs alone. With more
+ * than one account, it says which accounts the count is in.
+ */
 export function deriveAreaBadges(
-  inbox: { unread: number } | undefined,
+  inbox: InboxSummary | undefined,
   upcoming?: { upcoming: number },
 ): AreaBadges {
+  const unread = Math.max(0, inbox?.unread ?? 0)
+  const accounts = inbox?.accounts ?? []
+  const waiting = accounts.filter((account) => account.unread > 0)
   return {
-    mail: Math.max(0, inbox?.unread ?? 0),
-    calendar: Math.max(0, upcoming?.upcoming ?? 0),
+    mail: {
+      count: unread,
+      quiet: unread > 0 && !waiting.some((account) => account.personal),
+      parts:
+        accounts.length > 1
+          ? waiting.map((account) => ({ label: account.name, count: account.unread }))
+          : undefined,
+    },
+    calendar: { count: Math.max(0, upcoming?.upcoming ?? 0), quiet: false },
   }
 }
 

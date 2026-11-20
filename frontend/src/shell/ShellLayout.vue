@@ -111,7 +111,7 @@ import { computed, defineAsyncComponent, onUnmounted, ref, useTemplateRef, watch
 import { useRoute } from 'vue-router'
 
 import { AreaSidebarTarget } from '@/platform/area-sidebar'
-import type { AreaDefinition, ScrollOwner, ShellFrame } from '@/platform/contracts'
+import type { AreaBadge, AreaDefinition, ScrollOwner, ShellFrame } from '@/platform/contracts'
 import { shellPhoneChromeRequested } from '@/platform/phone-chrome'
 import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
@@ -134,7 +134,7 @@ import { isMobile } from '@/shell/useIsMobile'
 const props = defineProps<{
   areas: readonly AreaDefinition[]
   activeArea?: AreaDefinition
-  badges: Readonly<Record<string, number>>
+  badges: Readonly<Record<string, AreaBadge | undefined>>
 }>()
 
 defineSlots<{

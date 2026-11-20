@@ -425,8 +425,23 @@ export const operationInboxSummary: Validators<InboxSummaryInput, InboxSummaryOu
     assertSchema(
       value,
       {
-        properties: { unread: { title: 'Unread', type: 'integer' } },
-        required: ['unread'],
+        $defs: {
+          AccountUnread: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              unread: { title: 'Unread', type: 'integer' },
+              personal: { title: 'Personal', type: 'boolean' },
+            },
+            required: ['name', 'unread', 'personal'],
+            title: 'AccountUnread',
+            type: 'object',
+          },
+        },
+        properties: {
+          unread: { title: 'Unread', type: 'integer' },
+          accounts: { items: { $ref: '#/$defs/AccountUnread' }, title: 'Accounts', type: 'array' },
+        },
+        required: ['unread', 'accounts'],
         title: 'InboxSummary',
         type: 'object',
       },
@@ -1811,6 +1826,11 @@ export const operationGetUnifiedFolders: Validators<
               name: { title: 'Name', type: 'string' },
               role: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Role' },
               unread_threads: { title: 'Unread Threads', type: 'integer' },
+              unread_by_account: {
+                additionalProperties: { type: 'integer' },
+                title: 'Unread By Account',
+                type: 'object',
+              },
               accounts: { items: { type: 'string' }, title: 'Accounts', type: 'array' },
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
@@ -1821,7 +1841,16 @@ export const operationGetUnifiedFolders: Validators<
                 title: 'Color',
               },
             },
-            required: ['slug', 'name', 'role', 'unread_threads', 'accounts', 'icon', 'color'],
+            required: [
+              'slug',
+              'name',
+              'role',
+              'unread_threads',
+              'unread_by_account',
+              'accounts',
+              'icon',
+              'color',
+            ],
             title: 'UnifiedFolder',
             type: 'object',
           },

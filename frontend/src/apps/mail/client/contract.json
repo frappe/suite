@@ -14,14 +14,47 @@
       "query": null,
       "body": null,
       "output": {
+        "$defs": {
+          "AccountUnread": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "unread": {
+                "title": "Unread",
+                "type": "integer"
+              },
+              "personal": {
+                "title": "Personal",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "unread",
+              "personal"
+            ],
+            "title": "AccountUnread",
+            "type": "object"
+          }
+        },
         "properties": {
           "unread": {
             "title": "Unread",
             "type": "integer"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/$defs/AccountUnread"
+            },
+            "title": "Accounts",
+            "type": "array"
           }
         },
         "required": [
-          "unread"
+          "unread",
+          "accounts"
         ],
         "title": "InboxSummary",
         "type": "object"
@@ -3221,6 +3254,13 @@
                 "title": "Unread Threads",
                 "type": "integer"
               },
+              "unread_by_account": {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "title": "Unread By Account",
+                "type": "object"
+              },
               "accounts": {
                 "items": {
                   "type": "string"
@@ -3264,6 +3304,7 @@
               "name",
               "role",
               "unread_threads",
+              "unread_by_account",
               "accounts",
               "icon",
               "color"
