@@ -120,6 +120,64 @@ const operationUpcomingSummary: QueryRef<
   loadValidators: async () => (await import('./validators')).operationUpcomingSummary,
 }
 
+export type BookingPageGetOutputBookingHost = { full_name: string; user_image: string | null }
+
+export type BookingPageGetInput = { slug: string }
+
+export type BookingPageGetOutput = {
+  slug: string
+  title: string
+  description: string | null
+  length_minutes: number
+  hosts: Array<BookingPageGetOutputBookingHost>
+}
+
+export type BookingPageGetError = 'DoesNotExistError'
+
+const operationBookingPageGet: QueryRef<
+  BookingPageGetInput,
+  BookingPageGetOutput,
+  BookingPageGetError
+> = {
+  id: 'booking_page_get',
+  owner: 'calendar',
+  kind: 'query',
+  publicName: 'bookingPages.get',
+  method: 'GET',
+  path: 'booking-pages/{slug}',
+  prefix: '/api/suite/calendar/',
+  pathParams: ['slug'],
+  nodeParams: [],
+  entity: null,
+  errors: ['DoesNotExistError'],
+  loadValidators: async () => (await import('./validators')).operationBookingPageGet,
+}
+
+export type BookingPageSlotsInput = { from: string; to: string; slug: string }
+
+export type BookingPageSlotsOutput = { slots: Array<string>; bookable_until: string }
+
+export type BookingPageSlotsError = 'BadRequest' | 'DoesNotExistError'
+
+const operationBookingPageSlots: QueryRef<
+  BookingPageSlotsInput,
+  BookingPageSlotsOutput,
+  BookingPageSlotsError
+> = {
+  id: 'booking_page_slots',
+  owner: 'calendar',
+  kind: 'query',
+  publicName: 'bookingPages.slots',
+  method: 'GET',
+  path: 'booking-pages/{slug}/slots',
+  prefix: '/api/suite/calendar/',
+  pathParams: ['slug'],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest', 'DoesNotExistError'],
+  loadValidators: async () => (await import('./validators')).operationBookingPageSlots,
+}
+
 export type CalendarGetCalendarEventsOutputCalendarEvent = {
   name: string
   account: string
@@ -1227,6 +1285,10 @@ export const api = {
     splitSeries: operationSplitCalendarEventSeries,
     deleteFollowing: operationDeleteCalendarEventSeriesFrom,
     respond: operationRsvpCalendarEvent,
+  },
+  bookingPages: {
+    get: operationBookingPageGet,
+    slots: operationBookingPageSlots,
   },
   calendars: {
     list: operationGetCalendarsWithShared,

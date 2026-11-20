@@ -128,3 +128,6 @@ export function installEventReminders({
 /** Calendar's Settings group. Loads when Settings opens. */
 export const loadCalendarSettings = () =>
   import('@/apps/calendar/settings').then((module) => module.calendarSettings)
+
+/** The public booking page at `/book/<slug>`, open to guests (spec 003). Loads on first visit. */
+export const loadBookingPage = () => import('@/apps/calendar/booking/pages/BookingPage.vue')

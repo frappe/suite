@@ -76,6 +76,8 @@ website_route_rules = [
     # a person an Admin created with a temporary password (`/join`).
     {"from_route": "/join", "to_route": "suite"},
     {"from_route": "/join/<path:app_path>", "to_route": "suite"},
+    # Calendar booking pages: a guest picks a time with a host (specs/calendar/003).
+    {"from_route": "/book/<slug>", "to_route": "suite"},
 ]
 
 home_page = "suite"

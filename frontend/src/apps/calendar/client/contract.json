@@ -596,6 +596,158 @@
       "bytes": false
     },
     {
+      "id": "booking_page_get",
+      "kind": "query",
+      "publicName": "bookingPages.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "booking-pages/{slug}",
+      "pathParams": [
+        "slug"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "BookingHost": {
+            "properties": {
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "full_name",
+              "user_image"
+            ],
+            "title": "BookingHost",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "length_minutes": {
+            "title": "Length Minutes",
+            "type": "integer"
+          },
+          "hosts": {
+            "items": {
+              "$ref": "#/$defs/BookingHost"
+            },
+            "title": "Hosts",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "length_minutes",
+          "hosts"
+        ],
+        "title": "BookingPage",
+        "type": "object"
+      },
+      "errors": [
+        "DoesNotExistError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "booking_page_slots",
+      "kind": "query",
+      "publicName": "bookingPages.slots",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "booking-pages/{slug}/slots",
+      "pathParams": [
+        "slug"
+      ],
+      "query": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "SlotWindow",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "description": "Slot start instants in UTC, ascending; none starts at or after `bookable_until`.",
+        "properties": {
+          "slots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slots",
+            "type": "array"
+          },
+          "bookable_until": {
+            "title": "Bookable Until",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slots",
+          "bookable_until"
+        ],
+        "title": "BookingSlots",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "DoesNotExistError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "calendar.get_calendar_events",
       "kind": "query",
       "publicName": "events.window",

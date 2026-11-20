@@ -26,9 +26,10 @@ import { computed, onMounted, onUnmounted, reactive, ref, useTemplateRef } from 
 
 import { api, client, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
+import { detectTimezone } from '@/platform/time-zone'
 import { useWorkspace } from '@/platform/workspace'
 import SuiteMark from '@/shell/SuiteMark.vue'
-import { detectTimezone, useTimezones } from '@/shell/useTimezones'
+import { useTimezones } from '@/shell/useTimezones'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 
 import AccountSetupStep from './AccountSetupStep.vue'

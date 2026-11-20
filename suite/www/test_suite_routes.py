@@ -19,6 +19,7 @@ class SuiteRoutes(IntegrationTestCase):
             "admin",
             "admin/users",
             "admin/mail/domains",
+            "book/onboarding-call",
         ):
             with self.subTest(path=path):
                 frappe.local.request = Request(EnvironBuilder(path="/" + path).get_environ())
