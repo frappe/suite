@@ -22,6 +22,7 @@ class ExternalCalendar(Document):
         site_wide: DF.Check
         source: DF.Data
         source_key: DF.Data
+        starts_visible: DF.Check
     # end: auto-generated types
 
     """A calendar of events this site holds on behalf of another system.

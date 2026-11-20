@@ -93,28 +93,30 @@ describe('which calendars are drawn', () => {
   })
   const mine = row('mine', { may_write_all: 1, may_delete: 1 })
   const team = row('team')
+  // The site's own: a source starts a holiday calendar ticked and a birthday calendar unticked
   const holidays = row('h1', { name: 'external|h1', account: 'external' })
+  const birthdays = row('b1', { name: 'external|b1', account: 'external', visible: 0 })
 
   const drawn = () =>
     Object.fromEntries((userStore().calendars.data ?? []).map((cal) => [cal.name, cal.visible]))
 
   beforeEach(() => {
     localStorage.clear()
-    server.calendars.splice(0, Infinity, mine, team, holidays)
+    server.calendars.splice(0, Infinity, mine, team, holidays, birthdays)
     setActivePinia(createPinia())
   })
 
-  it("starts shared calendars unticked, the site's own among them, and the reader's own as the server says", () => {
-    expect(drawn()).toEqual({ 'acc|mine': 1, 'acc|team': 0, 'external|h1': 0 })
+  it("starts shared calendars unticked, the site's own as their source says, and the reader's own as the server says", () => {
+    expect(drawn()).toEqual({ 'acc|mine': 1, 'acc|team': 0, 'external|h1': 1, 'external|b1': 0 })
   })
 
-  it('draws a shared calendar once the reader ticks it', () => {
-    userStore().sharedVisibility = { 'external|h1': 1 }
-    expect(drawn()).toEqual({ 'acc|mine': 1, 'acc|team': 0, 'external|h1': 1 })
+  it('draws a shared calendar as the reader ticks it, whatever its source said', () => {
+    userStore().sharedVisibility = { 'external|h1': 0, 'external|b1': 1 }
+    expect(drawn()).toEqual({ 'acc|mine': 1, 'acc|team': 0, 'external|h1': 0, 'external|b1': 1 })
   })
 
   it('keeps drawn the shared calendars an earlier build was drawing', () => {
     localStorage.setItem('calendar-hidden-shared', JSON.stringify([]))
-    expect(drawn()).toEqual({ 'acc|mine': 1, 'acc|team': 1, 'external|h1': 0 })
+    expect(drawn()).toEqual({ 'acc|mine': 1, 'acc|team': 1, 'external|h1': 1, 'external|b1': 0 })
   })
 })

@@ -43,7 +43,10 @@ def calendar_rows(user: str) -> list[dict]:
             "_name": calendar.calendar_name,
             "color": calendar.color,
             "default": 0,
-            "visible": 1,
+            # Whether a reader who has not chosen yet sees it: the source's call, since a holiday
+            # is news to everyone and a birthday most days is not. The reader's choice is kept in
+            # their browser and wins.
+            "visible": calendar.starts_visible,
             # Nobody writes to these here. What they say is the source's to change.
             "may_write_all": 0,
             "may_delete": 0,
@@ -87,7 +90,7 @@ def calendars_for(user: str) -> list[frappe._dict]:
     return frappe.get_all(
         "External Calendar",
         or_filters=drawn,
-        fields=["name", "calendar_name", "color"],
+        fields=["name", "calendar_name", "color", "starts_visible"],
         order_by="calendar_name asc",
     )
 

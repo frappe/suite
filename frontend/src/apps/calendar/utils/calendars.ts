@@ -27,7 +27,8 @@ export type SharedVisibility = Record<string, 0 | 1>
 /**
  * The choices an earlier build kept as a list of the shared calendars hidden, carried into the
  * map. Every shared calendar that list did not hide was being drawn, so it stays drawn. The
- * site's own calendars are new to this reader whatever the list says, and start unticked.
+ * site's own calendars are new to this reader whatever the list says, and start as their
+ * source says.
  */
 export const carriedVisibility = (
   calendars: CalendarRow[],
@@ -44,6 +45,14 @@ export const carriedVisibility = (
   // A choice already made wins over what the old list implied.
   ...chosen,
 })
+
+/**
+ * Whether a shared calendar is drawn for a reader who has not chosen yet. One someone else keeps
+ * starts unticked. A calendar this site keeps says for itself in `visible`: a holiday calendar
+ * starts ticked, since a closed office is news to everyone, and a birthday calendar does not.
+ */
+export const startsVisible = (cal: CalendarRow): 0 | 1 =>
+  cal.account === EXTERNAL_ACCOUNT ? cal.visible : 0
 
 /**
  * Whether an event is drawn: it sits on a calendar the reader has switched on. One predicate

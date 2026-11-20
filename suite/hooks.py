@@ -362,6 +362,10 @@ scheduler_events = {
         "suite.calendar.doctype.calendar_exchange.calendar_exchange.retry_stuck_calendar_exchanges",
         "suite.mail.doctype.contacts_exchange.contacts_exchange.retry_stuck_contacts_exchanges",
     ],
+    "hourly_long": [
+        # calendar
+        "suite.calendar.hr.sync.sync_hr_calendars_hourly",
+    ],
     "all": [
         "suite.content.jobs.sweep",
         "suite.content.jobs.queue_conversion",
