@@ -37,17 +37,16 @@ vi.mock('@/apps/mail/composables/useInboxTabs', async () => {
   const { computed } = await import('vue')
   return {
     useTabChoiceMenu: () => ({
-      categoriesSwitch: computed(() => null),
-      tabGroups: computed(() => []),
+      rows: computed(() => []),
     }),
   }
 })
 vi.stubGlobal('__', (text: string) => text)
 
-const tab = (category: InboxCategory, label: string, unread: number): InboxTab => ({
-  category,
+const tab = (id: InboxCategory, label: string, unread: number): InboxTab => ({
+  id,
   label,
-  icon: `lucide-${category}`,
+  icon: `lucide-${id}`,
   unread,
 })
 const TABS = [

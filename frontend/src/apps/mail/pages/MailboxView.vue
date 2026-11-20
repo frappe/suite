@@ -308,7 +308,7 @@
                 mailbox !== 'search'
                   ? filter
                     ? __('No mails found for the selected filter.')
-                    : __('No mails in {0}.', [inboxTab ? tabName(inboxTab) : mailboxName])
+                    : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : mailboxName])
                   : hasSearchQuery
                     ? __('No results found for the given query.')
                     : __('Search your mail')
@@ -957,10 +957,11 @@ const {
 })
 
 // The Inbox's category tabs; `inboxTab` is the open one, and undefined in any other list or when the
-// Inbox isn't split.
+// Inbox isn't split. `inboxCategory` is what the list asks for: none in All mail, the whole Inbox.
 const {
   tabs: inboxTabs,
   active: inboxTab,
+  category: inboxCategory,
   routeFor: routeForTab,
 } = useInboxTabs(
   () => mailbox === store.mailboxIds.inbox && 'account',
@@ -972,7 +973,7 @@ const {
 const clearScope = computed(() =>
   ['search', 'starred', store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox)
     ? undefined
-    : listScope(inboxTab.value, mailboxName.value, filter.value),
+    : listScope(inboxCategory.value, mailboxName.value, filter.value),
 )
 
 // Reset resource for a mailbox: the window starts at the top and runs as deep as the composable asks
@@ -987,7 +988,7 @@ const threads = useInfiniteQuery(api.mail.threads.list, () =>
         limit: PAGE_LENGTH,
         start: 0,
         filter_by: filter.value,
-        category: inboxTab.value,
+        category: inboxCategory.value,
       }
     : false,
 )

@@ -65,6 +65,7 @@ vi.hoisted(() => {
     max_attachment_size: 25_000_000,
     inbox_tabs: [],
     split_inbox: 0,
+    all_mail_tab: 1,
     email_classification: false,
     is_suite_cloud_configured: false,
     accounts: [account],

@@ -30,7 +30,8 @@
   "compose_section",
   "undo_send_period",
   "split_inbox",
-  "inbox_tabs"
+  "inbox_tabs",
+  "all_mail_tab"
  ],
  "fields": [
   {
@@ -221,6 +222,13 @@
    "fieldname": "inbox_tabs",
    "fieldtype": "JSON",
    "label": "Inbox Tabs"
+  },
+  {
+   "default": "1",
+   "description": "Whether a split Inbox ends with an All Mail tab, every category in one list.",
+   "fieldname": "all_mail_tab",
+   "fieldtype": "Check",
+   "label": "All Mail Tab"
   }
  ],
  "grid_page_length": 50,
@@ -232,7 +240,7 @@
    "link_fieldname": "user_settings"
   }
  ],
- "modified": "2026-10-12 12:00:00.000000",
+ "modified": "2026-11-20 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "User Settings",

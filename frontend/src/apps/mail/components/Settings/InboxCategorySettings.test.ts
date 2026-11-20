@@ -6,7 +6,7 @@ import { requireTestElement } from '@/platform/testing/dom'
 import InboxCategorySettings from './InboxCategorySettings.vue'
 
 const state = vi.hoisted(() => ({
-  user: { email_classification: true, split_inbox: 1, inbox_tabs: [''] },
+  user: { email_classification: true, split_inbox: 1, inbox_tabs: [''], all_mail_tab: 1 },
   save: vi.fn(),
 }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ query: {} }) }))
@@ -68,6 +68,7 @@ beforeEach(() => {
     email_classification: true,
     split_inbox: 1,
     inbox_tabs: ['primary', 'updates', 'forums', 'promotions', 'social'],
+    all_mail_tab: 1,
   }
   state.save.mockReset().mockResolvedValue(undefined)
 })
@@ -87,11 +88,15 @@ it('holds the last category on: the switch is the way to one list', () => {
   expect(box(root, 'Promotions').disabled).toBe(true)
   expect(box(root, 'Updates').disabled).toBe(false)
 })
-it('shows no category to tick while the Inbox is one list', () => {
+it('shows no category to tick while the Inbox is one list, nor the All mail tab', () => {
   state.user.split_inbox = 0
   const root = mount()
   expect(root.textContent).toContain('Split Inbox into categories')
+  expect(root.textContent).not.toContain('All mail tab')
   expect(root.querySelector('input')).toBeNull()
+})
+it('offers the All mail tab while the Inbox is split', () => {
+  expect(mount().textContent).toContain('All mail tab')
 })
 it('shows nothing on a site that does not sort mail into categories', () => {
   state.user.email_classification = false

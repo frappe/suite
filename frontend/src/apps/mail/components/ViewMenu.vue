@@ -1,7 +1,7 @@
 <template>
   <!-- How the list is laid out, in one menu with the page's actions: Split View, which lays out the
        whole page, list and pane; how the list is grouped by date; and in an Inbox, whether it is
-       split into categories and which get a tab. Each choice applies on click. -->
+       split into categories and, in a submenu, which get a tab. Each choice applies on click. -->
   <Dropdown :options="menu" align="end">
     <Button variant="ghost" :tooltip="__('View')" :aria-label="__('View')">
       <template #icon>
@@ -25,7 +25,7 @@ const { inbox = false } = defineProps<{ inbox?: boolean }>()
 
 const showReadingPane = useReadingPane()
 const toggleReadingPane = useToggleReadingPane()
-const { categoriesSwitch, tabGroups } = useTabChoiceMenu()
+const { rows: tabRows } = useTabChoiceMenu()
 
 // Grouping the list by date (see dateGroup): the same switch as Settings → Layout, saved as it is
 // flipped.
@@ -54,9 +54,8 @@ const menu = computed(() => [
         switchValue: groupedByDate.value,
         onClick: (on: boolean) => groupByDate(on),
       },
-      ...(inbox && categoriesSwitch.value ? [categoriesSwitch.value] : []),
+      ...(inbox ? tabRows.value : []),
     ],
   },
-  ...(inbox ? tabGroups.value : []),
 ])
 </script>
