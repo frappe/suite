@@ -256,7 +256,10 @@ export const registration: OwnerRegistration = {
     }
     if (['add_identity', 'delete_identity_names', 'save_identity'].includes(reference.id))
       return { effects: { invalidates: ['mail.get_identities'] } }
-    if (['create_signature', 'update_signature', 'delete_signature'].includes(reference.id))
+    // An edit also reaches the identities that carried the old signature.
+    if (reference.id === 'update_signature')
+      return { effects: { invalidates: ['mail.signatures', 'mail.get_identities'] } }
+    if (['create_signature', 'delete_signature'].includes(reference.id))
       return { effects: { invalidates: ['mail.signatures'] } }
     if (
       reference.kind === 'mutation' &&
