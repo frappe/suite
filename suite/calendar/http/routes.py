@@ -235,6 +235,30 @@ class DensityRow(TypedDict):
     is_declined: bool
 
 
+class BookingHost(TypedDict):
+    full_name: str
+    user_image: str | None
+
+
+class BookingPage(TypedDict):
+    slug: str
+    title: str
+    description: str | None
+    length_minutes: int
+    hosts: list[BookingHost]
+
+
+# UTC instants; `to` is exclusive and at most 42 days after `from`.
+SlotWindow = TypedDict("SlotWindow", {"from": str, "to": str})
+
+
+class BookingSlots(TypedDict):
+    """Slot start instants in UTC, ascending; none starts at or after `bookable_until`."""
+
+    slots: list[str]
+    bookable_until: str
+
+
 CONTRACT_ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
@@ -481,7 +505,40 @@ ROUTES = (
         kind="query",
         public_name="events.upcoming",
     ),
+    # Booking pages (specs/calendar/003-booking-pages.md): what a guest reads on `/book/<slug>`.
+    # A switched-off page answers as a missing one (§The link).
+    Route(
+        "GET",
+        "booking-pages/{slug}",
+        "booking_page_get",
+        errors=(frappe.DoesNotExistError,),
+        output=BookingPage,
+        allow_guest=True,
+        kind="query",
+        public_name="bookingPages.get",
+    ),
+    Route(
+        "GET",
+        "booking-pages/{slug}/slots",
+        "booking_page_slots",
+        errors=(BadRequest, frappe.DoesNotExistError),
+        query=SlotWindow,
+        output=BookingSlots,
+        allow_guest=True,
+        kind="query",
+        public_name="bookingPages.slots",
+    ),
 )
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def booking_page_get(slug: str) -> BookingPage:
+    raise NotImplementedError("Booking pages are served by the free-slot change")
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def booking_page_slots(slug: str, **kwargs: Given) -> BookingSlots:
+    raise NotImplementedError("Booking pages are served by the free-slot change")
 
 
 @frappe.whitelist(methods=["GET"])

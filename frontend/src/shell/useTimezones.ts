@@ -8,25 +8,3 @@ export function useTimezones() {
   const timezoneOptions = computed(() => timezones.value.map((value) => ({ label: value, value })))
   return { timezones, timezoneOptions }
 }
-
-// Browsers report legacy CLDR zone names; the framework list carries the renamed IDs.
-const RENAMED_ZONES = new Map<string, string>(
-  Object.entries({
-    'Asia/Calcutta': 'Asia/Kolkata',
-    'Asia/Katmandu': 'Asia/Kathmandu',
-    'Asia/Rangoon': 'Asia/Yangon',
-    'Asia/Saigon': 'Asia/Ho_Chi_Minh',
-    'America/Godthab': 'America/Nuuk',
-    'Atlantic/Faeroe': 'Atlantic/Faroe',
-    'Europe/Kiev': 'Europe/Kyiv',
-  }),
-)
-
-export function normalizeTimezone(zone: string): string {
-  return RENAMED_ZONES.get(zone) ?? zone
-}
-
-export function detectTimezone(): string {
-  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return normalizeTimezone(zone)
-}

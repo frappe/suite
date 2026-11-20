@@ -1,6 +1,7 @@
 import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 
+import { loadBookingPage } from '@/apps/calendar'
 import { RECOVERY_COPIES_TITLE } from '@/apps/drive'
 import type { PhoneChromeOwner, ShellFrame } from '@/platform/contracts'
 import AppLoadErrorView from '@/shell/AppLoadErrorView.vue'
@@ -146,6 +147,15 @@ export const routes: RouteRecordRaw[] = [
       title: 'Join Frappe Suite',
       onboarding: true,
     },
+  },
+  // A Calendar booking page (spec 003): someone outside the company picks a free time with a
+  // host, signed in or not. A page of its own, outside the shell and any area.
+  {
+    path: '/book/:slug',
+    name: 'calendar-booking-page',
+    component: loadBookingPage,
+    props: true,
+    meta: { frame: 'none', scroll: 'content', allowGuest: true, title: 'Book a time' },
   },
   {
     path: '/suite/welcome',

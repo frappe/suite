@@ -128,7 +128,7 @@ describe('suite route table', () => {
     expect(router.resolve('/drive/favourites').name).toBe('not-found')
   })
 
-  it.each(['/meet/demo', '/mail/login'])(
+  it.each(['/meet/demo', '/mail/login', '/book/onboarding-call'])(
     'lets a guest reach %s without a login redirect',
     async (path) => {
       state.status = 'guest'

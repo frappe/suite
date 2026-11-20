@@ -66,10 +66,11 @@ import { useCursor, type CursorMode } from '@/platform/cursor'
 import { toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
+import { normalizeTimezone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
 import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
-import { normalizeTimezone, useTimezones } from '@/shell/useTimezones'
+import { useTimezones } from '@/shell/useTimezones'
 
 const THEME_OPTIONS: {
   label: string
