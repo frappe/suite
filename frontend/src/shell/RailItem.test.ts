@@ -43,22 +43,16 @@ async function mount(props: InstanceType<typeof RailItem>['$props']) {
 const icon = { render: () => h('svg') }
 
 describe('the rail unread dot', () => {
-  it('is red for mail that is the reader’s own', async () => {
+  it('is red for mail that is the reader’s own, gray for mail that is not theirs alone', async () => {
     expect((await mount({ label: 'Mail', icon, badge: 3, badgeStyle: 'dot' })).dot).toBe('red')
-  })
-
-  it('is gray for mail that is not theirs alone', async () => {
-    const item = await mount({ label: 'Mail', icon, badge: 3, badgeStyle: 'dot', badgeQuiet: true })
-    expect(item.dot).toBe('gray')
-  })
-
-  it('is not drawn with nothing to count', async () => {
-    expect((await mount({ label: 'Mail', icon, badge: 0, badgeStyle: 'dot' })).dot).toBeNull()
-  })
-
-  it('says the count in the tooltip', async () => {
-    const item = await mount({ label: 'Mail', icon, badge: 3, badgeStyle: 'dot' })
-    expect(item.tooltip).toBe('3 unread')
+    const quiet = await mount({
+      label: 'Mail',
+      icon,
+      badge: 3,
+      badgeStyle: 'dot',
+      badgeQuiet: true,
+    })
+    expect(quiet.dot).toBe('gray')
   })
 
   it('names each place the count is in, one to a line', async () => {

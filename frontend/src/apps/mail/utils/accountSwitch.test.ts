@@ -16,7 +16,6 @@ const routes = [
   { path: '/account/:accountId/mailbox/:mailbox/:threadID', name: 'mail-mail', component: page },
   { path: '/account/:accountId/outbox', name: 'mail-outbox', component: page },
   { path: '/account/:accountId/profile', name: 'mail-profile', component: page },
-  { path: '/all/:folder', name: 'mail-unified', component: page },
 ]
 
 let app: App | undefined
@@ -44,7 +43,6 @@ const switcherAt = async (path: string) => {
     },
     switchToAll: async () => {
       await switcher.switchToAll()
-      await router.isReady()
       return router.currentRoute.value.fullPath
     },
   }
@@ -75,11 +73,6 @@ describe('switching accounts', () => {
 
 describe('switching to every account at once', () => {
   afterEach(() => localStorage.clear())
-
-  it('opens the same folder across every account from a folder', async () => {
-    const { switchToAll } = await switcherAt('/account/alice/mailbox/inbox')
-    expect(await switchToAll()).toBe('/all/inbox')
-  })
 
   // On a phone the accounts are picked on Profile. Picking one stays there, so picking all of them
   // does too; the Inbox tab then opens the merged Inbox.

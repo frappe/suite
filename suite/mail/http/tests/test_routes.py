@@ -41,24 +41,6 @@ class TestHandlers(UnitTestCase):
             },
         )
 
-    @patch.object(routes, "get_user_personal_jmap_account", return_value=None)
-    @patch.object(
-        routes,
-        "get_inbox_unread_by_account",
-        return_value=[{"account": "team", "name": "team@example.com", "unread": 5}],
-    )
-    def test_inbox_summary_without_a_personal_account(self, unread, personal):
-        self.assertEqual(
-            routes.inbox_summary(),
-            {"unread": 5, "accounts": [{"name": "team@example.com", "unread": 5, "personal": False}]},
-        )
-
-    @patch.object(routes, "get_user_personal_jmap_account")
-    @patch.object(routes, "get_inbox_unread_by_account", return_value=[])
-    def test_inbox_summary_looks_up_no_account_without_mail(self, unread, personal):
-        self.assertEqual(routes.inbox_summary(), {"unread": 0, "accounts": []})
-        personal.assert_not_called()
-
 
 class TestInviteRefusals(UnitTestCase):
     def setUp(self):

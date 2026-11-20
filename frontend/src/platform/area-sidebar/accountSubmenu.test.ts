@@ -105,17 +105,15 @@ describe('accountSubmenu unread counts', () => {
     unread,
   })
 
-  it('says what is unread in an account that is not in use', () => {
-    const rows = accountSubmenu(accounts, 'one', () => {}, undefined, { one: 5, two: 3 })
+  const three = [...accounts, { id: 'three', _name: 'three@example.com' }]
+
+  it('says what is unread in the accounts not in use', () => {
+    const rows = accountSubmenu(three, 'one', () => {}, undefined, { one: 5, two: 3, three: 0 })
     expect(rows.map(endOf)).toEqual([
       { text: '', ticked: true },
       { text: '3 unread', ticked: false },
+      { text: '', ticked: false },
     ])
-  })
-
-  it('leaves the end empty for an account with nothing unread', () => {
-    const rows = accountSubmenu(accounts, 'one', () => {}, undefined, { two: 0 })
-    expect(endOf(rows[1]!)).toEqual({ text: '', ticked: false })
   })
 
   it('stops a count at 99+', () => {
@@ -123,14 +121,15 @@ describe('accountSubmenu unread counts', () => {
     expect(endOf(rows[1]!).text).toBe('99+ unread')
   })
 
-  it('says what is unread across every account on the all-accounts row', () => {
-    const rows = accountSubmenu(accounts, 'one', () => {}, all(false, 8), { one: 5, two: 3 })
-    expect(endOf(rows.at(-1)!)).toEqual({ text: '8 unread', ticked: false })
-  })
-
-  it('counts every account while all of them are showing', () => {
-    const rows = accountSubmenu(accounts, 'one', () => {}, all(true, 8), { one: 5, two: 3 })
-    expect(rows.map(endOf)).toEqual([
+  it('counts every account on the all-accounts row, and each account while it is picked', () => {
+    const unread = { one: 5, two: 3 }
+    expect(endOf(accountSubmenu(accounts, 'one', () => {}, all(false, 8), unread).at(-1)!)).toEqual(
+      {
+        text: '8 unread',
+        ticked: false,
+      },
+    )
+    expect(accountSubmenu(accounts, 'one', () => {}, all(true, 8), unread).map(endOf)).toEqual([
       { text: '5 unread', ticked: false },
       { text: '3 unread', ticked: false },
       { text: '', ticked: true },

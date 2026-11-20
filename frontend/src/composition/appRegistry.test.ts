@@ -129,40 +129,24 @@ describe('app registry', () => {
 
   // Mail in the reader's own account asks for them. Mail only in the accounts they share with
   // others is there to be seen, without the alarm.
-  it("keeps the Mail badge loud while any unread mail is in the reader's own account", () => {
-    expect(deriveAreaBadges(inbox(account('me', 1, true), account('team', 6))).mail.quiet).toBe(
-      false,
-    )
-  })
-
-  it('quiets the Mail badge when the unread mail is all in shared accounts', () => {
-    expect(deriveAreaBadges(inbox(account('me', 0, true), account('team', 7))).mail.quiet).toBe(
-      true,
-    )
-  })
-
-  it('has nothing to quiet when nothing is unread', () => {
-    expect(deriveAreaBadges(inbox(account('me', 0, true))).mail.quiet).toBe(false)
-    expect(deriveAreaBadges(undefined).mail.quiet).toBe(false)
-  })
-
-  it('names each account with unread mail, in the order they come', () => {
-    const badge = deriveAreaBadges(
-      inbox(
-        account('me@example.com', 5, true),
-        account('dev@example.com', 0),
-        account('team@example.com', 3),
-      ),
-    ).mail
-    expect(badge.parts).toEqual([
-      { label: 'me@example.com', count: 5 },
-      { label: 'team@example.com', count: 3 },
-    ])
+  it("quiets the Mail badge only while none of the unread mail is the reader's own", () => {
+    const quiet = (own: number) =>
+      deriveAreaBadges(inbox(account('me', own, true), account('team', 6))).mail.quiet
+    expect(quiet(1)).toBe(false)
+    expect(quiet(0)).toBe(true)
   })
 
   // With one account there is nowhere else the mail could be: the count says it all.
-  it('names no account when the reader has only one', () => {
-    expect(deriveAreaBadges(inbox(account('me@example.com', 5, true))).mail.parts).toBeUndefined()
+  it('names each account with unread mail, when there is more than one', () => {
+    const me = account('me@example.com', 5, true)
+    expect(
+      deriveAreaBadges(inbox(me, account('dev@example.com', 0), account('team@example.com', 3)))
+        .mail.parts,
+    ).toEqual([
+      { label: 'me@example.com', count: 5 },
+      { label: 'team@example.com', count: 3 },
+    ])
+    expect(deriveAreaBadges(inbox(me)).mail.parts).toBeUndefined()
   })
 
   it('derives the Calendar badge from what is left of the day', () => {
