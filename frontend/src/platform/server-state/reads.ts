@@ -33,6 +33,11 @@ interface Flight {
   consumers: Set<symbol>
   work: Promise<unknown>
 }
+interface LandedWrite {
+  /** The revision a read had to begin at or before to have missed the write. */
+  revision: number
+  update(value: unknown): unknown
+}
 interface OptimisticRead {
   before: unknown
   pages: unknown[]
@@ -48,6 +53,13 @@ export class Reads {
   private readonly rooms = new Map<string, () => void>()
   private readonly gc = new Map<string, ReturnType<typeof setTimeout>>()
   private readonly optimisticUpdates = new Map<ReadRecord, OptimisticRead>()
+  // Writes that landed while a read of the record was out. That read's answer may predate them, and
+  // a write that changes a list without reading it again would be undone by it, so the answer takes
+  // their change too: a mail opened while its list reloads came back unread, and went from a list
+  // filtered to unread mail on the next reload.
+  private readonly landedDuringRead = new Map<ReadRecord, LandedWrite[]>()
+  // Records reading every loaded page again: the pages already in are held until the last one is.
+  private readonly refreshingPages = new Set<ReadRecord>()
 
   constructor(
     private readonly transport: Transport,
@@ -80,6 +92,21 @@ export class Reads {
     this.collect(record)
   }
 
+  private readOut(record: ReadRecord): boolean {
+    return record.fetching > 0 || this.refreshingPages.has(record)
+  }
+
+  /** `value`, read from `revision` on, with the change of every write that landed after it began. */
+  private withWritesLanded(record: ReadRecord, revision: number, value: unknown): unknown {
+    return (this.landedDuringRead.get(record) ?? [])
+      .filter((write) => revision <= write.revision)
+      .reduce((landed, write) => write.update(landed), value)
+  }
+
+  private settleWritesLanded(record: ReadRecord): void {
+    if (!this.readOut(record)) this.landedDuringRead.delete(record)
+  }
+
   optimistic<I>(partition: string, input: I, effect: Effects<I>['optimisticReads']) {
     const changes = new Map<ReadRecord, OptimisticRead>()
     if (effect)
@@ -106,6 +133,11 @@ export class Reads {
         if (rollback) {
           record.value = change.before
           record.pages = change.pages
+        } else if (this.readOut(record)) {
+          // The write commits at the next revision: every read out now began before it.
+          const landed = this.landedDuringRead.get(record) ?? []
+          landed.push({ revision: this.revision, update: change.update })
+          this.landedDuringRead.set(record, landed)
         }
       }
     }
@@ -232,11 +264,15 @@ export class Reads {
         if (this.flights.get(key) === active) this.flights.delete(key)
         return this.fetch(record, input, options, next, apply)
       }
-      const normalized = this.entities.normalize(
-        outcome.output,
-        record.reference.entity,
-        partition,
+      const normalized = this.withWritesLanded(
+        record,
         outcome.revision,
+        this.entities.normalize(
+          outcome.output,
+          record.reference.entity,
+          partition,
+          outcome.revision,
+        ),
       )
       if (!apply) return normalized
       if (next) {
@@ -261,6 +297,7 @@ export class Reads {
       active.consumers.delete(token)
       if (!active.consumers.size) active.controller.abort()
       record.fetching -= 1
+      this.settleWritesLanded(record)
       if (!record.observers.size && !record.fetching) this.collect(record)
       if (next) record.fetchingNext = false
     }
@@ -277,6 +314,23 @@ export class Reads {
     }
     const generation = (this.pageRefreshes.get(record.key) ?? 0) + 1
     this.pageRefreshes.set(record.key, generation)
+    this.refreshingPages.add(record)
+    try {
+      await this.refreshEachPage(record, page, generation, signal)
+    } finally {
+      this.refreshingPages.delete(record)
+      this.settleWritesLanded(record)
+    }
+  }
+
+  private async refreshEachPage(
+    record: ReadRecord,
+    page: import('@/platform/transport').PageCapability,
+    generation: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    // A write that lands while a later page is out finds the earlier pages already in.
+    const revision = this.revision
     const depth = record.pages.length
     const pages: unknown[] = []
     let input = record.input
@@ -301,8 +355,9 @@ export class Reads {
     if (record.partition !== this.access(record.policy, record.input, record.context))
       throw abortError()
     if (this.pageRefreshes.get(record.key) !== generation) return
-    if (record.pages.length > depth) return this.refreshPages(record, signal)
-    this.setValue(record, pages[0], pages)
+    if (record.pages.length > depth) return this.refreshEachPage(record, page, generation, signal)
+    const settled = pages.map((value) => this.withWritesLanded(record, revision, value))
+    this.setValue(record, settled[0], settled)
     record.status = 'success'
     record.stale = false
     record.updatedAt = Date.now()
@@ -388,6 +443,7 @@ export class Reads {
     this.flights.clear()
     this.records.clear()
     this.optimisticUpdates.clear()
+    this.landedDuringRead.clear()
     this.pageRefreshes.clear()
     this.entities.clear()
     this.revision += 1

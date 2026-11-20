@@ -790,3 +790,122 @@ describe('Mail settings through the shared client', () => {
     expect(await bytes.text()).toBe('mail attachment')
   })
 })
+
+describe('A mail read while its list is being read again', () => {
+  // A small mail server: one folder of conversations, each one message. A list read takes its copy
+  // of the folder when it arrives, and answers when `hold` lets it: an answer that left before a
+  // write landed and comes back after it.
+  const seen = new Map<string, 0 | 1>()
+  const held: { release: () => void }[] = []
+  let holding = false
+  const thread = (id: string) => {
+    const shared = {
+      name: id,
+      id,
+      thread_id: id,
+      from_name: 'Sender',
+      from_email: 'sender@example.com',
+      received_at: id === 'a' ? '2026-11-04 10:00:00' : '2026-11-03 10:00:00',
+      mailboxes: [{ mailbox: 'junk', mailbox_id: 'c', mailbox_name: 'Spam' }],
+      seen: seen.get(id) ?? 0,
+      junk: 1,
+      flagged: 0,
+      draft: 0,
+      subject: 'Offer',
+      preview: 'Offer',
+      recipients: [],
+      attachments: [],
+    }
+    const message = {
+      ...shared,
+      message_id: null,
+      in_reply_to: null,
+      reacts_with: [],
+      mailing_list: 0,
+      html_body: null,
+      text_body: 'Offer',
+      reply_to: [],
+      dsn_blob_id: null,
+    }
+    return { ...shared, messages: [message] }
+  }
+  const folder = ['a', 'b']
+  beforeEach(() => {
+    seen.clear()
+    held.splice(0)
+    holding = false
+    fetcher.mockImplementation(async (url, init) => {
+      const input: unknown = JSON.parse(String(init?.body))
+      if (!input || typeof input !== 'object') throw new Error('Expected a JSON body')
+      if (String(url).endsWith('set_mails_seen')) {
+        const ids = 'ids' in input && Array.isArray(input.ids) ? input.ids.map(String) : []
+        for (const id of ids) seen.set(id, 'seen' in input && input.seen ? 1 : 0)
+        return new Response(JSON.stringify({ message: ids }))
+      }
+      if (!String(url).endsWith('get_threads'))
+        return new Response(JSON.stringify({ message: null }))
+      const start = 'start' in input ? Number(input.start) : 0
+      const limit = 'limit' in input ? Number(input.limit) : 0
+      // The copy is taken now, as the server reads the folder when asked.
+      const body = JSON.stringify({
+        message: {
+          rows: folder.slice(start, start + limit).map(thread),
+          mailbox: 'c',
+          has_more: start + limit < folder.length,
+        },
+      })
+      if (holding) await new Promise<void>((release) => held.push({ release }))
+      return new Response(body)
+    })
+  })
+  const list = (limit: number) =>
+    observe(() =>
+      engine.useInfiniteQuery(api.mail.threads.list, {
+        account: 'acc',
+        mailbox: 'c',
+        limit,
+        start: 0,
+        filter_by: 'unread',
+      }),
+    )
+  const read = (id: string) =>
+    engine.client.mutation(api.mail.messages.seen, { account: 'acc', ids: [id], seen: true })
+  const seenOf = (rows: readonly { id: string; seen: number }[], id: string) =>
+    rows.find((row) => row.id === id)?.seen
+
+  it('stays read when the answer left before the read landed', async () => {
+    const threads = list(25)
+    await vi.waitFor(() => expect(threads.rows).toHaveLength(2))
+    holding = true
+    const reread = threads.refetch()
+    await vi.waitFor(() => expect(held).toHaveLength(1))
+    holding = false
+    await read('a')
+    held[0].release()
+    await reread
+    expect(seenOf(threads.rows, 'a')).toBe(1)
+    expect(seenOf(threads.rows, 'b')).toBe(0)
+
+    // A read that leaves after the write landed is the server's word: made unread elsewhere since,
+    // the row says so.
+    seen.set('a', 0)
+    await threads.refetch()
+    expect(seenOf(threads.rows, 'a')).toBe(0)
+  })
+
+  it('stays read when it landed while a later page of the list was out', async () => {
+    const threads = list(1)
+    await vi.waitFor(() => expect(threads.rows).toHaveLength(1))
+    await threads.fetchNext()
+    expect(threads.rows.map((row) => row.id)).toEqual(['a', 'b'])
+    // The first page answers at once, still unread; the second waits while the read lands.
+    const reread = threads.refetch()
+    holding = true
+    await vi.waitFor(() => expect(held).toHaveLength(1))
+    holding = false
+    await read('a')
+    held[0].release()
+    await reread
+    expect(seenOf(threads.rows, 'a')).toBe(1)
+  })
+})
