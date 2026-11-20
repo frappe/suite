@@ -121,7 +121,7 @@ class TestBookingSlots(IntegrationTestCase):
         return slug
 
     def slots(self, slug: str = "intro-call", window=WEEK, now: datetime = MONDAY) -> list[datetime]:
-        return booking.public_page(slug, *window, now=now)["slots"]
+        return booking.public_slots(slug, *window, now=now)["slots"]
 
     # §Settings: hours and grid
 
@@ -207,10 +207,12 @@ class TestBookingSlots(IntegrationTestCase):
     def test_days_ahead_count_whole_days_from_today_in_the_pages_zone(self):
         self.make_page(time_zone="Asia/Kolkata", days_ahead=2)
         # 20:00 on Monday in UTC is already Tuesday in Kolkata: Tuesday and Wednesday are offered.
-        slots = self.slots(now=utc(1, 20))
-        days = {slot.astimezone(ZoneInfo("Asia/Kolkata")).date().day for slot in slots}
+        answer = booking.public_slots("intro-call", *WEEK, now=utc(1, 20))
+        days = {slot.astimezone(ZoneInfo("Asia/Kolkata")).date().day for slot in answer["slots"]}
         self.assertEqual(days, {2, 3})
-        self.assertEqual(slots[0], utc(2, 3, 30))
+        self.assertEqual(answer["slots"][0], utc(2, 3, 30))
+        # Thursday 4 March starts at 18:30 on Wednesday in UTC.
+        self.assertEqual(answer["bookable_until"], utc(3, 18, 30))
 
     # §Settings: the zone of the weekly hours
 
@@ -246,18 +248,25 @@ class TestBookingSlots(IntegrationTestCase):
 
     def test_a_switched_off_page_answers_as_one_that_does_not_exist(self):
         self.make_page(slug="switched-off", enabled=0)
-        with self.assertRaises(frappe.DoesNotExistError) as off:
-            self.slots("switched-off")
-        with self.assertRaises(frappe.DoesNotExistError) as missing:
-            self.slots("never-made")
-        self.assertEqual(str(off.exception), str(missing.exception))
+        for look_up in (booking.public_page, self.slots):
+            with self.subTest(look_up.__name__):
+                with self.assertRaises(frappe.DoesNotExistError) as off:
+                    look_up("switched-off")
+                with self.assertRaises(frappe.DoesNotExistError) as missing:
+                    look_up("never-made")
+                self.assertEqual(str(off.exception), str(missing.exception))
 
-    def test_the_public_answer_carries_slot_times_and_nothing_of_the_hosts_events(self):
-        self.make_page(hours=[("Monday", "09:00", "11:00")])
+    def test_the_public_answers_carry_the_page_and_slot_times_and_nothing_of_the_hosts_events(self):
+        self.make_page(hours=[("Monday", "09:00", "11:00")], description="Say hello.")
         self.events = [event("2027-03-01T09:00:00", title="Divorce lawyer")]
         with self.set_user("Guest"), patch.object(booking, "datetime", MondayClock):
-            answer = routes.booking_page_get(
+            page = routes.booking_page_get(slug="intro-call")
+            slots = routes.booking_page_slots(
                 slug="intro-call", to="2027-03-08T00:00:00Z", **{"from": "2027-03-01T00:00:00Z"}
             )
-        self.assertEqual(answer["slots"], ["2027-03-01T10:00:00Z"])
-        self.assertNotIn("Divorce", frappe.as_json(answer))
+        self.assertEqual(
+            {key: page[key] for key in ("slug", "title", "description", "length_minutes")},
+            {"slug": "intro-call", "title": "Intro call", "description": "Say hello.", "length_minutes": 60},
+        )
+        self.assertEqual(slots, {"slots": ["2027-03-01T10:00:00Z"], "bookable_until": "2027-03-31T00:00:00Z"})
+        self.assertNotIn("Divorce", frappe.as_json([page, slots]))

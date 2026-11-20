@@ -606,28 +606,11 @@
       "pathParams": [
         "slug"
       ],
-      "query": {
-        "properties": {
-          "from": {
-            "title": "From",
-            "type": "string"
-          },
-          "to": {
-            "title": "To",
-            "type": "string"
-          }
-        },
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "BookingPageQuery",
-        "type": "object"
-      },
+      "query": null,
       "body": null,
       "output": {
         "$defs": {
-          "BookingPageHost": {
+          "BookingHost": {
             "properties": {
               "full_name": {
                 "title": "Full Name",
@@ -649,12 +632,16 @@
               "full_name",
               "user_image"
             ],
-            "title": "BookingPageHost",
+            "title": "BookingHost",
             "type": "object"
           }
         },
-        "description": "What a booker sees of a page: who, what and when it is free. Nothing of what the host is\ndoing at other times.",
+        "description": "What a booker sees of a page. Nothing of what the host is doing.",
         "properties": {
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -670,38 +657,86 @@
             ],
             "title": "Description"
           },
+          "length_minutes": {
+            "title": "Length Minutes",
+            "type": "integer"
+          },
           "hosts": {
             "items": {
-              "$ref": "#/$defs/BookingPageHost"
+              "$ref": "#/$defs/BookingHost"
             },
             "title": "Hosts",
             "type": "array"
-          },
-          "length": {
-            "title": "Length",
-            "type": "integer"
-          },
-          "time_zone": {
-            "title": "Time Zone",
+          }
+        },
+        "required": [
+          "slug",
+          "title",
+          "description",
+          "length_minutes",
+          "hosts"
+        ],
+        "title": "BookingPage",
+        "type": "object"
+      },
+      "errors": [
+        "DoesNotExistError",
+        "RateLimitExceededError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "booking_page_slots",
+      "kind": "query",
+      "publicName": "bookingPages.slots",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "booking-pages/{slug}/slots",
+      "pathParams": [
+        "slug"
+      ],
+      "query": {
+        "properties": {
+          "from": {
+            "title": "From",
             "type": "string"
           },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "SlotWindow",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
           "slots": {
             "items": {
               "type": "string"
             },
             "title": "Slots",
             "type": "array"
+          },
+          "bookable_until": {
+            "title": "Bookable Until",
+            "type": "string"
           }
         },
         "required": [
-          "title",
-          "description",
-          "hosts",
-          "length",
-          "time_zone",
-          "slots"
+          "slots",
+          "bookable_until"
         ],
-        "title": "PublicBookingPage",
+        "title": "BookingSlots",
         "type": "object"
       },
       "errors": [

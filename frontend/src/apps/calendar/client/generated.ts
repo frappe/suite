@@ -120,20 +120,19 @@ const operationUpcomingSummary: QueryRef<
   loadValidators: async () => (await import('./validators')).operationUpcomingSummary,
 }
 
-export type BookingPageGetOutputBookingPageHost = { full_name: string; user_image: string | null }
+export type BookingPageGetOutputBookingHost = { full_name: string; user_image: string | null }
 
-export type BookingPageGetInput = { from: string; to: string; slug: string }
+export type BookingPageGetInput = { slug: string }
 
 export type BookingPageGetOutput = {
+  slug: string
   title: string
   description: string | null
-  hosts: Array<BookingPageGetOutputBookingPageHost>
-  length: number
-  time_zone: string
-  slots: Array<string>
+  length_minutes: number
+  hosts: Array<BookingPageGetOutputBookingHost>
 }
 
-export type BookingPageGetError = 'BadRequest' | 'DoesNotExistError' | 'RateLimitExceededError'
+export type BookingPageGetError = 'DoesNotExistError' | 'RateLimitExceededError'
 
 const operationBookingPageGet: QueryRef<
   BookingPageGetInput,
@@ -150,8 +149,33 @@ const operationBookingPageGet: QueryRef<
   pathParams: ['slug'],
   nodeParams: [],
   entity: null,
-  errors: ['BadRequest', 'DoesNotExistError', 'RateLimitExceededError'],
+  errors: ['DoesNotExistError', 'RateLimitExceededError'],
   loadValidators: async () => (await import('./validators')).operationBookingPageGet,
+}
+
+export type BookingPageSlotsInput = { from: string; to: string; slug: string }
+
+export type BookingPageSlotsOutput = { slots: Array<string>; bookable_until: string }
+
+export type BookingPageSlotsError = 'BadRequest' | 'DoesNotExistError' | 'RateLimitExceededError'
+
+const operationBookingPageSlots: QueryRef<
+  BookingPageSlotsInput,
+  BookingPageSlotsOutput,
+  BookingPageSlotsError
+> = {
+  id: 'booking_page_slots',
+  owner: 'calendar',
+  kind: 'query',
+  publicName: 'bookingPages.slots',
+  method: 'GET',
+  path: 'booking-pages/{slug}/slots',
+  prefix: '/api/suite/calendar/',
+  pathParams: ['slug'],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest', 'DoesNotExistError', 'RateLimitExceededError'],
+  loadValidators: async () => (await import('./validators')).operationBookingPageSlots,
 }
 
 export type CalendarGetCalendarEventsOutputCalendarEvent = {
@@ -1264,6 +1288,7 @@ export const api = {
   },
   bookingPages: {
     get: operationBookingPageGet,
+    slots: operationBookingPageSlots,
   },
   calendars: {
     list: operationGetCalendarsWithShared,

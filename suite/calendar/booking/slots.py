@@ -62,9 +62,8 @@ def candidates(schedule: Schedule, start: datetime, end: datetime, now: datetime
     """
 
     zone = schedule.zone
-    today = now.astimezone(zone).date()
     earliest = max(start, now + schedule.minimum_notice)
-    latest = min(end, _at(today + timedelta(days=schedule.days_ahead), timedelta(), zone))
+    latest = min(end, horizon(schedule, now))
     if earliest >= latest:
         return []
 
@@ -83,6 +82,14 @@ def candidates(schedule: Schedule, start: datetime, end: datetime, now: datetime
                     found.append(slot)
         day += timedelta(days=1)
     return found
+
+
+def horizon(schedule: Schedule, now: datetime) -> datetime:
+    """The first instant no slot starts at: the start of the day `days_ahead` after today, both
+    days in the page's zone."""
+
+    today = now.astimezone(schedule.zone).date()
+    return _at(today + timedelta(days=schedule.days_ahead), timedelta(), schedule.zone)
 
 
 def is_free(slot: datetime, schedule: Schedule, busy: Sequence[Span]) -> bool:

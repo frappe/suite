@@ -13,6 +13,7 @@ from suite.calendar.doctype.booking_page.booking_page import WEEKDAYS, hours_spa
 
 @dataclass(frozen=True)
 class LoadedPage:
+    slug: str
     title: str
     description: str | None
     hosts: tuple[Host, ...]
@@ -31,6 +32,7 @@ def load_public(slug: str) -> LoadedPage:
         raise frappe.DoesNotExistError(_("That booking page does not exist."))
 
     return LoadedPage(
+        slug=page.slug,
         title=page.title,
         description=page.description or None,
         hosts=tuple(Host(host.user, host.calendar) for host in page.hosts),

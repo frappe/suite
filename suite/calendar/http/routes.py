@@ -130,26 +130,30 @@ EventsQuery = TypedDict(
 
 UpcomingQuery = TypedDict("UpcomingQuery", {"from": str, "to": str})
 
-# Two instants, each with its zone: the booker's browser asks for the days it shows.
-BookingPageQuery = TypedDict("BookingPageQuery", {"from": str, "to": str})
+# The window a booker's browser asks slots for: two instants with their zone, `to` exclusive.
+SlotWindow = TypedDict("SlotWindow", {"from": str, "to": str})
 
 
-class BookingPageHost(TypedDict):
+class BookingHost(TypedDict):
     full_name: str
     user_image: str | None
 
 
-class PublicBookingPage(TypedDict):
-    """What a booker sees of a page: who, what and when it is free. Nothing of what the host is
-    doing at other times."""
+class BookingPage(TypedDict):
+    """What a booker sees of a page. Nothing of what the host is doing."""
 
+    slug: str
     title: str
     description: str | None
-    hosts: list[BookingPageHost]
-    length: int
-    time_zone: str
-    # UTC instants, `...Z`, earliest first.
+    length_minutes: int
+    hosts: list[BookingHost]
+
+
+class BookingSlots(TypedDict):
+    # Slot starts as UTC instants, `...Z`, earliest first, inside the window asked for.
     slots: list[str]
+    # No slot starts at or after this UTC instant.
+    bookable_until: str
 
 
 class UpcomingSummary(TypedDict):
@@ -510,11 +514,21 @@ ROUTES = (
         "booking-pages/{slug}",
         "booking_page_get",
         allow_guest=True,
-        errors=(BadRequest, frappe.DoesNotExistError, frappe.RateLimitExceededError),
-        query=BookingPageQuery,
-        output=PublicBookingPage,
+        errors=(frappe.DoesNotExistError, frappe.RateLimitExceededError),
+        output=BookingPage,
         kind="query",
         public_name="bookingPages.get",
+    ),
+    Route(
+        "GET",
+        "booking-pages/{slug}/slots",
+        "booking_page_slots",
+        allow_guest=True,
+        errors=(BadRequest, frappe.DoesNotExistError, frappe.RateLimitExceededError),
+        query=SlotWindow,
+        output=BookingSlots,
+        kind="query",
+        public_name="bookingPages.slots",
     ),
 )
 
@@ -571,20 +585,33 @@ def upcoming_summary(to: Given = None, **kwargs: Given) -> UpcomingSummary:
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 @dynamic_rate_limit()
+def booking_page_get(slug: Given = None) -> BookingPage:
+    """A public booking page, for anyone with the link. Rate limited per IP address
+    (003 §Abuse). A page that is missing or switched off answers 404 alike."""
+
+    return booking.public_page(_required_text(slug, "slug"))
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@dynamic_rate_limit()
 @refusals_as_bad_request
-def booking_page_get(slug: Given = None, to: Given = None, **kwargs: Given) -> PublicBookingPage:
-    """A public booking page and its free slots between two instants, for anyone with the link.
+def booking_page_slots(slug: Given = None, to: Given = None, **kwargs: Given) -> BookingSlots:
+    """A public booking page's free slots in [from, to), at most 42 days. Rate limited per IP
+    address, and 404 for a missing or switched-off page, as `booking_page_get`."""
 
-    Rate limited per IP address (003 §Abuse). A page that is missing or switched off answers 404
-    alike.
-    """
-
-    page = booking.public_page(
+    answer = booking.public_slots(
         _required_text(slug, "slug"),
         _instant(kwargs.get("from"), "from"),
         _instant(to, "to"),
     )
-    return {**page, "slots": [slot.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") for slot in page["slots"]]}
+    return {
+        "slots": [_utc(slot) for slot in answer["slots"]],
+        "bookable_until": _utc(answer["bookable_until"]),
+    }
+
+
+def _utc(instant: datetime) -> str:
+    return instant.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _instant(value: Given, name: str) -> datetime:

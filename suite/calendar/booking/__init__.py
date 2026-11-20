@@ -7,11 +7,12 @@ events on the mail server and follows the busy rules of specs/calendar/002-avail
 Each call reads every host's events for the window once, so its cost is one mail-server round
 trip per host.
 
-`public_page` is what the public page asks for, without signing in. A page that is switched off
-answers as one that does not exist: both raise `frappe.DoesNotExistError` with the same message.
-Nothing about what a host is doing leaves this module, only when slots start.
+`public_page` and `public_slots` are what the public page asks for, without signing in. A page
+that is switched off answers as one that does not exist: both raise `frappe.DoesNotExistError`
+with the same message. Nothing about what a host is doing leaves this module, only when slots
+start.
 
-Neither call writes anything.
+None of these calls writes anything.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -29,9 +30,11 @@ __all__ = [
     "Host",
     "PublicHost",
     "PublicPage",
+    "PublicSlots",
     "Schedule",
     "free_slots",
     "public_page",
+    "public_slots",
 ]
 
 # The widest window one lookup answers: a month's grid, with the days either side of it.
@@ -44,12 +47,18 @@ class PublicHost(TypedDict):
 
 
 class PublicPage(TypedDict):
+    slug: str
     title: str
     description: str | None
+    length_minutes: int
     hosts: list[PublicHost]
-    length: int
-    time_zone: str
+
+
+class PublicSlots(TypedDict):
+    # Slot starts, earliest first. Each lasts the page's length.
     slots: list[datetime]
+    # No slot starts at or after this: the start of the day past how far ahead, in the page's zone.
+    bookable_until: datetime
 
 
 def free_slots(
@@ -85,14 +94,33 @@ def free_slots(
     ]
 
 
-def public_page(slug: str, start: datetime, end: datetime, *, now: datetime | None = None) -> PublicPage:
-    """What the public page at /book/<slug> shows: the page and its free slots in [start, end).
+def public_page(slug: str) -> PublicPage:
+    """What the public page at /book/<slug> shows of the page itself.
 
-    Raises `frappe.DoesNotExistError` for a page that is missing or switched off, alike, and
-    `frappe.ValidationError` for a window that ends before it starts or is wider than
-    `MAX_RANGE`. Works for a guest: the page is read here, not through Desk permissions.
+    Raises `frappe.DoesNotExistError` for a page that is missing or switched off, alike. Works for
+    a guest: the page is read here, not through Desk permissions.
     """
 
+    from suite.calendar.booking.pages import load_public
+
+    page = load_public(slug)
+    return {
+        "slug": page.slug,
+        "title": page.title,
+        "description": page.description,
+        "length_minutes": int(page.schedule.length.total_seconds() // 60),
+        "hosts": page.public_hosts,
+    }
+
+
+def public_slots(slug: str, start: datetime, end: datetime, *, now: datetime | None = None) -> PublicSlots:
+    """The page's free slots in [start, end), and the instant past which it offers none.
+
+    Raises `frappe.DoesNotExistError` as `public_page` does, and `frappe.ValidationError` for a
+    window that ends before it starts or is wider than `MAX_RANGE`.
+    """
+
+    from suite.calendar.booking import slots
     from suite.calendar.booking.pages import load_public
 
     if end <= start:
@@ -103,11 +131,8 @@ def public_page(slug: str, start: datetime, end: datetime, *, now: datetime | No
         )
 
     page = load_public(slug)
+    now = now or datetime.now(UTC)
     return {
-        "title": page.title,
-        "description": page.description,
-        "hosts": page.public_hosts,
-        "length": int(page.schedule.length.total_seconds() // 60),
-        "time_zone": page.schedule.zone.key,
         "slots": free_slots(list(page.hosts), EVERY_HOST_FREE, start, end, schedule=page.schedule, now=now),
+        "bookable_until": slots.horizon(page.schedule, now),
     }
