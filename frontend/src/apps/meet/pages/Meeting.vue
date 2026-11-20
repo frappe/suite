@@ -9,7 +9,7 @@
       class="shrink-0 overflow-hidden transition-[height] duration-500 ease-in-out"
       :class="headerVisible ? 'h-11' : 'h-0'"
     >
-      <MeetingHeader :meeting-id="meetingId" :meeting-title="previewTitle">
+      <MeetingHeader :meeting-id="meetingId" :meeting-title="meetingTitle">
         <template #right>
           <RecordingIndicator
             v-if="!showPreview && recording.isLive.value && recording.state.value"
@@ -406,25 +406,8 @@ const gridLayout = useGridLayout(mediaState)
 // --- Lobby notification tracking ---
 const notifiedLobbyUsers = ref(new Set<string>())
 
-// --- Meeting doc ---
-const meetingDoc = useQuery(api.meet.rooms.get, () =>
-  session.isLoggedIn
-    ? {
-        name: meetingId.value,
-      }
-    : false,
-)
-const meetingTitle = computed(
-  () => meetingDoc.data?.title || meetingDoc.data?.name || meetingId.value,
-)
-const meetingOwner = computed(() => meetingDoc.data?.owner || '')
-const meetingCoHosts = computed(() => meetingDoc.data?.co_hosts?.map((row) => row.user) || [])
-const isCurrentUserHost = computed(() =>
-  Boolean(session.user?.sessionUser && session.user.sessionUser === meetingOwner.value),
-)
-const isCurrentUserCohost = computed(() =>
-  Boolean(session.user?.sessionUser && meetingCoHosts.value.includes(session.user.sessionUser)),
-)
+const isCurrentUserHost = ref(false)
+const isCurrentUserCohost = ref(false)
 const recording = useRecording(meetingId.value, { signedIn: () => session.isLoggedIn })
 const recordingDialogOpen = ref(false)
 const recordingStopDialogOpen = ref(false)
@@ -459,26 +442,10 @@ async function confirmRecordingStart() {
     throw error
   }
 }
-const previewDetails = useQuery(api.meet.rooms.preview, () =>
-  !session.isLoggedIn
-    ? {
-        meeting_id: meetingId.value,
-      }
-    : false,
-)
-// The meeting's own title, if it has one. The header falls back to the code; the preview's line
-// above "Ready to join?" does not, since the code is already in the header.
-const givenTitle = computed(() => meetingDoc.data?.title || previewDetails.data?.title || '')
-const previewTitle = computed(() => givenTitle.value || meetingId.value)
-usePageMeta(() => appPageMeta(previewTitle.value, 'Meet'))
-watch(
-  () => meetingDoc.error,
-  (error) => {
-    if (error && !previewDetails.data && !previewDetails.isFetching) {
-      void previewDetails.refetch().catch(() => {})
-    }
-  },
-)
+const previewDetails = useQuery(api.meet.rooms.preview, () => ({ meeting_id: meetingId.value }))
+const givenTitle = computed(() => previewDetails.data?.title || '')
+const meetingTitle = computed(() => givenTitle.value || meetingId.value)
+usePageMeta(() => appPageMeta(meetingTitle.value, 'Meet'))
 
 // --- Lobby notification conversion ---
 const lobbyUsersForNotifications = computed(() => {
@@ -622,9 +589,15 @@ const sfuConnection = useSFUConnection({
   onRoomRejoined: () => void captions.restoreCaptionSubscription(),
   onE2EERequired: () => captions.disableCaptionsForE2EE(),
   onRecordingState: recording.syncState,
+  beginRecordingAdmissionSync: recording.beginAdmissionSync,
   onRecordingEnabled: recording.setGlobalEnabled,
-  onCohostPromoted: async () => {
-    await meetingDoc.refetch()
+  onRole: (isHost, isCohost) => {
+    isCurrentUserHost.value = isHost
+    isCurrentUserCohost.value = isCohost
+    if (!previewDetails.data?.title) void previewDetails.refetch().catch(() => {})
+  },
+  onCohostPromoted: () => {
+    isCurrentUserCohost.value = true
   },
 })
 
@@ -750,6 +723,7 @@ provide('meetingId', meetingId.value)
 provide('sfuManager', sfuConnection.sfuManager)
 provide('socket', useSocket())
 provide('isCurrentUserHost', isCurrentUserHost)
+provide('isCurrentUserCohost', isCurrentUserCohost)
 provide('hostControls', {
   muteParticipant: (...args: unknown[]) =>
     handleMuteParticipant(typeof args[0] === 'string' ? args[0] : ''),
@@ -898,6 +872,13 @@ const activePanel = computed(() => {
   if (isPeopleOpen.value) return 'people'
   return null
 })
+const moderationRoom = useQuery(api.meet.rooms.get, () =>
+  activePanel.value === 'people' && (isCurrentUserHost.value || isCurrentUserCohost.value)
+    ? { name: meetingId.value }
+    : false,
+)
+const meetingOwner = computed(() => moderationRoom.data?.owner || '')
+const meetingCoHosts = computed(() => moderationRoom.data?.co_hosts?.map((row) => row.user) || [])
 const participantsForPeoplePanel = computed<Record<string, Participant>>(
   () => participantStore.participants,
 )
@@ -943,7 +924,6 @@ const handlers = useMeetingHandlers({
   sfuConnection,
   mediaControls,
   lobby,
-  refreshMeeting: () => meetingDoc.refetch(),
   meetingId: meetingId.value,
   isCurrentUserHost,
   isPeopleOpen,

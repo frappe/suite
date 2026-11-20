@@ -11,7 +11,6 @@ const mocks = vi.hoisted(() => ({
   startCount: 0,
   startResults: fromPartial<Array<RecordingState | { status: 'Rejected' }>>([]),
   getStateCount: 0,
-  getStateCompleted: 0,
   getStateResults: fromPartial<Array<RecordingState | null | Promise<RecordingState | null>>>([]),
   socketHandler: fromPartial<
     ((event: { meeting_id: string; recording: RecordingState | null }) => void) | null
@@ -49,7 +48,6 @@ vi.mock('@/api', async (original) => {
         mocks.getStateCount += 1
         if (mocks.getStateResults.length) {
           const result = await mocks.getStateResults.shift()
-          mocks.getStateCompleted += 1
           return result
         }
         if (mocks.startCount > 1)
@@ -87,7 +85,6 @@ describe('useRecording', () => {
     mocks.startCount = 0
     mocks.startResults.length = 0
     mocks.getStateCount = 0
-    mocks.getStateCompleted = 0
     mocks.getStateResults.length = 0
     mocks.socketHandler = null
     mocks.stopped = false
@@ -146,13 +143,7 @@ describe('useRecording', () => {
     expect(recording.state.value?.state_revision).toBe(3)
   })
 
-  it('does not resurrect state after a realtime null transition', async () => {
-    let resolveStale!: (value: RecordingState) => void
-    mocks.getStateResults.push(
-      new Promise<RecordingState>((resolve) => {
-        resolveStale = resolve
-      }),
-    )
+  it('waits for admission state for a signed-in attendee and listens for live updates', () => {
     let recording!: ReturnType<typeof useRecording>
     const app = createApp({
       setup() {
@@ -161,17 +152,21 @@ describe('useRecording', () => {
       },
     })
     app.mount(document.createElement('div'))
-    await vi.waitFor(() => expect(mocks.getStateCount).toBe(1))
 
+    expect(mocks.getStateCount).toBe(0)
+    const active = { name: 'recording', status: 'Recording', state_revision: 1 } as const
+    recording.beginAdmissionSync()(active)
+    expect(recording.isLive.value).toBe(true)
+
+    const applyLateActive = recording.beginAdmissionSync()
     mocks.socketHandler?.({ meeting_id: 'room', recording: null })
-    resolveStale({
-      name: 'recording',
-      status: 'Recording',
-      state_revision: 1,
-    })
-    await vi.waitFor(() => expect(mocks.getStateCompleted).toBe(1))
+    applyLateActive(active)
+    expect(recording.isLive.value).toBe(false)
 
-    expect(recording.state.value).toBeNull()
+    const applyLateNull = recording.beginAdmissionSync()
+    mocks.socketHandler?.({ meeting_id: 'room', recording: active })
+    applyLateNull(null)
+    expect(recording.isLive.value).toBe(true)
     app.unmount()
   })
 

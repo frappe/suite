@@ -139,12 +139,18 @@ export function useRecording(meetingId: string, { signedIn }: { signedIn: () => 
     handleState({ meeting_id: meetingId, recording })
   }
 
+  function beginAdmissionSync() {
+    const version = stateVersion
+    return (recording: RecordingState | null) => {
+      if (version === stateVersion) syncState(recording)
+    }
+  }
+
   function setGlobalEnabled(enabled: boolean) {
     globalEnabled.value = enabled
   }
 
   onMounted(() => {
-    void loadState()
     socket?.on('meeting:recording_state', handleState)
   })
   onUnmounted(() => socket?.off('meeting:recording_state', handleState))
@@ -160,6 +166,7 @@ export function useRecording(meetingId: string, { signedIn }: { signedIn: () => 
     getPreflight,
     setGlobalEnabled,
     syncState,
+    beginAdmissionSync,
     start,
     stop,
   }

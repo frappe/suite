@@ -291,9 +291,17 @@ ROUTES: tuple[Route, ...] = (
     ),
 )
 
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def room_preview(meeting_id: str) -> shapes.Preview:
+    try:
+        return {"title": meeting.get_public_meeting_preview(meeting_id)["title"]}
+    except frappe.PermissionError:
+        return {"title": ""}
+
+
 # Reuse the original whitelisted functions so the resource and legacy addresses
 # have exactly the same validation, authorization and transaction behavior.
-room_preview = meeting.get_public_meeting_preview
 room_access = meeting.check_meeting_access
 room_connection = meeting.get_sfu_connection_details
 room_presence_token = meeting.get_sfu_presence_preview_token
