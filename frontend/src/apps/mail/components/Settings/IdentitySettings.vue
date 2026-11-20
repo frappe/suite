@@ -204,11 +204,22 @@ interface Draft {
   replyTo: Address[]
   bcc: Address[]
   signature: string
+  // The signature choice made in the form, if one was: unset, it is read off the words
+  picked?: string
+}
+
+function draftOf(identity: Identity): Draft {
+  return {
+    identity,
+    name: identity._name ?? '',
+    replyTo: rowsOf(identity.reply_to),
+    bcc: rowsOf(identity.bcc),
+    signature: identity.html_signature ?? '',
+  }
 }
 
 // Unset, the list shows
 const draft = ref<Draft>()
-const original = ref('')
 // Few addresses have a reply-to or a Bcc, so the two lists wait behind a button until one is used
 const showsReplyAndBcc = ref(false)
 function showReplyAndBcc() {
@@ -242,22 +253,16 @@ function changesOf(form: Draft) {
     reply_to: filled(form.replyTo),
     bcc: filled(form.bcc),
     html_signature: form.signature,
+    // Linked, the address follows the saved signature's edits
+    signature: savedSignatureOf(form)?.name ?? null,
   }
 }
 
 // Whether Save was pressed on the open address: from then on a row that is no address says so
 const isChecked = ref(false)
 function editAddress(identity: Identity) {
-  draft.value = {
-    identity,
-    name: identity._name ?? '',
-    replyTo: rowsOf(identity.reply_to),
-    bcc: rowsOf(identity.bcc),
-    signature: identity.html_signature ?? '',
-  }
-  original.value = JSON.stringify(changesOf(draft.value))
+  draft.value = draftOf(identity)
   isChecked.value = false
-  isCustomPicked.value = false
   showsReplyAndBcc.value = draft.value.replyTo.length + draft.value.bcc.length > 0
   saveIdentity.reset()
 }
@@ -278,14 +283,15 @@ function showList() {
   newAddress.value = undefined
 }
 
-// Nothing to save until the form differs from the address as it was read
+// Nothing to save until the form differs from the address as it was read. Read again as the saved
+// signatures arrive, which tell which one the address uses
 const isSaveBlocked = computed(() => {
   const form = draft.value
   if (!form || identities.isFetching) {
     return true
   }
 
-  return JSON.stringify(changesOf(form)) === original.value
+  return JSON.stringify(changesOf(form)) === JSON.stringify(changesOf(draftOf(form.identity)))
 })
 
 // A refused save is said on the page that was saved, where the eyes are, so no toast says it too
@@ -328,33 +334,39 @@ const signatureChoices = computed(() => [
   })),
   { label: __('Custom'), value: CUSTOM },
 ])
-// Custom is picked, not read off the words: they may be none yet, or still match a saved signature
-const isCustomPicked = ref(false)
+// The saved signature the address's words are. Two can hold the same words, so the one picked here
+// comes first, then the one the address is linked to. Custom is picked, not read off the words: they
+// may be none yet, or still match a saved signature
+function savedSignatureOf(form: Draft) {
+  if (form.picked === CUSTOM || !form.signature) {
+    return undefined
+  }
+
+  const matching = savedSignatures.value.filter(({ html_body }) => html_body === form.signature)
+  return (
+    matching.find(({ name }) => SAVED + name === form.picked) ??
+    matching.find((signature) => signature.identities.includes(form.identity.name)) ??
+    matching[0]
+  )
+}
 const signatureChoice = computed(() => {
-  const words = draft.value?.signature
-  if (isCustomPicked.value) {
-    return CUSTOM
-  }
-
-  if (!words) {
-    return NONE
-  }
-
-  const saved = savedSignatures.value.find((signature) => signature.html_body === words)
+  const form = draft.value
+  const saved = form && savedSignatureOf(form)
   if (saved) {
     return SAVED + saved.name
   }
 
-  return CUSTOM
+  return form?.picked === CUSTOM || form?.signature ? CUSTOM : NONE
 })
 const isWritingSignature = computed(() => signatureChoice.value === CUSTOM)
-// A saved signature is copied into the address: the address keeps its words if the saved one changes
+// A saved signature is copied into the address and linked to it: an edit of the saved one reaches
+// the address while it still holds those words
 function chooseSignature(choice: unknown) {
   if (!draft.value) {
     return
   }
 
-  isCustomPicked.value = choice === CUSTOM
+  draft.value.picked = String(choice)
   if (choice === CUSTOM) {
     return
   }

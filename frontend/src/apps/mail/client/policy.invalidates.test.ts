@@ -266,3 +266,28 @@ it('a reminder set, ended or asked for with a send is read again where the threa
     expect(read).toContain('mail.get_reply_reminder')
   expect(readAgainAfter('pin_mails', 'messages.pin')).not.toContain('mail.get_reply_reminder')
 })
+
+it('editing a signature reads the identities again, which carry its copies', () => {
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'update_signature',
+      kind: 'mutation',
+      publicName: 'signatures.update',
+    }),
+  )
+  expect(policy.effects).toMatchObject({
+    invalidates: expect.arrayContaining(['mail.signatures', 'mail.get_identities']),
+  })
+})
+it('saving an address reads the signatures again, which list the addresses linked to them', () => {
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'save_identity',
+      kind: 'mutation',
+      publicName: 'identities.save',
+    }),
+  )
+  expect(policy.effects).toMatchObject({
+    invalidates: expect.arrayContaining(['mail.signatures', 'mail.get_identities']),
+  })
+})
