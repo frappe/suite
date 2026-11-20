@@ -89,8 +89,15 @@ vi.mock('@/api', async () => {
     useQuery: () =>
       reactive({
         data: [
-          { name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>' },
-          { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>' },
+          { name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>', identities: [] },
+          { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>', identities: [] },
+          // The same words as Short, given to the sales address
+          {
+            name: 'sig-3',
+            signature_name: 'Short again',
+            html_body: '<p>Thanks</p>',
+            identities: ['oa|b'],
+          },
         ],
       }),
     useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
@@ -389,6 +396,7 @@ it('saves the address that is open, then shows the list', async () => {
     reply_to: [],
     bcc: [],
     html_signature: '',
+    signature: null,
   })
   expect(state.toast).toHaveBeenCalledWith('Address updated')
   expect(lines()).toHaveLength(2)
@@ -550,14 +558,50 @@ it('reads a signature that matches a saved one as that one, and any other as Cus
   expect(pickedSignature()).toBe('Custom')
   expect(root.querySelector('textarea')?.value).toBe('<p>Sales desk</p>')
 })
-it('saves the words of the saved signature that is picked', async () => {
+it('saves the words of the saved signature that is picked, and which one it is', async () => {
   mount([me])
   await openAddress('me@example.com')
   await pickSignature('Work')
   await press('Save')
   expect(state.run).toHaveBeenCalledWith(
     'save_identity',
-    expect.objectContaining({ html_signature: '<p>Regards</p>' }),
+    expect.objectContaining({ html_signature: '<p>Regards</p>', signature: 'sig-1' }),
+  )
+})
+it('reads two saved signatures with the same words as the one the address was given', async () => {
+  mount([
+    { ...me, html_signature: '<p>Thanks</p>' },
+    { ...sales, html_signature: '<p>Thanks</p>' },
+  ])
+  await openAddress('sales@example.com')
+  expect(pickedSignature()).toBe('Short again')
+
+  await press('Back to addresses')
+  await openAddress('me@example.com')
+  expect(pickedSignature()).toBe('Short')
+})
+it('saves the one picked of two saved signatures with the same words', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await pickSignature('Short again')
+  expect(pickedSignature()).toBe('Short again')
+
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '<p>Thanks</p>', signature: 'sig-3' }),
+  )
+})
+it('lets Custom be saved on the same words, so they no longer follow the saved signature', async () => {
+  mount([{ ...sales, html_signature: '<p>Thanks</p>' }])
+  await openAddress('sales@example.com')
+  await pickSignature('Custom')
+  expect(findButton('Save')?.disabled).toBe(false)
+
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '<p>Thanks</p>', signature: null }),
   )
 })
 it('saves no signature once None is picked', async () => {

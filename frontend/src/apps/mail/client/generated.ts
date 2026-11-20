@@ -509,6 +509,7 @@ export type SaveIdentityInput = {
   reply_to: Array<SaveIdentityInputAddress>
   bcc: Array<SaveIdentityInputAddress>
   html_signature: string | null
+  signature: string | null
 }
 
 export type SaveIdentityOutput = null
@@ -536,6 +537,7 @@ export type SignaturesOutputSignature = {
   name: string
   signature_name: string
   html_body: string | null
+  identities: Array<string>
 }
 
 export type SignaturesInput = Record<string, never>

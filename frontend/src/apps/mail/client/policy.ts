@@ -254,10 +254,11 @@ export const registration: OwnerRegistration = {
         },
       }
     }
-    if (['add_identity', 'delete_identity_names', 'save_identity'].includes(reference.id))
+    if (['add_identity', 'delete_identity_names'].includes(reference.id))
       return { effects: { invalidates: ['mail.get_identities'] } }
-    // An edit also reaches the identities that carried the old signature.
-    if (reference.id === 'update_signature')
+    // A saved address is linked to the saved signature it uses, and an edited signature reaches
+    // the addresses linked to it.
+    if (['save_identity', 'update_signature'].includes(reference.id))
       return { effects: { invalidates: ['mail.signatures', 'mail.get_identities'] } }
     if (['create_signature', 'delete_signature'].includes(reference.id))
       return { effects: { invalidates: ['mail.signatures'] } }

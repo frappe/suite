@@ -279,3 +279,15 @@ it('editing a signature reads the identities again, which carry its copies', () 
     invalidates: expect.arrayContaining(['mail.signatures', 'mail.get_identities']),
   })
 })
+it('saving an address reads the signatures again, which list the addresses linked to them', () => {
+  const policy = registration.policy(
+    fromPartial<Operation>({
+      id: 'save_identity',
+      kind: 'mutation',
+      publicName: 'identities.save',
+    }),
+  )
+  expect(policy.effects).toMatchObject({
+    invalidates: expect.arrayContaining(['mail.signatures', 'mail.get_identities']),
+  })
+})

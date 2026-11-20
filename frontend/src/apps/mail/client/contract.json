@@ -1364,6 +1364,17 @@
               }
             ],
             "title": "Html Signature"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
           }
         },
         "required": [
@@ -1372,7 +1383,8 @@
           "name",
           "reply_to",
           "bcc",
-          "html_signature"
+          "html_signature",
+          "signature"
         ],
         "title": "SaveIdentity",
         "type": "object"
@@ -1419,12 +1431,20 @@
                   }
                 ],
                 "title": "Html Body"
+              },
+              "identities": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Identities",
+                "type": "array"
               }
             },
             "required": [
               "name",
               "signature_name",
-              "html_body"
+              "html_body",
+              "identities"
             ],
             "title": "Signature",
             "type": "object"

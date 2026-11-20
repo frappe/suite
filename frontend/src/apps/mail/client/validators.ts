@@ -1093,8 +1093,9 @@ export const operationSaveIdentity: Validators<SaveIdentityInput, SaveIdentityOu
             anyOf: [{ type: 'string' }, { type: 'null' }],
             title: 'Html Signature',
           },
+          signature: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Signature' },
         },
-        required: ['account', 'id', 'name', 'reply_to', 'bcc', 'html_signature'],
+        required: ['account', 'id', 'name', 'reply_to', 'bcc', 'html_signature', 'signature'],
         additionalProperties: false,
         $defs: {
           Address: {
@@ -1137,8 +1138,9 @@ export const operationSignatures: Validators<SignaturesInput, SignaturesOutput> 
               name: { title: 'Name', type: 'string' },
               signature_name: { title: 'Signature Name', type: 'string' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
+              identities: { items: { type: 'string' }, title: 'Identities', type: 'array' },
             },
-            required: ['name', 'signature_name', 'html_body'],
+            required: ['name', 'signature_name', 'html_body', 'identities'],
             title: 'Signature',
             type: 'object',
           },
