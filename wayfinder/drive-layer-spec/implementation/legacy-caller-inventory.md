@@ -24,7 +24,7 @@ Every path is relative to the app root. The classification is executable:
 `suite/drive/http/tests/test_shims.py`.
 
 **Amended 2026-09-29** by unified frontend ticket
-[017 — Product methods and the zero-call gate](../../unified-frontend/tickets/017-product-methods-and-the-zero-call-gate.md)
+017 — Product methods and the zero-call gate
 (Faris): no `suite.drive.api.*` name outlives Cleanup. The class this
 document and `shims.py` call **permanent** now means "answered by its
 untouched legacy body until Cleanup; no Drive route replaces it", not "kept

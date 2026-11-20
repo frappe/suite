@@ -7,7 +7,7 @@ Original status: guideline, not a spec. Decided in conversation on 2026-09-12 an
 inventoried Frappe, the Drive REST layer and the six app frontends; the facts
 below cite that work.
 
-Owner ticket: [002 Shell and platform interface](../tickets/002-shell-and-platform-interface.md).
+Owner ticket: 002 Shell and platform interface.
 
 ## Purpose
 

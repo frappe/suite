@@ -299,7 +299,8 @@ function buttons(row: HTMLElement) {
 
 function listCalendars() {
   const own = { account: 'personal', color: null, visible: 1 }
-  state.calendars = [
+  // Reactive, as the store's list is: a calendar shown or hidden is drawn again
+  state.calendars = reactive([
     {
       ...own,
       name: 'personal|a',
@@ -327,7 +328,7 @@ function listCalendars() {
       may_write_all: 0,
       may_delete: 0,
     },
-  ]
+  ])
 }
 
 beforeEach(() => {
@@ -423,14 +424,22 @@ it('asks before it deletes an invite address, then deletes the one that was pick
   expect(dialog.querySelector('dialog')).toBeNull()
 })
 
-it('gives a calendar you can edit one button, Edit, which opens that calendar', async () => {
+it('gives a calendar you can edit Hide and Edit, which opens that calendar', async () => {
   listCalendars()
   const root = mount()
-  expect(buttons(calendarRow(root, 'Work'))).toEqual(['Edit'])
-  expect(buttons(calendarRow(root, 'Holidays'))).toEqual(['Edit'])
-  expect(buttons(calendarRow(root, 'Company'))).toEqual([])
+  expect(buttons(calendarRow(root, 'Work'))).toEqual(['Hide', 'Edit'])
+  expect(buttons(calendarRow(root, 'Holidays'))).toEqual(['Hide', 'Edit'])
+  expect(buttons(calendarRow(root, 'Company'))).toEqual(['Hide'])
   await press(calendarRow(root, 'Holidays'), 'Edit')
   expect(root.querySelector('dialog')?.textContent).toContain('Edit Holidays')
+})
+it('hides a read-only calendar, then offers to show it again', async () => {
+  listCalendars()
+  const root = mount()
+  await press(calendarRow(root, 'Company'), 'Hide')
+  expect(buttons(calendarRow(root, 'Company'))).toEqual(['Show'])
+  await press(calendarRow(root, 'Company'), 'Show')
+  expect(buttons(calendarRow(root, 'Company'))).toEqual(['Hide'])
 })
 it('asks about deleting the calendar whose edit dialog Delete was pressed in', async () => {
   listCalendars()

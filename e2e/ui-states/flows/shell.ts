@@ -90,10 +90,10 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "The panel opens beside the rail: comments and shares, unread ones bold with an amber dot, each with its excerpt and when." },
 		},
 		accountMenu: {
-			meta: { description: "The avatar opens the account menu: Maya's name and email, then Log out. Maya is a Suite Admin but no system manager, so there is no Open Desk." },
+			meta: { description: "The avatar opens the account menu: Maya's name and email, then Log out. There is no Open Desk." },
 		},
 		accountMenuDesk: {
-			meta: { description: "Administrator, a system manager, gets Open Desk between the name and Log out. Administrator has no mail account, so Mail and Calendar are missing from the rail." },
+			meta: { description: "Administrator, a system manager, gets the same menu, with no Open Desk. Administrator has no mail account, so Mail and Calendar are missing from the rail." },
 		},
 		workspaceMenuAdmin: {
 			meta: { description: "The workspace mark opens the workspace menu: \"Northwind Labs\", then Admin, Invite people and Workspace settings for a Suite Admin." },
@@ -299,7 +299,7 @@ export const shell = defineFlow<Event, BaseScene>({
 		async OPEN_ACCOUNT_AS_SYSTEM_MANAGER(scene) {
 			const page = await openAs(scene, "Administrator", "admin");
 			await rail(page).getByRole("button", { name: "Account", exact: true }).click();
-			await expect(page.getByRole("menuitem", { name: "Open Desk" })).toBeVisible();
+			await expect(page.getByRole("menuitem", { name: "Log out" })).toBeVisible();
 		},
 		async OPEN_WORKSPACE(scene) {
 			await scene.page.getByRole("button", { name: "Workspace menu" }).click();

@@ -281,7 +281,7 @@ const {
   selectionMode = false,
   threadRouteName = 'mail-mail',
   hideAvatar = false,
-  outgoing,
+  outgoing = undefined,
   screened = false,
   pinnable = false,
 } = defineProps<{
@@ -335,7 +335,8 @@ const emit = defineEmits([
 ])
 
 const route = useRoute()
-const { mailboxes, mailboxIds } = userStore()
+const user = userStore()
+const { mailboxes } = user
 const screener = useScreener()
 
 // One sender or several: the row says which, the open thread says who.
@@ -373,14 +374,14 @@ const allMailboxesToShow = computed(() => {
   const messages = mail.messages?.length ? mail.messages : [mail]
   if (mailbox === 'search')
     return searchFolders(messages, {
-      sent: mail.sent ?? mailboxIds.sent,
-      drafts: mailboxIds.drafts,
+      sent: mail.sent ?? user.mailboxIds.sent,
+      drafts: user.mailboxIds.drafts,
     })
-  return mailbox === mailboxIds.sent || mailbox === 'starred'
-    ? receivedFolders(messages, mailboxIds, mailbox)
+  return mailbox === user.mailboxIds.sent || mailbox === 'starred'
+    ? receivedFolders(messages, user.mailboxIds, mailbox)
     : // Sent and Drafts are where your own mail lives, not where anything was filed: never a tag.
       mail.mailboxes.filter(
-        (m) => ![mailbox, mailboxIds.sent, mailboxIds.drafts].includes(m.mailbox_id),
+        (m) => ![mailbox, user.mailboxIds.sent, user.mailboxIds.drafts].includes(m.mailbox_id),
       )
 })
 // Two at most, the rest counted.
@@ -419,8 +420,8 @@ const match = computed(() =>
 const isOutgoing = computed(() => {
   if (outgoing !== undefined) return outgoing
   if (mailbox === 'search')
-    return !!match.value && !isReceived(match.value, mail.sent ?? mailboxIds.sent)
-  return mailbox === mailboxIds.sent || mailbox === mailboxIds.drafts
+    return !!match.value && !isReceived(match.value, mail.sent ?? user.mailboxIds.sent)
+  return mailbox === user.mailboxIds.sent || mailbox === user.mailboxIds.drafts
 })
 
 // Read off the conversation the row carries. A search result names its match's sender instead.

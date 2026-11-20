@@ -852,6 +852,7 @@ import {
 import { useMessageReactions } from '@/apps/mail/composables/useMessageReactions'
 import { useReplyReminder } from '@/apps/mail/composables/useReplyReminder'
 import { trustableDomains, useScreener } from '@/apps/mail/composables/useScreener'
+import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import { useUnsubscribe } from '@/apps/mail/composables/useUnsubscribe'
 import { FLAGGED_STAR_STYLE } from '@/apps/mail/constants'
 import { getAttachmentsZipUrl } from '@/apps/mail/resources'
@@ -1665,6 +1666,18 @@ const reload = () => {
   if (!messages?.length) return void threadFallback.refetch().catch(() => {})
   emit('reloadMails')
 }
+// Asked for by a hand other than this pane's (see useThreadReload), and taken once: held while the
+// pane was away, it is taken as the pane comes back to the thread.
+const { threadReloadRequest } = useThreadReload()
+watch(
+  [threadReloadRequest, () => threadID],
+  ([request]) => {
+    if (!request || request.threadId !== threadID) return
+    threadReloadRequest.value = undefined
+    reload()
+  },
+  { immediate: true },
+)
 // Fresh rows for the open thread, from the list or from its own fetch: rebuilt from them only on
 // first arrival or an explicit refresh. Otherwise synced in place, or a draft being written here
 // is torn down and remounted from its last save — every save refetches the thread, and the

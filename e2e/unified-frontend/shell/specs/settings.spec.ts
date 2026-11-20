@@ -93,14 +93,15 @@ test.describe("desktop", () => {
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
 
-	test("a system manager's account menu offers Open Desk, and no Settings or Upgrade plan", async ({ page }) => {
+	test("a system manager's account menu offers no Open Desk, Settings or Upgrade plan", async ({ page }) => {
 		await patchAccount(page, FULL_ACCOUNT);
 		await page.goto("/home");
 		await page.getByRole("button", { name: "Account", exact: true }).click();
 
 		const menu = page.getByRole("menu");
 		await expect(menu.getByText("Administrator").first()).toBeVisible();
-		await expect(menu.getByRole("menuitem", { name: "Open Desk" })).toHaveAttribute("href", "/app");
+		await expect(menu.getByRole("menuitem", { name: "Log out" })).toBeVisible();
+		await expect(menu.getByRole("menuitem", { name: "Open Desk" })).toHaveCount(0);
 		await expect(menu.getByRole("menuitem", { name: "Settings" })).toHaveCount(0);
 		await expect(menu.getByRole("menuitem", { name: "Upgrade plan" })).toHaveCount(0);
 	});

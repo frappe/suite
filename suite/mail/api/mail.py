@@ -2549,6 +2549,8 @@ def allow_screening_senders(
     the interface holds on to these to undo the verdict.
     """
 
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
+
     if not from_emails:
         return {}
 
@@ -2582,6 +2584,8 @@ def screen_out_senders(account: str, from_emails: list[str]) -> dict[str, list[s
     Returns the ids junked, keyed by sender — see `allow_screening_senders` for why the interface
     needs them back.
     """
+
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
 
     if not from_emails:
         return {}

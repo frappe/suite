@@ -4,6 +4,7 @@ import { createApp, h, nextTick, reactive, type App } from 'vue'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import type { Mail, MailCopy } from '@/apps/mail/types'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -383,4 +384,42 @@ it('goes back to the folder when a draft that was the whole pane is sent off to 
 
   expect(router.currentRoute.value.name).toBe('mail-mailbox')
   expect(router.currentRoute.value.params.mailbox).toBe('drafts')
+})
+
+it('rebuilds when its thread is asked to, so a send undone elsewhere comes back as a draft', async () => {
+  query.current = reactive({
+    data: [message('bob'), reply],
+    status: 'success',
+    refetch: async () => {},
+  })
+  await openThread()
+  expect(composerShown()).toBe(false)
+
+  // Undone from the phone's compose page, which has gone: the reply is a draft on the server again.
+  useThreadReload().requestThreadReload('one')
+  await settle()
+  query.current.data = [
+    message('bob'),
+    { ...reply, draft: 1, mailboxes: [{ mailbox_id: 'drafts', mailbox_name: 'Drafts' }] },
+  ]
+  await settle()
+
+  expect(composerShown()).toBe(true)
+})
+
+it('rebuilds from fresh rows when it comes back to a thread asked for while it was away', async () => {
+  // The phone's compose page sent the draft: the list the pane comes back to still has the draft.
+  useThreadReload().requestThreadReload('one')
+  query.current = reactive({
+    data: [message('bob'), draftOfReply],
+    status: 'success',
+    refetch: async () => {},
+  })
+  await openThread()
+
+  query.current.data = [message('bob'), reply]
+  await settle()
+
+  expect(cards()).toEqual(['bob', 'reply'])
+  expect(composerShown()).toBe(false)
 })

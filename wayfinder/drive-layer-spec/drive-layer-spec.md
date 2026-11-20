@@ -4,13 +4,14 @@
 |---|---|
 | Status | Decisions accepted; implementation and measurement pending |
 | Date | 2026-09-05 |
-| Source map | [`MAP.md`](MAP.md), [`tickets/`](tickets/), and [`explainer/`](explainer/) |
+| Source map | [`MAP.md`](MAP.md) |
 | Companion plan | [`drive-layer-plan.md`](drive-layer-plan.md) (file ownership and build order) |
 | Architecture | [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) (module placement and dependency rules) |
 
 Implementation-ready spec for the Drive layer of the `suite` app. Every
 schema, query, and number here is frozen. Bracketed ids cite the ticket
-that decided the rule, in [`tickets/`](tickets/). Terms are the
+that decided the rule. The tickets were removed before merge and are in
+git history at `fd03f7c75`, under `wayfinder/drive-layer-spec/tickets/`. Terms are the
 [`Drive glossary`](../../suite/drive/CONTEXT.md)'s.
 
 This spec includes all twelve decisions accepted by Faris on 2026-09-05.
@@ -25,7 +26,7 @@ The framework storage assumptions are preserved in
 ## Accepted decisions
 
 All twelve planning choices are resolved. The table records the accepted
-outcomes from the [visual guide](explainer/remaining-decisions.html) review.
+outcomes from the visual guide review.
 The numbered sections below define their implementation contracts.
 Design acceptance does not complete implementation or verification.
 

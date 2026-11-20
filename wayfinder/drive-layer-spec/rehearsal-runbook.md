@@ -8,7 +8,7 @@ that the migrated site works in the browser.
 Run the steps in order. Each step gives the command and what a pass looks
 like. If a step fails, stop. Do not continue on a half-migrated site.
 
-The running plan is [`PROGRESS.md`](PROGRESS.md). The rules for Build,
+The rules for Build,
 Cleanup and the preflight are in [`drive-layer-spec.md`](drive-layer-spec.md)
 §14.
 

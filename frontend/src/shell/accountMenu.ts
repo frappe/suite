@@ -1,4 +1,4 @@
-import { ItemListRow, KeyboardShortcut, type DropdownOptions } from 'frappe-ui'
+import { KeyboardShortcut, type DropdownOptions } from 'frappe-ui'
 import { computed, h, type ComputedRef } from 'vue'
 
 import type { AccountArea, AccountSheetArea, AreaDefinition } from '@/platform/contracts'
@@ -24,7 +24,7 @@ export function accountSheetAreas(areas: readonly AreaDefinition[]): AccountShee
 
 /**
  * The desktop account menu [T021]: who is signed in; the account areas
- * (People) and Keyboard shortcuts; Open Desk for system managers; Log out.
+ * (People) and Keyboard shortcuts; Log out.
  * Settings is not here: the menu opens from the rail, and the rail's gear
  * sits directly above the avatar (spec section 3.5).
  */
@@ -68,41 +68,6 @@ export function useAccountMenu(areas: () => readonly AccountArea[]): ComputedRef
             // `leading-none` keeps the hint's text-sm line height from making this row taller.
             slots: { suffix: () => h(KeyboardShortcut, { combo: '?', class: 'leading-none' }) },
           },
-        ],
-      },
-      {
-        group: __('Desk'),
-        hideLabel: true,
-        options: [
-          {
-            label: __('Open Desk'),
-            condition: () => session.capabilities.value.systemManager,
-            // A plain link, so Desk loads in full in the same tab and the row can
-            // still open in a new one (spec section 12.6). The row draws the
-            // menu's highlight itself: the menu item renders as this row.
-            slots: {
-              item: () =>
-                h(
-                  ItemListRow,
-                  {
-                    as: 'a',
-                    href: '/app',
-                    class:
-                      'cursor-pointer outline-none focus:bg-surface-alpha-gray-2 data-[highlighted]:bg-surface-alpha-gray-2',
-                  },
-                  {
-                    prefix: () =>
-                      h('span', {
-                        class: 'lucide-app-window size-4 shrink-0 text-ink-gray-6',
-                        'aria-hidden': 'true',
-                      }),
-                    label: () => __('Open Desk'),
-                  },
-                ),
-            },
-          },
-          // Upgrade plan joins here once the site resource carries
-          // `upgrade_url` (ask S5).
         ],
       },
       {

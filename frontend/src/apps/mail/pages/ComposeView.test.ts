@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import { createApp, h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
+import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import { translate } from '@/platform/translation'
 
 import ComposeView from './ComposeView.vue'
@@ -98,6 +99,7 @@ beforeEach(() => {
   pickFiles.mockReset()
   upload.mockReset()
   toasts.error.mockReset()
+  toasts.success.mockReset()
   handoff.draft = undefined
 })
 afterEach(() => {
@@ -105,17 +107,22 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-/** The compose page, open on a new mail. */
-async function openComposePage() {
+/** The compose page, open on a new mail, reached from `from` (the folder, unless a test says). */
+async function openComposePage(from = '/mail') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/mail', component: { render: () => null } },
+      {
+        path: '/mail/account/:accountId/mailbox/:mailbox/:threadID',
+        component: { render: () => null },
+      },
       { path: '/mail/compose', component: ComposeView },
     ],
   })
-  await router.push('/mail')
-  await router.push('/mail/compose')
+  await router.push(from)
+  // The page it came from, as a browser's history records it (memory history records nothing).
+  await router.push({ path: '/mail/compose', state: { back: from } })
   const app = createApp({ render: () => h(RouterView) })
   app.config.globalProperties.__ = translate
   app.provide('$user', { data: { name: 'maya@example.com', undo_send_period: 10 } })
@@ -274,5 +281,68 @@ describe('sending from the compose page', () => {
       description: 'Dana’s server refused the address',
     })
     await vi.waitFor(() => expect(document.activeElement).toBe(body))
+  })
+
+  // A reply written on the compose page, opened from its thread: Send answers that it went, held
+  // for the undo window.
+  const sendReply = async (from: string) => {
+    handoff.draft = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Re: Brief',
+      html_body: '<p>Looks good.</p>',
+      in_reply_to: '<brief@brightwave.example>',
+      attachments: [],
+    }
+    server.answer = (method) =>
+      method === 'update_draft_mail'
+        ? reply({
+            message: {
+              name: 'draft-1',
+              id: 'draft-1',
+              status: 'Submitted',
+              error: null,
+              thread_id: 'brief',
+              submission_id: 'submission-1',
+              send_at: '2026-11-19T10:00:10Z',
+              undo_send_period: 10,
+            },
+          })
+        : method === 'cancel_scheduled_mail'
+          ? reply({ message: { id: 'draft-1' } })
+          : reply({ message: [] })
+    await openComposePage(from)
+    button('Send')!.click()
+    await vi.waitFor(() => expect(sentToast()).toBeDefined())
+  }
+  const sentToast = () => toasts.success.mock.calls.find(([message]) => message === 'Message sent')
+
+  it('offers no View for the thread the page goes back to', async () => {
+    await sendReply('/mail/account/acc/mailbox/inbox/brief')
+
+    expect(sentToast()![1].action.label).toBe('Undo')
+    expect(sentToast()![1].cancel).toBeUndefined()
+  })
+
+  it('offers View when the page goes back to somewhere else', async () => {
+    await sendReply('/mail/account/acc/mailbox/inbox/other-thread')
+
+    expect(sentToast()![1].cancel.label).toBe('View')
+  })
+
+  it('has the thread it goes back to rebuilt once sent, and again once the send is undone', async () => {
+    const { threadReloadRequest } = useThreadReload()
+    await sendReply('/mail/account/acc/mailbox/inbox/brief')
+    // Sent: the thread drops the draft's card for the reply when it is back on screen.
+    expect(threadReloadRequest.value?.threadId).toBe('brief')
+    threadReloadRequest.value = undefined
+
+    sentToast()![1].action.onClick()
+
+    await vi.waitFor(() => expect(threadReloadRequest.value?.threadId).toBe('brief'))
+    expect(toasts.success).toHaveBeenCalledWith(
+      'Message unsent. It is back in your drafts.',
+      undefined,
+    )
   })
 })

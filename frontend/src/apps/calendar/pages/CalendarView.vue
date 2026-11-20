@@ -29,7 +29,11 @@ import { useCalendarSearchFilters } from '@/apps/calendar/composables/useCalenda
 import { useEmailParticipants } from '@/apps/calendar/composables/useEmailParticipants'
 import { userStore } from '@/apps/calendar/stores/user'
 import { raiseToast } from '@/apps/calendar/utils'
-import { canEditEvent, calendarColor as colorOf } from '@/apps/calendar/utils/calendars'
+import {
+  canEditEvent,
+  calendarColor as colorOf,
+  onShownCalendar,
+} from '@/apps/calendar/utils/calendars'
 import { draggedDuration, fromEventZone, shiftedMasterStart } from '@/apps/calendar/utils/datetime'
 import { eventRowId, sameEvent, serverEventId } from '@/apps/calendar/utils/eventIdentity'
 import { eventPeople, eventPlace, eventRowDescription } from '@/apps/calendar/utils/eventMeta'
@@ -329,9 +333,7 @@ const getEventRole = (event) => {
 const { calendars } = store
 
 // Which calendars are drawn is the calendar's own `visible`, set from the sidebar.
-const visibleCalendars = computed(
-  () => new Set(calendars.data?.filter((cal) => cal.visible).map((cal) => cal.name)),
-)
+const onVisibleCalendar = computed(() => onShownCalendar(calendars.data))
 watch(
   () => calendars.error,
   (error) =>
@@ -444,9 +446,6 @@ const withCalendarColor = (event) => ({
  */
 const eventsPending = computed(() => events.isFetching || (!eventRows.value && !events.error))
 
-const onVisibleCalendar = (event) =>
-  event.calendars.some((c) => visibleCalendars.value.has(c.calendar))
-
 // --- The phone's search page ---
 
 // A page of its own (`calendar-search`), not the palette raised over the calendar. The
@@ -535,11 +534,11 @@ const searchCalendarLabel = (value: string) =>
   store.calendarOptions.find((option) => option.value === value)?.label || value
 
 const visibleEvents = computed(
-  () => eventRows.value?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+  () => eventRows.value?.filter(onVisibleCalendar.value).map(withCalendarColor) || [],
 )
 
 const visibleTodayEvents = computed(
-  () => todayRows.value?.filter(onVisibleCalendar).map(withCalendarColor) || [],
+  () => todayRows.value?.filter(onVisibleCalendar.value).map(withCalendarColor) || [],
 )
 
 const showEditEvent = ref(false)
