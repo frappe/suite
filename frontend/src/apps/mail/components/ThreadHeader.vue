@@ -172,7 +172,7 @@
           @click="emit('prevThread')"
         >
           <template #icon>
-            <ArrowLeft class="icon" />
+            <ChevronUp class="icon" />
           </template>
         </Button>
 
@@ -185,7 +185,7 @@
           @click="emit('nextThread')"
         >
           <template #icon>
-            <ArrowRight class="icon" />
+            <ChevronDown class="icon" />
           </template>
         </Button>
       </div>
@@ -211,10 +211,10 @@ import {
   AlarmClockOff,
   Archive,
   ArchiveRestore,
-  ArrowLeft,
-  ArrowRight,
   BellPlus,
+  ChevronDown,
   ChevronLeft,
+  ChevronUp,
   CircleAlert,
   CircleCheck,
   Clock,
@@ -473,7 +473,7 @@ const moreActions = computed((): Action[] => [
   },
   // The conversation on paper, or as a PDF from the same dialog. A phone prints from More.
   {
-    label: isMac ? __('Print (⌘P)') : __('Print (Ctrl+P)'),
+    label: isMac ? __('Print (⌘+P)') : __('Print (Ctrl+P)'),
     onClick: () => emit('print'),
     icon: Printer,
     condition: () => !inDrafts.value && !isMobile.value,
@@ -554,7 +554,7 @@ const getMailboxOption = (mailbox: MailboxData, emitName: 'moveThread') => ({
 interface Action {
   label: string
   onClick: () => void
-  icon: typeof ArrowLeft | Component
+  icon: typeof ChevronUp | Component
   condition: () => boolean
 }
 </script>

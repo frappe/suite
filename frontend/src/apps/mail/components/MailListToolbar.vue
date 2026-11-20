@@ -48,8 +48,11 @@
     <template v-else>
       <ReuseSelector v-if="showFilter" />
       <!-- Not every title is the filter's: a selection count and a search result count
-		     both land here, and neither opens a menu. -->
-      <p v-else class="pb-0.5">{{ title }}</p>
+		     both land here, and neither opens a menu. Cut short where the buttons beside it need the
+		     room: they are what the row is for, and the ticks say how many. -->
+      <Tooltip v-else :text="title" :disabled="!titleCut">
+        <p ref="titleText" class="min-w-0 truncate">{{ title }}</p>
+      </Tooltip>
     </template>
 
     <div class="-mr-1.5 ml-auto flex shrink-0 items-center space-x-2 pl-2">
@@ -81,9 +84,9 @@
 
 <script setup lang="ts">
 import { createReusableTemplate, useResizeObserver } from '@vueuse/core'
-import { Button, Divider, Dropdown } from 'frappe-ui'
+import { Button, Divider, Dropdown, Tooltip } from 'frappe-ui'
 import { ChevronDown, ListFilter, RefreshCw } from 'lucide-vue-next'
-import { Comment, computed, Fragment, ref, type VNode } from 'vue'
+import { Comment, computed, Fragment, ref, watch, type VNode } from 'vue'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import type { FilterOption } from '@/apps/mail/utils/listFilter'
@@ -137,4 +140,14 @@ const chipsWidth = ref(0)
 useResizeObserver(area, ([entry]) => (areaWidth.value = entry.contentRect.width))
 useResizeObserver(chips, () => (chipsWidth.value = chips.value?.scrollWidth ?? 0))
 const chipsFit = computed(() => !chipsWidth.value || chipsWidth.value <= areaWidth.value)
+
+// The plain title says itself in full in a tooltip, only while it is cut short.
+const titleText = ref<HTMLElement>()
+const titleCut = ref(false)
+const measureTitle = () => {
+  const el = titleText.value
+  titleCut.value = !!el && el.scrollWidth > el.clientWidth
+}
+useResizeObserver(titleText, measureTitle)
+watch(() => title, measureTitle, { flush: 'post' })
 </script>

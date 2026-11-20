@@ -645,6 +645,7 @@ const {
   navigableRows,
   focusedRowKey,
   cursorRowKey,
+  showCursor,
   onListFocusIn,
   focusedRow,
   focusRow,
@@ -804,12 +805,15 @@ const handleKeyDown = (e: KeyboardEvent) => {
   }
   if (shouldIgnoreKeypress(e)) return
 
-  // Escape clears the selection, then backs out of the open thread, then lets go of the cursor, as
-  // in a single account's list.
+  // Escape clears the selection, then backs out of the open thread, leaving the cursor's bar on its
+  // row (see showCursor), then lets go of the cursor, as in a single account's list.
   if (key === 'escape') {
     e.preventDefault()
     if (selections.value.length) return resetSelections()
-    if (threadID) return closeThread()
+    if (threadID) {
+      showCursor()
+      return closeThread()
+    }
     focusedRowKey.value = undefined
     return
   }

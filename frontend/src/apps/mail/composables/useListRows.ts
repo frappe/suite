@@ -272,6 +272,14 @@ export const useListRows = ({
   const cursorShown = ref(false)
   useEventListener(window, 'pointerdown', () => (cursorShown.value = false))
 
+  /**
+   * Esc closed the open thread: the reader is on the keys, and the next one walks the list from that
+   * thread's row. The cursor followed the thread there (see revealThread), under the open row's own
+   * bar; marked here, its bar is on that row once the pane closes. Unmarked, a thread opened or
+   * stepped to with a click closed onto a list with no cursor to be seen.
+   */
+  const showCursor = () => (cursorShown.value = true)
+
   /** The row the cursor's bar is drawn on, if any: the cursor's row while its bar shows. */
   const cursorRowKey = computed(() => (cursorShown.value ? focusedRowKey.value : undefined))
 
@@ -400,6 +408,7 @@ export const useListRows = ({
     navigableRows,
     focusedRowKey,
     cursorRowKey,
+    showCursor,
     onListFocusIn,
     focusedRow,
     focusRow,
