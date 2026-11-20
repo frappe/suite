@@ -596,6 +596,125 @@
       "bytes": false
     },
     {
+      "id": "booking_page_get",
+      "kind": "query",
+      "publicName": "bookingPages.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "booking-pages/{slug}",
+      "pathParams": [
+        "slug"
+      ],
+      "query": {
+        "properties": {
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "BookingPageQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "$defs": {
+          "BookingPageHost": {
+            "properties": {
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "full_name",
+              "user_image"
+            ],
+            "title": "BookingPageHost",
+            "type": "object"
+          }
+        },
+        "description": "What a booker sees of a page: who, what and when it is free. Nothing of what the host is\ndoing at other times.",
+        "properties": {
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "hosts": {
+            "items": {
+              "$ref": "#/$defs/BookingPageHost"
+            },
+            "title": "Hosts",
+            "type": "array"
+          },
+          "length": {
+            "title": "Length",
+            "type": "integer"
+          },
+          "time_zone": {
+            "title": "Time Zone",
+            "type": "string"
+          },
+          "slots": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Slots",
+            "type": "array"
+          }
+        },
+        "required": [
+          "title",
+          "description",
+          "hosts",
+          "length",
+          "time_zone",
+          "slots"
+        ],
+        "title": "PublicBookingPage",
+        "type": "object"
+      },
+      "errors": [
+        "BadRequest",
+        "DoesNotExistError",
+        "RateLimitExceededError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "calendar.get_calendar_events",
       "kind": "query",
       "publicName": "events.window",

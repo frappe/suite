@@ -120,6 +120,40 @@ const operationUpcomingSummary: QueryRef<
   loadValidators: async () => (await import('./validators')).operationUpcomingSummary,
 }
 
+export type BookingPageGetOutputBookingPageHost = { full_name: string; user_image: string | null }
+
+export type BookingPageGetInput = { from: string; to: string; slug: string }
+
+export type BookingPageGetOutput = {
+  title: string
+  description: string | null
+  hosts: Array<BookingPageGetOutputBookingPageHost>
+  length: number
+  time_zone: string
+  slots: Array<string>
+}
+
+export type BookingPageGetError = 'BadRequest' | 'DoesNotExistError' | 'RateLimitExceededError'
+
+const operationBookingPageGet: QueryRef<
+  BookingPageGetInput,
+  BookingPageGetOutput,
+  BookingPageGetError
+> = {
+  id: 'booking_page_get',
+  owner: 'calendar',
+  kind: 'query',
+  publicName: 'bookingPages.get',
+  method: 'GET',
+  path: 'booking-pages/{slug}',
+  prefix: '/api/suite/calendar/',
+  pathParams: ['slug'],
+  nodeParams: [],
+  entity: null,
+  errors: ['BadRequest', 'DoesNotExistError', 'RateLimitExceededError'],
+  loadValidators: async () => (await import('./validators')).operationBookingPageGet,
+}
+
 export type CalendarGetCalendarEventsOutputCalendarEvent = {
   name: string
   account: string
@@ -1227,6 +1261,9 @@ export const api = {
     splitSeries: operationSplitCalendarEventSeries,
     deleteFollowing: operationDeleteCalendarEventSeriesFrom,
     respond: operationRsvpCalendarEvent,
+  },
+  bookingPages: {
+    get: operationBookingPageGet,
   },
   calendars: {
     list: operationGetCalendarsWithShared,

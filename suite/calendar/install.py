@@ -1,5 +1,14 @@
 from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
 
+# The public booking page looks up a host's free time for anyone with the link, one mail-server
+# read per lookup, so it is limited per IP address (specs/calendar/003 §Abuse). A booker paging
+# through months makes a handful a minute.
+BOOKING_PAGE_RATE_LIMIT = {
+    "method_path": "suite.calendar.http.routes.booking_page_get",
+    "limit": 30,
+    "seconds": 60,
+}
+
 
 def after_install() -> None:
     add_rate_limits()
@@ -73,6 +82,7 @@ def add_rate_limits() -> None:
             "limit": 20,
             "seconds": 60,
         },
+        BOOKING_PAGE_RATE_LIMIT,
     ]
 
     for rl in rate_limits:

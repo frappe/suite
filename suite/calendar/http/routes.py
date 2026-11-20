@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypedDict
 from urllib.parse import urlparse
 
@@ -11,6 +12,7 @@ from frappe import _
 from frappe.utils import get_system_timezone, get_url
 from pydantic import BaseModel
 
+from suite.calendar import booking
 from suite.calendar.api import (
     _declined_by_viewer,
     _own_emails,
@@ -35,11 +37,12 @@ from suite.calendar.doctype.calendar_event.calendar_event import (
     update_calendar_event_instance,
 )
 from suite.calendar.doctype.calendar_event.fields import EventFields
-from suite.composition.http import BadRequest, Route
+from suite.composition.http import BadRequest, Route, refusals_as_bad_request
 from suite.mail.doctype.user_account.user_account import (
     get_user_jmap_accounts,
     is_jmap_account_belongs_to_user,
 )
+from suite.utils.rate_limiter import dynamic_rate_limit
 
 Given = str | int | float | bool | list | dict | None
 
@@ -126,6 +129,27 @@ EventsQuery = TypedDict(
 )
 
 UpcomingQuery = TypedDict("UpcomingQuery", {"from": str, "to": str})
+
+# Two instants, each with its zone: the booker's browser asks for the days it shows.
+BookingPageQuery = TypedDict("BookingPageQuery", {"from": str, "to": str})
+
+
+class BookingPageHost(TypedDict):
+    full_name: str
+    user_image: str | None
+
+
+class PublicBookingPage(TypedDict):
+    """What a booker sees of a page: who, what and when it is free. Nothing of what the host is
+    doing at other times."""
+
+    title: str
+    description: str | None
+    hosts: list[BookingPageHost]
+    length: int
+    time_zone: str
+    # UTC instants, `...Z`, earliest first.
+    slots: list[str]
 
 
 class UpcomingSummary(TypedDict):
@@ -481,6 +505,17 @@ ROUTES = (
         kind="query",
         public_name="events.upcoming",
     ),
+    Route(
+        "GET",
+        "booking-pages/{slug}",
+        "booking_page_get",
+        allow_guest=True,
+        errors=(BadRequest, frappe.DoesNotExistError, frappe.RateLimitExceededError),
+        query=BookingPageQuery,
+        output=PublicBookingPage,
+        kind="query",
+        public_name="bookingPages.get",
+    ),
 )
 
 
@@ -532,6 +567,35 @@ def upcoming_summary(to: Given = None, **kwargs: Given) -> UpcomingSummary:
                 continue
             upcoming += 1
     return {"upcoming": upcoming}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+@dynamic_rate_limit()
+@refusals_as_bad_request
+def booking_page_get(slug: Given = None, to: Given = None, **kwargs: Given) -> PublicBookingPage:
+    """A public booking page and its free slots between two instants, for anyone with the link.
+
+    Rate limited per IP address (003 §Abuse). A page that is missing or switched off answers 404
+    alike.
+    """
+
+    page = booking.public_page(
+        _required_text(slug, "slug"),
+        _instant(kwargs.get("from"), "from"),
+        _instant(to, "to"),
+    )
+    return {**page, "slots": [slot.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") for slot in page["slots"]]}
+
+
+def _instant(value: Given, name: str) -> datetime:
+    text = _required_text(value, name)
+    try:
+        instant = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        instant = None
+    if instant is None or instant.tzinfo is None:
+        frappe.throw(_("Calendar argument {0} must be a time with its zone").format(name), BadRequest)
+    return instant
 
 
 def _conferencing(links: list[dict]) -> Conferencing | None:

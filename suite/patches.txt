@@ -107,7 +107,7 @@ suite.mail.patches.classify_mail_at_delivery
 # Mail that was sent, or a draft that was replaced, could stay cached as a draft.
 suite.mail.patches.drop_cached_drafts
 # --- calendar ---
-# (no patches)
+suite.calendar.patches.add_booking_page_rate_limit
 # --- suite_core ---
 # Existing, already-set-up sites shouldn't be sent through Suite's onboarding.
 suite.suite_core.patches.grant_suite_admin_to_system_managers

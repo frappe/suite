@@ -23,6 +23,16 @@ def is_server_configured() -> bool:
     return is_jmap_server_configured()
 
 
+def personal_account(user: str) -> str | None:
+    """The user's own mail account, where their own mail and calendars are, or None without one.
+
+    An account someone else shared with the user, or a team's, is not it.
+    """
+    from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+
+    return get_user_personal_jmap_account(user)
+
+
 def send_email(email_type: str, recipient: str, params: Mapping[str, Any], request_key: str) -> None:
     """Ask Suite Cloud to send one first-party email from its named template."""
     import frappe

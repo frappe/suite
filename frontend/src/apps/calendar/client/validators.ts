@@ -7,6 +7,8 @@ import type {
   AddCalendarEventOutput,
   AddInviteToCalendarInput,
   AddInviteToCalendarOutput,
+  BookingPageGetInput,
+  BookingPageGetOutput,
   CalendarGetCalendarEventsInput,
   CalendarGetCalendarEventsOutput,
   CreateCalendarInput,
@@ -293,6 +295,58 @@ export const operationUpcomingSummary: Validators<UpcomingSummaryInput, Upcoming
         type: 'object',
       },
       'upcoming_summary output',
+    )
+  },
+}
+
+export const operationBookingPageGet: Validators<BookingPageGetInput, BookingPageGetOutput> = {
+  validateInput(value: unknown): asserts value is BookingPageGetInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          from: { title: 'From', type: 'string' },
+          to: { title: 'To', type: 'string' },
+          slug: { type: 'string' },
+        },
+        required: ['from', 'to', 'slug'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'booking_page_get input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is BookingPageGetOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          BookingPageHost: {
+            properties: {
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['full_name', 'user_image'],
+            title: 'BookingPageHost',
+            type: 'object',
+          },
+        },
+        description:
+          'What a booker sees of a page: who, what and when it is free. Nothing of what the host is\ndoing at other times.',
+        properties: {
+          title: { title: 'Title', type: 'string' },
+          description: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Description' },
+          hosts: { items: { $ref: '#/$defs/BookingPageHost' }, title: 'Hosts', type: 'array' },
+          length: { title: 'Length', type: 'integer' },
+          time_zone: { title: 'Time Zone', type: 'string' },
+          slots: { items: { type: 'string' }, title: 'Slots', type: 'array' },
+        },
+        required: ['title', 'description', 'hosts', 'length', 'time_zone', 'slots'],
+        title: 'PublicBookingPage',
+        type: 'object',
+      },
+      'booking_page_get output',
     )
   },
 }

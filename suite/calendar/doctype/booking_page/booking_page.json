@@ -1,0 +1,173 @@
+{
+ "actions": [],
+ "creation": "2026-11-20 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "title",
+  "slug",
+  "enabled",
+  "description",
+  "times_section",
+  "length",
+  "slot_interval",
+  "buffer",
+  "times_column",
+  "minimum_notice",
+  "days_ahead",
+  "time_zone",
+  "hours_section",
+  "weekly_hours",
+  "hosts_section",
+  "hosts"
+ ],
+ "fields": [
+  {
+   "fieldname": "title",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Title",
+   "reqd": 1
+  },
+  {
+   "description": "The page is at /book/<slug>. Left empty, it is made from the title.",
+   "fieldname": "slug",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Slug",
+   "unique": 1
+  },
+  {
+   "default": "1",
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Enabled"
+  },
+  {
+   "fieldname": "description",
+   "fieldtype": "Small Text",
+   "label": "Description"
+  },
+  {
+   "fieldname": "times_section",
+   "fieldtype": "Section Break",
+   "label": "Times"
+  },
+  {
+   "default": "30",
+   "fieldname": "length",
+   "fieldtype": "Int",
+   "label": "Length (minutes)",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "Length",
+   "description": "Length starts slots one length apart: 9:00, 10:00 and 11:00 for an hour.",
+   "fieldname": "slot_interval",
+   "fieldtype": "Select",
+   "label": "Slots start every",
+   "options": "Length\n15\n30",
+   "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "The host must also be free this many minutes before and after a slot.",
+   "fieldname": "buffer",
+   "fieldtype": "Int",
+   "label": "Buffer (minutes)",
+   "non_negative": 1
+  },
+  {
+   "fieldname": "times_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "240",
+   "description": "No slot starts sooner than this from now.",
+   "fieldname": "minimum_notice",
+   "fieldtype": "Int",
+   "label": "Minimum notice (minutes)",
+   "non_negative": 1
+  },
+  {
+   "default": "30",
+   "description": "No slot starts more than this many days from today.",
+   "fieldname": "days_ahead",
+   "fieldtype": "Int",
+   "label": "Days ahead",
+   "non_negative": 1
+  },
+  {
+   "description": "The zone of the weekly hours. Left empty, it is the host's.",
+   "fieldname": "time_zone",
+   "fieldtype": "Autocomplete",
+   "label": "Time zone"
+  },
+  {
+   "fieldname": "hours_section",
+   "fieldtype": "Section Break",
+   "label": "Weekly hours"
+  },
+  {
+   "description": "Left empty on a new page, it is Monday to Friday, 9:00 to 17:00.",
+   "fieldname": "weekly_hours",
+   "fieldtype": "Table",
+   "label": "Weekly hours",
+   "options": "Booking Page Hours"
+  },
+  {
+   "fieldname": "hosts_section",
+   "fieldtype": "Section Break",
+   "label": "Hosts"
+  },
+  {
+   "fieldname": "hosts",
+   "fieldtype": "Table",
+   "label": "Hosts",
+   "options": "Booking Page Host",
+   "reqd": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-20 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Calendar",
+ "name": "Booking Page",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 0,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Suite User",
+   "share": 0,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "show_title_field_in_link": 1,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "title",
+ "track_changes": 0
+}
