@@ -133,8 +133,8 @@ const moreOptions = computed(() => {
       ? () => (chained.value = { title: option.label, options: option.options! })
       : option.onClick,
   }))
-  return [filing, [...inGroup('later'), ...inGroup('selection')]]
-    .filter((options) => options.length)
-    .map((options) => ({ group: '', options }))
+  return [filing, [...inGroup('later'), ...inGroup('selection')]].flatMap((options) =>
+    options.length ? [{ group: '', options }] : [],
+  )
 })
 </script>
