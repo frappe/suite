@@ -117,7 +117,7 @@
           <!-- Mail list -->
           <div
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+var(--suite-phone-nav-height,0px)+env(safe-area-inset-bottom))]"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
             <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.

@@ -190,7 +190,7 @@
           <div
             v-else-if="threadRows.length"
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+var(--suite-phone-nav-height,0px)+env(safe-area-inset-bottom))]"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">

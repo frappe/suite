@@ -6,15 +6,14 @@
        lit, and Compose a round
        button over its right end, in the thumb zone. The island keeps its width wherever Compose
        steps aside. It sits in Mail's overlay layer, so the shell's
-       bar slot keeps no height and the lists run to the bottom of the screen, under it. It stands
-       on whatever else the slot holds (the offer to install), and gives the bottom over to the
-       selection bar while mail is selected. It slides away while a list scrolls down
+       bar slot keeps no height and the lists run to the bottom of the screen, under it. It gives the
+       bottom over to the selection bar while mail is selected. It slides away while a list scrolls down
        (`phoneBarsAway`). -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="!isMobileSelectionActive"
-      :class="{ 'translate-y-[calc(100%+var(--suite-phone-nav-height,0px))]': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col transition-transform duration-200 ease-out items-end gap-3 px-4 pb-[calc(0.75rem+max(0px,env(safe-area-inset-bottom)_-_var(--suite-phone-nav-height,0px)))]"
+      :class="{ 'translate-y-full': away }"
+      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col transition-transform duration-200 ease-out items-end gap-3 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
       <!-- Not where composing is not the task: search results and the profile page. -->
       <Button

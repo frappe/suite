@@ -12,8 +12,8 @@
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="open"
-      :class="{ 'translate-y-[calc(100%+var(--suite-phone-nav-height,0px))]': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col items-end gap-3 transition-transform duration-200 ease-out px-4 pb-[calc(0.75rem+max(0px,env(safe-area-inset-bottom)_-_var(--suite-phone-nav-height,0px)))]"
+      :class="{ 'translate-y-full': away }"
+      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-end gap-3 transition-transform duration-200 ease-out px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
       <button
         v-if="!allSelected"
@@ -43,14 +43,16 @@
         <span class="ml-auto shrink-0 px-1" aria-hidden="true">
           <span class="block h-6 border-l" />
         </span>
-        <!-- Each takes an even share of the room left, up to a full round button; the rest stays between
-             the count and the actions, which keep to the right, by More. -->
+        <!-- One width for every action and More, as wide as five actions and More allow on a phone,
+             so the spacing holds however many there are; the room left stays between the count and
+             the actions, which keep to the right. More of them (a mixed selection can add Unarchive
+             and Not Junk), or a narrower screen, and they all shrink alike. -->
         <button
           v-for="action in acts"
           :key="action.label"
           type="button"
           :aria-label="action.shortLabel"
-          class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 min-w-0 max-w-11 flex-1 items-center justify-center rounded-full transition active:scale-95"
+          class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 w-10 min-w-0 items-center justify-center rounded-full transition active:scale-95"
           @click="action.onClick"
         >
           <component :is="action.icon" class="size-5 shrink-0" />
@@ -59,7 +61,7 @@
           v-if="moreOptions.length"
           type="button"
           :aria-label="__('More')"
-          class="text-ink-gray-7 active:bg-surface-gray-2 flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95"
+          class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 w-10 min-w-0 items-center justify-center rounded-full transition active:scale-95"
           @click="showMore = true"
         >
           <Ellipsis class="size-5" />

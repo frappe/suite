@@ -30,8 +30,7 @@ type Event =
 	| { type: "PAGE_CODE_FAILS" }
 	| { type: "OPEN_MAIL_WITHOUT_ACCOUNT" }
 	| { type: "NARROW" }
-	| { type: "OPEN_ACCOUNT_SHEET" }
-	| { type: "OPEN_CALENDAR_ON_PHONE" };
+	| { type: "OPEN_ACCOUNT_SHEET" };
 
 /**
  * The frame around every app. `ShellLayout.vue` picks the frame from
@@ -151,19 +150,10 @@ const machine = setupFlow<Event>().createMachine({
 		},
 		phoneHome: {
 			meta: { description: "Home at phone width: no rail. A bottom bar holds one item per area and the avatar; the workspace menu, bell, Search and Shortcuts have no place here." },
-			on: { OPEN_ACCOUNT_SHEET: "accountSheet", OPEN_CALENDAR_ON_PHONE: "phoneInstallOffer" },
+			on: { OPEN_ACCOUNT_SHEET: "accountSheet" },
 		},
 		accountSheet: {
 			meta: { description: "The avatar opens the account sheet from the bottom: Maya's name and email, Settings, Theme as Light, Dark and Auto, and Log out." },
-		},
-		phoneInstallOffer: {
-			meta: { description: "Calendar on a phone whose browser offers to install it (the offer event is sent by the flow): a strip above the bottom bar says \"Install Calendar as an app.\" with Install and a close button." },
-		},
-		phoneNotifyAsk: {
-			meta: {
-				description: "Inside an installed Calendar app, the first time it opens: \"Be notified by Calendar on this device?\" with Turn on. Not reached: it needs the page to run as an installed app.",
-				transient: true,
-			},
 		},
 	},
 });
@@ -380,16 +370,6 @@ export const shell = defineFlow<Event, BaseScene>({
 		async OPEN_ACCOUNT_SHEET(scene) {
 			await scene.page.getByRole("button", { name: "Account", exact: true }).or(scene.page.getByRole("link", { name: "Account", exact: true })).first().click();
 			await expect(scene.page.getByRole("dialog", { name: "Account" }).getByText("Log out")).toBeVisible();
-		},
-		async OPEN_CALENDAR_ON_PHONE(scene) {
-			await scene.page.goto("/calendar");
-			await scene.page.waitForLoadState("networkidle").catch(() => undefined);
-			await scene.page.evaluate(() => {
-				const offer = new Event("beforeinstallprompt", { cancelable: true });
-				Object.assign(offer, { prompt: () => Promise.resolve(), userChoice: Promise.resolve({ outcome: "dismissed" }) });
-				window.dispatchEvent(offer);
-			});
-			await expect(scene.page.getByRole("region", { name: "Install Calendar" })).toBeVisible();
 		},
 	},
 	frame(scene, state) {

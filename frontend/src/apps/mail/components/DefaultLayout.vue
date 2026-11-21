@@ -15,7 +15,7 @@
         id="scrollContainer"
         class="w-full overflow-auto max-sm:flex max-sm:flex-col max-sm:overflow-hidden"
         :class="{
-          'pb-[calc(5rem+var(--suite-phone-nav-height,0px)+env(safe-area-inset-bottom))]':
+          'pb-[calc(5rem+env(safe-area-inset-bottom))]':
             shellChrome && !route.meta.scrollsUnderPhoneBar,
         }"
       >

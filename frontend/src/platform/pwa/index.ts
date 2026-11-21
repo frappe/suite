@@ -3,7 +3,6 @@ import { computed, readonly, ref, shallowRef, watch } from 'vue'
 import type { Session } from '@/platform/session'
 import { translate } from '@/platform/translation'
 
-import { onIos, standalone, startInstallOffer } from './install'
 import { pushNotification } from './notification'
 import SPLASH_DEVICES from './splash-devices.json'
 
@@ -40,7 +39,6 @@ export function installPwa(
 ): void {
   installableApps = routes.apps
   signedInUser = () => session.user.value?.id ?? null
-  startInstallOffer(currentApp)
   watch(
     () => pwaAppAt(routes.path(), routes.apps),
     (app) => {
@@ -101,25 +99,10 @@ function launchedApp(): string {
   return loaded
 }
 
-const NOTIFY_ASKED_KEY = 'suite_notify_asked'
-
-/**
- * Turning this device's notifications on and off, from an app's Profile, and the ask an installed
- * app makes once, the first time it opens: an iPhone lets a page ask only from a tap, so the ask is
- * a button rather than the browser's prompt on load.
- */
+/** Turning this device's notifications on and off, from an app's Profile. */
 export function useDevicePush() {
   const available = computed(
     () => !!pushRelayURL() && 'Notification' in window && 'serviceWorker' in navigator,
-  )
-  const askOpen = computed(
-    () =>
-      available.value &&
-      standalone() &&
-      currentApp.value !== 'suite' &&
-      !pushEnabled.value &&
-      Notification.permission === 'default' &&
-      !asked.value.includes(currentApp.value),
   )
   /**
    * Turns this device's notifications on: true, or false when the browser refuses. Throws when
@@ -129,10 +112,7 @@ export function useDevicePush() {
     // Asked from the tap itself, before anything is awaited: an iPhone lets a page ask only while
     // the tap is fresh, and setting up the worker can take longer than that.
     const permission = await Notification.requestPermission()
-    if (permission !== 'granted') {
-      dismissAsk()
-      return false
-    }
+    if (permission !== 'granted') return false
     const push = await pushClient
     if (!push) throw new Error(translate('Notifications could not be set up on this device.'))
     const { permission_granted } = await push.enableNotification()
@@ -140,33 +120,13 @@ export function useDevicePush() {
     // The token is this user's: a sign-in by someone else drops it (see claimPushToken).
     const user = signedInUser()
     if (permission_granted && user) localStorage.setItem(PUSH_OWNER_KEY, user)
-    dismissAsk()
     return permission_granted
   }
   const disable = async () => {
     await (await pushClient)?.disableNotification()
     pushEnabled.value = false
   }
-  const dismissAsk = () => {
-    if (asked.value.includes(currentApp.value)) return
-    asked.value = [...asked.value, currentApp.value]
-    try {
-      localStorage.setItem(NOTIFY_ASKED_KEY, JSON.stringify(asked.value))
-    } catch {
-      // Storage can be unavailable (private mode); the ask comes back with the next visit.
-    }
-  }
-  return { available, enabled: readonly(pushEnabled), askOpen, enable, disable, dismissAsk }
-}
-
-const asked = ref<string[]>(readAsked())
-function readAsked(): string[] {
-  try {
-    const list: unknown = JSON.parse(localStorage.getItem(NOTIFY_ASKED_KEY) ?? '[]')
-    return Array.isArray(list) ? list.filter((app): app is string => typeof app === 'string') : []
-  } catch {
-    return []
-  }
+  return { available, enabled: readonly(pushEnabled), enable, disable }
 }
 
 /**
@@ -189,8 +149,6 @@ let installableApps: readonly InstallableApp[] = []
 // The app whose manifest the page linked when it loaded.
 let loadedApp: string | null = null
 
-export { useInstallOffer, type InstallOffer } from './install'
-
 /** The app a page installs as: the installable app it belongs to, or the Suite. */
 export function pwaAppAt(path: string, apps: readonly InstallableApp[]): string {
   const app = apps.find(({ scope }) => path === scope || path.startsWith(`${scope}/`))
@@ -206,6 +164,21 @@ export function pwaAppAt(path: string, apps: readonly InstallableApp[]): string 
 export function pageLoadNeededFor(path: string): boolean {
   if (!loadedApp || !onIos() || standalone()) return false
   return pwaAppAt(path, installableApps) !== loadedApp
+}
+
+/** Running as an installed app rather than in a browser tab. */
+function standalone(): boolean {
+  return (
+    window.matchMedia?.('(display-mode: standalone)').matches ||
+    ('standalone' in navigator && navigator.standalone === true)
+  )
+}
+
+/** An iPhone or iPad, whatever the browser: they all use WebKit, and none can prompt. */
+function onIos(): boolean {
+  const { userAgent, maxTouchPoints } = navigator
+  // iPadOS asks for desktop pages as a Mac; only its touch screen tells it apart.
+  return /iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1)
 }
 
 /**
