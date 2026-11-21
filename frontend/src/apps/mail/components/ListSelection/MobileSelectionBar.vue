@@ -12,8 +12,8 @@
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="open"
-      :class="{ 'translate-y-full': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-end gap-3 transition-transform duration-200 ease-out px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      :class="{ 'invisible translate-y-full': away }"
+      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-end gap-3 transition-[transform,visibility] duration-200 ease-out px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
       <button
         v-if="!allSelected"
@@ -88,7 +88,12 @@ import { usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import type { SelectAction } from '@/apps/mail/utils/selectActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
-type MenuOption = { label: string; icon?: string | Component; onClick?: () => void }
+type MenuOption = {
+  label: string
+  icon?: string | Component
+  onClick?: () => void
+  drillsIn?: boolean
+}
 // A More entry: an action, or a menu of its own (the folder menus) that opens as a chained sheet.
 type ExtraOption = {
   label: string
@@ -133,6 +138,7 @@ const moreOptions = computed(() => {
     onClick: option.options
       ? () => (chained.value = { title: option.label, options: option.options! })
       : option.onClick,
+    drillsIn: !!option.options,
   }))
   return [filing, [...inGroup('later'), ...inGroup('selection')]].flatMap((options) =>
     options.length ? [{ group: '', options }] : [],
