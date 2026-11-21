@@ -446,6 +446,7 @@ const laterOptions = computed(() => [
           label: laterLabel.value,
           icon: remindOnly.value ? BellPlus : Clock,
           onClick: () => (laterOpen.value = true),
+          drillsIn: true,
         },
       ]
     : []),

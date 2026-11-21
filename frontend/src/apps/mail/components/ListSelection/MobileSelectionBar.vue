@@ -72,10 +72,9 @@
 
   <AdaptiveDropdown v-model:open="showMore" :options="moreOptions" />
   <AdaptiveDropdown
-    :open="!!chained"
+    v-model:open="chainedOpen"
     :options="chained?.options ?? []"
     :title="chained?.title"
-    @update:open="(open: boolean) => !open && (chained = null)"
   />
 </template>
 
@@ -120,7 +119,9 @@ const emit = defineEmits<{ toggleAll: [selected: boolean] }>()
 const overlayLayer = usePortalTarget()
 const away = usePhoneBarsAway()
 const showMore = ref(false)
+// What the chained sheet shows outlives its closing, or the sheet would empty as it slides away.
 const chained = ref<{ title: string; options: MenuOption[] } | null>(null)
+const chainedOpen = ref(false)
 
 const visible = computed(() => actions.filter((a) => a.condition()))
 const acts = computed(() => visible.value.filter((a) => a.group === 'act'))
@@ -128,6 +129,8 @@ const plain = (a: SelectAction): MenuOption => ({
   label: a.label,
   icon: a.icon,
   onClick: a.onClick,
+  // One that asks something first (Snooze: until when) asks in a sheet of its own.
+  drillsIn: !!a.menu,
 })
 const moreOptions = computed(() => {
   const inGroup = (group: SelectAction['group']) =>
@@ -136,7 +139,10 @@ const moreOptions = computed(() => {
     label: option.label,
     icon: option.icon,
     onClick: option.options
-      ? () => (chained.value = { title: option.label, options: option.options! })
+      ? () => {
+          chained.value = { title: option.label, options: option.options! }
+          chainedOpen.value = true
+        }
       : option.onClick,
     drillsIn: !!option.options,
   }))
