@@ -5,7 +5,8 @@
        junk, trash), then More. Select All floats over its right end, where Compose stands over the
        bottom bar, until there is nothing left to select: ✕ is how to empty it. Teleported to Mail's
        overlay layer: inside the layout's `isolate` stacking context, no z-index could beat the
-       page. More holds the rest in the toolbar's groups, each set apart: where the mail is filed
+       page. More holds the rest in the toolbar's groups, each set apart: any action the bar had no
+       room for (see phoneBar), where the mail is filed
        (any `extraOptions`; one with `options` of its own opens them as a sheet chained from More),
        and what keeps it to come back to (Snooze, Pin, Star). It slides away while the list scrolls
        down (`phoneBarsAway`). -->
@@ -40,32 +41,29 @@
             {{ count }}
           </span>
         </button>
-        <span class="ml-auto shrink-0 px-1" aria-hidden="true">
-          <span class="block h-6 border-l" />
-        </span>
-        <!-- One width for every action and More, as wide as five actions and More allow on a phone,
-             so the spacing holds however many there are; the room left stays between the count and
-             the actions, which keep to the right. More of them (a mixed selection can add Unarchive
-             and Not Junk), or a narrower screen, and they all shrink alike. -->
-        <button
-          v-for="action in acts"
-          :key="action.label"
-          type="button"
-          :aria-label="action.shortLabel"
-          class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 w-10 min-w-0 items-center justify-center rounded-full transition active:scale-95"
-          @click="action.onClick"
-        >
-          <component :is="action.icon" class="size-5 shrink-0" />
-        </button>
-        <button
-          v-if="moreOptions.length"
-          type="button"
-          :aria-label="__('More')"
-          class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 w-10 min-w-0 items-center justify-center rounded-full transition active:scale-95"
-          @click="showMore = true"
-        >
-          <Ellipsis class="size-5" />
-        </button>
+        <!-- Six columns at most, More among them (see phoneBar), sharing the room after the count:
+             one width however many there are, so the spacing holds, the buttons in the last ones.
+             The line setting them apart from the count goes with the first. -->
+        <div class="ml-3 grid min-w-0 flex-1 grid-cols-6 gap-0.5">
+          <button
+            v-for="(button, i) in buttons"
+            :key="button.key"
+            type="button"
+            :aria-label="button.label"
+            class="text-ink-gray-7 active:bg-surface-gray-2 relative flex h-11 min-w-0 items-center justify-center rounded-full transition active:scale-95"
+            :style="
+              i === 0 ? { gridColumnStart: PHONE_BAR_BUTTONS + 1 - buttons.length } : undefined
+            "
+            @click="button.onClick"
+          >
+            <span
+              v-if="i === 0"
+              class="absolute -left-1.5 top-1/2 h-6 -translate-y-1/2 border-l"
+              aria-hidden="true"
+            />
+            <component :is="button.icon" class="size-5 shrink-0" />
+          </button>
+        </div>
       </div>
     </div>
   </Teleport>
@@ -84,7 +82,7 @@ import { Ellipsis, SquareCheck, X } from 'lucide-vue-next'
 import { computed, ref, type Component } from 'vue'
 
 import { usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
-import type { SelectAction } from '@/apps/mail/utils/selectActions'
+import { PHONE_BAR_BUTTONS, phoneBar, type SelectAction } from '@/apps/mail/utils/selectActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 type MenuOption = {
@@ -124,7 +122,11 @@ const chained = ref<{ title: string; options: MenuOption[] } | null>(null)
 const chainedOpen = ref(false)
 
 const visible = computed(() => actions.filter((a) => a.condition()))
-const acts = computed(() => visible.value.filter((a) => a.group === 'act'))
+const inGroup = (group: SelectAction['group']) => visible.value.filter((a) => a.group === group)
+const keeping = computed(() => [...inGroup('later'), ...inGroup('selection')])
+const bar = computed(() =>
+  phoneBar(inGroup('act'), extraOptions.length > 0 || keeping.value.length > 0),
+)
 const plain = (a: SelectAction): MenuOption => ({
   label: a.label,
   icon: a.icon,
@@ -132,9 +134,8 @@ const plain = (a: SelectAction): MenuOption => ({
   // One that asks something first (Snooze: until when) asks in a sheet of its own.
   drillsIn: !!a.menu,
 })
+// What the bar had no button for comes first: it is done to the mail, as the buttons are.
 const moreOptions = computed(() => {
-  const inGroup = (group: SelectAction['group']) =>
-    visible.value.filter((a) => a.group === group).map(plain)
   const filing = extraOptions.map((option) => ({
     label: option.label,
     icon: option.icon,
@@ -146,8 +147,19 @@ const moreOptions = computed(() => {
       : option.onClick,
     drillsIn: !!option.options,
   }))
-  return [filing, [...inGroup('later'), ...inGroup('selection')]].flatMap((options) =>
+  return [bar.value.folded.map(plain), filing, keeping.value.map(plain)].flatMap((options) =>
     options.length ? [{ group: '', options }] : [],
   )
 })
+const buttons = computed(() => [
+  ...bar.value.buttons.map((action) => ({
+    key: action.label,
+    label: action.shortLabel,
+    icon: action.icon,
+    onClick: action.onClick,
+  })),
+  ...(moreOptions.value.length
+    ? [{ key: 'more', label: __('More'), icon: Ellipsis, onClick: () => (showMore.value = true) }]
+    : []),
+])
 </script>
