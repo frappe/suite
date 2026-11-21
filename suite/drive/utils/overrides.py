@@ -1,5 +1,6 @@
 import frappe
 from frappe.permissions import SYSTEM_USER_ROLE, get_doctypes_with_read
+from frappe.utils import get_email_address
 
 from suite.drive.utils import get_principals, principal_list
 
@@ -66,7 +67,7 @@ def filter_drive_settings(user):
 
 @common_filters
 def filter_drive_invitation(user):
-    return f"(`tabDrive User Invitation`.`email` = {frappe.db.escape(user)})"
+    return f"(`tabDrive User Invitation`.`email` = {frappe.db.escape(get_email_address(user))})"
 
 
 @common_filters

@@ -3,7 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
-from frappe.utils import add_days, get_datetime, now, validate_email_address
+from frappe.utils import add_days, get_datetime, get_email_address, now, validate_email_address
 
 from suite.suite_core import suite_email
 
@@ -43,6 +43,9 @@ class DriveUserInvitation(Document):
         from suite.drive.api.notifications import drive_logo_inline_images
 
         link = frappe.utils.get_url(f"/api/method/suite.drive.api.product.accept_invite?key={self.name}")
+        inviter = frappe.session.user
+        if inviter not in frappe.STANDARD_USERS:
+            inviter = get_email_address(inviter)
         suite_email.send(
             "drive-invite",
             self.email,
@@ -50,7 +53,7 @@ class DriveUserInvitation(Document):
             local={
                 "subject": "Frappe Drive - Invitation",
                 "template": "drive_invitation",
-                "args": {"invite_link": link, "user": frappe.session.user},
+                "args": {"invite_link": link, "user": inviter},
                 "inline_images": drive_logo_inline_images(),
             },
         )
@@ -86,7 +89,7 @@ class DriveUserInvitation(Document):
                 }
             ).insert(ignore_permissions=True)
             frappe.db.commit()
-            user_exists = frappe.db.exists("User", self.email)
+            user_exists = frappe.db.exists("User", {"email": self.email})
 
             if not user_exists:
                 url = f"/drive/signup?e={self.email}&r={req.name}"
@@ -101,7 +104,7 @@ class DriveUserInvitation(Document):
         frappe.db.commit()
 
         if frappe.session.user == "Guest":
-            frappe.local.login_manager.login_as(self.email)
+            frappe.local.login_manager.login_as(frappe.db.get_value("User", {"email": self.email}))
 
         frappe.local.response["location"] = "/drive/"
         return "/drive/"

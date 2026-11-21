@@ -209,7 +209,7 @@ watch(scheduleEndTime, (endTime) => {
 	scheduleStartTime.value = adjustScheduleStartTime(scheduleStartTime.value, endTime);
 });
 
-const userResource = useCall<{ name?: string; full_name?: string; user_image?: string }>({
+const userResource = useCall<{ name?: string; email?: string; full_name?: string; user_image?: string }>({
 	url: "/api/v2/method/suite.api.account.get_logged_in_user",
 });
 
@@ -237,7 +237,7 @@ const scheduledDuration = computed(() => {
 	return dayjs.duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() }).toISOString();
 });
 
-const currentUserEmail = computed(() => calendarStore.userResource.data?.name || userResource.data?.name);
+const currentUserEmail = computed(() => calendarStore.userResource.data?.email || userResource.data?.email);
 
 const scheduledParticipants = computed(() => {
 	const currentName = calendarStore.userResource.data?.full_name || userResource.data?.full_name;

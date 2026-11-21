@@ -133,7 +133,7 @@ def get_directory_addresses() -> list[dict]:
         frappe.qb.from_(user)
         .join(has_role)
         .on(has_role.parent == user.name)
-        .select(user.full_name.as_("name"), user.name.as_("email"))
+        .select(user.full_name.as_("name"), user.email)
         .where((user.enabled == 1) & (has_role.parenttype == "User") & (has_role.role == "Suite User"))
         .distinct()
         .run(as_dict=True)

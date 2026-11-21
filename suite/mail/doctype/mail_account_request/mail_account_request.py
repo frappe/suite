@@ -12,6 +12,7 @@ from frappe.utils import (
     cint,
     flt,
     get_datetime,
+    get_email_address,
     get_url,
     now,
     now_datetime,
@@ -305,15 +306,18 @@ class MailAccountRequest(Document):
         """Emails the invite link to the backup email."""
 
         link = get_url("/mail/signup/" + self.request_key)
+        inviter = self.invited_by
+        if inviter not in frappe.STANDARD_USERS:
+            inviter = get_email_address(inviter) or inviter
         suite_email.send(
             "account-invite",
             self.backup_email,
-            {"inviter": self.invited_by, "link": link},
+            {"inviter": inviter, "link": link},
             local={
-                "subject": _("You have been invited by {0} to join Frappe Mail").format(self.invited_by),
+                "subject": _("You have been invited by {0} to join Frappe Mail").format(inviter),
                 "template": "generic",
                 "args": {
-                    "title": _("You have been invited by {0} to join Frappe Mail.").format(self.invited_by),
+                    "title": _("You have been invited by {0} to join Frappe Mail.").format(inviter),
                     "description": _("Please confirm your email address by clicking the button below."),
                     "button": _("Verify Account"),
                     "link": link,

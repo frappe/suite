@@ -107,7 +107,7 @@
                       :label="$user(row.owner)?.full_name || 'Deleted'"
                       size="xs"
                     />
-                    <Tooltip :text="row.owner">
+                    <Tooltip :text="$user(row.owner)?.email || row.owner">
                       {{ $user(row.owner)?.full_name || 'Deleted' }}
                     </Tooltip>
                   </template>

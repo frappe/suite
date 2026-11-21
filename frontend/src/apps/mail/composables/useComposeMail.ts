@@ -122,7 +122,7 @@ export const useComposeMail = (options: ComposeMailOptions) => {
 			identityMatching(defaultOutgoingEmail) ??
 			identityEmails[0] ??
 			// An account with no identities at all still has to send as somebody.
-			user.data.name
+			user.data.email
 		)
 	}
 

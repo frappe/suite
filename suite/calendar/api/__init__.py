@@ -1005,11 +1005,11 @@ def enrich_participants_with_avatars(events: list[dict]) -> None:
         return
 
     user_data = frappe.db.get_all(
-        "User", filters={"name": ["in", list(unique_emails)]}, fields=["name", "user_image"]
+        "User", filters={"email": ["in", list(unique_emails)]}, fields=["email", "user_image"]
     )
     # Only actual profile pictures — no Gravatar fallback, so participants
     # without one render as initials in the frontend.
-    user_images = {u.name: u.user_image for u in user_data if u.user_image}
+    user_images = {u.email: u.user_image for u in user_data if u.user_image}
 
     for event in events:
         for participant in event["participants"]:

@@ -100,7 +100,7 @@ export function useCurrentUser() {
     isLoggedIn: computed(() => store.isLoggedIn),
     fullName: computed(() => (userResource.data?.full_name as string | undefined) ?? fullName.value),
     imageURL: computed(() => (userResource.data?.avatar as string | undefined) ?? imageURL.value),
-    email: computed(() => (userResource.data?.email as string | undefined) ?? store.user ?? ''),
+    email: computed(() => (userResource.data?.email as string | undefined) ?? ''),
     systemUser: computed(() =>
       userResource.data
         ? ((userResource.data.roles as string[]) ?? []).includes('System Manager')

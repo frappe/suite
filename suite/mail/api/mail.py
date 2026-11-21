@@ -227,10 +227,10 @@ def add_user_images_to_emails(account: str, mails: list[dict], is_thread: bool =
     if unique_emails:
         user_data = frappe.db.get_all(
             "User",
-            filters={"name": ["in", list(unique_emails)]},
-            fields=["name", "user_image"],
+            filters={"email": ["in", list(unique_emails)]},
+            fields=["email", "user_image"],
         )
-        user_image_map = {u.name: u.user_image for u in user_data if u.user_image}
+        user_image_map = {u.email: u.user_image for u in user_data if u.user_image}
 
     images = {email: user_image_map.get(email) or get_avatar_url(email) for email in unique_emails}
 

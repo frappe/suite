@@ -54,7 +54,7 @@ def get_entity_activity_log(entity_name: str):
         frappe.qb.from_(Activity)
         .select(*selectedFields)
         .left_join(User)
-        .on(Activity.owner == User.email)
+        .on(Activity.owner == User.name)
         .where(Activity.entity == entity_name)
         .orderby(Activity.creation, order=Order.desc)
     )

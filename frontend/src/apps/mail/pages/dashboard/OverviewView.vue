@@ -72,7 +72,7 @@
 							<Avatar :image="account.user_image" :label="account.full_name" size="lg" />
 							<div class="min-w-0 flex-1">
 								<p class="truncate text-sm font-medium">{{ account.full_name }}</p>
-								<p class="text-ink-gray-5 truncate text-xs">{{ account.name }}</p>
+								<p class="text-ink-gray-5 truncate text-xs">{{ account.email }}</p>
 							</div>
 							<Badge
 								:label="account.enabled ? __('Enabled') : __('Disabled')"

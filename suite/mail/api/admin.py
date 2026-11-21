@@ -650,6 +650,7 @@ def get_members(
         .on(USER.name == USER_SETTINGS.user)
         .select(
             USER.name,
+            USER.email,
             USER.full_name,
             USER.user_image,
             USER.last_active,
@@ -663,7 +664,11 @@ def get_members(
     if is_enabled is not None:
         query = query.where(USER.enabled == (1 if is_enabled else 0))
     if search:
-        query = query.where(USER.name.like(f"%{search}%") | USER.full_name.like(f"%{search}%"))
+        query = query.where(
+            USER.name.like(f"%{search}%")
+            | USER.email.like(f"%{search}%")
+            | USER.full_name.like(f"%{search}%")
+        )
     if is_admin is not None:
         query = query.having(is_admin_expr == (1 if is_admin else 0))
 
@@ -678,7 +683,7 @@ def get_members(
     )
     for user in users:
         if not user.get("user_image"):
-            user["user_image"] = get_avatar_url(user["name"])
+            user["user_image"] = get_avatar_url(user["email"])
         user["is_admin"] = bool(user.get("is_admin"))
         user["enabled"] = bool(user.get("enabled"))
         # Stored in system time; the API speaks UTC, like every other timestamp it returns.
@@ -782,7 +787,7 @@ def get_member(member_id: str) -> dict:
     user = frappe.db.get_value(
         "User",
         member_id,
-        ["name", "full_name", "user_image", "last_active", "enabled", "creation"],
+        ["name", "email", "full_name", "user_image", "last_active", "enabled", "creation"],
         as_dict=True,
     )
     if not user:
@@ -792,7 +797,7 @@ def get_member(member_id: str) -> dict:
     result = {
         "name": user.name,
         "full_name": user.full_name,
-        "user_image": user.user_image or get_avatar_url(user.name),
+        "user_image": user.user_image or get_avatar_url(user.email),
         "description": user.full_name,
         # Both are stored in system time; the API speaks UTC.
         "last_active": to_utc_z(user.last_active),
@@ -1534,13 +1539,13 @@ def _recent_accounts(limit: int) -> list[dict]:
         frappe.qb.from_(USER)
         .join(USER_SETTINGS)
         .on(USER.name == USER_SETTINGS.user)
-        .select(USER.name, USER.full_name, USER.user_image, USER.enabled, USER.creation)
+        .select(USER.name, USER.email, USER.full_name, USER.user_image, USER.enabled, USER.creation)
         .where(IfNull(USER_SETTINGS.username, "") != "")
         .orderby(USER.creation, order=Order.desc)
         .limit(limit)
     ).run(as_dict=True)
     for row in rows:
-        row["user_image"] = row.get("user_image") or get_avatar_url(row["name"])
+        row["user_image"] = row.get("user_image") or get_avatar_url(row["email"])
         row["enabled"] = bool(row["enabled"])
         row["joined_on"] = to_utc_z(row.pop("creation"))
     return rows

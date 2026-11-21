@@ -50,16 +50,16 @@
               class="size-7 shrink-0 rounded-full bg-surface-gray-3 flex items-center justify-center">
               <LucideUsers class="size-4 text-ink-gray-7" />
             </div>
-            <Avatar v-else size="xl" :label="user.user || user.email" :image="user.user_image" />
+            <Avatar v-else size="xl" :label="user.email || user.user" :image="user.user_image" />
 
             <div class="flex items-start flex-col gap-1">
               <span class="text-base-medium text-ink-gray-9">{{
-                user.is_group ? groupName(user.user) : user.full_name || user.user || user.email
+                user.is_group ? groupName(user.user) : user.full_name || user.email || user.user
                 }}</span>
               <span v-if="user.is_group" class="text-ink-gray-7 text-sm">{{
                 peopleLabel(groupCount(user.user)) }}</span>
-              <span v-else-if="user.full_name && user.full_name !== (user.user || user.email)"
-                class="text-ink-gray-7 text-sm">{{ user.user || user.email }}</span>
+              <span v-else-if="user.full_name && user.full_name !== (user.email || user.user)"
+                class="text-ink-gray-7 text-sm">{{ user.email || user.user }}</span>
             </div>
             <div class="ml-auto flex w-28 shrink-0 items-center justify-end">
               <span v-if="user.user == currentUserId" class="mr-1 text-ink-gray-7">

@@ -242,7 +242,7 @@ def _notify_sheet_shared(sheet_name: str, recipient: str, can_edit: bool) -> Non
         # Best-effort email — silently skipped if the site has no mailer.
         suite_email.enqueue(
             "sheet-share",
-            recipient,
+            frappe.utils.get_email_address(recipient),
             {"sharer": sharer, "sheet": title, "access": role, "link": link},
             local={
                 "subject": subject,
