@@ -2,19 +2,28 @@
   <!-- Mobile title header. The toolbar below carries the bottom border, matching the
 	     mailbox structure. -->
   <!-- In a category other than Primary the title names it and leads back to Primary. -->
-  <MobileTitleHeader
-    v-if="isMobile && inboxTab && inboxTab !== 'primary'"
-    with-back
-    :title="tabName(inboxTab)"
-    @back="router.push(routeForTab('primary'))"
-  />
   <!-- Every account's Inbox is named so, since nothing else on a phone's list says the accounts
        are merged; another merged folder keeps its own name. -->
   <MobileTitleHeader
-    v-else-if="isMobile"
-    with-menu
-    :title="folder === INBOX_FOLDER ? __('All Inboxes') : folderLabel"
-  />
+    v-if="isMobile"
+    :with-back="!!inboxTab && inboxTab !== 'primary'"
+    :with-menu="!inboxTab || inboxTab === 'primary'"
+    :title="
+      inboxTab && inboxTab !== 'primary'
+        ? tabName(inboxTab)
+        : folder === INBOX_FOLDER
+          ? __('All Inboxes')
+          : folderLabel
+    "
+    @back="router.push(routeForTab('primary'))"
+  >
+    <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
+    <template v-if="clearScope" #actions>
+      <div class="mr-2.5 flex items-center">
+        <ClearListMenu :scope="clearScope" :target="{ folder }" />
+      </div>
+    </template>
+  </MobileTitleHeader>
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's
@@ -94,7 +103,7 @@
               </div>
             </template>
             <!-- The filters as chips, where the selector would go. -->
-            <template v-if="!isMobile && !selections.length" #filter>
+            <template v-if="!selections.length" #filter>
               <ListFilterChips
                 :filter-options="FILTER_OPTIONS"
                 :filter="filter"
@@ -112,9 +121,6 @@
                 :actions="selectActions"
                 :collapsed="showReadingPane"
               />
-            </template>
-            <template v-if="clearScope" #mobile-actions>
-              <ClearListMenu :scope="clearScope" :target="{ folder }" />
             </template>
           </MailListToolbar>
 

@@ -84,12 +84,19 @@
           >
             <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
-              v-if="inboxTab && inboxTab !== 'primary'"
-              with-back
-              :title="tabName(inboxTab)"
+              v-if="mailbox !== 'search'"
+              :with-back="!!inboxTab && inboxTab !== 'primary'"
+              :with-menu="!inboxTab || inboxTab === 'primary'"
+              :title="inboxTab && inboxTab !== 'primary' ? tabName(inboxTab) : mailboxName"
               @back="router.push(routeForTab('primary'))"
-            />
-            <MobileTitleHeader v-else-if="mailbox !== 'search'" with-menu :title="mailboxName" />
+            >
+              <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
+              <template v-if="clearScope" #actions>
+                <div class="mr-2.5 flex items-center">
+                  <ClearListMenu :scope="clearScope" :target="{ account: accountId, mailbox }" />
+                </div>
+              </template>
+            </MobileTitleHeader>
 
             <!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
 						     the whole header read as chrome on top of the page). Borderless: it
@@ -129,8 +136,12 @@
               :title="title"
               :filter-options="FILTER_OPTIONS"
             >
-              <template v-if="clearScope" #mobile-actions>
-                <ClearListMenu :scope="clearScope" :target="{ account: accountId, mailbox }" />
+              <template #filter>
+                <ListFilterChips
+                  :filter-options="FILTER_OPTIONS"
+                  :filter="filter"
+                  :clear="clearFilter"
+                />
               </template>
             </MailListToolbar>
           </div>
