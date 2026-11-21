@@ -65,10 +65,17 @@
       <template v-if="!pageOwnsPhoneChrome" #nav>
         <!-- Everything under the page, measured: what floats over the page (a compose button)
              stands on it through --suite-phone-nav-height, whatever it holds. -->
-        <div ref="phoneNav">
+        <!-- Out of the flow under an area's floating bar, which stands on it. -->
+        <div
+          ref="phoneNav"
+          :class="{ 'pointer-events-none fixed inset-x-0 bottom-0 z-20': phoneNavFloats }"
+        >
           <!-- The offer to install, just above the bottom bar: in the flow, so it covers nothing,
-               and only where the bar is. -->
-          <InstallPrompt :app="activeArea?.installable ? activeArea : undefined" />
+               and only where the bar is. Under a floating bar, a card that floats with it. -->
+          <InstallPrompt
+            :app="activeArea?.installable ? activeArea : undefined"
+            :floating="phoneNavFloats"
+          />
           <!-- An unavailable area's own tabs lead only back to its unavailable page. -->
           <component :is="activeArea.phoneNav" v-if="activeArea?.phoneNav && !unavailable" />
           <MobileNav
@@ -212,6 +219,11 @@ watch(phoneNav, (element) => {
   if (!element) setPhoneNavHeight(null)
 })
 onUnmounted(() => setPhoneNavHeight(null))
+
+// An area's floating bar, unless its unavailable page has the shell's own bar in its place.
+const phoneNavFloats = computed(
+  () => !!activeArea.value?.phoneNavFloats && !!activeArea.value.phoneNav && !unavailable.value,
+)
 
 const pageOwnsPhoneChrome = computed(
   () =>

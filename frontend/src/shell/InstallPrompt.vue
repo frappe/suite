@@ -1,6 +1,7 @@
 <template>
   <!-- The offer to install the app whose page this is, as a slim strip just above the bottom bar:
-       in the page's flow, so it covers nothing, and only where the bottom bar is. Shown once per
+       in the page's flow, so it covers nothing, and only where the bottom bar is. Under a bar that
+       floats, a card at the foot of the screen that the bar stands on. Shown once per
        app and device until dismissed (see platform/pwa/install). Inside the one Suite app
        installed before the split, a note in the same place says once that Mail and Calendar are
        apps of their own. -->
@@ -8,7 +9,8 @@
        browser's prompt on load: an iPhone lets a page ask only from a tap. -->
   <div
     v-if="ask"
-    class="bg-surface-gray-1 text-p-sm text-ink-gray-8 flex items-center gap-3 border-t px-4 py-2"
+    class="text-p-sm text-ink-gray-8 flex items-center gap-3"
+    :class="look"
     role="region"
     :aria-label="__('Notifications')"
   >
@@ -25,7 +27,8 @@
   </div>
   <div
     v-else-if="note || offer"
-    class="bg-surface-gray-1 text-p-sm text-ink-gray-8 flex items-center gap-3 border-t px-4 py-2"
+    class="text-p-sm text-ink-gray-8 flex items-center gap-3"
+    :class="look"
     role="region"
     :aria-label="note ? __('Apps of their own') : __('Install {0}', [label])"
   >
@@ -78,7 +81,15 @@ import { translate as __ } from '@/platform/translation'
 const props = defineProps<{
   /** The area of the page, when it installs as an app of its own. */
   app?: AreaDefinition
+  /** Under a bottom bar that floats over the page: a card that floats with it, not a strip. */
+  floating?: boolean
 }>()
+
+const look = computed(() =>
+  props.floating
+    ? 'bg-surface-elevation-2 pointer-events-auto mx-4 mb-[calc(0.75rem+env(safe-area-inset-bottom))] rounded-7 border py-2 pl-4 pr-2 shadow-xl'
+    : 'bg-surface-gray-1 border-t px-4 py-2',
+)
 
 const route = useRoute()
 const {

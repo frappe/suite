@@ -76,13 +76,9 @@
 					     right). Selecting leaves it as it is: the selection bar floats at the bottom
 					     (MobileSelectionBar), so the list never shifts. Search skips both rows
 					     (SearchResultsHeader is the header there; no tab in the bar reads as
-					     active), keeping only the loading bar — the border goes with the rows it
-					     underlines. -->
-          <div
-            v-if="isMobile"
-            class="relative shrink-0"
-            :class="{ 'border-b': mailbox !== 'search' }"
-          >
+					     active), keeping only the loading bar. No line under the rows: the list
+					     starts right under the filter chips. -->
+          <div v-if="isMobile" class="relative shrink-0">
             <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
               v-if="mailbox !== 'search'"
@@ -194,7 +190,7 @@
           <div
             v-else-if="threadRows.length"
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+var(--suite-phone-nav-height,0px)+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">

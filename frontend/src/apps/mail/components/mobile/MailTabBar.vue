@@ -13,8 +13,8 @@
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="!isMobileSelectionActive"
-      :class="{ 'translate-y-full': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col transition-transform duration-200 ease-out items-end gap-3 px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      :class="{ 'translate-y-[calc(100%+var(--suite-phone-nav-height,0px))]': away }"
+      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col transition-transform duration-200 ease-out items-end gap-3 px-4 pb-[calc(0.75rem+max(0px,env(safe-area-inset-bottom)_-_var(--suite-phone-nav-height,0px)))]"
     >
       <!-- Not where composing is not the task: search results and the profile page. -->
       <Button

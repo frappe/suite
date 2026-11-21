@@ -12,8 +12,8 @@
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="open"
-      :class="{ 'translate-y-full': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col items-end gap-3 transition-transform duration-200 ease-out px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      :class="{ 'translate-y-[calc(100%+var(--suite-phone-nav-height,0px))]': away }"
+      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col items-end gap-3 transition-transform duration-200 ease-out px-4 pb-[calc(0.75rem+max(0px,env(safe-area-inset-bottom)_-_var(--suite-phone-nav-height,0px)))]"
     >
       <button
         v-if="!allSelected"
@@ -49,7 +49,7 @@
           v-for="action in acts"
           :key="action.label"
           type="button"
-          :aria-label="stripShortcutHint(action.label)"
+          :aria-label="action.shortLabel"
           class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 min-w-0 max-w-11 flex-1 items-center justify-center rounded-full transition active:scale-95"
           @click="action.onClick"
         >
@@ -85,7 +85,6 @@ import { computed, ref, type Component } from 'vue'
 import { usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import type { SelectAction } from '@/apps/mail/utils/selectActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import { stripShortcutHint } from '@/utils/actionLabel'
 
 type MenuOption = { label: string; icon?: string | Component; onClick?: () => void }
 // A More entry: an action, or a menu of its own (the folder menus) that opens as a chained sheet.

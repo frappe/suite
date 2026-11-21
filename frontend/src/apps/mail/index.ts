@@ -23,6 +23,7 @@ export const mailArea: AreaDefinition = {
   menuIcon: 'lucide-mail',
   installable: true,
   phoneNav: defineAsyncComponent(() => import('@/apps/mail/components/mobile/MailTabBar.vue')),
+  phoneNavFloats: true,
   // Ticket 010 owns shell adoption. The existing MailLayout keeps its full frame for now.
   loadRoutes: () => import('@/apps/mail/routes'),
 }

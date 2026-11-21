@@ -94,7 +94,6 @@ const moduleGraphDebtGroups = [
       'mail/components/ListSelection/MobileSelectionBar.vue|@/components/AdaptiveDropdown.vue',
       'mail/components/MailActions.vue|@/components/AdaptiveDropdown.vue',
       'mail/components/MailListItem.vue|@/components/HighlightedText.vue',
-      'mail/components/MailListToolbar.vue|@/components/AdaptiveDropdown.vue',
       'mail/components/PlainTextBody.vue|@/components/LinkifiedText.vue',
       'mail/components/QuotaBar.vue|@/components/SidebarStorage.vue',
       'mail/components/SearchResultsHeader.vue|@/stores/root',

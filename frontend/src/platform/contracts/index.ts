@@ -79,6 +79,12 @@ interface AreaBase {
    * pages, its profile included, not to the shell's account sheet.
    */
   phoneNav?: Component
+  /**
+   * The area's own bottom bar floats over its pages, which run on under it to the foot of the
+   * screen. The shell's offer to install floats with it then, a card at the foot of the screen, and
+   * the bar stands on it through `--suite-phone-nav-height`.
+   */
+  phoneNavFloats?: boolean
 }
 
 /**
