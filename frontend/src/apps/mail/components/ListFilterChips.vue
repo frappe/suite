@@ -1,10 +1,11 @@
 <template>
   <!-- The list's filters as a row of state chips rather than a menu, so a filter can never be
        mistaken for a folder. "All" is none of them ticked; the others combine. A ticked chip keeps
-       an outlined chip's 1px border, transparent, so ticking one never changes its size. -->
-  <div class="flex items-center gap-1.5">
+       an outlined chip's 1px border, transparent, so ticking one never changes its size. A phone
+       draws the same chips a size up, for a thumb, in a row that scrolls. -->
+  <div class="flex w-max items-center gap-1.5">
     <Button
-      size="sm"
+      :size="size"
       :variant="activeKeys.length ? 'outline' : 'subtle'"
       class="rounded-4"
       :class="{
@@ -14,9 +15,9 @@
       @click="clear()"
     />
     <Button
-      v-for="option in filterOptions.filter((o) => !o.condition || o.condition())"
+      v-for="option in visibleOptions"
       :key="option.key"
-      size="sm"
+      :size="size"
       :variant="activeKeys.includes(option.key) ? 'subtle' : 'outline'"
       class="rounded-4"
       :class="{
@@ -33,9 +34,10 @@
 import { Button } from 'frappe-ui'
 import { computed } from 'vue'
 
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import type { FilterOption } from '@/apps/mail/utils/listFilter'
 
-const { filter } = defineProps<{
+const { filterOptions, filter } = defineProps<{
   filterOptions: FilterOption[]
   /** The filters in effect, comma-joined (`filter_by`), or none. */
   filter: string | null
@@ -43,5 +45,8 @@ const { filter } = defineProps<{
   clear: () => void
 }>()
 
+const { isMobile } = useScreenSize()
+const size = computed(() => (isMobile.value ? 'md' : 'sm'))
 const activeKeys = computed(() => (filter ? filter.split(',') : []))
+const visibleOptions = computed(() => filterOptions.filter((o) => !o.condition || o.condition()))
 </script>

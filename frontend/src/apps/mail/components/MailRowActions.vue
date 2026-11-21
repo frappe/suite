@@ -26,6 +26,7 @@
   <button
     v-else-if="pinnable && pinned && isMobile"
     class="action-btn"
+    :class="{ 'before-star': starrable }"
     :aria-label="__('Unpin')"
     @click.stop.prevent="emit('setPinned', false)"
   >
@@ -49,6 +50,7 @@
   <button
     v-else-if="starrable"
     class="action-btn"
+    :class="{ 'after-pin': pinnable && pinned }"
     :aria-label="flagged ? __('Unstar') : __('Star')"
     @click.stop.prevent="emit('setFlagged', !flagged)"
   >
@@ -216,6 +218,15 @@ const actions = computed(() =>
 	   star's clearance to the row border) so taps meant for the next row's first
 	   line are never captured. ~68×54px effective target on a 20px glyph. */
   @apply relative after:absolute after:content-[''] max-sm:after:-bottom-2.5 max-sm:after:-left-6 max-sm:after:-right-6 max-sm:after:-top-6 sm:after:-inset-1.5;
+}
+
+/* A pinned row's pin beside its star on a phone: each halo stops halfway across the gap between
+   them, or the star's, drawn over the pin's, takes the taps meant for the pin. */
+.action-btn.before-star {
+  @apply max-sm:after:-right-1.5;
+}
+.action-btn.after-pin {
+  @apply max-sm:after:-left-1.5;
 }
 
 /* Hover-capable pointers only: on touch, :hover sticks after a tap and the

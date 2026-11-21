@@ -34,6 +34,7 @@
             />
             <span class="flex-1 truncate text-left">{{ sheetLabel(item.label) }}</span>
             <component :is="item.slots.suffix" v-if="item.slots?.suffix" />
+            <ChevronRight v-if="item.drillsIn" class="text-ink-gray-5 h-4 w-4 shrink-0" />
             <!-- Which one you're already on. Desktop takes this from the Menu's own
 						     selected styling; a sheet row has no such state, so it shows a tick. -->
             <Check v-if="item.selected" class="text-ink-gray-6 h-4 w-4 shrink-0" />
@@ -47,7 +48,7 @@
 <script setup lang="ts">
 import { BottomSheet } from 'frappe-ui'
 import { Icon as FeatherIcon } from 'frappe-ui/experimental'
-import { Check } from 'lucide-vue-next'
+import { Check, ChevronRight } from 'lucide-vue-next'
 import { computed, h, isVNode, type Component, type VNode } from 'vue'
 
 import { useScreenSize } from '@/composables/useScreenSize'
@@ -80,6 +81,8 @@ interface OptionItem {
   slots?: { prefix?: () => VNode; suffix?: () => VNode }
   /** Leaves the sheet open after the row is tapped, for rows ticked several in a row. */
   keepOpen?: boolean
+  /** Opens a sheet of its own (Move To's folders, say): a chevron at the row's far end says so. */
+  drillsIn?: boolean
 }
 
 type Options = (OptionItem | { group: string; options: OptionItem[] })[]

@@ -33,6 +33,11 @@ declare module 'vue-router' {
     scroll?: ScrollOwner
     /** Absent reads as `shell`. */
     phoneChrome?: PhoneChromeOwner
+    /**
+     * A list that runs on under a floating phone bar, leaving room at its own end, where another
+     * page stops short of the bar.
+     */
+    scrollsUnderPhoneBar?: boolean
     allowGuest?: boolean
     title?: string
     /**
