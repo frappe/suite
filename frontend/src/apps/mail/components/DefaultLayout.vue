@@ -9,9 +9,15 @@
   >
     <AppSidebar />
     <div class="isolate flex min-h-0 flex-1 text-base">
+      <!-- Mail's bottom bar floats over the page (MailTabBar): a page stops short of it, but a list
+           runs on under it and leaves room at its own end. -->
       <div
         id="scrollContainer"
         class="w-full overflow-auto max-sm:flex max-sm:flex-col max-sm:overflow-hidden"
+        :class="{
+          'pb-[calc(5rem+env(safe-area-inset-bottom))]':
+            shellChrome && !route.meta.scrollsUnderPhoneBar,
+        }"
       >
         <slot />
       </div>
@@ -37,26 +43,9 @@
       <!-- Mail's composer: the window over the page on a desktop, the compose page on a phone. -->
       <ComposeHost />
     </div>
-
-    <!-- Compose, floating above the shell's bottom nav in the right thumb zone.
-		     It steps aside with the nav while a thread is open, and in the lists
-		     where composing is not the task: search results, selection mode, the
-		     screener and the profile page. -->
-    <Button
-      v-if="isMobile && showComposeButton"
-      variant="solid"
-      class="fixed bottom-[calc(var(--suite-phone-nav-height,4rem+env(safe-area-inset-bottom))+1rem)] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
-      :aria-label="__('Compose')"
-      @click="openComposePage(router, store.accountId)"
-    >
-      <template #icon>
-        <span class="lucide-square-pen size-6" aria-hidden="true" />
-      </template>
-    </Button>
   </div>
 </template>
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
 import { computed, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -75,7 +64,6 @@ import {
   useKeyboardOpen,
   useListReload,
   useMobileSearch,
-  useMobileSelection,
   useScreenSize,
 } from '@/apps/mail/utils/composables'
 import { resumeRemovals } from '@/apps/mail/utils/pendingRemovals'
@@ -105,15 +93,6 @@ const shellChrome = computed(() => isMobile.value && !isThreadOpen.value && !key
 useShellPhoneChrome(shellChrome)
 
 const { isSearchRoute, paletteOpen } = useMobileSearch()
-const { isMobileSelectionActive } = useMobileSelection()
-const showComposeButton = computed(
-  () =>
-    shellChrome.value &&
-    !isMobileSelectionActive.value &&
-    !isSearchRoute.value &&
-    !paletteOpen.value &&
-    route.name !== 'mail-profile',
-)
 
 // Leaving the search route (Back, or a folder chosen in the sheet) closes the palette it was
 // raised behind.

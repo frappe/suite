@@ -1,59 +1,95 @@
 <template>
-  <!-- A phone list's action bar while selecting (design: 5·Selection). It covers the shell's bottom
-	     nav for thumb reach, fixed over it with safe-area padding so entering or leaving selection
-	     never shifts the list, and teleported to Mail's overlay layer: inside the layout's `isolate`
-	     stacking context, no z-index could beat the nav. Four labelled actions and More: unlabelled
-	     icons have no tooltips on touch. The rest, and any `extraOptions`, live in the More sheet; an
-	     extra option with `options` of its own opens them as a sheet chained from More. -->
+  <!-- A phone list's action bar while selecting: an island where Mail's bottom bar floats, which
+       steps aside for it. The header above stays as it is, so entering or leaving selection never
+       shifts the list. ✕ and the count, then everything that is done to the mail (read, archive,
+       junk, trash), then More. Select All floats over its right end, where Compose stands over the
+       bottom bar, until there is nothing left to select: ✕ is how to empty it. Teleported to Mail's
+       overlay layer: inside the layout's `isolate` stacking context, no z-index could beat the
+       page. More holds the rest in the toolbar's groups, each set apart: where the mail is filed
+       (any `extraOptions`; one with `options` of its own opens them as a sheet chained from More),
+       and what keeps it to come back to (Snooze, Pin, Star). It slides away while the list scrolls
+       down (`phoneBarsAway`). -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
       v-if="open"
-      class="bg-surface-base fixed inset-x-0 bottom-0 z-20 border-t pb-[env(safe-area-inset-bottom)]"
+      :class="{ 'translate-y-full': away }"
+      class="pointer-events-none fixed inset-x-0 bottom-[var(--suite-phone-nav-height,0px)] z-20 flex flex-col items-end gap-3 transition-transform duration-200 ease-out px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
-      <!-- flex-1 columns, like the nav underneath: equal widths keep the icons evenly spaced
-			     whatever the label length. -->
-      <div class="flex h-15 items-stretch">
+      <button
+        v-if="!allSelected"
+        type="button"
+        class="bg-surface-elevation-2 active:bg-surface-gray-2 text-ink-gray-8 pointer-events-auto flex h-10 items-center gap-2 rounded-full border pl-3 pr-4 text-base !font-medium shadow-xl transition active:scale-95"
+        @click="emit('toggleAll', true)"
+      >
+        <SquareCheck class="text-ink-gray-7 size-4" />
+        {{ __('Select All') }}
+      </button>
+      <div
+        role="toolbar"
+        :aria-label="__('Selected mail')"
+        class="bg-surface-elevation-2 pointer-events-auto flex h-14 w-full items-center gap-0.5 rounded-full border p-1.5 shadow-xl"
+      >
         <button
-          v-for="action in visible.slice(0, 4)"
+          type="button"
+          :aria-label="__('Clear selection')"
+          class="bg-surface-gray-3 active:bg-surface-gray-4 flex h-11 shrink-0 items-center gap-2 rounded-full pl-3 pr-4 transition active:scale-95"
+          @click="emit('toggleAll', false)"
+        >
+          <X class="text-ink-gray-7 size-5" />
+          <span class="text-ink-gray-8 text-base !font-medium tabular-nums" aria-live="polite">
+            {{ count }}
+          </span>
+        </button>
+        <span class="ml-auto shrink-0 px-1" aria-hidden="true">
+          <span class="block h-6 border-l" />
+        </span>
+        <!-- Each takes an even share of the room left, up to a full round button; the rest stays between
+             the count and the actions, which keep to the right, by More. -->
+        <button
+          v-for="action in acts"
           :key="action.label"
-          class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
+          type="button"
+          :aria-label="stripShortcutHint(action.label)"
+          class="text-ink-gray-7 active:bg-surface-gray-2 flex h-11 min-w-0 max-w-11 flex-1 items-center justify-center rounded-full transition active:scale-95"
           @click="action.onClick"
         >
-          <component :is="action.icon" class="h-5 w-5" />
-          <span class="max-w-full truncate">{{ action.shortLabel }}</span>
+          <component :is="action.icon" class="size-5 shrink-0" />
         </button>
         <button
           v-if="moreOptions.length"
-          class="text-ink-gray-7 flex flex-1 flex-col items-center justify-center gap-1 px-1 text-[11px] !font-semibold"
+          type="button"
+          :aria-label="__('More')"
+          class="text-ink-gray-7 active:bg-surface-gray-2 flex size-11 shrink-0 items-center justify-center rounded-full transition active:scale-95"
           @click="showMore = true"
         >
-          <Ellipsis class="h-5 w-5" />
-          <span>{{ __('More') }}</span>
+          <Ellipsis class="size-5" />
         </button>
       </div>
-
-      <AdaptiveDropdown v-model:open="showMore" :options="moreOptions" />
-      <AdaptiveDropdown
-        :open="!!chained"
-        :options="chained?.options ?? []"
-        :title="chained?.title"
-        @update:open="(open: boolean) => !open && (chained = null)"
-      />
     </div>
   </Teleport>
+
+  <AdaptiveDropdown v-model:open="showMore" :options="moreOptions" />
+  <AdaptiveDropdown
+    :open="!!chained"
+    :options="chained?.options ?? []"
+    :title="chained?.title"
+    @update:open="(open: boolean) => !open && (chained = null)"
+  />
 </template>
 
 <script setup lang="ts">
 import { usePortalTarget } from 'frappe-ui'
-import { Ellipsis } from 'lucide-vue-next'
+import { Ellipsis, SquareCheck, X } from 'lucide-vue-next'
 import { computed, ref, type Component } from 'vue'
 
+import { usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import type { SelectAction } from '@/apps/mail/utils/selectActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import { stripShortcutHint } from '@/utils/actionLabel'
 
 type MenuOption = { label: string; icon?: string | Component; onClick?: () => void }
 // A More entry: an action, or a menu of its own (the folder menus) that opens as a chained sheet.
-type Option = {
+type ExtraOption = {
   label: string
   icon: string | Component
   onClick?: () => void
@@ -64,35 +100,41 @@ const {
   open,
   actions,
   extraOptions = [],
-} = defineProps<{ open: boolean; actions: SelectAction[]; extraOptions?: Option[] }>()
+  count,
+  allSelected,
+} = defineProps<{
+  open: boolean
+  actions: SelectAction[]
+  extraOptions?: ExtraOption[]
+  count: number
+  allSelected: boolean
+}>()
+const emit = defineEmits<{ toggleAll: [selected: boolean] }>()
 
 const overlayLayer = usePortalTarget()
+const away = usePhoneBarsAway()
 const showMore = ref(false)
 const chained = ref<{ title: string; options: MenuOption[] } | null>(null)
 
 const visible = computed(() => actions.filter((a) => a.condition()))
-// The toolbar's order (see selectActions): the extra options, where they are filed, after what is
-// done to them.
+const acts = computed(() => visible.value.filter((a) => a.group === 'act'))
+const plain = (a: SelectAction): MenuOption => ({
+  label: a.label,
+  icon: a.icon,
+  onClick: a.onClick,
+})
 const moreOptions = computed(() => {
-  const rest = visible.value.slice(4).map((a) => ({
-    label: a.label,
-    icon: a.icon,
-    onClick: a.onClick,
-    group: a.group,
-  }))
-  const later = rest.findIndex((a) => a.group !== 'act')
-  const at = later < 0 ? rest.length : later
-  const extras = extraOptions.map((option) => ({
+  const inGroup = (group: SelectAction['group']) =>
+    visible.value.filter((a) => a.group === group).map(plain)
+  const filing = extraOptions.map((option) => ({
     label: option.label,
     icon: option.icon,
     onClick: option.options
       ? () => (chained.value = { title: option.label, options: option.options! })
       : option.onClick,
   }))
-  return [...rest.slice(0, at), ...extras, ...rest.slice(at)].map(({ label, icon, onClick }) => ({
-    label,
-    icon,
-    onClick,
-  }))
+  return [filing, [...inGroup('later'), ...inGroup('selection')]]
+    .filter((options) => options.length)
+    .map((options) => ({ group: '', options }))
 })
 </script>

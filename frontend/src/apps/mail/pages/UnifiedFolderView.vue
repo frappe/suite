@@ -76,15 +76,7 @@
             :route-for="routeForTab"
           />
 
-          <div v-if="isMobile && selections.length" class="border-b">
-            <MobileSelectionHeader
-              :count="selections.length"
-              :all-selected="isAllSelected"
-              @toggle-all="toggleSelectAll"
-            />
-          </div>
           <MailListToolbar
-            v-else
             class="border-b"
             :title="title"
             :filter-options="FILTER_OPTIONS"
@@ -103,7 +95,9 @@
               </div>
             </template>
             <!-- The filters as chips, where the selector would go. -->
-            <template v-if="!selections.length" #filter>
+            <!-- On a phone the chips stay while selecting: the selection bar floats at the bottom
+                 (MobileSelectionBar), so the list below doesn't move. -->
+            <template v-if="isMobile || !selections.length" #filter>
               <ListFilterChips
                 :filter-options="FILTER_OPTIONS"
                 :filter="filter"
@@ -127,7 +121,7 @@
           <!-- Mail list -->
           <div
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
             <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.
@@ -340,7 +334,13 @@
     :current="snoozedUntilOf(snoozing)"
     @pick="(until: string) => snoozeTo(snoozing, until)"
   />
-  <MobileSelectionBar :open="mobileSelectionMode" :actions="selectActions" />
+  <MobileSelectionBar
+    :open="mobileSelectionMode"
+    :actions="selectActions"
+    :count="selections.length"
+    :all-selected="isAllSelected"
+    @toggle-all="toggleSelectAll"
+  />
 </template>
 
 <script setup lang="ts">
@@ -357,7 +357,6 @@ import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
 import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
-import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import LoadError from '@/apps/mail/components/LoadError.vue'
@@ -372,6 +371,7 @@ import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
@@ -519,6 +519,8 @@ const {
   // Deferred reads too, as in the mailbox list.
   framed: () => !!inboxTab.value || !!filter.value || filterChanged.value,
 })
+// The phone's floating bars step aside while the list scrolls down.
+hidePhoneBarsOnScroll(mailListRef)
 
 // The list's filters, their menu, and its title (see useListFilter) — all shared with the mailbox
 // list.

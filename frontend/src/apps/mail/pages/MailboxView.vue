@@ -73,14 +73,15 @@
 
           <!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
-					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-					     Search skips both rows (SearchResultsHeader is the header there; no tab
-					     in the bar reads as active), keeping only the selection
-					     toolbar and the loading bar — the border goes with the rows it underlines. -->
+					     right). Selecting leaves it as it is: the selection bar floats at the bottom
+					     (MobileSelectionBar), so the list never shifts. Search skips both rows
+					     (SearchResultsHeader is the header there; no tab in the bar reads as
+					     active), keeping only the loading bar — the border goes with the rows it
+					     underlines. -->
           <div
             v-if="isMobile"
             class="relative shrink-0"
-            :class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
+            :class="{ 'border-b': mailbox !== 'search' }"
           >
             <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
@@ -114,25 +115,16 @@
             </div>
 
             <InboxTabs
-              v-if="inboxTab && !selections.length"
+              v-if="inboxTab"
               :tabs="inboxTabs"
               :active="inboxTab"
               :route-for="routeForTab"
             />
 
-            <!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
-            <!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
-						     axis and the count text starts where the title does. -->
-            <MobileSelectionHeader
-              v-if="selections.length"
-              :count="selections.length"
-              :all-selected="isAllSelected"
-              @toggle-all="toggleSelectAll"
-            />
             <!-- No `loading`: the bar below spans this whole header block, so it
-						     also covers selection mode and search, where this row is absent. -->
+						     also covers search, where this row is absent. -->
             <MailListToolbar
-              v-else-if="mailbox !== 'search'"
+              v-if="mailbox !== 'search'"
               :title="title"
               :filter-options="FILTER_OPTIONS"
             >
@@ -202,7 +194,7 @@
           <div
             v-else-if="threadRows.length"
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
             <div v-for="(group, key) in groupedThreads" :key="key">
@@ -415,6 +407,9 @@
     :open="mobileSelectionMode"
     :actions="selectActions"
     :extra-options="folderSelectionOptions"
+    :count="selections.length"
+    :all-selected="isAllSelected"
+    @toggle-all="toggleSelectAll"
   />
 </template>
 <script setup lang="ts">
@@ -431,7 +426,6 @@ import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
 import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
-import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import LoadError from '@/apps/mail/components/LoadError.vue'
@@ -445,6 +439,7 @@ import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
@@ -550,6 +545,8 @@ const {
   busy: () => emptyMailbox.isPending || refillPending.value,
   asked: () => mailbox !== 'search' || hasSearchQuery.value,
 })
+// The phone's floating bars step aside while the list scrolls down.
+hidePhoneBarsOnScroll(mailListRef)
 
 // Rows and the cursor
 
