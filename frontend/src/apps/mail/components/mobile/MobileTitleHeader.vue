@@ -15,7 +15,7 @@
       <button
         type="button"
         aria-haspopup="dialog"
-        class="touch-target ml-3 flex h-10 min-w-0 items-center gap-1 pr-2"
+        class="touch-target ml-3 flex h-10 min-w-0 items-center gap-1 pr-2 transition-opacity active:opacity-60"
         @click="openAreaSidebar('mail')"
       >
         <span :class="[TITLE, 'text-3xl']">{{ title }}</span>
@@ -52,6 +52,6 @@ const emit = defineEmits<{ back: [] }>()
 
 /** The round 40px hit area of the row's leading icon. */
 const ICON_SLOT =
-  'touch-target text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full'
+  'touch-target text-ink-gray-6 active:bg-surface-gray-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full'
 const TITLE = 'text-ink-gray-8 truncate !font-semibold tracking-[-0.01em]'
 </script>

@@ -20,7 +20,7 @@
     <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
     <template v-if="clearScope" #actions>
       <div class="mr-2.5 flex items-center">
-        <ClearListMenu :scope="clearScope" :target="{ folder }" />
+        <ClearListMenu :scope="clearScope" :target="{ folder }" :inbox="folder === INBOX_FOLDER" />
       </div>
     </template>
   </MobileTitleHeader>
@@ -45,7 +45,7 @@
       <InboxHeaderTabs
         v-else
         class="-my-2.5 min-w-0 self-stretch"
-        :tabs="inboxTabs"
+        :tabs="byLatestMail(inboxTabs, categoryCards)"
         :active="inboxTab"
         :route-for="routeForTab"
       />
@@ -66,53 +66,56 @@
         @touch-end="onThreadTouchEnd"
       >
         <template #list>
-          <InboxTabs
-            v-if="isMobile && inboxTab"
-            :tabs="inboxTabs"
-            :active="inboxTab"
-            :route-for="routeForTab"
-          />
+          <!-- On a phone these scroll with the list, at its top. -->
+          <PhoneListHead :into="listTop">
+            <CategoryCards
+              v-if="isMobile && inboxTab === 'primary'"
+              :cards="categoryCards"
+              :ready="categoryCardsReady"
+              :route-for="routeForTab"
+            />
 
-          <MailListToolbar
-            :title="title"
-            :filter-options="FILTER_OPTIONS"
-            :show-filter="!selections.length"
-            :show-actions="!selections.length"
-            :fetching="isFetching"
-            @refresh="refreshThreads()"
-          >
-            <template v-if="!isMobile" #lead>
-              <div class="mr-5">
-                <SelectAllCheckbox
-                  :selected="isAllSelected"
-                  :some="selections.length > 0"
-                  @toggle="toggleSelectAll"
-                />
-              </div>
-            </template>
-            <!-- The filters as chips, where the selector would go. -->
-            <!-- On a phone the chips stay while selecting: the selection bar floats at the bottom
+            <MailListToolbar
+              :title="title"
+              :filter-options="FILTER_OPTIONS"
+              :show-filter="!selections.length"
+              :show-actions="!selections.length"
+              :fetching="isFetching"
+              @refresh="refreshThreads()"
+            >
+              <template v-if="!isMobile" #lead>
+                <div class="mr-5">
+                  <SelectAllCheckbox
+                    :selected="isAllSelected"
+                    :some="selections.length > 0"
+                    @toggle="toggleSelectAll"
+                  />
+                </div>
+              </template>
+              <!-- The filters as chips, where the selector would go. -->
+              <!-- On a phone the chips stay while selecting: the selection bar floats at the bottom
                  (MobileSelectionBar), so the list below doesn't move. -->
-            <template v-if="isMobile || !selections.length" #filter>
-              <ListFilterChips
-                :filter-options="FILTER_OPTIONS"
-                :filter="filter"
-                :clear="clearFilter"
-              />
-            </template>
-            <template #actions>
-              <ClearListMenu
-                v-if="clearScope && !selections.length"
-                :scope="clearScope"
-                :target="{ folder }"
-              />
-              <SelectActionButtons
-                v-if="selections.length"
-                :actions="selectActions"
-                :collapsed="showReadingPane"
-              />
-            </template>
-          </MailListToolbar>
+              <template v-if="isMobile || !selections.length" #filter>
+                <ListFilterChips
+                  :filter-options="FILTER_OPTIONS"
+                  :filter="filter"
+                  :clear="clearFilter"
+                />
+              </template>
+              <template #actions>
+                <ClearListMenu
+                  v-if="clearScope && !selections.length"
+                  :scope="clearScope"
+                  :target="{ folder }"
+                />
+                <SelectActionButtons
+                  v-if="selections.length"
+                  :actions="selectActions"
+                  :collapsed="showReadingPane"
+                />
+              </template>
+            </MailListToolbar>
+          </PhoneListHead>
 
           <!-- Mail list -->
           <div
@@ -120,6 +123,7 @@
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
+            <div ref="listTop" />
             <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.
                  While the list loads, its rows stand here in outline. -->
             <MailListSkeleton
@@ -350,7 +354,6 @@ import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
-import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
@@ -362,12 +365,15 @@ import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
+import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
+import { byLatestMail, useCategoryCards } from '@/apps/mail/composables/useCategoryCards'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
@@ -517,6 +523,8 @@ const {
 })
 // The phone's floating bars step aside while the list scrolls down.
 hidePhoneBarsOnScroll(mailListRef)
+// Where the category cards and the filter chips move into on a phone (see PhoneListHead).
+const listTop = ref<HTMLElement | null>(null)
 
 // The list's filters, their menu, and its title (see useListFilter) — all shared with the mailbox
 // list.
@@ -1743,6 +1751,12 @@ onUnmounted(() => {
   socket.off('mail_changed', onNewMail)
   window.removeEventListener('keydown', handleKeyDown)
 })
+
+// The categories other than Primary, the newest mail first: a phone's cards, and a desktop's tab order.
+const { cards: categoryCards, ready: categoryCardsReady } = useCategoryCards(
+  () => folder === INBOX_FOLDER && 'unified',
+  () => inboxTabs.value,
+)
 </script>
 
 <style scoped></style>

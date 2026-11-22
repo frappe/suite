@@ -4,7 +4,7 @@
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
+    class="sm:hover:bg-surface-gray-1 max-sm:active:bg-surface-gray-2 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
     :class="[
       ROW_BOX_CLASS,
       {

@@ -27,7 +27,7 @@
       <InboxHeaderTabs
         v-else
         class="-my-2.5 min-w-0 self-stretch"
-        :tabs="inboxTabs"
+        :tabs="byLatestMail(inboxTabs, categoryCards)"
         :active="inboxTab"
         :route-for="routeForTab"
       />
@@ -90,7 +90,11 @@
               <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
               <template v-if="clearScope" #actions>
                 <div class="mr-2.5 flex items-center">
-                  <ClearListMenu :scope="clearScope" :target="{ account: accountId, mailbox }" />
+                  <ClearListMenu
+                    :scope="clearScope"
+                    :target="{ account: accountId, mailbox }"
+                    :inbox="mailbox === store.mailboxIds.inbox"
+                  />
                 </div>
               </template>
             </MobileTitleHeader>
@@ -110,28 +114,31 @@
               />
             </div>
 
-            <InboxTabs
-              v-if="inboxTab"
-              :tabs="inboxTabs"
-              :active="inboxTab"
-              :route-for="routeForTab"
-            />
+            <!-- On a phone these scroll with the list, at its top. -->
+            <PhoneListHead :into="listTop">
+              <CategoryCards
+                v-if="inboxTab === 'primary'"
+                :cards="categoryCards"
+                :ready="categoryCardsReady"
+                :route-for="routeForTab"
+              />
 
-            <!-- No `loading`: the bar below spans this whole header block, so it
+              <!-- No `loading`: the bar below spans this whole header block, so it
 						     also covers search, where this row is absent. -->
-            <MailListToolbar
-              v-if="mailbox !== 'search'"
-              :title="title"
-              :filter-options="FILTER_OPTIONS"
-            >
-              <template #filter>
-                <ListFilterChips
-                  :filter-options="FILTER_OPTIONS"
-                  :filter="filter"
-                  :clear="clearFilter"
-                />
-              </template>
-            </MailListToolbar>
+              <MailListToolbar
+                v-if="mailbox !== 'search'"
+                :title="title"
+                :filter-options="FILTER_OPTIONS"
+              >
+                <template #filter>
+                  <ListFilterChips
+                    :filter-options="FILTER_OPTIONS"
+                    :filter="filter"
+                    :clear="clearFilter"
+                  />
+                </template>
+              </MailListToolbar>
+            </PhoneListHead>
           </div>
 
           <!-- Toolbar/Actions -->
@@ -193,6 +200,7 @@
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
+            <div ref="listTop" />
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
                 v-if="headersVisible"
@@ -419,7 +427,6 @@ import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
-import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
@@ -430,12 +437,15 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
 import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
+import { byLatestMail, useCategoryCards } from '@/apps/mail/composables/useCategoryCards'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
@@ -543,6 +553,8 @@ const {
 })
 // The phone's floating bars step aside while the list scrolls down.
 hidePhoneBarsOnScroll(mailListRef)
+// Where the category cards and the filter chips move into on a phone (see PhoneListHead).
+const listTop = ref<HTMLElement | null>(null)
 
 // Rows and the cursor
 
@@ -1493,6 +1505,12 @@ const title = computed(() => {
   }
   return filterTitle.value
 })
+
+// The categories other than Primary, the newest mail first: a phone's cards, and a desktop's tab order.
+const { cards: categoryCards, ready: categoryCardsReady } = useCategoryCards(
+  () => mailbox === store.mailboxIds.inbox && 'account',
+  () => inboxTabs.value,
+)
 </script>
 
 <style scoped>

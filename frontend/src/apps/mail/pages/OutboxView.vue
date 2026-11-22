@@ -149,8 +149,8 @@ import {
   type Submission,
   type SubmissionFilters,
 } from '@/apps/mail/utils/submission'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { DashboardListSkeleton } from '@/platform/dashboard'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { appPageMeta } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 

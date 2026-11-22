@@ -92,7 +92,7 @@ import { useFilterBySender, useScreenSize, useUndo } from '@/apps/mail/utils/com
 import { mailCopyIds } from '@/apps/mail/utils/mailCopies'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { translate as __ } from '@/platform/translation'
 
 const {

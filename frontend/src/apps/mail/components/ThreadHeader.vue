@@ -278,7 +278,7 @@ import {
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
 } from '@/apps/mail/utils/unifiedFolders'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 
 const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   thread: Mail[]

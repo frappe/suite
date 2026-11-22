@@ -12,8 +12,8 @@
        down (`phoneBarsAway`). -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
-      ref="shell"
       v-if="open"
+      ref="shell"
       :class="{ 'invisible translate-y-full': away }"
       class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-end gap-3 transition-[transform,visibility] duration-200 ease-out px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
@@ -84,7 +84,7 @@ import { computed, ref, type Component } from 'vue'
 
 import { liftToastsOver, usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import { PHONE_BAR_BUTTONS, phoneBar, type SelectAction } from '@/apps/mail/utils/selectActions'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 
 type MenuOption = {
   label: string

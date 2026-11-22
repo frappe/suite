@@ -73,7 +73,7 @@ import CustomTimeForm from '@/apps/mail/components/CustomTimeForm.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import type { TimeChoice } from '@/apps/mail/utils/snoozeTimes'
 import { timeMenuOptions, type TimeMenuFooter } from '@/apps/mail/utils/timeMenuOptions'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 
 // A time to do something at (snooze until, remind on): a few choices, or one of the reader's own.
 // Shared so every place a time is asked for asks the same way, and settles on the first click.

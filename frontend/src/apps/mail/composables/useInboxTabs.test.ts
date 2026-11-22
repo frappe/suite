@@ -30,7 +30,6 @@ const state = vi.hoisted(() => ({
   store: fromPartial<InboxTabsStore>({}),
 }))
 vi.mock('vue-router', () => ({ useRoute: () => state.route }))
-const screen = vi.hoisted(() => ({ isMobile: { value: false } }))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))
 const saved = vi.hoisted(() => fromPartial<unknown[]>([]))
 const toasts = vi.hoisted(() => fromPartial<string[]>([]))
@@ -73,7 +72,6 @@ vi.mock('@/apps/mail/utils', () => ({
 // Mail's one undo slot, as the toast's Undo and Cmd/Ctrl+Z both reach it.
 const undoSlot = vi.hoisted(() => ({ action: fromPartial<(() => unknown) | undefined>(undefined) }))
 vi.mock('@/apps/mail/utils/composables', () => ({
-  useScreenSize: () => screen,
   useSettings: () => ({ openSettings: () => {} }),
   useUndo: () => ({
     setUndoAction: (action?: () => unknown) => (undoSlot.action = action),
@@ -97,7 +95,6 @@ describe('the Inbox tabs', () => {
     answers.clear()
     undoSlot.action = undefined
     state.route = reactive({ query: {} })
-    screen.isMobile.value = false
     saved.length = 0
     toasts.length = 0
     localStorage.clear()
@@ -287,18 +284,6 @@ describe('the Inbox tabs', () => {
     options.at(-1)?.onClick(false)
     await nextTick()
     expect(saved).toEqual([{ all_mail_tab: 0 }])
-  })
-
-  it('are absent on a phone, whose Inbox is one list of every category', () => {
-    screen.isMobile.value = true
-    state.route.query = { category: 'updates' }
-
-    for (const scope of ['account', 'unified'] as const) {
-      const { tabs, active } = tabsFor(scope)
-      expect(tabs.value).toEqual([])
-      // No category is asked for, so the list is the whole Inbox, not Primary or Updates alone.
-      expect(active.value).toBeUndefined()
-    }
   })
 
   it('are absent from any other list, and from an Inbox that is not split', () => {
