@@ -11,9 +11,8 @@ const { byLatestMail } = await import('./useCategoryCards')
 const tab = (id: InboxTabId): InboxTab => ({ id, label: id, icon: '', unread: 0 })
 
 it('orders the tabs by newest mail, keeping Primary first and All mail last', () => {
-  const tabs = ['primary', 'updates', 'forums', 'promotions', 'social', 'all'].map((id) =>
-    tab(id as InboxTabId),
-  )
+  const ids: InboxTabId[] = ['primary', 'updates', 'forums', 'promotions', 'social', 'all']
+  const tabs = ids.map(tab)
   // Social's newest mail is the newest; Updates has not loaded yet.
   const cards = [tab('social'), tab('forums'), tab('promotions')].map((t) => ({
     tab: t,
