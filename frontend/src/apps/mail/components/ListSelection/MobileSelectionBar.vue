@@ -12,6 +12,7 @@
        down (`phoneBarsAway`). -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
+      ref="shell"
       v-if="open"
       :class="{ 'invisible translate-y-full': away }"
       class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col items-end gap-3 transition-[transform,visibility] duration-200 ease-out px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
@@ -81,7 +82,7 @@ import { usePortalTarget } from 'frappe-ui'
 import { Ellipsis, SquareCheck, X } from 'lucide-vue-next'
 import { computed, ref, type Component } from 'vue'
 
-import { usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
+import { liftToastsOver, usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import { PHONE_BAR_BUTTONS, phoneBar, type SelectAction } from '@/apps/mail/utils/selectActions'
 import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
@@ -116,6 +117,8 @@ const emit = defineEmits<{ toggleAll: [selected: boolean] }>()
 
 const overlayLayer = usePortalTarget()
 const away = usePhoneBarsAway()
+const shell = ref<HTMLElement | null>(null)
+liftToastsOver(shell)
 const showMore = ref(false)
 // What the chained sheet shows outlives its closing, or the sheet would empty as it slides away.
 const chained = ref<{ title: string; options: MenuOption[] } | null>(null)

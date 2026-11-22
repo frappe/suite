@@ -154,3 +154,13 @@ watch(
   { immediate: true },
 )
 </script>
+
+<style>
+/* On a phone the toasts sit above Mail's floating bar (`liftToastsOver`), not under it. */
+html.mail-phone-bar [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--mail-phone-bar) + 0.75rem) !important;
+}
+[data-sonner-toaster][data-y-position='bottom'] {
+  transition: bottom 200ms ease-out;
+}
+</style>

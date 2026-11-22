@@ -11,6 +11,7 @@
        (`phoneBarsAway`). -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
+      ref="bar"
       v-if="!isMobileSelectionActive"
       :class="{ 'invisible translate-y-full': away }"
       class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col transition-[transform,visibility] duration-200 ease-out items-end gap-3 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
@@ -56,11 +57,11 @@
 
 <script setup lang="ts">
 import { Avatar, Button, usePortalTarget } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
-import { usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
+import { liftToastsOver, usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import { userStore } from '@/apps/mail/stores/user'
 import { getIcon } from '@/apps/mail/utils'
 import { useMobileSearch, useMobileSelection } from '@/apps/mail/utils/composables'
@@ -86,6 +87,8 @@ const { openSearch } = useMobileSearch()
 const { isMobileSelectionActive } = useMobileSelection()
 const overlayLayer = usePortalTarget()
 const away = usePhoneBarsAway()
+const bar = ref<HTMLElement | null>(null)
+liftToastsOver(bar)
 
 const accountLabel = computed(
   () => session.user.value?.fullName || session.user.value?.id || __('Profile'),
