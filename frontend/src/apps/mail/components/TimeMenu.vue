@@ -4,7 +4,7 @@
        takes their place in it. -->
   <Dialog v-if="!isMobile && !$slots.default" v-model:open="dialogOpen" :title size="xs">
     <CustomTimeForm
-      v-if="picking"
+      v-if="formShown"
       :action
       :past-message
       :initial-value
@@ -130,6 +130,11 @@ const pick = (value: string) => {
 }
 
 // The dialog stays up from the choices to a time of the reader's own, and closing it ends both.
+// What it shows, the choices or the form, holds while it fades out, so it leaves as it was.
+const formShown = ref(false)
+watch([open, picking], ([shown, ownTime]) => {
+  if (shown || ownTime) formShown.value = ownTime
+})
 const dialogOpen = computed({
   get: () => open.value || picking.value,
   set: (shown) => {

@@ -22,6 +22,7 @@
       <div class="mr-2.5 flex items-center">
         <ClearListMenu
           :scope="clearScope"
+          :empty="listState === 'empty'"
           :target="{ folder }"
           :inbox="folder === INBOX_FOLDER && (!inboxTab || inboxTab === 'primary')"
         />
@@ -111,6 +112,7 @@
                 <ClearListMenu
                   v-if="clearScope && !selections.length"
                   :scope="clearScope"
+                  :empty="listState === 'empty'"
                   :target="{ folder }"
                 />
                 <SelectActionButtons

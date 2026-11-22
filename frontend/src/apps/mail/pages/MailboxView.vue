@@ -92,6 +92,7 @@
                 <div class="mr-2.5 flex items-center">
                   <ClearListMenu
                     :scope="clearScope"
+                    :empty="listState === 'empty'"
                     :target="{ account: accountId, mailbox }"
                     :inbox="
                       mailbox === store.mailboxIds.inbox && (!inboxTab || inboxTab === 'primary')
@@ -177,6 +178,7 @@
               <ClearListMenu
                 v-if="clearScope && !selections.length"
                 :scope="clearScope"
+                :empty="listState === 'empty'"
                 :target="{ account: accountId, mailbox }"
               />
               <SelectActionButtons

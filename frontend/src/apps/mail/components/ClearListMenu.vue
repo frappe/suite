@@ -2,8 +2,9 @@
   <!-- Clearing what the list shows in one go, on its own toolbar: an Inbox tab, or a whole folder.
        Drawn as the toolbar's own buttons are. On a phone, whose Inbox has no View menu, the Inbox's
        menu (Primary's, not a category's) also turns its categories on and off, and leads to a sheet
-       of its own to choose which show. A phone opens it as a sheet from the bottom. -->
-  <AdaptiveDropdown :options="options" align="end">
+       of its own to choose which show. A phone opens it as a sheet from the bottom. An empty list
+       has nothing to clear, so offers none of it, and without the categories, no menu at all. -->
+  <AdaptiveDropdown v-if="options.length" :options="options" align="end">
     <!-- No tooltip on a phone: a tap opens the sheet, and a tooltip only lingers over it. -->
     <Button
       variant="ghost"
@@ -41,7 +42,8 @@ const {
   scope,
   target,
   inbox = false,
-} = defineProps<{ scope: ClearScope; target: ClearTarget; inbox?: boolean }>()
+  empty = false,
+} = defineProps<{ scope: ClearScope; target: ClearTarget; inbox?: boolean; empty?: boolean }>()
 
 const { menuFor } = useClearList(() => target)
 const { isMobile } = useScreenSize()
@@ -51,9 +53,10 @@ const choosing = ref(false)
 const categoryChoice = computed(() => inbox && isMobile.value && offered.value)
 
 const options = computed(() => {
-  if (!categoryChoice.value) return menuFor(scope)
+  const clearing = empty ? [] : menuFor(scope)
+  if (!categoryChoice.value) return clearing
   return [
-    ...menuFor(scope),
+    ...clearing,
     {
       group: '',
       options: [
