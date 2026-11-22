@@ -74,8 +74,8 @@ const startLifting = () =>
 export const liftToastsOver = (bar: Ref<HTMLElement | null>) => {
   const key = Symbol()
   const measure = (el: HTMLElement) => {
-    const island = el.lastElementChild as HTMLElement | null
-    barHeights.set(key, el.offsetHeight - (island?.offsetTop ?? 0))
+    const island = el.lastElementChild
+    barHeights.set(key, el.offsetHeight - (island instanceof HTMLElement ? island.offsetTop : 0))
   }
   useResizeObserver(bar, () => bar.value && measure(bar.value))
   // Measured on showing too, so the first toast need not wait for the observer.
