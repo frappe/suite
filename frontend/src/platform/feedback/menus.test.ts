@@ -3,11 +3,11 @@ import type { DropdownItemSlotProps } from 'frappe-ui'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, ref } from 'vue'
 
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { createApiClient, installApiErrorHandler } from '@/platform/server-state'
 import { createTransport, type MutationRef } from '@/platform/transport'
 
+import AdaptiveDropdown from './AdaptiveDropdown.vue'
 import { ContextMenu, Dropdown } from './index'
 
 vi.mock('frappe-ui', async () => ({

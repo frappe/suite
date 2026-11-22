@@ -278,7 +278,7 @@ import {
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
 } from '@/apps/mail/utils/unifiedFolders'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 
 const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   thread: Mail[]
@@ -418,9 +418,21 @@ const moreSheetOptions = computed(() => {
   const filing = inDrafts.value
     ? []
     : [
-        { label: __('Move To'), icon: FolderInput, onClick: () => (moveToOpen.value = true) },
+        {
+          label: __('Move To'),
+          icon: FolderInput,
+          onClick: () => (moveToOpen.value = true),
+          drillsIn: true,
+        },
         ...(folderOptions.value.length
-          ? [{ label: __('Folders'), icon: Folders, onClick: () => (foldersOpen.value = true) }]
+          ? [
+              {
+                label: __('Folders'),
+                icon: Folders,
+                onClick: () => (foldersOpen.value = true),
+                drillsIn: true,
+              },
+            ]
           : []),
       ]
   const later = laterOptions.value
@@ -434,6 +446,7 @@ const laterOptions = computed(() => [
           label: laterLabel.value,
           icon: remindOnly.value ? BellPlus : Clock,
           onClick: () => (laterOpen.value = true),
+          drillsIn: true,
         },
       ]
     : []),

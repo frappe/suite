@@ -4,7 +4,7 @@
        takes their place in it. -->
   <Dialog v-if="!isMobile && !$slots.default" v-model:open="dialogOpen" :title size="xs">
     <CustomTimeForm
-      v-if="picking"
+      v-if="formShown"
       :action
       :past-message
       :initial-value
@@ -39,21 +39,15 @@
     <!-- The menu is another's (the composer's Send menu asks it as a submenu): only the reader's own
          time opens from here. -->
     <slot v-else />
-    <!-- A time of the reader's own: a dialog on desktop, a sheet on a phone. -->
+    <!-- A time of the reader's own: a dialog on desktop, a sheet on a phone. Each mounts the form
+         as it opens and drops it once it has closed, so the form starts afresh every time and the
+         dialog or sheet leaves whole. -->
     <Dialog v-if="!isMobile" v-model:open="picking" :title size="xs">
-      <CustomTimeForm
-        v-if="picking"
-        :action
-        :past-message
-        :initial-value
-        @pick="pick"
-        @cancel="picking = false"
-      />
+      <CustomTimeForm :action :past-message :initial-value @pick="pick" @cancel="picking = false" />
     </Dialog>
     <BottomSheet v-else v-model:open="picking" :title>
       <div class="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <CustomTimeForm
-          v-if="picking"
           :action
           :past-message
           :initial-value
@@ -67,13 +61,13 @@
 
 <script setup lang="ts">
 import { BottomSheet, Dialog } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import CustomTimeForm from '@/apps/mail/components/CustomTimeForm.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import type { TimeChoice } from '@/apps/mail/utils/snoozeTimes'
 import { timeMenuOptions, type TimeMenuFooter } from '@/apps/mail/utils/timeMenuOptions'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 
 // A time to do something at (snooze until, remind on): a few choices, or one of the reader's own.
 // Shared so every place a time is asked for asks the same way, and settles on the first click.
@@ -108,7 +102,16 @@ const open = defineModel<boolean>('open', { default: false })
 const picking = defineModel<boolean>('picking', { default: false })
 const { isMobile } = useScreenSize()
 
-const listed = computed(() => (open.value ? choices() : []))
+// Read as the menu opens, so "Later today" counts from then. Kept while it closes, so a phone's
+// sheet slides away with its rows rather than emptying first.
+const listed = ref<TimeChoice[]>([])
+watch(
+  open,
+  (shown) => {
+    if (shown) listed.value = choices()
+  },
+  { immediate: true },
+)
 const options = computed(() =>
   timeMenuOptions(
     listed.value,
@@ -127,6 +130,11 @@ const pick = (value: string) => {
 }
 
 // The dialog stays up from the choices to a time of the reader's own, and closing it ends both.
+// What it shows, the choices or the form, holds while it fades out, so it leaves as it was.
+const formShown = ref(false)
+watch([open, picking], ([shown, ownTime]) => {
+  if (shown || ownTime) formShown.value = ownTime
+})
 const dialogOpen = computed({
   get: () => open.value || picking.value,
   set: (shown) => {

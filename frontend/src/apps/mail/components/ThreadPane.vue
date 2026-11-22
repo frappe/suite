@@ -46,7 +46,8 @@
 	     flips only after the slide-out ends, keeping the offscreen pane out of the focus order.
 	     Teleported to Mail's overlay layer on mobile (like the selection bar): inside the layout's isolate
 	     stacking context the remounting bottom nav paints over the pane during the slide-out,
-	     whatever the pane's own z-index says. -->
+	     whatever the pane's own z-index says. Over the floating bars there (z-20), which come
+	     back as the pane leaves and must not paint over it as it goes. -->
   <Teleport :to="overlayLayer ?? 'body'" :disabled="!isMobile">
     <div
       class="bg-surface-base"
@@ -54,7 +55,7 @@
         'overflow-hidden': isMobile,
         [SPLIT_PANE_CLASS]: split,
         'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-        'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+        'fixed inset-0 z-30 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
           isMobile,
         'invisible translate-x-full': isMobile && !threadOpen,
         hidden: !isMobile && !showReadingPane && !threadOpen,

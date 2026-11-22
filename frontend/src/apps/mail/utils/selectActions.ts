@@ -41,6 +41,9 @@ export interface SelectAction {
   // The same asked as a submenu where the actions fold into the More menu, the choices one click
   // each. Called as that menu opens, so its times are the time now.
   submenu?: () => TimeMenuOptions
+  // Offered beside its opposite only when the selection is mixed, so the first to give up its
+  // button on a full phone bar (see phoneBar).
+  spare?: boolean
 }
 
 /** A menu of where the ticked threads are filed (Move To, Folders): its rows as the thread toolbar's
@@ -147,6 +150,7 @@ export const selectActions = (
       shortLabel: __('Unarchive'),
       onClick: () => run.unarchive?.(),
       icon: ArchiveRestore,
+      spare: true,
       condition: () =>
         !!run.unarchive &&
         notDrafts((t) => !!boxesOf(t).archive && unarchivable(messagesOf(t), boxesOf(t)))(),
@@ -165,6 +169,7 @@ export const selectActions = (
       shortLabel: __('Not Junk'),
       onClick: run.notJunk,
       icon: CircleCheck,
+      spare: true,
       condition: some((t) => t.junk === 1),
     },
     {
@@ -266,4 +271,23 @@ export const foldedToolbar = (actions: SelectAction[], filing: FilingMenu[]) => 
     [...inGroup('later'), ...inGroup('selection')],
   ]
   return { buttons: inGroup('act'), menu: menu.filter((group) => group.length) }
+}
+
+/** As many buttons as a phone's selection bar holds, More among them. */
+export const PHONE_BAR_BUTTONS = 6
+
+/**
+ * The phone's selection bar: what is done to the mail keeps its buttons, More included, up to
+ * PHONE_BAR_BUTTONS; past that, the spare ones (Unarchive, Not Junk), then the last, fold into More,
+ * which then has them at its top. `withMore`: More has something of its own to hold.
+ */
+export const phoneBar = (acts: SelectAction[], withMore: boolean) => {
+  if (acts.length + (withMore ? 1 : 0) <= PHONE_BAR_BUTTONS) return { buttons: acts, folded: [] }
+  const over = acts.length - (PHONE_BAR_BUTTONS - 1)
+  const last = [...acts].reverse()
+  const folding = new Set([...new Set([...last.filter((a) => a.spare), ...last])].slice(0, over))
+  return {
+    buttons: acts.filter((a) => !folding.has(a)),
+    folded: acts.filter((a) => folding.has(a)),
+  }
 }

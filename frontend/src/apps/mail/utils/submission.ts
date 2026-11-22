@@ -136,7 +136,7 @@ export const subjectLabel = (row: Submission) =>
 type SubmissionAction = {
   label: string
   icon: Component
-  theme?: string
+  theme?: 'gray' | 'red'
   onClick: () => void
 }
 
@@ -167,7 +167,7 @@ export const submissionActions = (
   const cancel = {
     label: __('Cancel delivery'),
     icon: X,
-    theme: 'red',
+    theme: 'red' as const,
     onClick: on.cancelDelivery,
   }
 

@@ -63,7 +63,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
 

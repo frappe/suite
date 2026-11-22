@@ -79,7 +79,7 @@ export const useListFilter = ({
     onChange()
   }
 
-  /** Start clear: another list (a mailbox switch) opens unfiltered. */
+  /** Start clear: another list (another folder, or another Inbox category) opens unfiltered. */
   const reloadFilter = () => {
     stored.value = []
     changed.value = false

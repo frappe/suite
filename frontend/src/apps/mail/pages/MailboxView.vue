@@ -27,7 +27,7 @@
       <InboxHeaderTabs
         v-else
         class="-my-2.5 min-w-0 self-stretch"
-        :tabs="inboxTabs"
+        :tabs="byLatestMail(inboxTabs, categoryCards)"
         :active="inboxTab"
         :route-for="routeForTab"
       />
@@ -73,23 +73,34 @@
 
           <!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
-					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-					     Search skips both rows (SearchResultsHeader is the header there; no tab
-					     in the bar reads as active), keeping only the selection
-					     toolbar and the loading bar — the border goes with the rows it underlines. -->
-          <div
-            v-if="isMobile"
-            class="relative shrink-0"
-            :class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
-          >
+					     right). Selecting leaves it as it is: the selection bar floats at the bottom
+					     (MobileSelectionBar), so the list never shifts. Search skips both rows
+					     (SearchResultsHeader is the header there; no tab in the bar reads as
+					     active), keeping only the loading bar. No line under the rows: the list
+					     starts right under the filter chips. -->
+          <div v-if="isMobile" class="relative shrink-0">
             <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
-              v-if="inboxTab && inboxTab !== 'primary'"
-              with-back
-              :title="tabName(inboxTab)"
+              v-if="mailbox !== 'search'"
+              :with-back="!!inboxTab && inboxTab !== 'primary'"
+              :with-menu="!inboxTab || inboxTab === 'primary'"
+              :title="inboxTab && inboxTab !== 'primary' ? tabName(inboxTab) : mailboxName"
               @back="router.push(routeForTab('primary'))"
-            />
-            <MobileTitleHeader v-else-if="mailbox !== 'search'" with-menu :title="mailboxName" />
+            >
+              <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
+              <template v-if="clearScope" #actions>
+                <div class="mr-2.5 flex items-center">
+                  <ClearListMenu
+                    :scope="clearScope"
+                    :empty="listState === 'empty'"
+                    :target="{ account: accountId, mailbox }"
+                    :inbox="
+                      mailbox === store.mailboxIds.inbox && (!inboxTab || inboxTab === 'primary')
+                    "
+                  />
+                </div>
+              </template>
+            </MobileTitleHeader>
 
             <!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
 						     the whole header read as chrome on top of the page). Borderless: it
@@ -106,33 +117,32 @@
               />
             </div>
 
-            <InboxTabs
-              v-if="inboxTab && !selections.length"
-              :tabs="inboxTabs"
-              :active="inboxTab"
-              :route-for="routeForTab"
-            />
+            <!-- On a phone these scroll with the list, at its top. -->
+            <PhoneListHead :into="listTop">
+              <CategoryCards
+                v-if="inboxTab === 'primary'"
+                :cards="categoryCards"
+                :ready="categoryCardsReady"
+                :route-for="routeForTab"
+              />
 
-            <!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
-            <!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
-						     axis and the count text starts where the title does. -->
-            <MobileSelectionHeader
-              v-if="selections.length"
-              :count="selections.length"
-              :all-selected="isAllSelected"
-              @toggle-all="toggleSelectAll"
-            />
-            <!-- No `loading`: the bar below spans this whole header block, so it
-						     also covers selection mode and search, where this row is absent. -->
-            <MailListToolbar
-              v-else-if="mailbox !== 'search'"
-              :title="title"
-              :filter-options="FILTER_OPTIONS"
-            >
-              <template v-if="clearScope" #mobile-actions>
-                <ClearListMenu :scope="clearScope" :target="{ account: accountId, mailbox }" />
-              </template>
-            </MailListToolbar>
+              <!-- No `loading`: the bar below spans this whole header block, so it
+						     also covers search, where this row is absent. -->
+              <MailListToolbar
+                v-if="mailbox !== 'search'"
+                :title="title"
+                :filter-options="FILTER_OPTIONS"
+              >
+                <template #filter>
+                  <ListFilterChips
+                    :filter-options="FILTER_OPTIONS"
+                    :filter="filter"
+                    :clear="clearFilter"
+                    :outline="inboxTab === 'primary' && !categoryCardsReady"
+                  />
+                </template>
+              </MailListToolbar>
+            </PhoneListHead>
           </div>
 
           <!-- Toolbar/Actions -->
@@ -166,7 +176,7 @@
 
             <template #actions>
               <ClearListMenu
-                v-if="clearScope && !selections.length"
+                v-if="clearScope && !selections.length && listState !== 'empty'"
                 :scope="clearScope"
                 :target="{ account: accountId, mailbox }"
               />
@@ -179,21 +189,22 @@
             </template>
           </MailListToolbar>
 
-          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. -->
-          <MailListSkeleton
-            v-if="listState === 'loading'"
-            class="min-h-0 flex-1 overflow-hidden"
-            :selectable="!isAllAccountsSearch"
-            :date-headers="headersVisible"
-          />
+          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. Each
+               state starts with the top of the list (`listTop`), where a phone draws the cards and
+               chips, so they sit in the same place whether the list is loading, empty or there. -->
+          <div v-if="listState === 'loading'" class="min-h-0 flex-1 overflow-hidden">
+            <div ref="listTop" />
+            <MailListSkeleton :selectable="!isAllAccountsSearch" :date-headers="headersVisible" />
+          </div>
 
           <!-- Mail list -->
           <div
             v-else-if="threadRows.length"
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
             @focusin="onListFocusIn"
           >
+            <div ref="listTop" />
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
                 v-if="headersVisible"
@@ -296,24 +307,37 @@
               <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
             </div>
           </div>
-          <div v-else class="flex h-full items-center justify-center">
-            <LoadError
-              v-if="listState === 'error'"
-              :title="__('Could not load the list.')"
-              :error="activeThreads.error"
-              @retry="retryList"
-            />
-            <p v-else class="text-ink-gray-5">
-              {{
-                mailbox !== 'search'
-                  ? filter
-                    ? __('No mails found for the selected filter.')
-                    : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : mailboxName])
-                  : hasSearchQuery
-                    ? __('No results found for the given query.')
-                    : __('Search your mail')
-              }}
-            </p>
+          <div v-else class="flex h-full flex-col">
+            <div ref="listTop" />
+            <div class="flex min-h-0 flex-1 items-center justify-center">
+              <LoadError
+                v-if="listState === 'error'"
+                :title="__('Could not load the list.')"
+                :error="activeThreads.error"
+                @retry="retryList"
+              />
+              <!-- An empty list shows the empty-folder picture, filtered or not, unless the reading
+                 pane beside it (Split View) already shows it; a search says so in words alone. -->
+              <div v-else class="text-ink-gray-5 flex flex-col items-center">
+                <NoMails
+                  v-if="mailbox !== 'search' && (isMobile || !showReadingPane)"
+                  class="text-ink-gray-2 mb-2 size-16"
+                />
+                <p>
+                  {{
+                    mailbox !== 'search'
+                      ? filter
+                        ? __('No mails found for the selected filter.')
+                        : __('No mails in {0}.', [
+                            inboxCategory ? tabName(inboxCategory) : mailboxName,
+                          ])
+                      : hasSearchQuery
+                        ? __('No results found for the given query.')
+                        : __('Search your mail')
+                  }}
+                </p>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -404,6 +428,9 @@
     :open="mobileSelectionMode"
     :actions="selectActions"
     :extra-options="folderSelectionOptions"
+    :count="selections.length"
+    :all-selected="isAllSelected"
+    @toggle-all="toggleSelectAll"
   />
 </template>
 <script setup lang="ts">
@@ -417,10 +444,8 @@ import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
-import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
-import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import LoadError from '@/apps/mail/components/LoadError.vue'
@@ -429,11 +454,15 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
+import { byLatestMail, useCategoryCards } from '@/apps/mail/composables/useCategoryCards'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
@@ -539,6 +568,10 @@ const {
   busy: () => emptyMailbox.isPending || refillPending.value,
   asked: () => mailbox !== 'search' || hasSearchQuery.value,
 })
+// The phone's floating bars step aside while the list scrolls down.
+hidePhoneBarsOnScroll(mailListRef)
+// Where the category cards and the filter chips move into on a phone (see PhoneListHead).
+const listTop = ref<HTMLElement | null>(null)
 
 // Rows and the cursor
 
@@ -970,7 +1003,11 @@ const {
 } = useInboxTabs(
   () => mailbox === store.mailboxIds.inbox && 'account',
   () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
-  () => resetThreads(false),
+  // Another category is another list: it opens unfiltered, as another folder does.
+  () => {
+    reloadFilter()
+    resetThreads(false)
+  },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
 // (Starred, a search) or nothing unread to clear (Sent, Drafts).
@@ -1489,6 +1526,12 @@ const title = computed(() => {
   }
   return filterTitle.value
 })
+
+// The categories other than Primary, the newest mail first: a phone's cards, and a desktop's tab order.
+const { cards: categoryCards, ready: categoryCardsReady } = useCategoryCards(
+  () => mailbox === store.mailboxIds.inbox && 'account',
+  () => inboxTabs.value,
+)
 </script>
 
 <style scoped>
