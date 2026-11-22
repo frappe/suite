@@ -13,11 +13,13 @@ import UnifiedFolderView from './UnifiedFolderView.vue'
 // `holding`, it keeps a list's reader waiting for the answer.
 const server = vi.hoisted(() => {
   const asked: string[] = []
+  // What each list request asked for: its query string and body.
+  const sent: string[] = []
   const waiting: (() => void)[] = []
-  return { failing: true, holding: false, asked, waiting }
+  return { failing: true, holding: false, asked, sent, waiting }
 })
 vi.hoisted(() => {
-  globalThis.fetch = async (input) => {
+  globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), 'http://localhost')
     const method = url.pathname.split('.').at(-1) ?? ''
     const reply = (body: unknown, status = 200) =>
@@ -28,6 +30,7 @@ vi.hoisted(() => {
     if (method !== 'get_threads' && method !== 'get_unified_threads')
       return reply({ message: null })
     server.asked.push(method)
+    server.sent.push(`${url.search} ${typeof init?.body === 'string' ? init.body : ''}`)
     if (server.holding) await new Promise<void>((resolve) => server.waiting.push(resolve))
     if (server.failing)
       return reply(
@@ -129,12 +132,14 @@ beforeEach(() => {
   server.failing = true
   server.holding = false
   server.asked = []
+  server.sent = []
 })
 afterEach(() => {
   for (const answer of server.waiting.splice(0)) answer()
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
   groupByDate(false)
+  userStore().inboxTabs = []
 })
 
 async function open(path: string) {
@@ -175,7 +180,7 @@ async function open(path: string) {
   app.use(router)
   apps.push(app)
   app.mount(element)
-  return { element, errors }
+  return { element, errors, router }
 }
 
 const retryButton = (element: HTMLElement) =>
@@ -267,5 +272,29 @@ describe('a thread opened in an "All accounts" folder whose list is on its way',
     // The pane itself waits for the row: what its buttons do is read off it.
     expect(element.querySelector('[data-reading-pane]')).toBeNull()
     expect(errors).toEqual([])
+  })
+})
+
+describe.each([
+  ['an account Inbox', '/mail/account/acc/mailbox/a'],
+  ['the "All accounts" Inbox', '/mail/all/inbox'],
+])('switching category in %s', (_view, path) => {
+  it('opens the next category unfiltered', async () => {
+    server.failing = false
+    userStore().inboxTabs = ['primary', 'social']
+    const { element, router } = await open(`${path}?category=primary`)
+    const chip = (label: string) =>
+      Array.from(element.querySelectorAll('button')).find((b) => b.textContent?.trim() === label)
+    await vi.waitFor(() => expect(chip('Unread')).toBeDefined())
+
+    chip('Unread')!.click()
+    await vi.waitFor(() => expect(server.sent.some((sent) => sent.includes('unread'))).toBe(true))
+    const switchedAt = server.sent.length
+    await router.push(`${path}?category=social`)
+
+    await vi.waitFor(() =>
+      expect(server.sent.slice(switchedAt).some((sent) => sent.includes('social'))).toBe(true),
+    )
+    expect(server.sent.slice(switchedAt).filter((sent) => sent.includes('unread'))).toEqual([])
   })
 })

@@ -1,8 +1,8 @@
 <template>
   <!-- Clearing what the list shows in one go, on its own toolbar: an Inbox tab, or a whole folder.
-       Drawn as the toolbar's own buttons are. On a phone, whose Inbox has no View menu, an Inbox's
-       menu also turns its categories on and off, and leads to a sheet of its own to choose which
-       show. A phone opens it as a sheet from the bottom. -->
+       Drawn as the toolbar's own buttons are. On a phone, whose Inbox has no View menu, the Inbox's
+       menu (Primary's, not a category's) also turns its categories on and off, and leads to a sheet
+       of its own to choose which show. A phone opens it as a sheet from the bottom. -->
   <AdaptiveDropdown :options="options" align="end">
     <!-- No tooltip on a phone: a tap opens the sheet, and a tooltip only lingers over it. -->
     <Button

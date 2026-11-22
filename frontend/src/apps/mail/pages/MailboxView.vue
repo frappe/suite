@@ -93,7 +93,9 @@
                   <ClearListMenu
                     :scope="clearScope"
                     :target="{ account: accountId, mailbox }"
-                    :inbox="mailbox === store.mailboxIds.inbox"
+                    :inbox="
+                      mailbox === store.mailboxIds.inbox && (!inboxTab || inboxTab === 'primary')
+                    "
                   />
                 </div>
               </template>
@@ -135,6 +137,7 @@
                     :filter-options="FILTER_OPTIONS"
                     :filter="filter"
                     :clear="clearFilter"
+                    :outline="inboxTab === 'primary' && !categoryCardsReady"
                   />
                 </template>
               </MailListToolbar>
@@ -310,17 +313,27 @@
               :error="activeThreads.error"
               @retry="retryList"
             />
-            <p v-else class="text-ink-gray-5">
-              {{
-                mailbox !== 'search'
-                  ? filter
-                    ? __('No mails found for the selected filter.')
-                    : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : mailboxName])
-                  : hasSearchQuery
-                    ? __('No results found for the given query.')
-                    : __('Search your mail')
-              }}
-            </p>
+            <!-- An empty list shows the empty-folder picture, filtered or not, unless the reading
+                 pane beside it (Split View) already shows it; a search says so in words alone. -->
+            <div v-else class="text-ink-gray-5 flex flex-col items-center">
+              <NoMails
+                v-if="mailbox !== 'search' && (isMobile || !showReadingPane)"
+                class="text-ink-gray-2 mb-2 size-16"
+              />
+              <p>
+                {{
+                  mailbox !== 'search'
+                    ? filter
+                      ? __('No mails found for the selected filter.')
+                      : __('No mails in {0}.', [
+                          inboxCategory ? tabName(inboxCategory) : mailboxName,
+                        ])
+                    : hasSearchQuery
+                      ? __('No results found for the given query.')
+                      : __('Search your mail')
+                }}
+              </p>
+            </div>
           </div>
         </template>
 
@@ -986,7 +999,11 @@ const {
 } = useInboxTabs(
   () => mailbox === store.mailboxIds.inbox && 'account',
   () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
-  () => resetThreads(false),
+  // Another category is another list: it opens unfiltered, as another folder does.
+  () => {
+    reloadFilter()
+    resetThreads(false)
+  },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
 // (Starred, a search) or nothing unread to clear (Sent, Drafts).

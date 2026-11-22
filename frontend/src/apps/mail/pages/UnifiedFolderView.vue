@@ -20,7 +20,11 @@
     <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
     <template v-if="clearScope" #actions>
       <div class="mr-2.5 flex items-center">
-        <ClearListMenu :scope="clearScope" :target="{ folder }" :inbox="folder === INBOX_FOLDER" />
+        <ClearListMenu
+          :scope="clearScope"
+          :target="{ folder }"
+          :inbox="folder === INBOX_FOLDER && (!inboxTab || inboxTab === 'primary')"
+        />
       </div>
     </template>
   </MobileTitleHeader>
@@ -100,6 +104,7 @@
                   :filter-options="FILTER_OPTIONS"
                   :filter="filter"
                   :clear="clearFilter"
+                  :outline="isMobile && inboxTab === 'primary' && !categoryCardsReady"
                 />
               </template>
               <template #actions>
@@ -137,16 +142,20 @@
               :error="threads.error"
               @retry="retryList"
             />
-            <p
+            <div
               v-else-if="listState === 'empty'"
-              class="text-ink-gray-5 px-3 py-10 text-center text-p-sm sm:px-5"
+              class="text-ink-gray-5 flex flex-col items-center px-3 py-10 text-center text-p-sm sm:px-5"
             >
-              {{
-                filter
-                  ? __('No mails found for the selected filter.')
-                  : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : folderLabel])
-              }}
-            </p>
+              <!-- Not in Split View, whose reading pane beside the list already shows it. -->
+              <NoMails v-if="isMobile || !showReadingPane" class="text-ink-gray-2 mb-2 size-16" />
+              <p>
+                {{
+                  filter
+                    ? __('No mails found for the selected filter.')
+                    : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : folderLabel])
+                }}
+              </p>
+            </div>
             <div v-for="(rows, key) in groupedRows" :key="key">
               <MailGroupHeader
                 v-if="headersVisible"
@@ -554,7 +563,11 @@ const {
 } = useInboxTabs(
   () => folder === INBOX_FOLDER && 'unified',
   () => unifiedFolderRoute(folder),
-  () => resetThreads(),
+  // Another category is another list: it opens unfiltered, as another folder does.
+  () => {
+    reloadFilter()
+    resetThreads()
+  },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
 // (Starred) or nothing unread to clear (Sent, Drafts).

@@ -45,8 +45,8 @@ const LAST_TAB_KEY = 'mail-inbox-tab'
  * A phone draws the categories other than Primary as cards over it (CategoryCards), not tabs.
  *
  * `listRoute` is the list the tabs belong to: a tab leads there, leaving any open thread behind,
- * since that thread may not be in the tab being opened. `onSwitch` refetches the list when another
- * tab opens, as a filter change does.
+ * since that thread may not be in the tab being opened. `onSwitch` starts the list over when another
+ * tab opens: unfiltered, and refetched.
  */
 export const useInboxTabs = (
   scope: () => 'account' | 'unified' | false,
