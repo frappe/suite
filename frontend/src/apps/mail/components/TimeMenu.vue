@@ -39,21 +39,15 @@
     <!-- The menu is another's (the composer's Send menu asks it as a submenu): only the reader's own
          time opens from here. -->
     <slot v-else />
-    <!-- A time of the reader's own: a dialog on desktop, a sheet on a phone. -->
+    <!-- A time of the reader's own: a dialog on desktop, a sheet on a phone. Each mounts the form
+         as it opens and drops it once it has closed, so the form starts afresh every time and the
+         dialog or sheet leaves whole. -->
     <Dialog v-if="!isMobile" v-model:open="picking" :title size="xs">
-      <CustomTimeForm
-        v-if="picking"
-        :action
-        :past-message
-        :initial-value
-        @pick="pick"
-        @cancel="picking = false"
-      />
+      <CustomTimeForm :action :past-message :initial-value @pick="pick" @cancel="picking = false" />
     </Dialog>
     <BottomSheet v-else v-model:open="picking" :title>
       <div class="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
         <CustomTimeForm
-          v-if="picking"
           :action
           :past-message
           :initial-value
@@ -67,7 +61,7 @@
 
 <script setup lang="ts">
 import { BottomSheet, Dialog } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import CustomTimeForm from '@/apps/mail/components/CustomTimeForm.vue'
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -108,7 +102,16 @@ const open = defineModel<boolean>('open', { default: false })
 const picking = defineModel<boolean>('picking', { default: false })
 const { isMobile } = useScreenSize()
 
-const listed = computed(() => (open.value ? choices() : []))
+// Read as the menu opens, so "Later today" counts from then. Kept while it closes, so a phone's
+// sheet slides away with its rows rather than emptying first.
+const listed = ref<TimeChoice[]>([])
+watch(
+  open,
+  (shown) => {
+    if (shown) listed.value = choices()
+  },
+  { immediate: true },
+)
 const options = computed(() =>
   timeMenuOptions(
     listed.value,
