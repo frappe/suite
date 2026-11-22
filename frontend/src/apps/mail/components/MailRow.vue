@@ -28,7 +28,9 @@
     @dragend="emit('dragEnd')"
   >
     <!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
-		     bulk selection. Long-pressing the row anywhere selects it on touch. -->
+		     bulk selection. Long-pressing the row anywhere selects it on touch. On a phone a selected
+		     row keeps its avatar, with a tick on its bottom-right corner, so the sender stays in view;
+		     elsewhere a check circle takes the avatar's place. -->
     <!-- max-sm:justify-start pins the avatar/checkbox to the row's 14px padding
 		     axis; centered, the 40px column left them 2-4px "inside" it. -->
     <div
@@ -52,20 +54,28 @@
         />
       </div>
       <div
-        v-else-if="isSelected"
-        class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full max-sm:h-10 max-sm:w-10"
+        v-else-if="isSelected && !isMobile"
+        class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full"
         @click.stop.prevent="emit('setSelected', false)"
       >
         <Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
       </div>
-      <Avatar
-        v-show="showAvatar"
-        :label="avatarLabel"
-        :image="avatarImage"
-        size="xl"
-        class="hitbox max-sm:!h-10 max-sm:!w-10"
-        @click.stop.prevent="emit('setSelected', true)"
-      />
+      <div v-show="showAvatar" class="relative">
+        <Avatar
+          :label="avatarLabel"
+          :image="avatarImage"
+          size="xl"
+          class="hitbox max-sm:!h-10 max-sm:!w-10"
+          @click.stop.prevent="emit('setSelected', !isSelected)"
+        />
+        <!-- Ringed in the selected row's own grey, so it reads as cut out of the avatar. -->
+        <span
+          v-if="isSelected"
+          class="bg-surface-gray-10 absolute -bottom-px -right-px flex size-[18px] items-center justify-center rounded-full ring-[1.5px] ring-[color:var(--surface-gray-1)]"
+        >
+          <Check class="text-ink-base size-3 stroke-[3.5px]" />
+        </span>
+      </div>
     </div>
 
     <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
@@ -261,7 +271,7 @@ const emit = defineEmits<{
   dragEnd: []
 }>()
 
-const { isFullWidth, showCheckbox, showAvatar, showLeading } = useRowLayout(() => ({
+const { isMobile, isFullWidth, showCheckbox, showAvatar, showLeading } = useRowLayout(() => ({
   selectable,
   hideAvatar,
   isSelected,
