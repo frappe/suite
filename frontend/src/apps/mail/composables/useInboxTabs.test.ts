@@ -71,7 +71,9 @@ vi.mock('@/apps/mail/utils', () => ({
 }))
 // Mail's one undo slot, as the toast's Undo and Cmd/Ctrl+Z both reach it.
 const undoSlot = vi.hoisted(() => ({ action: fromPartial<(() => unknown) | undefined>(undefined) }))
+const screen = vi.hoisted(() => ({ isMobile: { value: false } }))
 vi.mock('@/apps/mail/utils/composables', () => ({
+  useScreenSize: () => screen,
   useSettings: () => ({ openSettings: () => {} }),
   useUndo: () => ({
     setUndoAction: (action?: () => unknown) => (undoSlot.action = action),
@@ -98,6 +100,7 @@ describe('the Inbox tabs', () => {
     saved.length = 0
     toasts.length = 0
     localStorage.clear()
+    screen.isMobile.value = false
     state.store = reactive({
       userResource: {
         data: {
@@ -165,6 +168,16 @@ describe('the Inbox tabs', () => {
 
     state.route.query = { category: 'all' }
     expect([active.value, category.value]).toEqual(['all', undefined])
+  })
+
+  it('open on Primary on a phone, not the category last open', async () => {
+    screen.isMobile.value = true
+    state.route.query = { category: 'updates' }
+    const { active } = tabsFor('account')
+    await nextTick()
+
+    state.route.query = {}
+    expect(active.value).toBe('primary')
   })
 
   it('refetch the list when All mail opens, as any other tab does', async () => {

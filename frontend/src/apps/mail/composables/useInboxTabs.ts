@@ -4,6 +4,7 @@ import { useRoute, type RouteLocationNamedRaw } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 
 export type InboxCategory = 'primary' | 'updates' | 'forums' | 'promotions' | 'social'
 
@@ -56,6 +57,7 @@ export const useInboxTabs = (
   const route = useRoute()
   const store = userStore()
   const lastTab = useStorage<string>(LAST_TAB_KEY, '')
+  const { isMobile } = useScreenSize()
 
   // The whole Inbox's unread threads: the account's Inbox, or the Inbox merged across accounts (a
   // system folder's slug is its role).
@@ -86,7 +88,12 @@ export const useInboxTabs = (
   const active = computed<InboxTabId | undefined>(() => {
     if (!tabs.value.length) return undefined
     const named = (id: unknown) => tabs.value.find((tab) => tab.id === id)?.id
-    return named(route.query.category) ?? named(lastTab.value) ?? 'primary'
+    // A phone's Inbox is Primary, its other categories cards over it: it always opens there.
+    return (
+      named(route.query.category) ??
+      (isMobile.value ? undefined : named(lastTab.value)) ??
+      'primary'
+    )
   })
   const category = computed<InboxCategory | undefined>(() =>
     active.value === 'all' ? undefined : active.value,

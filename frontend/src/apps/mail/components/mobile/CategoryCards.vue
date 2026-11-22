@@ -45,6 +45,7 @@
           <span
             v-if="card.tab.unread"
             class="size-2 shrink-0 rounded-full bg-blue-500"
+            role="img"
             :aria-label="__('Unread')"
           />
           <!-- When its newest mail came, as a list row dates it. -->

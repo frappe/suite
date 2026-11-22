@@ -110,9 +110,8 @@
               </template>
               <template #actions>
                 <ClearListMenu
-                  v-if="clearScope && !selections.length"
+                  v-if="clearScope && !selections.length && listState !== 'empty'"
                   :scope="clearScope"
-                  :empty="listState === 'empty'"
                   :target="{ folder }"
                 />
                 <SelectActionButtons

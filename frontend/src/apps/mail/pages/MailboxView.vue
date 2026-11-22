@@ -176,9 +176,8 @@
 
             <template #actions>
               <ClearListMenu
-                v-if="clearScope && !selections.length"
+                v-if="clearScope && !selections.length && listState !== 'empty'"
                 :scope="clearScope"
-                :empty="listState === 'empty'"
                 :target="{ account: accountId, mailbox }"
               />
               <SelectActionButtons
@@ -190,13 +189,13 @@
             </template>
           </MailListToolbar>
 
-          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. -->
-          <MailListSkeleton
-            v-if="listState === 'loading'"
-            class="min-h-0 flex-1 overflow-hidden"
-            :selectable="!isAllAccountsSearch"
-            :date-headers="headersVisible"
-          />
+          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. Each
+               state starts with the top of the list (`listTop`), where a phone draws the cards and
+               chips, so they sit in the same place whether the list is loading, empty or there. -->
+          <div v-if="listState === 'loading'" class="min-h-0 flex-1 overflow-hidden">
+            <div ref="listTop" />
+            <MailListSkeleton :selectable="!isAllAccountsSearch" :date-headers="headersVisible" />
+          </div>
 
           <!-- Mail list -->
           <div
@@ -308,33 +307,36 @@
               <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
             </div>
           </div>
-          <div v-else class="flex h-full items-center justify-center">
-            <LoadError
-              v-if="listState === 'error'"
-              :title="__('Could not load the list.')"
-              :error="activeThreads.error"
-              @retry="retryList"
-            />
-            <!-- An empty list shows the empty-folder picture, filtered or not, unless the reading
-                 pane beside it (Split View) already shows it; a search says so in words alone. -->
-            <div v-else class="text-ink-gray-5 flex flex-col items-center">
-              <NoMails
-                v-if="mailbox !== 'search' && (isMobile || !showReadingPane)"
-                class="text-ink-gray-2 mb-2 size-16"
+          <div v-else class="flex h-full flex-col">
+            <div ref="listTop" />
+            <div class="flex min-h-0 flex-1 items-center justify-center">
+              <LoadError
+                v-if="listState === 'error'"
+                :title="__('Could not load the list.')"
+                :error="activeThreads.error"
+                @retry="retryList"
               />
-              <p>
-                {{
-                  mailbox !== 'search'
-                    ? filter
-                      ? __('No mails found for the selected filter.')
-                      : __('No mails in {0}.', [
-                          inboxCategory ? tabName(inboxCategory) : mailboxName,
-                        ])
-                    : hasSearchQuery
-                      ? __('No results found for the given query.')
-                      : __('Search your mail')
-                }}
-              </p>
+              <!-- An empty list shows the empty-folder picture, filtered or not, unless the reading
+                 pane beside it (Split View) already shows it; a search says so in words alone. -->
+              <div v-else class="text-ink-gray-5 flex flex-col items-center">
+                <NoMails
+                  v-if="mailbox !== 'search' && (isMobile || !showReadingPane)"
+                  class="text-ink-gray-2 mb-2 size-16"
+                />
+                <p>
+                  {{
+                    mailbox !== 'search'
+                      ? filter
+                        ? __('No mails found for the selected filter.')
+                        : __('No mails in {0}.', [
+                            inboxCategory ? tabName(inboxCategory) : mailboxName,
+                          ])
+                      : hasSearchQuery
+                        ? __('No results found for the given query.')
+                        : __('Search your mail')
+                  }}
+                </p>
+              </div>
             </div>
           </div>
         </template>

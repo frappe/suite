@@ -80,7 +80,7 @@
 <script setup lang="ts">
 import { usePortalTarget } from 'frappe-ui'
 import { Ellipsis, SquareCheck, X } from 'lucide-vue-next'
-import { computed, ref, type Component } from 'vue'
+import { computed, ref, watch, type Component } from 'vue'
 
 import { liftToastsOver, usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import { PHONE_BAR_BUTTONS, phoneBar, type SelectAction } from '@/apps/mail/utils/selectActions'
@@ -123,6 +123,16 @@ const showMore = ref(false)
 // What the chained sheet shows outlives its closing, or the sheet would empty as it slides away.
 const chained = ref<{ title: string; options: MenuOption[] } | null>(null)
 const chainedOpen = ref(false)
+// Its sheets sit outside the bar so they can slide away whole; they still go with it when the
+// selection empties some other way (a row unticked, the list changing), so nothing acts on none.
+watch(
+  () => open,
+  (shown) => {
+    if (shown) return
+    showMore.value = false
+    chainedOpen.value = false
+  },
+)
 
 const visible = computed(() => actions.filter((a) => a.condition()))
 const inGroup = (group: SelectAction['group']) => visible.value.filter((a) => a.group === group)
