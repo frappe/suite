@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
+from bs4 import BeautifulSoup
 from frappe.utils import now_datetime
 from frappe.utils.synchronization import filelock
 
@@ -14,6 +15,7 @@ from suite.content import capacity, checker, convert
 from suite.content.http import routes
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
+from suite.writer import drive as writer_drive
 from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused
 from suite.writer.content.tests.drive_callback_case import (
     DriveCallbackCase,
@@ -63,6 +65,12 @@ class TestDocumentWrites(DriveCallbackCase):
     def blocks_of(self, node: str) -> str:
         # The body without the ids the editor gives headings
         return re.sub(r' (id|data-toc-id)="[^"]*"', "", self.body_of(node))
+
+    def markdown_of(self, node: str) -> str:
+        # The document as Drive's content route asks Writer for it
+        docname = frappe.db.get_value(writer_drive.DOCTYPE, {"node": node})
+        stream, _mime = writer_drive.SPEC.export(docname, "markdown")
+        return stream.read().decode()
 
     def test_a_new_document_holds_the_markdown(self):
         node = self.create("# Plan\n\nShip **today**, café ✓.")
@@ -297,3 +305,44 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(
             self.answer_of(refused.exception)["message"], "A document can't keep this Markdown: empty-link"
         )
+
+    def test_a_document_reads_back_as_markdown(self):
+        node = self.create("# Plan\n\nShip **today**.")
+
+        writer_routes.document_write(node, "## Later\n\nOne more thing.", "append")
+
+        self.assertEqual(self.markdown_of(node), "# Plan\n\nShip **today**.\n\n## Later\n\nOne more thing.")
+
+    def test_a_busy_converter_answers_busy_to_a_markdown_read(self):
+        node = self.create("Hello")
+
+        with (
+            filelock(checker.LOCK),
+            patch.object(checker, "REQUEST_WAIT_S", 0.2),
+            self.assertRaises(frappe.RateLimitExceededError),
+        ):
+            self.markdown_of(node)
+
+    def test_markdown_read_and_written_back_makes_the_same_document(self):
+        node = self.create(
+            "# Plan\n\n"
+            "Ship **today**, *not* later, with `code` and [a link](https://example.com/a_b).\n\n"
+            "- one\n    - inside\n- two\n\n"
+            "1. first\n2. second\n\n"
+            "> A quote\n\n"
+            "| a | b |\n|---|---|\n| 1 | x \\| y |\n\n"
+            "```python\nif x < 1:\n    y = '*'\n```\n\n"
+            "---\n\n"
+            "![A chart](https://example.com/chart.png)\n\n"
+            "Stars \\*stay\\* and 1\\. too."
+        )
+        before = self.blocks_of(node)
+
+        writer_routes.document_write(node, self.markdown_of(node), "replace")
+
+        # A block's attributes come back in any order, which parsed blocks don't mind
+        self.assertEqual(
+            BeautifulSoup(self.blocks_of(node), "html.parser"), BeautifulSoup(before, "html.parser")
+        )
+        self.assertIn("<table>", before)
+        self.assertIn('<codeBlock language="python">', before)

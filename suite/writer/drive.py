@@ -80,7 +80,8 @@ import pycrdt
 from frappe import _
 
 from suite import drive
-from suite.content import with_content
+from suite.content import checker, with_content
+from suite.writer.content import converter
 from suite.writer.content.files import (
     BODY_FRAGMENT,
     elements,
@@ -100,6 +101,8 @@ EMPTY_BODY = "AAA="
 
 HTML_FORMAT = "html"
 HTML_MIME = "text/html"
+MARKDOWN_FORMAT = "markdown"
+MARKDOWN_MIME = "text/markdown"
 
 VERSION_SCHEMA = "writer-document/1"
 # The bytes every envelope `version_bytes` writes starts with
@@ -157,15 +160,29 @@ def duplicate(source_docname: str, node: str) -> str:
 
 
 def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
-    """Stream one document as HTML, which Drive's Download asks for by default."""
+    """Stream one document as HTML, which Drive's Download asks for by default, or as Markdown."""
+    if format == MARKDOWN_FORMAT:
+        return markdown_export(docname)
+
     if format != HTML_FORMAT:
-        frappe.throw(_("Writer exports {0} only").format(HTML_FORMAT), frappe.ValidationError)
+        frappe.throw(_("Writer does not export {0}").format(format), frappe.ValidationError)
     row = frappe.db.get_value(DOCTYPE, docname, ("html",), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
 
     html_bytes = (row.html or "").encode("utf-8")
     return io.BytesIO(html_bytes), HTML_MIME
+
+
+def markdown_export(docname: str) -> tuple[io.BytesIO, str]:
+    """Stream one document as Markdown, made from the HTML its Download gives."""
+    html, _mime = SPEC.export(docname, HTML_FORMAT)
+    try:
+        markdown = converter.markdown_of(html.read().decode("utf-8"))
+    except checker.CheckerBusy:
+        frappe.throw(_("The converter is busy. Try again in a moment."), frappe.RateLimitExceededError)
+
+    return io.BytesIO(markdown.encode("utf-8")), MARKDOWN_MIME
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
@@ -257,7 +274,7 @@ SPEC = with_content(
         listing_type="document",
         # Drive's Download sends no format; WebDAV hides documents by their node kind
         default_export=HTML_FORMAT,
-        export_formats=(HTML_FORMAT,),
+        export_formats=(HTML_FORMAT, MARKDOWN_FORMAT),
         create_empty=create_empty,
         duplicate=duplicate,
         export=export,

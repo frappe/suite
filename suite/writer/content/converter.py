@@ -3,17 +3,27 @@
 import json
 from pathlib import Path
 
-from suite.content import convert
+from suite.content import checker, convert
 
 # The Node converter `bench build` makes
 CONVERTER_BUILD = Path(__file__).with_name("dist") / "converter.cjs"
 CONVERTER_VERSION = json.loads(Path(__file__).with_name("converter-version.json").read_text())["version"]
+NEEDS_BUILD = "the Writer converter needs Node and its built bundle"
 
 
 def run(legacy: dict) -> convert.Converted | convert.Refused:
     """Convert the old body `legacy` in a request, where a site without Node or the bundle is a fault."""
     answer = convert.convert(CONVERTER_BUILD, CONVERTER_VERSION, legacy)
     if answer is None:
-        raise RuntimeError("the Writer converter needs Node and its built bundle")
+        raise RuntimeError(NEEDS_BUILD)
 
     return answer
+
+
+def markdown_of(html: str) -> str:
+    """Answer a document's HTML as Markdown, written as the browser's Markdown download writes it."""
+    answer = checker.ask(CONVERTER_BUILD, {"html": html}, minimum=convert.NODE_MIN)
+    if answer is None or "markdown" not in answer:
+        raise RuntimeError(NEEDS_BUILD)
+
+    return answer["markdown"]

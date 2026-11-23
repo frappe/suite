@@ -4,8 +4,10 @@ import { readFrames } from '@/apps/writer/collab/child-input'
 import { convertLegacy } from '@/apps/writer/collab/conversion'
 import { addInnerText } from '@/apps/writer/collab/headless-dom'
 import type { LegacyBody } from '@/apps/writer/collab/legacy-read'
+import { markdownOf } from '@/apps/writer/collab/markdown'
 
-type ConverterInput = { legacy: LegacyBody; maxState: number } | Record<string, never>
+type ConverterInput =
+  { legacy: LegacyBody; maxState: number } | { html: string } | Record<string, never>
 
 // The editor parses old HTML into a document that loads nothing; each window name is read only when
 // used, since some, like localStorage, throw on the blank page's origin
@@ -40,7 +42,7 @@ for (const name of ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']) {
 
 // The Node child the server runs per document: on stdin, frames whose first is the JSON header
 // {legacy, maxState}; on stdout, the conversion with its state in base64 and the converter
-// version. An empty header answers the version alone
+// version. A header {html} answers that HTML as Markdown, and an empty one the version alone
 const stdinChunks: Buffer[] = []
 
 function convertInput() {
@@ -49,6 +51,7 @@ function convertInput() {
   // SAFETY: this private stdin pipe is written by suite/content/convert.py, which
   // constructs {legacy, maxState} from this app's read_old result, or {} for version probes.
   // The conversion owner checks unsupported nested legacy content before producing state.
+  // suite/writer/content/converter.py writes it too, with {html} for a Markdown read
   const input = JSON.parse(headerFrame.toString()) as ConverterInput
 
   const result = 'legacy' in input ? convertLegacy(input.legacy, input.maxState) : undefined
@@ -57,8 +60,14 @@ function convertInput() {
       ? { ...result, state: Buffer.from(result.state).toString('base64') }
       : result
 
+  const markdown =
+    'html' in input
+      ? markdownOf(new DOMParser().parseFromString(input.html, 'text/html').body)
+      : undefined
+
   const reply = {
     ...answer,
+    markdown,
     version: __CONVERTER_VERSION__,
   }
   process.stdout.write(JSON.stringify(reply))
