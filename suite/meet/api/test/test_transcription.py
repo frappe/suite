@@ -6,11 +6,13 @@ from datetime import timedelta
 from unittest.mock import Mock, patch
 
 import frappe
+from frappe.api import handle
 from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 from werkzeug.wrappers import Request
 
 from suite import drive
+from suite.composition.http import handle_before_request
 from suite.meet.api import transcription
 from suite.meet.api.recording import get_preflight, start
 from suite.meet.speech_context import make_hints
@@ -27,7 +29,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 frappe.get_doc(
                     {"doctype": "User", "email": email, "first_name": "Transcription Test", "enabled": 1}
                 ).insert(ignore_permissions=True)
-        drive.ensure_personal_root(self.owner)
+        self.owner_root = drive.ensure_personal_root(self.owner)
         frappe.db.delete("Meet Transcription Job", {"room_owner": self.owner})
         frappe.db.delete("Meet Recording", {"room_owner": self.owner})
         frappe.set_user(self.owner)
@@ -272,10 +274,19 @@ class IntegrationTestTranscription(IntegrationTestCase):
         with self.assertRaises(frappe.PermissionError):
             transcription._lease(job, "old-token", "worker")
 
+    def _drive_request(self, method, path, **body):
+        request = Request.from_values(path=f"/api/suite/drive/{path}", method=method)
+        with (
+            patch.object(frappe.local, "request", request, create=True),
+            patch.object(frappe.local, "form_dict", frappe._dict(body)),
+            patch.object(frappe.local, "response", frappe._dict(type="json")),
+        ):
+            handle_before_request()
+            response = handle(request)
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()["data"]
+
     def test_transcript_only_capture_publishes_once_for_owner_and_purges_source(self):
-        from suite.drive._core import nodes
-        from suite.drive.framework import principals_for
-        from suite.drive.http.routes import node_put_grant
         from suite.meet.api.recording import get_state, stop
         from suite.meet.transcription.capture import reconcile_capture
 
@@ -352,14 +363,18 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertEqual(ready["artifact"], duplicate["artifact"])
             artifact = frappe.get_doc("Drive Node", ready["artifact"])
             self.assertEqual(artifact.title, "Original Transcript.txt")
+            self.assertEqual(artifact.owner, self.owner)
+            self.assertEqual(artifact.root, self.owner_root)
+            self.assertTrue(artifact.read_only)
+            self.assertEqual(
+                frappe.db.count("Drive Node", {"parent_node": artifact.parent_node, "kind": "file"}), 1
+            )
+            expected_content = (
+                "Transcript\n\n[00:00:01 - 00:00:03] Anita: कल Atlas signup की क़ीमत confirm करेंगे।\n"
+            ).encode()
             content, _mime = drive.read_file(artifact.name)
             with content:
-                self.assertEqual(
-                    content.read().decode("utf-8"),
-                    "Transcript\n\n[00:00:01 - 00:00:03] Anita: कल Atlas signup की क़ीमत confirm करेंगे।\n",
-                )
-            self.assertEqual(artifact.owner, self.owner)
-            principals = principals_for()
+                self.assertEqual(content.read(), expected_content)
             frappe.set_user(self.attendee)
             try:
                 with self.assertRaises(drive.DriveNotFound):
@@ -368,7 +383,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     drive.check(artifact.parent_node, drive.READ)
             finally:
                 frappe.set_user(self.owner)
-            link = node_put_grant(artifact.name, "$LINK", drive.READ)
+            link = self._drive_request("PUT", f"nodes/{artifact.name}/grants/$LINK", role=drive.READ)
             token = link["url"].removeprefix("/l/")
             frappe.set_user(self.attendee)
             try:
@@ -378,7 +393,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 with patch.object(frappe.local, "request", request, create=True):
                     stream, _mime = drive.read_file(artifact.name)
                 with stream:
-                    self.assertIn(b"Transcript", stream.read())
+                    self.assertEqual(stream.read(), expected_content)
             finally:
                 frappe.set_user(self.owner)
             self.assertFalse(
@@ -386,13 +401,12 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     "Drive Node", {"parent_node": artifact.parent_node, "title": "Recording.mp4"}
                 )
             )
-            with self.assertRaises(drive.DriveForbidden):
-                nodes.update(
-                    principals, artifact.name, blob=artifact.blob, size=artifact.size, mime=artifact.mime
-                )
-            nodes.update(principals, artifact.name, state="Trashed")
-            self.assertEqual(frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready")
-            nodes.update(principals, artifact.name, state="Active")
+            for state in ("Trashed", "Active"):
+                with self.subTest(state=state):
+                    self._drive_request("PATCH", f"nodes/{artifact.name}", state=state)
+                    self.assertEqual(
+                        frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready"
+                    )
             # Ready delivery survives recorder failure; cleanup remains retryable.
             with (
                 patch("frappe.sendmail") as notify,
@@ -413,8 +427,8 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertTrue(job.source_deleted)
             self.assertTrue(job.notification_sent_at)
             self.assertEqual(recorder.call_args.args[2], "delete")
-            nodes.update(principals, artifact.name, state="Trashed")
-            nodes.purge(principals, artifact.name)
+            self._drive_request("PATCH", f"nodes/{artifact.name}", state="Trashed")
+            self._drive_request("DELETE", f"nodes/{artifact.name}")
             transcription.maintenance()
             self.assertFalse(frappe.db.exists("Meet Transcription Job", job.name))
             with patch.object(transcription, "_authenticate"), self.assertRaises(frappe.DoesNotExistError):
