@@ -87,7 +87,7 @@ class TestWriterDocumentRow(DriveCallbackCase):
             1,
             doc.lineage,
             doc.q_epoch,
-            "<p>one</p>",
+            lambda _state: "<p>one</p>",
             writer_content.EDITOR.readable_copy,
         )
         exported, _mime = writer_drive.SPEC.export(self.docname_of(node), "html")
@@ -107,7 +107,7 @@ class TestWriterDocumentRow(DriveCallbackCase):
             1,
             doc.lineage,
             doc.q_epoch,
-            "<p>one</p>",
+            lambda _state: "<p>one</p>",
             writer_content.EDITOR.readable_copy,
         )
         frappe.db.set_value(

@@ -128,7 +128,9 @@ def check_staged(app: str, doc_id: str) -> str | None:
 
         rev = int(render.rev)
         html = payload.decode(errors="replace")
-        outcome = install(app, doc_id, rev, render.lineage, int(render.q_epoch), html, html_copy)
+        outcome = install(
+            app, doc_id, rev, render.lineage, int(render.q_epoch), lambda _state: html, html_copy
+        )
         stage.drop_renders_through(app, doc_id, rev)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         return outcome
@@ -142,20 +144,16 @@ def install(
     rev: int,
     lineage: str,
     q_epoch: int,
-    html: str | Callable[[bytes], str],
+    render: Callable[[bytes], str],
     html_copy: ReadableCopy,
 ) -> str:
-    """Make a render at `rev` the readable copy if it holds the document then: installed, stale or refused."""
+    """Make `render` of the state at `rev` the readable copy if it holds it: installed, stale or refused."""
     log_read = read(app, doc_id, integrated=True)
     if log_read is None or not renders_log(log_read, rev, lineage, q_epoch):
         return "stale"
 
     state = state_at(app, log_read, rev)
-    if not isinstance(html, str):
-        # No tab rendered this rev, so the app's copy renders the state
-        html = html(state)
-
-    clean, text = cleaned(html)
+    clean, text = cleaned(render(state))
     if not html_copy.is_html_complete(state, clean, text):
         keep_evidence(app, doc_id, "copy_refused", clean, rev)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
