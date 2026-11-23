@@ -134,6 +134,12 @@ def _refuse(kind: type, message: str, **fields) -> None:
     refuse(kind, message, **fields)
 
 
+@_route
+def throw_again(refusal: Exception) -> None:
+    """Answer `refusal` as every route here does, for a route of another product that calls Drive."""
+    raise refusal
+
+
 def _principals():
     return framework.principals_for_request()
 

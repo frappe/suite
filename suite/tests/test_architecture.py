@@ -780,6 +780,7 @@ class TestArchitecture(unittest.TestCase):
                 "store_file",
                 "stream_file",
                 "take_version",
+                "throw_again",
                 "touch",
                 "transfer_user_drive",
             ),

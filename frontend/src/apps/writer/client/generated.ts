@@ -79,6 +79,7 @@ export type DocumentCreateError =
   | 'DriveNotFound'
   | 'DriveForbidden'
   | 'DriveLocked'
+  | 'DriveLinkExpired'
   | 'DriveConflict'
   | 'MarkdownRefused'
   | 'WriteRefused'
@@ -103,6 +104,7 @@ const operationDocumentCreate: MutationRef<
     'DriveNotFound',
     'DriveForbidden',
     'DriveLocked',
+    'DriveLinkExpired',
     'DriveConflict',
     'MarkdownRefused',
     'WriteRefused',
@@ -119,6 +121,7 @@ export type DocumentWriteError =
   | 'DriveNotFound'
   | 'DriveForbidden'
   | 'DriveLocked'
+  | 'DriveLinkExpired'
   | 'DriveConflict'
   | 'MarkdownRefused'
   | 'WriteRefused'
@@ -143,6 +146,7 @@ const operationDocumentWrite: MutationRef<
     'DriveNotFound',
     'DriveForbidden',
     'DriveLocked',
+    'DriveLinkExpired',
     'DriveConflict',
     'MarkdownRefused',
     'WriteRefused',

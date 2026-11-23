@@ -95,6 +95,9 @@ def document_settings(name: str, data: str) -> None:
     frappe.get_doc("Writer Document", name).update_settings(data)
 
 
+WRITE_REFUSALS = (markdown_body.MarkdownRefused, markdown_body.WriteRefused, markdown_body.WriteBusy)
+
+
 def refusing(handler: Callable) -> Callable:
     """Throw a workflow's refusal again, as the answer carries the message of a thrown error only."""
 
@@ -102,9 +105,10 @@ def refusing(handler: Callable) -> Callable:
     def answered(*args: object, **kwargs: object) -> object:
         try:
             return handler(*args, **kwargs)
+        except WRITE_REFUSALS as refusal:
+            refuse(type(refusal), str(refusal), retry_ms=getattr(refusal, "retry_ms", None))
         except frappe.ValidationError as refusal:
-            extra = {field: getattr(refusal, field, None) for field in ("free_title", "retry_ms")}
-            refuse(type(refusal), str(refusal), **extra)
+            drive.throw_again(refusal)
 
     return answered
 
@@ -133,10 +137,9 @@ MARKDOWN_ERRORS = (
     drive.DriveNotFound,
     drive.DriveForbidden,
     drive.DriveLocked,
+    drive.DriveLinkExpired,
     drive.DriveConflict,
-    markdown_body.MarkdownRefused,
-    markdown_body.WriteRefused,
-    markdown_body.WriteBusy,
+    *WRITE_REFUSALS,
 )
 
 ROUTES = (

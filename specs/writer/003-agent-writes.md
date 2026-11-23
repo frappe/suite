@@ -59,9 +59,11 @@ A refusal answers its class and a message:
 
 | Class | Status | Meaning |
 | --- | --- | --- |
+| `DriveError` | 400 | An argument is wrong, such as an empty title |
 | `DriveNotFound` | 404 | The folder or document does not exist for this user, or the item is not a Writer document |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the document, or the document is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
+| `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | The title is taken in the folder. `free_title` names one that is free. Nothing was created |
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, or the Markdown is over 128 KB. Nothing was written |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted` or `doc_full`. The same call gets the same answer until that changes |

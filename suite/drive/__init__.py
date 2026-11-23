@@ -16,7 +16,7 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The thirteen calls an app makes are `check`, `touch`, `take_version`,
+The fourteen calls an app makes are `check`, `throw_again`, `touch`, `take_version`,
 `create_document`, `import_document`, `copy`, `adopt_media`, `read_file`,
 `stream_file`, `push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
@@ -290,6 +290,13 @@ def check(node: str, role: int) -> str | None:
     require(row, role, _principals())
     _refuse_trashed_write(row, role)
     return row.content_doctype
+
+
+def throw_again(refusal: Exception) -> None:
+    """Throw `refusal` as a Drive route answers it, so an app's route that calls Drive answers the same."""
+    from suite.drive.http.routes import throw_again as _throw_again
+
+    _throw_again(refusal)
 
 
 def create_document(
@@ -726,6 +733,7 @@ __all__ = (
     "store_file",
     "stream_file",
     "take_version",
+    "throw_again",
     "touch",
     "transfer_user_drive",
 )

@@ -117,6 +117,32 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(self.answer_of(refused.exception)["free_title"], f"{title} (2)")
         self.assertEqual(frappe.db.count("Drive Node", {"parent_node": self.folder, "title": title}), 1)
 
+    def test_an_empty_title_is_a_bad_request_with_its_reason(self):
+        with self.assertRaises(drive.DriveError) as refused:
+            writer_routes.document_create(self.folder, "", "First.")
+
+        self.assertIs(type(refused.exception), drive.DriveError)
+        self.assertEqual(refused.exception.http_status_code, 400)
+        self.assertTrue(self.answer_of(refused.exception)["message"])
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": self.folder, "title": ""}), 0)
+
+    def test_a_document_behind_a_link_password_names_the_unlock_scheme(self):
+        node = self.create("First.")
+        link = share_as_writer(node, "$LINK", drive.EDIT, password="a-long-enough-password")
+        frappe.db.commit()
+        token = link["principal"].removeprefix("$LINK:")
+        frappe.set_user(OUTSIDER)
+
+        with self.assertRaises(drive.DriveLocked) as refused:
+            call_route(
+                lambda node: writer_routes.document_write(node, "Second.", "append"), node, links=token
+            )
+
+        self.assertEqual(refused.exception.http_status_code, 401)
+        self.assertEqual(frappe.local.response_headers["WWW-Authenticate"], 'DriveLink realm="drive"')
+        frappe.set_user(WRITER)
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
     def test_a_node_that_is_not_a_document_answers_not_found(self):
         with self.assertRaises(drive.DriveNotFound):
             writer_routes.document_write(self.folder, "Second.", "append")
