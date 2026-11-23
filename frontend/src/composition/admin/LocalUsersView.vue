@@ -15,19 +15,7 @@
       <Button v-else variant="subtle" :label="__('Invite users')" @click="inviting = true" />
     </template>
 
-    <div v-if="selectedUsers.length" class="flex min-h-7 flex-wrap items-center gap-2">
-      <span class="pr-1 text-base text-ink-gray-7 tabular-nums">{{
-        __('{0} selected', [selectedUsers.length])
-      }}</span>
-      <Button
-        icon-left="lucide-circle-play"
-        :label="__('Reactivate')"
-        @click="openLifecycle(true)"
-      />
-      <Button icon-left="lucide-circle-off" :label="__('Disable')" @click="openLifecycle(false)" />
-      <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="selectedUsers = []" />
-    </div>
-    <div v-else class="flex flex-wrap items-center justify-between gap-3">
+    <div class="flex flex-wrap items-center justify-between gap-3">
       <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
         <slot name="lead" />
         <FormControl
@@ -68,6 +56,19 @@
           />
         </div>
       </div>
+    </div>
+
+    <div v-if="selectedUsers.length" class="flex min-h-7 flex-wrap items-center gap-2">
+      <span class="pr-1 text-base text-ink-gray-7 tabular-nums">{{
+        __('{0} selected', [selectedUsers.length])
+      }}</span>
+      <Button
+        icon-left="lucide-circle-play"
+        :label="__('Reactivate')"
+        @click="openLifecycle(true)"
+      />
+      <Button icon-left="lucide-circle-off" :label="__('Disable')" @click="openLifecycle(false)" />
+      <Button class="ml-auto" variant="ghost" :label="__('Done')" @click="selectedUsers = []" />
     </div>
 
     <LoadFailed

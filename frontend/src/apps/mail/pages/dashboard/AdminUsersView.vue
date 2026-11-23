@@ -61,6 +61,7 @@ import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef } from 'v
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, useQuery } from '@/api'
+import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
 import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
 import { DashboardLayout } from '@/platform/dashboard'
 import { translate as __ } from '@/platform/translation'
@@ -70,9 +71,6 @@ const AddAccountModal = defineAsyncComponent(
 )
 const FailedCreationActions = defineAsyncComponent(
   () => import('@/apps/mail/pages/dashboard/FailedCreationActions.vue'),
-)
-const InvitesView = defineAsyncComponent(
-  () => import('@/apps/mail/pages/dashboard/InvitesView.vue'),
 )
 
 // Suite composition supplies its preserved-identity directory; Mail owns invitations (§4.3).
