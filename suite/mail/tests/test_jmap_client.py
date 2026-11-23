@@ -408,8 +408,11 @@ class ClientForUser(unittest.TestCase):
 
     def setUp(self):
         # get_jmap_client is cached per request and the session per user: a user of this test's own.
+        from suite.mail.framework import close_mail_clients
+
         self.user = f"{uuid4().hex}@example.test"
         self.addCleanup(clear_jmap_session, self.user)
+        self.addCleanup(close_mail_clients)
 
         settings = mock.Mock(username=USER)
         settings.get_password.return_value = "pw"
@@ -430,6 +433,23 @@ class ClientForUser(unittest.TestCase):
         frappe.local.request_cache.clear()
         with mock.patch.object(suite_jmap, "SuiteHTTPClient", side_effect=to_fake_server):
             return get_jmap_client(self.user, ignore_permissions=True)
+
+    def test_request_cleanup_closes_discovered_and_cached_session_pools_including_account_views(self):
+        from suite.mail.framework import close_mail_clients
+
+        server = _server()
+        for cached in (False, True):
+            with self.subTest(cached_session=cached):
+                client = self.client_for_user(server)
+                view = account_view(client, SHARED)
+                _mailboxes(view)
+                self.assertFalse(client.http.is_closed)
+
+                close_mail_clients()
+
+                self.assertTrue(client.http.is_closed)
+                self.assertTrue(view.http.is_closed)
+                close_mail_clients()
 
     def test_without_a_cached_session_it_discovers_one_and_caches_it(self):
         server = _server()

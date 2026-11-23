@@ -44,7 +44,27 @@ function waitForEvent(
 	});
 }
 
-function request<T>(socket: Socket, event: string, data: object): Promise<T> {
+interface SfuHealth {
+	rooms: number;
+	peers: number;
+}
+
+async function readSfuHealth(): Promise<SfuHealth> {
+	const health: unknown = await (await fetch(`${sfuOrigin}/health`)).json();
+	if (
+		!health ||
+		typeof health !== 'object' ||
+		!('rooms' in health) ||
+		typeof health.rooms !== 'number' ||
+		!('peers' in health) ||
+		typeof health.peers !== 'number'
+	) {
+		throw new Error('SFU health response has invalid human counts');
+	}
+	return { ...health, rooms: health.rooms, peers: health.peers };
+}
+
+function request<T>(socket: Socket, event: string, data: unknown): Promise<T> {
 	return new Promise((resolve, reject) => {
 		const timeout = setTimeout(
 			() => reject(new Error(`timed out waiting for ${event} acknowledgement`)),
@@ -130,9 +150,21 @@ function runBuffer(
 }
 
 function startFfmpeg(args: string[]): ChildProcess {
+	const destination = args.at(-1);
+	if (!destination) throw new Error('Publisher destination is required');
 	const child = spawn(
 		'/usr/bin/ffmpeg',
-		['-hide_banner', '-loglevel', 'warning', ...args],
+		[
+			'-hide_banner',
+			'-loglevel',
+			'warning',
+			'-filter_threads',
+			'1',
+			...args.slice(0, -1),
+			'-threads',
+			'1',
+			destination,
+		],
 		{ stdio: ['ignore', 'ignore', 'pipe'] },
 	);
 	let diagnostics = '';
@@ -465,10 +497,7 @@ try {
 	);
 	await waitForEvent(events, 'capture_ready');
 	const captureReadyAt = performance.now();
-	const holdHealth = (await (await fetch(`${sfuOrigin}/health`)).json()) as {
-		rooms: number;
-		peers: number;
-	};
+	const holdHealth = await readSfuHealth();
 	if (holdHealth.rooms !== 1 || holdHealth.peers !== 4)
 		throw new Error(
 			`Recorder Endpoint affected human SFU counts (rooms=${holdHealth.rooms}, peers=${holdHealth.peers})`,
@@ -664,6 +693,26 @@ try {
 			`997 Hz energy was not sustained across the artifact ` +
 				`(energetic=${energeticSamples.length}/${energySamples.length}, quarters=${coveredQuarters}/4)`,
 		);
+	const continuity = await run('/usr/bin/ffmpeg', [
+		'-hide_banner',
+		'-nostats',
+		'-ss',
+		'1',
+		'-i',
+		artifact,
+		'-t',
+		String(durationSeconds - 2),
+		'-vn',
+		'-af',
+		'silencedetect=noise=-50dB:d=0.1',
+		'-f',
+		'null',
+		'-',
+	]);
+	if (continuity.stderr.includes('silence_start:'))
+		throw new Error(
+			`Captured continuous tones contain audio dropouts: ${continuity.stderr}`,
+		);
 	await Promise.all(
 		producer.processes.map((process) => stopProducerProcess(process)),
 	);
@@ -672,9 +721,7 @@ try {
 	const cleanupStartedAt = performance.now();
 	let cleanupHealth = holdHealth;
 	while (performance.now() - cleanupStartedAt < 65_000) {
-		cleanupHealth = (await (
-			await fetch(`${sfuOrigin}/health`)
-		).json()) as typeof holdHealth;
+		cleanupHealth = await readSfuHealth();
 		if (cleanupHealth.rooms === 0 && cleanupHealth.peers === 0) break;
 		await new Promise((resolve) => setTimeout(resolve, 500));
 	}

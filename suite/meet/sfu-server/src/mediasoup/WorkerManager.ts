@@ -40,7 +40,7 @@ export class WorkerManager {
 					.catch(async (error) => {
 						loggers.workerManager.error(
 							'Error during cleanup after worker death: %s',
-							(error as Error).message,
+							error instanceof Error ? error.message : String(error),
 						);
 						captureException(error);
 						await flushSentry();
@@ -92,7 +92,7 @@ export class WorkerManager {
 			} catch (error) {
 				loggers.workerManager.warn(
 					'Error closing worker: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}

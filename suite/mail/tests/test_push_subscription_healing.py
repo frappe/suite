@@ -596,3 +596,21 @@ class GetJMAPClientForDisabledUser(unittest.TestCase):
 
     def test_allow_disabled_still_refuses_a_missing_user(self):
         self.assertIn("does not exist", self._run(enabled=None, allow_disabled=True))
+
+
+class FormatPushSubscription(unittest.TestCase):
+    """``format_push_subscription`` — the list can tell this site's own subscription from others."""
+
+    def _formatted(self, device_client_id: str) -> dict:
+        return push_subscription.format_push_subscription(
+            "user@example.test",
+            {"id": "s1", "deviceClientId": device_client_id, "expires": None, "types": None},
+        )
+
+    def test_this_sites_own_subscription_says_so(self):
+        own = push_subscription.get_site_device_client_id("user@example.test")
+
+        self.assertTrue(self._formatted(own)["this_site"])
+
+    def test_another_clients_subscription_does_not(self):
+        self.assertFalse(self._formatted("someone-else")["this_site"])

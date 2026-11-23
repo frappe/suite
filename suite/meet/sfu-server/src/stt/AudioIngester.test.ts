@@ -1,5 +1,5 @@
-import type { ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Producer, Router } from 'mediasoup/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioIngester } from './AudioIngester';
@@ -48,9 +48,9 @@ function testIngester(
 		speechDetector: fixtureDetector(),
 		roomId: 'room',
 		participantId: 'speaker',
-		producer: { id: 'producer' } as Producer,
-		router: {} as Router,
-		sttClient: {} as ISttClient,
+		producer: fromPartial<Producer>({ id: 'producer' }),
+		router: fromPartial<Router>({}),
+		sttClient: fromPartial<ISttClient>({}),
 		onUnexpectedStreamClose: vi.fn(),
 		onTranscript: vi.fn(),
 		...options,
@@ -68,14 +68,10 @@ describe('AudioIngester', () => {
 		const detector = fixtureDetector();
 		vi.spyOn(detector, 'detect');
 		const ingester = testIngester({ onPcm, speechDetector: detector });
-		const internals = ingester as unknown as {
-			handleDecodedAudio(audio: Buffer): void;
-			vadQueueBytes: number;
-		};
 		const original = Buffer.concat([speechFrame(), silenceFrame()]);
-		internals.handleDecodedAudio(original);
+		ingester['handleDecodedAudio'](original);
 		expect(onPcm).toHaveBeenCalledExactlyOnceWith(original);
-		expect(internals.vadQueueBytes).toBe(0);
+		expect(ingester['vadQueueBytes']).toBe(0);
 		expect(detector.detect).not.toHaveBeenCalled();
 		await ingester.stop();
 	});
@@ -103,11 +99,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		const audio = Array.from({ length: 12 }, (_, index) =>
 			silenceFrame(index + 1),
@@ -120,53 +112,49 @@ describe('AudioIngester', () => {
 		expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(1200);
 	});
 
-	it.each([
-		undefined,
-		'1000',
-		'300',
-		'0',
-	])('preserves bounded soft-onset audio with late detector decisions and pre-roll override %s', async (override) => {
-		vi.stubEnv('STT_PRE_ROLL_MS', override);
-		let calls = 0;
-		const detector: SpeechDetector = {
-			mode: 'test',
-			reset: vi.fn(),
-			detect: async () => ({ speech: ++calls > 19 }),
-		};
-		const stream = testStream();
-		const ingester = testIngester({
-			speechDetector: detector,
-		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
-		internals.sttStream = stream;
-		const softPrefix = Array.from({ length: 19 }, (_, index) => {
-			const frame = Buffer.alloc(FRAME_BYTES);
-			for (let offset = 0; offset < frame.length; offset += 2)
-				frame.writeInt16LE(20 + index, offset);
-			return frame;
-		});
-		const positiveFrame = speechFrame();
-		internals.handleDecodedAudio(
-			Buffer.concat([...softPrefix, positiveFrame, positiveFrame]),
-		);
-		await internals.runVadCheck();
-		const expectedPrefix =
-			override === undefined
-				? softPrefix
-				: override === '1000'
-					? softPrefix.slice(-10)
-					: override === '300'
-						? softPrefix.slice(-3)
-						: [];
-		expect(
-			Buffer.concat(stream.sendAudio.mock.calls.map(([frame]) => frame)),
-		).toEqual(Buffer.concat([...expectedPrefix, positiveFrame, positiveFrame]));
-		expect(stream.markFinal).not.toHaveBeenCalled();
-	});
+	it.each([undefined, '1000', '300', '0'])(
+		'preserves bounded soft-onset audio with late detector decisions and pre-roll override %s',
+		async (override) => {
+			vi.stubEnv('STT_PRE_ROLL_MS', override);
+			let calls = 0;
+			const detector: SpeechDetector = {
+				mode: 'test',
+				reset: vi.fn(),
+				detect: async () => ({ speech: ++calls > 19 }),
+			};
+			const stream = testStream();
+			const ingester = testIngester({
+				speechDetector: detector,
+			});
+			const internals = ingester;
+			internals.sttStream = stream;
+			const softPrefix = Array.from({ length: 19 }, (_, index) => {
+				const frame = Buffer.alloc(FRAME_BYTES);
+				for (let offset = 0; offset < frame.length; offset += 2)
+					frame.writeInt16LE(20 + index, offset);
+				return frame;
+			});
+			const positiveFrame = speechFrame();
+			internals.handleDecodedAudio(
+				Buffer.concat([...softPrefix, positiveFrame, positiveFrame]),
+			);
+			await internals.runVadCheck();
+			const expectedPrefix =
+				override === undefined
+					? softPrefix
+					: override === '1000'
+						? softPrefix.slice(-10)
+						: override === '300'
+							? softPrefix.slice(-3)
+							: [];
+			expect(
+				Buffer.concat(stream.sendAudio.mock.calls.map(([frame]) => frame)),
+			).toEqual(
+				Buffer.concat([...expectedPrefix, positiveFrame, positiveFrame]),
+			);
+			expect(stream.markFinal).not.toHaveBeenCalled();
+		},
+	);
 
 	it('does not send a stale speech decision after stop during inference', async () => {
 		let finish: (value: { speech: boolean }) => void = () => {};
@@ -182,11 +170,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		internals.handleDecodedAudio(speechFrame());
 		const checking = internals.runVadCheck();
@@ -210,13 +194,8 @@ describe('AudioIngester', () => {
 			speechDetector: detector,
 			onUnexpectedStreamClose: failed,
 		});
-		const internals = ingester as unknown as {
-			running: boolean;
-			sttStream: ISttStream;
-			handleDecodedAudio(audio: Buffer): void;
-			startVadLoop(): void;
-		};
-		internals.running = true;
+		const internals = ingester;
+		internals['running'] = true;
 		internals.sttStream = stream;
 		internals.handleDecodedAudio(speechFrame());
 		internals.startVadLoop();
@@ -250,20 +229,15 @@ describe('AudioIngester', () => {
 		const stream = testStream();
 		const ingester = testIngester({
 			speechDetector: undefined,
-			sttClient: {
+			sttClient: fromPartial<ISttClient>({
 				createStream: vi.fn().mockResolvedValue(stream),
-			} as unknown as ISttClient,
+			}),
 		});
 		const transport = {
 			connect: vi.fn().mockResolvedValue(undefined),
 			close: vi.fn(),
 		};
-		const internals = ingester as unknown as {
-			setupPlainTransport(): Promise<void>;
-			createConsumer(): Promise<void>;
-			startFfmpeg(): Promise<void>;
-			plainTransport: typeof transport | null;
-		};
+		const internals = ingester;
 		vi.spyOn(internals, 'setupPlainTransport').mockImplementation(async () => {
 			internals.plainTransport = transport;
 		});
@@ -319,19 +293,14 @@ describe('AudioIngester', () => {
 			});
 		const onTranscript = vi.fn();
 		const ingester = testIngester({
-			sttClient: { createStream } as unknown as ISttClient,
+			sttClient: fromPartial<ISttClient>({ createStream }),
 			onTranscript,
 		});
 		const transport = {
 			connect: vi.fn().mockResolvedValue(undefined),
 			close: vi.fn(),
 		};
-		const internals = ingester as unknown as {
-			setupPlainTransport(): Promise<void>;
-			createConsumer(): Promise<void>;
-			startFfmpeg(): Promise<void>;
-			plainTransport: typeof transport | null;
-		};
+		const internals = ingester;
 		vi.spyOn(internals, 'setupPlainTransport').mockImplementation(async () => {
 			internals.plainTransport = transport;
 		});
@@ -362,11 +331,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			speechDetector: detector,
 		});
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(data: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		internals.handleDecodedAudio(silenceFrame(45));
 		await internals.runVadCheck();
@@ -404,64 +369,59 @@ describe('AudioIngester', () => {
 		).toEqual(Buffer.concat([speechFrame(), speechFrame()]));
 	});
 
-	it.each([
-		false,
-		true,
-	])('handles a single positive block after DTX without interrupting capture, pre-roll=%s', async (withPreRoll) => {
-		vi.useFakeTimers();
-		const stream = testStream();
-		const onFailure = vi.fn();
-		const ingester = testIngester({
-			onUnexpectedStreamClose: onFailure,
-		});
-		const internals = ingester as unknown as {
-			running: boolean;
-			sttStream: ISttStream;
-			handleDecodedAudio(data: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
-		internals.running = true;
-		internals.sttStream = stream;
-		if (withPreRoll) internals.handleDecodedAudio(silenceFrame(32));
-		internals.handleDecodedAudio(speechFrame());
-		await internals.runVadCheck();
-		vi.advanceTimersByTime(699);
-		await internals.runVadCheck();
-		expect(stream.markFinal).not.toHaveBeenCalled();
-		expect(stream.close).not.toHaveBeenCalled();
-		vi.advanceTimersByTime(1);
-		await internals.runVadCheck();
-		if (withPreRoll) {
-			expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(200);
-			expect(stream.close).not.toHaveBeenCalled();
-			expect(onFailure).not.toHaveBeenCalled();
-			stream.sendAudio.mockClear();
-			internals.handleDecodedAudio(speechFrame());
+	it.each([false, true])(
+		'handles a single positive block after DTX without interrupting capture, pre-roll=%s',
+		async (withPreRoll) => {
+			vi.useFakeTimers();
+			const stream = testStream();
+			const onFailure = vi.fn();
+			const ingester = testIngester({
+				onUnexpectedStreamClose: onFailure,
+			});
+			const internals = ingester;
+			internals['running'] = true;
+			internals.sttStream = stream;
+			if (withPreRoll) internals.handleDecodedAudio(silenceFrame(32));
 			internals.handleDecodedAudio(speechFrame());
 			await internals.runVadCheck();
-			expect(stream.sendAudio).toHaveBeenCalledTimes(2);
-			await ingester.stop();
-		} else {
+			vi.advanceTimersByTime(699);
+			await internals.runVadCheck();
 			expect(stream.markFinal).not.toHaveBeenCalled();
-			expect(stream.sendAudio).not.toHaveBeenCalled();
 			expect(stream.close).not.toHaveBeenCalled();
-			expect(onFailure).not.toHaveBeenCalled();
-			// Subsequent speech uses the same stream and contains no old fragment.
-			const nextSpeech = Buffer.from(speechFrame());
-			nextSpeech.writeInt16LE(123, 2);
-			internals.handleDecodedAudio(Buffer.concat([nextSpeech, nextSpeech]));
+			vi.advanceTimersByTime(1);
 			await internals.runVadCheck();
-			vi.advanceTimersByTime(700);
-			await internals.runVadCheck();
-			expect(
-				Buffer.concat(stream.sendAudio.mock.calls.map(([frame]) => frame)),
-			).toEqual(Buffer.concat([nextSpeech, nextSpeech]));
-			expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(200);
-			expect(stream.close).not.toHaveBeenCalled();
-			expect(onFailure).not.toHaveBeenCalled();
-			await ingester.stop();
-		}
-	});
+			if (withPreRoll) {
+				expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(200);
+				expect(stream.close).not.toHaveBeenCalled();
+				expect(onFailure).not.toHaveBeenCalled();
+				stream.sendAudio.mockClear();
+				internals.handleDecodedAudio(speechFrame());
+				internals.handleDecodedAudio(speechFrame());
+				await internals.runVadCheck();
+				expect(stream.sendAudio).toHaveBeenCalledTimes(2);
+				await ingester.stop();
+			} else {
+				expect(stream.markFinal).not.toHaveBeenCalled();
+				expect(stream.sendAudio).not.toHaveBeenCalled();
+				expect(stream.close).not.toHaveBeenCalled();
+				expect(onFailure).not.toHaveBeenCalled();
+				// Subsequent speech uses the same stream and contains no old fragment.
+				const nextSpeech = Buffer.from(speechFrame());
+				nextSpeech.writeInt16LE(123, 2);
+				internals.handleDecodedAudio(Buffer.concat([nextSpeech, nextSpeech]));
+				await internals.runVadCheck();
+				vi.advanceTimersByTime(700);
+				await internals.runVadCheck();
+				expect(
+					Buffer.concat(stream.sendAudio.mock.calls.map(([frame]) => frame)),
+				).toEqual(Buffer.concat([nextSpeech, nextSpeech]));
+				expect(stream.markFinal).toHaveBeenCalledExactlyOnceWith(200);
+				expect(stream.close).not.toHaveBeenCalled();
+				expect(onFailure).not.toHaveBeenCalled();
+				await ingester.stop();
+			}
+		},
+	);
 
 	it('drains queued VAD frames with explicit 300 ms pre-roll ordering', async () => {
 		vi.stubEnv('STT_PRE_ROLL_MS', '300');
@@ -483,11 +443,7 @@ describe('AudioIngester', () => {
 		const speechSilence = silenceFrame();
 		const speech2 = speechFrame();
 		const remainder = Buffer.alloc(FRAME_BYTES / 2);
-		const internals = ingester as unknown as {
-			handleDecodedAudio(audio: Buffer): void;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.handleDecodedAudio(
 			Buffer.concat([...silences, speech1, speechSilence, speech2, remainder]),
 		);
@@ -516,11 +472,7 @@ describe('AudioIngester', () => {
 		vi.useFakeTimers();
 		const stream = testStream();
 		const ingester = testIngester();
-		const internals = ingester as unknown as {
-			sttStream: ISttStream;
-			handleDecodedAudio(data: Buffer): void;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		for (let frame = 0; frame < 6; frame++) {
 			internals.handleDecodedAudio(speechFrame());
@@ -558,11 +510,7 @@ describe('AudioIngester', () => {
 	it('finalizes continuous speech at the maximum utterance duration', async () => {
 		const stream = testStream();
 		const ingester = testIngester();
-		const internals = ingester as unknown as {
-			handleDecodedAudio(audio: Buffer): void;
-			sttStream: ISttStream;
-			runVadCheck(): Promise<void>;
-		};
+		const internals = ingester;
 		internals.sttStream = stream;
 		for (let index = 0; index < 151; index++) {
 			internals.handleDecodedAudio(speechFrame());
@@ -578,7 +526,7 @@ describe('AudioIngester', () => {
 		const ingester = testIngester({
 			onUnexpectedStreamClose: onFailure,
 		});
-		const process = new EventEmitter() as ChildProcess;
+		const process = new EventEmitter();
 		Object.assign(process, {
 			killed: false,
 			exitCode: null,
@@ -588,14 +536,10 @@ describe('AudioIngester', () => {
 				return true;
 			}),
 		});
-		const internals = ingester as unknown as {
-			running: boolean;
-			ffmpeg: ChildProcess | null;
-			watchFfmpeg(process: ChildProcess): void;
-		};
-		internals.running = true;
-		internals.ffmpeg = process;
-		internals.watchFfmpeg(process);
+		const internals = ingester;
+		internals['running'] = true;
+		internals['ffmpeg'] = process;
+		internals['watchFfmpeg'](process);
 
 		process.emit('error', new Error('decoder failed'));
 		process.emit('exit', 1, null);

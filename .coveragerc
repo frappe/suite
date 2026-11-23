@@ -1,0 +1,9 @@
+[run]
+branch = true
+
+[report]
+# Frappe supplies its own run-time omit list. Exclude Suite's tests when
+# reporting too, including DocType tests outside a tests directory.
+omit =
+    */tests/*
+    */test_*.py

@@ -1,128 +1,46 @@
 # Copyright (c) 2026, Asif and Contributors
 # See license.txt
-"""Permission-shape tests for the whitelisted API.
+"""The whitelisted Sheets API offers no way to write a body but the live room.
 
-These are *not* end-to-end (no DB), they just assert that each endpoint
-calls ``frappe.has_permission`` with the right ptype. That's the
-specific shape the security audit said needed to stick: read-only users
-must not be able to push mutation-shaped broadcasts, and write-shaped
-endpoints must consult write permission before doing anything else.
+Every edit reaches a sheet through the content layer's room
+(`suite.sheets.content`), which checks access on each push. The old endpoints
+that saved `sheets_data`, wrote the op log, or relayed edits and presence over
+realtime are gone, so nothing can write a sheet around that check.
 """
 
 from __future__ import annotations
 
 import unittest
-from unittest import mock
+
+from suite.composition.http import Route
+from suite.sheets import api
+from suite.sheets.http.routes import CONTRACT_ROUTES
+
+OLD_SAVE_PATH = (
+    "save_sheet",
+    "record_op",
+    "broadcast_op",
+    "broadcast_cursor",
+    "ping_presence",
+    "yjs_relay",
+)
 
 
-class _PermCheckBase(unittest.TestCase):
-    def setUp(self):
-        patcher = mock.patch("suite.sheets.api.frappe")
-        self.frappe = patcher.start()
-        self.addCleanup(patcher.stop)
-        self.frappe.session.user = "alice@example.com"
-        # `has_permission` returns True by default — endpoints proceed past
-        # the gate so we can also assert what they emit downstream.
-        self.frappe.has_permission.return_value = True
+class OldSavePathIsGone(unittest.TestCase):
+    def test_the_api_has_no_old_save_path_endpoint(self):
+        for name in OLD_SAVE_PATH:
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(api, name))
 
+    def test_no_route_writes_a_body_or_reads_the_op_log(self):
+        routes: tuple[Route, ...] = CONTRACT_ROUTES
+        paths = {route.path for route in routes}
+        self.assertNotIn("/api/method/suite.sheets.api.save_sheet", paths)
+        self.assertFalse([path for path in paths if "versioning" in path])
 
-class BroadcastsRequireWrite(_PermCheckBase):
-    def test_broadcast_op_requires_write(self):
-        from suite.sheets import api
-
-        api.broadcast_op("SH-1", '{"op_type":"edit"}')
-        self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="write", throw=True)
-
-    def test_yjs_update_requires_write(self):
-        from suite.sheets import api
-
-        api.yjs_relay("SH-1", "yjs_update", "<opaque>")
-        self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="write", throw=True)
-
-    def test_yjs_state_requires_write(self):
-        from suite.sheets import api
-
-        api.yjs_relay("SH-1", "yjs_state", "<opaque>")
-        self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="write", throw=True)
-
-
-class PresenceStaysRead(_PermCheckBase):
-    def test_ping_presence_is_read(self):
-        from suite.sheets import api
-
-        # user_identity does a db lookup; stub the fields out.
-        self.frappe.db.get_value.return_value = ""
-        api.ping_presence("SH-1")
-        # Only the read-shape call matters here.
-        args, kwargs = self.frappe.has_permission.call_args
-        self.assertEqual(kwargs.get("doc"), "SH-1")
-        self.assertEqual(kwargs.get("throw"), True)
-        # No ptype kwarg ⇒ defaults to read.
-        self.assertNotIn("ptype", kwargs)
-
-    def test_yjs_awareness_is_read(self):
-        from suite.sheets import api
-
-        api.yjs_relay("SH-1", "yjs_awareness", "<opaque>")
-        self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="read", throw=True)
-
-    def test_yjs_state_request_is_read(self):
-        from suite.sheets import api
-
-        api.yjs_relay("SH-1", "yjs_state_request", "<opaque>")
-        self.frappe.has_permission.assert_called_with("Sheet", doc="SH-1", ptype="read", throw=True)
-
-
-class UnknownYjsEventRejected(_PermCheckBase):
-    def test_unknown_event_throws_before_perm_check(self):
-        from suite.sheets import api
-
-        self.frappe.throw.side_effect = RuntimeError("nope")
-        with self.assertRaises(RuntimeError):
-            api.yjs_relay("SH-1", "yjs_eval_payload", "<opaque>")
-        # Throw must fire before we even consult perms — otherwise an attacker
-        # can use the perm check as an oracle for sheet existence.
-        self.frappe.has_permission.assert_not_called()
-
-
-class ShareSheetRejectsDisabledUsers(_PermCheckBase):
-    def test_disabled_user_rejected(self):
-        from suite.sheets import api
-
-        # `enabled = 0` → throw.
-        self.frappe.db.get_value.return_value = 0
-        self.frappe.throw.side_effect = RuntimeError("disabled")
-        with self.assertRaises(RuntimeError):
-            api.share_sheet("SH-1", "bob@example.com")
-        self.frappe.share.add.assert_not_called()
-
-    def test_missing_user_rejected(self):
-        from suite.sheets import api
-
-        self.frappe.db.get_value.return_value = None
-        self.frappe.throw.side_effect = RuntimeError("not found")
-        with self.assertRaises(RuntimeError):
-            api.share_sheet("SH-1", "ghost@example.com")
-        self.frappe.share.add.assert_not_called()
-
-    def test_enabled_user_shared(self):
-        from suite.sheets import api
-
-        self.frappe.db.get_value.return_value = 1
-        api.share_sheet("SH-1", "bob@example.com", write=1)
-        self.frappe.share.add.assert_called_once()
-
-
-class RenameSheetGated(_PermCheckBase):
-    def test_rename_checks_write_before_load(self):
-        from suite.sheets import api
-
-        self.frappe.get_doc.return_value = mock.Mock(name="SH-1")
-        api.rename_sheet("SH-1", "New title")
-        # Write perm must be the first thing checked.
-        first_call = self.frappe.has_permission.call_args_list[0]
-        self.assertEqual(first_call.kwargs.get("ptype"), "write")
-        self.assertEqual(first_call.kwargs.get("doc"), "SH-1")
+    def test_the_old_body_still_opens_read_only_and_a_new_sheet_can_be_made(self):
+        self.assertTrue(callable(api.get_sheet))
+        self.assertTrue(callable(api.create_sheet))
 
 
 if __name__ == "__main__":

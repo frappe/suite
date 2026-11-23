@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import type { ISttClient } from '../../stt/SttClient';
 import { SttManager } from '../../stt/SttManager';
@@ -38,23 +39,29 @@ describe('caption lifecycle cleanup', () => {
 		const disconnecting = captureHandler('disconnect', 'socket-2');
 		const leave = vi.fn().mockResolvedValue(undefined);
 		const disconnect = vi.fn().mockResolvedValue(undefined);
-		registerRoomJoinHandlers({
-			participantConnections: { leave },
-			sttManager,
-		} as never)(leaving.socket as never);
-		registerDisconnectHandlers({
-			authManager: { cleanupSocket: vi.fn() },
-			participantConnections: { disconnect },
-			sttManager,
-			telemetry: { socketDisconnects: { inc: vi.fn() } },
-		} as never)(disconnecting.socket as never);
+		registerRoomJoinHandlers(
+			fromPartial({
+				participantConnections: { leave },
+				sttManager,
+			}),
+		)(fromPartial(leaving.socket));
+		registerDisconnectHandlers(
+			fromPartial({
+				authManager: { cleanupSocket: vi.fn() },
+				participantConnections: { disconnect },
+				sttManager,
+				telemetry: { socketDisconnects: { inc: vi.fn() } },
+			}),
+		)(fromPartial(disconnecting.socket));
 
 		await leaving.getHandler()?.();
 
 		expect(sttManager.hasSubscribers('room-1')).toBe(true);
 		expect(stopRoom).not.toHaveBeenCalled();
 
-		await disconnecting.getHandler()?.('client namespace disconnect' as never);
+		await disconnecting.getHandler()?.(
+			fromPartial('client namespace disconnect'),
+		);
 
 		expect(sttManager.hasSubscribers('room-1')).toBe(false);
 		expect(stopRoom).toHaveBeenCalledOnce();
@@ -74,20 +81,25 @@ describe('caption lifecycle cleanup', () => {
 				target.e2eeRequired = token === 'e2ee-token';
 			},
 		);
-		registerAuthHandlers({
-			authManager: { updateSocketToken },
-			sttManager,
-			telemetry: { authEvents: { inc: vi.fn() } },
-		} as never)(socket as never);
+		registerAuthHandlers(
+			fromPartial({
+				authManager: { updateSocketToken },
+				sttManager,
+				telemetry: { authEvents: { inc: vi.fn() } },
+			}),
+		)(fromPartial(socket));
 		const callback = vi.fn();
 
-		getHandler()?.({ token: 'plain-token' } as never, callback as never);
+		getHandler()?.(
+			fromPartial({ token: 'plain-token' }),
+			fromPartial(callback),
+		);
 
 		expect(callback).toHaveBeenLastCalledWith({ success: true });
 		expect(sttManager.hasSubscribers('room-1')).toBe(true);
 		expect(stopRoom).not.toHaveBeenCalled();
 
-		getHandler()?.({ token: 'e2ee-token' } as never, callback as never);
+		getHandler()?.(fromPartial({ token: 'e2ee-token' }), fromPartial(callback));
 		await vi.waitFor(() => expect(stopRoom).toHaveBeenCalledOnce());
 
 		expect(callback).toHaveBeenLastCalledWith({ success: true });

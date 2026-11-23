@@ -1,0 +1,136 @@
+/* Unscoped: frappe-ui's Dropdown teleports its menu to document.body, so a
+   scoped rule never reaches it. A menu may use the room the window has for
+   it (reka measures that for the popper), so it scrolls only when it doesn't
+   fit. frappe-ui beta.3 named the teleported menu `.dropdown-content`; beta.25
+   (the version Suite ships) renamed it to `.menu-content` /
+   `[data-reka-menu-content]`, so target every marker or the limit silently
+   stops matching after a frappe-ui bump and the menu clips off-screen.
+   `body:has(.sn-root)` keeps it off other apps' menus. */
+body:has(.sn-root) .dropdown-content,
+body:has(.sn-root) .dropdown-content [data-slot='content-body'],
+body:has(.sn-root) .menu-content,
+body:has(.sn-root) [data-reka-menu-content] {
+  max-height: var(--reka-popper-available-height);
+  overflow-y: auto;
+}
+/* A menu that does scroll gets a slim thumb, not the system bar and its arrows.
+   Chrome ignores these while scrollbar-width is set, and the app sets it to
+   thin everywhere, so a panel resets it. Firefox has no such pseudo-elements. */
+@supports selector(::-webkit-scrollbar) {
+  body:has(.sn-root) .menu-content {
+    scrollbar-width: auto;
+  }
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar {
+  width: 6px;
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar-button {
+  display: none;
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+body:has(.sn-root) .menu-content::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--surface-gray-4);
+}
+/* reka-ui teleports the popover to <body> (frappe-ui default z-index:50) with
+   no marker we can target, so the slicer's column menu rendered behind the
+   floating slicer (8400) / context menu (9000). Gate the bump on
+   `body:has(.sn-slicer)` — only while a Sheets slicer is floating — so
+   dropdowns everywhere else in the app (and other Suite products) keep their
+   normal stacking. The doubled class still outranks the single-class default. */
+body:has(.sn-slicer) .dropdown-content.dropdown-content,
+body:has(.sn-slicer) .menu-content.menu-content {
+  z-index: 9500;
+}
+
+/* A Frappe UI Dialog draws a translucent (~12% black) scrim over the grid.
+   The pivot-output highlight and other canvas
+   decorations sit above canvas content. Hide those whenever a dialog is up.
+   `.dialog-overlay` portals to <body>, so `:has` from body catches every
+   open dialog modal. Floating charts stay: they are content, and the
+   scrim (z-50) already sits above their layer (z-25). */
+body:has(.dialog-overlay) .sn-pivot-highlight,
+body:has(.dialog-overlay) .sn-pivot-fab,
+body:has(.dialog-overlay) .sn-remote-cursor,
+body:has(.dialog-overlay) .sn-filter-overlay {
+  display: none;
+}
+
+/* Overlay scrollbars for the canvas grid. The elements are created imperatively
+   in canvas/scrollbars.ts (appended to .sn-grid-wrap), so they carry no scoped
+   data-attr — these rules must live in the UNSCOPED block to reach them.
+   z-index sits above the filter (14) / pivot (15) range outlines so the thumb
+   stays on top of any outline that reaches the scrollbar gutter, but below the
+   notes drawer (30) and popovers. */
+.sn-sb {
+  position: absolute;
+  z-index: 16;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+/* --sn-sb-thick is published by canvas/scrollbars.ts from SCROLLBAR_THICK, the
+   single source of truth; the 12px fallback only covers the pre-mount frame.
+   The track is wider than the thumb so the thumb is easy to grab. */
+.sn-sb-v {
+  top: 0;
+  right: 0;
+  width: var(--sn-sb-thick, 12px);
+}
+.sn-sb-h {
+  left: 0;
+  bottom: 0;
+  height: var(--sn-sb-thick, 12px);
+}
+/* Auto-hidden state — faded out and click-through so cells under the gutter
+   stay reachable. JS (canvas/scrollbars.ts) toggles this on inactivity. */
+.sn-sb--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.sn-sb-thumb {
+  position: absolute;
+  border-radius: 3px;
+  background: var(--ink-gray-4);
+  transition: background 0.12s ease;
+  cursor: grab;
+  touch-action: none;
+}
+.sn-sb-v .sn-sb-thumb {
+  top: 0;
+  right: 2px;
+  width: 6px;
+}
+.sn-sb-h .sn-sb-thumb {
+  left: 0;
+  bottom: 2px;
+  height: 6px;
+}
+.sn-sb-thumb:hover {
+  background: var(--ink-gray-5);
+}
+.sn-sb-dragging .sn-sb-thumb {
+  background: var(--ink-gray-6);
+  cursor: grabbing;
+}
+.sn-sb-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* A collaborator's colour, the shades Writer uses (platform/collab/colours).
+   The element carries both modes' shades from colourStyle(); the theme picks
+   one. Unscoped: the avatars and tab dots live in other components. */
+.sn-peer {
+  --rc: var(--peer-light);
+  --rc-tint: var(--peer-light-tint);
+  --rc-ink: var(--peer-light-ink);
+  --rc-selection: var(--peer-light-selection);
+}
+:root[data-theme='dark'] .sn-peer {
+  --rc: var(--peer-dark);
+  --rc-tint: var(--peer-dark-tint);
+  --rc-ink: var(--peer-dark-ink);
+  --rc-selection: var(--peer-dark-selection);
+}

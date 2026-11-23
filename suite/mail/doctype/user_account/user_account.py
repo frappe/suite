@@ -91,6 +91,12 @@ def get_user_jmap_accounts(user: str | None = None, raise_exception: bool = Fals
     return accounts
 
 
+def get_account_users(account: str) -> list[str]:
+    """Every user who holds the JMAP account: one for a personal account, each member for a shared one."""
+
+    return frappe.db.get_all("User Account", {"account": account}, pluck="user")
+
+
 def is_jmap_account_belongs_to_user(
     account: str, user: str | None = None, raise_exception: bool = False
 ) -> bool:

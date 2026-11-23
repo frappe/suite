@@ -1,0 +1,270 @@
+<!-- Owns Calendar account readiness, meeting participants and scheduling for both home screens. -->
+<template>
+  <Dialog v-model:open="open" :title="__('Schedule meet')" dismissible>
+    <template #default>
+      <div class="space-y-4" @keydown.meta.enter.prevent.stop="submit">
+        <div v-if="readiness !== 'ready' && readiness !== 'loading'" class="space-y-3">
+          <Alert :description="accountMessage" />
+          <div class="flex gap-2">
+            <Button @click="loadAccount">{{ __('Retry') }}</Button>
+            <Button
+              v-if="
+                readiness === 'missing' &&
+                canManageAccounts &&
+                session.user.value?.is_mail_server_configured
+              "
+              :to="{ name: 'mail-accounts' }"
+            >
+              {{ __('Open Admin users') }}
+            </Button>
+          </div>
+        </div>
+        <Alert
+          v-if="submitError"
+          theme="red"
+          :title="__('Could not schedule the meeting')"
+          :description="submitError"
+        />
+        <FormControl v-model="title" :label="__('Title')" :placeholder="__('Team meeting')" />
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <FormControl
+            v-model="date"
+            :label="__('Date')"
+            type="date"
+            format="MMM D, YYYY"
+            :placeholder="__('Select date')"
+          />
+          <FormControl
+            v-model="startTime"
+            :label="__('Start')"
+            type="time"
+            :interval="15"
+            format="h:mm A"
+            :placeholder="__('Select time')"
+          />
+          <FormControl
+            v-model="endTime"
+            :label="__('End')"
+            type="time"
+            :interval="15"
+            format="h:mm A"
+            :placeholder="__('Select time')"
+          />
+        </div>
+        <ParticipantSelector
+          v-if="readiness === 'ready'"
+          v-model="participants"
+          :account="accountId"
+          :display-participants="scheduledParticipants"
+          :excluded-emails="currentUserEmail ? [currentUserEmail] : []"
+        />
+        <FormControl
+          v-else
+          :label="__('Participants')"
+          :placeholder="__('Enter participants')"
+          disabled
+        />
+      </div>
+    </template>
+    <template #actions>
+      <div class="flex justify-end">
+        <Button
+          :label="__('Schedule')"
+          variant="solid"
+          :loading="scheduleMeeting.isPending || showAccountProgress"
+          :disabled="readiness !== 'ready' || !isTimeValid"
+          @click="submit"
+        />
+      </div>
+    </template>
+  </Dialog>
+</template>
+
+<script setup lang="ts">
+import { Alert, Button, Dialog, FormControl } from 'frappe-ui'
+import { computed, ref, watch } from 'vue'
+
+import { api, useMutation, useQuery } from '@/api'
+import {
+  adjustScheduleEndTime,
+  adjustScheduleStartTime,
+  calendarDayjs as dayjs,
+  defaultScheduleWindow,
+  ParticipantSelector,
+  useCalendarUserStore,
+} from '@/apps/calendar'
+import { toast } from '@/platform/feedback'
+import { useSession } from '@/platform/session'
+import { userTimeZone } from '@/platform/time-zone'
+import { translate as __ } from '@/platform/translation'
+import { TransportError } from '@/platform/transport'
+
+interface CalendarParticipant {
+  email: string
+  _name?: string
+  user_image?: string
+  participation_status?: string
+  expect_reply?: boolean
+  isNew?: boolean
+}
+
+const emit = defineEmits<{ scheduled: [] }>()
+const open = ref(false)
+const calendarStore = useCalendarUserStore()
+const session = useSession()
+const readiness = ref<'loading' | 'ready' | 'missing' | 'denied' | 'failed'>('loading')
+const ACCOUNT_PROGRESS_DELAY_MS = 300
+const showAccountProgress = ref(false)
+const accountId = computed(() => {
+  const id = calendarStore.accountId
+  return calendarStore.userResource.data?.accounts.some((account) => account.id === id) ? id : ''
+})
+const submitError = ref('')
+const canManageAccounts = computed(() => !!session.capabilities.value.suiteAdmin)
+const accountMessage = computed(() => {
+  if (readiness.value === 'failed')
+    return __('Could not load Calendar account. Retry to check availability.')
+  if (readiness.value === 'denied')
+    return __(
+      'Your account cannot access Calendar. Ask a site administrator to review your access.',
+    )
+  if (!session.user.value?.is_mail_server_configured)
+    return __(
+      'Scheduling needs a configured mail account. Ask a site administrator to configure mail, then retry.',
+    )
+  return canManageAccounts.value
+    ? __(
+        'You do not have a Calendar account. Open Admin users to review your Mail account setup, then retry.',
+      )
+    : __("You don't have a Mail account. Ask your admin to add one, then retry.")
+})
+const title = ref('')
+const opening = defaultScheduleWindow(new Date())
+const date = ref(opening.date)
+const startTime = ref(opening.startTime)
+const endTime = ref(opening.endTime)
+const participants = ref<CalendarParticipant[]>([])
+
+watch(startTime, (value) => {
+  endTime.value = adjustScheduleEndTime(value, endTime.value)
+})
+watch(endTime, (value) => {
+  startTime.value = adjustScheduleStartTime(startTime.value, value)
+})
+
+const userResource = useQuery(api.suite.account.get)
+const start = computed(() => dayjs(`${date.value}T${startTime.value}`))
+const end = computed(() => dayjs(`${date.value}T${endTime.value}`))
+const isTimeValid = computed(
+  () =>
+    Boolean(date.value && startTime.value && endTime.value) &&
+    start.value.isValid() &&
+    end.value.isValid() &&
+    end.value.isAfter(start.value),
+)
+const duration = computed(() => {
+  if (!isTimeValid.value) return ''
+  const diff = dayjs.duration(end.value.diff(start.value))
+  return dayjs
+    .duration({ hours: Math.floor(diff.asHours()), minutes: diff.minutes() })
+    .toISOString()
+})
+const currentUserEmail = computed(
+  () => calendarStore.userResource.data?.name || userResource.data?.name,
+)
+const scheduledParticipants = computed(() => {
+  const attendees: CalendarParticipant[] = currentUserEmail.value
+    ? [
+        {
+          email: currentUserEmail.value,
+          _name: calendarStore.userResource.data?.full_name || userResource.data?.full_name,
+          user_image: userResource.data?.avatar,
+          participation_status: 'ACCEPTED',
+        },
+      ]
+    : []
+  attendees.push(...participants.value)
+  return attendees
+})
+const scheduleMeeting = useMutation(api.meet.meetings.createCalendar, { silent: true })
+
+watch(
+  () => open.value && readiness.value === 'loading',
+  (checking, _, onCleanup) => {
+    showAccountProgress.value = false
+    if (!checking) return
+    const timer = setTimeout(() => (showAccountProgress.value = true), ACCOUNT_PROGRESS_DELAY_MS)
+    onCleanup(() => clearTimeout(timer))
+  },
+)
+
+async function show() {
+  open.value = true
+  submitError.value = ''
+  if (accountId.value) {
+    readiness.value = 'ready'
+    return
+  }
+  await loadAccount()
+}
+
+async function loadAccount() {
+  readiness.value = 'loading'
+  try {
+    await calendarStore.loadUser()
+    readiness.value = accountId.value ? 'ready' : 'missing'
+  } catch (error) {
+    readiness.value =
+      error instanceof TransportError && error.type === 'AccountSetupRequired'
+        ? 'missing'
+        : error instanceof TransportError && error.type === 'PermissionError'
+          ? 'denied'
+          : 'failed'
+  }
+}
+
+async function submit() {
+  if (scheduleMeeting.isPending || readiness.value !== 'ready') return
+  if (!accountId.value) {
+    readiness.value = 'missing'
+    return
+  }
+  if (!isTimeValid.value) {
+    toast.error(
+      __(
+        'Could not schedule the meeting. Enter a valid date and an end time after the start time.',
+      ),
+    )
+    return
+  }
+  submitError.value = ''
+  // The dialog stays open on a failure and says why in its own alert, so no toast repeats it; the
+  // Schedule button's spinner is the progress.
+  try {
+    await scheduleMeeting.run({
+      account: accountId.value,
+      title: title.value,
+      start: start.value.format('YYYY-MM-DD[T]HH:mm:ss'),
+      duration: duration.value,
+      time_zone: userTimeZone(),
+      participants: scheduledParticipants.value.map((participant) => ({ ...participant })),
+      send_scheduling_messages: scheduledParticipants.value.length > 1,
+    })
+  } catch (error) {
+    submitError.value =
+      error instanceof TransportError &&
+      ['ValidationError', 'BadRequest', 'PermissionError'].includes(error.type) &&
+      error.status >= 400 &&
+      error.status < 500 &&
+      error.message
+        ? error.message
+        : __('Your details are kept. Try again.')
+    return
+  }
+  open.value = false
+  toast.success(__('Meeting scheduled'))
+  emit('scheduled')
+}
+
+defineExpose({ show })
+</script>

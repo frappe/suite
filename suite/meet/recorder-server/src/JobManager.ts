@@ -27,9 +27,7 @@ const ACTIVE_TRANSITIONS: Record<JobRecord['state'], JobRecord['state'][]> = {
 };
 
 function terminal(job: JobRecord): boolean {
-	return TERMINAL_STATES.includes(
-		job.state as (typeof TERMINAL_STATES)[number],
-	);
+	return TERMINAL_STATES.some((state) => state === job.state);
 }
 
 export type ReserveResult =
@@ -510,7 +508,10 @@ export class JobManager {
 					this.healthDeliveries.delete(job);
 			});
 		this.healthDeliveries.set(job, delivery);
-		if (queueTimeoutMs === undefined) return delivery as Promise<T>;
+		if (queueTimeoutMs === undefined) {
+			// SAFETY: Without a queue deadline, cancelled is never set, so delivery resolves only the callback's T.
+			return delivery as Promise<T>;
+		}
 		return new Promise<T>((resolve, reject) => {
 			timer = setTimeout(() => {
 				if (started) return;
@@ -519,7 +520,10 @@ export class JobManager {
 			}, queueTimeoutMs);
 			delivery.then(
 				(value) => {
-					if (!cancelled) resolve(value as T);
+					if (!cancelled) {
+						// SAFETY: Only a cancelled queued callback returns the extra undefined; this branch excludes cancellation.
+						resolve(value as T);
+					}
 				},
 				(error: unknown) => {
 					if (!cancelled) reject(error);
@@ -638,22 +642,21 @@ export class JobManager {
 					record.resumed_capture_started_at = recovery.capture_started_at;
 					record.recovered_at = recovery.recovered_at;
 				}
-				if (type === 'complete' || type === 'partial')
+				if (type === 'complete' || type === 'partial') {
 					record.artifact = {
 						state: type,
 						path: artifact?.file ?? 'recording.mp4',
-						...(artifact
-							? {
-									bytes: artifact.bytes,
-									sha256: artifact.sha256,
-									duration_ms: artifact.duration_ms,
-									gaps: gaps ?? [],
-								}
-							: {}),
 					};
+					if (artifact) {
+						record.artifact.bytes = artifact.bytes;
+						record.artifact.sha256 = artifact.sha256;
+						record.artifact.duration_ms = artifact.duration_ms;
+						record.artifact.gaps = gaps ?? [];
+					}
+				}
 				if (reason) record.health_reason = reason.slice(0, 256);
 				else delete record.health_reason;
-				if (TERMINAL_STATES.includes(type as (typeof TERMINAL_STATES)[number]))
+				if (TERMINAL_STATES.some((state) => state === type))
 					record.terminal_at ??= new Date().toISOString();
 			});
 			cleanup = type === 'failed';
@@ -671,12 +674,7 @@ export class JobManager {
 		await healthDelivery;
 		if (cleanup) await this.bridge.stop(job, generation);
 		const terminal = this.store.get(job);
-		if (
-			terminal &&
-			TERMINAL_STATES.includes(
-				terminal.state as (typeof TERMINAL_STATES)[number],
-			)
-		)
+		if (terminal && TERMINAL_STATES.some((state) => state === terminal.state))
 			this.scheduleTerminal(terminal);
 	}
 

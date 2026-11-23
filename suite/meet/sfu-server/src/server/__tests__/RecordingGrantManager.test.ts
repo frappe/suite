@@ -2,6 +2,7 @@ import type { JsonWebKey } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import * as jwt from 'jsonwebtoken';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -294,7 +295,7 @@ describe('RecordingGrantManager', () => {
 		await expect(
 			manager.verifyProofAndConsume(
 				manager.verifyGrant(makeToken(), NOW),
-				challenge as RecordingProofChallenge,
+				fromPartial<RecordingProofChallenge>(challenge),
 				vectorSignature,
 				'socket-vector',
 				NOW + 1,

@@ -87,7 +87,7 @@ def add_invite_to_calendar(account: str, blob_id: str) -> dict:
     not an RSVP. Idempotent: an event whose UID is already on the calendar is not recreated."""
 
     client = get_account_client(account)
-    event_id = _ensure_on_calendar(client, account, _parse_events(client, blob_id))
+    event_id = ensure_on_calendar(client, account, _parse_events(client, blob_id))
 
     if formatted := get_calendar_events(account, [event_id]):
         return formatted[0]
@@ -104,7 +104,7 @@ def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
     server's own scheduling mail otherwise. Returns the updated calendar copy."""
 
     client = get_account_client(account)
-    event_id = _ensure_on_calendar(client, account, _parse_events(client, blob_id))
+    event_id = ensure_on_calendar(client, account, _parse_events(client, blob_id))
     record_rsvp(account, event_id, response)
 
     if formatted := get_calendar_events(account, [event_id]):
@@ -113,7 +113,7 @@ def rsvp_to_invite(account: str, blob_id: str, response: str) -> dict:
     frappe.throw(_("Could not record your response."))
 
 
-def _ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict]) -> str:
+def ensure_on_calendar(client: SuiteJMAPClient, account: str, events: list[dict]) -> str:
     """Creates the parsed events that aren't on the calendar yet (idempotent by UID, on the default
     calendar, no scheduling messages) and returns the master id of the invite's event: the first
     in the file, which is the one the reader is shown and answers. Only that event failing to get

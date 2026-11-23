@@ -1,0 +1,112 @@
+{
+  "sheet": {
+    "v": 2,
+    "current": "Summary",
+    "sheets": {
+      "Budget": {
+        "rows": {
+          "0": ["Item", "Amount", "Share"],
+          "1": ["Rent", "1200", "=B2/B$4"],
+          "2": ["Food", "350.5", "=B3/B$4"],
+          "3": ["Total", "=SUM(B2:B3)"],
+          "5": ["Paid on the 1st of each month"]
+        }
+      },
+      "Summary": {
+        "rows": {
+          "0": ["Total ×2", "=Budget!B4*2"],
+          "1": ["Costs", "=SUM(Costs)"],
+          "2": ["Code", "007"]
+        }
+      }
+    }
+  },
+  "formats": {
+    "Budget": {
+      "cells": {
+        "A1": {
+          "bold": true,
+          "backgroundColor": "#FFEE00"
+        },
+        "B1": {
+          "bold": true,
+          "backgroundColor": "#FFEE00"
+        },
+        "C1": {
+          "bold": true,
+          "backgroundColor": "#FFEE00"
+        },
+        "B2": {
+          "numberFormat": "currency:USD:2"
+        },
+        "B3": {
+          "numberFormat": "currency:USD:2"
+        },
+        "B4": {
+          "numberFormat": "currency:USD:2"
+        },
+        "C2": {
+          "numberFormat": "percentage:1"
+        },
+        "C3": {
+          "numberFormat": "percentage:1"
+        },
+        "A4": {
+          "italic": true,
+          "color": "#1F6FEB",
+          "align": "right"
+        }
+      },
+      "cols": {},
+      "rows": {}
+    }
+  },
+  "merge": {
+    "Budget": {
+      "masterMap": {
+        "A6": {
+          "rowSpan": 1,
+          "colSpan": 3,
+          "r": 5,
+          "c": 0
+        }
+      },
+      "slaveMap": {
+        "B6": "A6",
+        "C6": "A6"
+      }
+    }
+  },
+  "comments": null,
+  "validation": null,
+  "protection": null,
+  "condFormat": null,
+  "sortFilter": null,
+  "slicers": null,
+  "pivot": null,
+  "charts": null,
+  "namedRanges": {
+    "entries": {
+      "COSTS": {
+        "name": "Costs",
+        "sheet": "Budget",
+        "range": "B2:B3"
+      }
+    }
+  },
+  "view": {
+    "Budget": {
+      "colW": {
+        "0": 160
+      },
+      "rowH": {
+        "5": 36
+      },
+      "freezeRows": 1,
+      "freezeCols": 0,
+      "hiddenRows": [],
+      "hiddenCols": [],
+      "zoom": 1
+    }
+  }
+}

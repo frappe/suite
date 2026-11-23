@@ -86,7 +86,7 @@ export class SttManager {
 		} catch (error) {
 			loggers.stt.error(
 				'Speech detector preload failed: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 		}
 	}
@@ -117,7 +117,7 @@ export class SttManager {
 	}
 
 	/** Aggregate rooms, subscribers, ingesters, and held streams; recovering ingesters lack streams. */
-	getResourceCounts(): Record<string, number> {
+	getResourceCounts() {
 		return {
 			stt_subscribed_rooms: this.roomSubscribers.size,
 			stt_subscribers: [...this.roomSubscribers.values()].reduce(
@@ -220,7 +220,7 @@ export class SttManager {
 					loggers.stt.warn(
 						'Failed to recover STT stream for %s: %s',
 						sessionKey,
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				});
 			},
@@ -260,7 +260,9 @@ export class SttManager {
 						loggers.stt.warn(
 							'STT capacity recovery failed for %s: %s',
 							sessionKey,
-							(recoveryError as Error).message,
+							recoveryError instanceof Error
+								? recoveryError.message
+								: String(recoveryError),
 						);
 					});
 				} else {
@@ -349,7 +351,7 @@ export class SttManager {
 					ingester.stop().catch((error) => {
 						loggers.stt.error(
 							'Error stopping ingester: %s',
-							(error as Error).message,
+							error instanceof Error ? error.message : String(error),
 						);
 					}),
 				);
@@ -397,7 +399,7 @@ export class SttManager {
 				loggers.stt.warn(
 					'Failed to restart STT for room %s: %s',
 					roomId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			});
 		}
@@ -490,7 +492,7 @@ export class SttManager {
 					loggers.stt.warn(
 						'STT stream recovery attempt failed for %s: %s',
 						sessionKey,
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 				}
 			}

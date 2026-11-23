@@ -1,11 +1,5 @@
-import {
-  computed,
-  ref,
-  shallowReactive,
-  toValue,
-  type MaybeRefOrGetter,
-} from 'vue'
 import { defineStore } from 'pinia'
+import { computed, ref, shallowReactive, toValue, type MaybeRefOrGetter } from 'vue'
 
 export interface PaletteCommand {
   id: string
@@ -17,10 +11,7 @@ export interface PaletteCommand {
   keywords?: string[]
   disabled?: boolean
   keepOpen?: boolean
-  run: (context?: {
-    query: string
-    filters?: Record<string, string>
-  }) => void | Promise<void>
+  run: (context?: { query: string; filters?: Record<string, string> }) => void | Promise<void>
 }
 
 export interface PaletteCommandGroup {
@@ -50,14 +41,10 @@ export const useRootStore = defineStore('suite-root', () => {
     document.documentElement.setAttribute('data-theme-mode', next)
   }
 
-  function registerPaletteGroups(
-    owner: string,
-    groups: MaybeRefOrGetter<PaletteCommandGroup[]>,
-  ) {
+  function registerPaletteGroups(owner: string, groups: MaybeRefOrGetter<PaletteCommandGroup[]>) {
     paletteRegistrations.set(owner, groups)
     return () => {
-      if (paletteRegistrations.get(owner) === groups)
-        paletteRegistrations.delete(owner)
+      if (paletteRegistrations.get(owner) === groups) paletteRegistrations.delete(owner)
     }
   }
 

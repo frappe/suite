@@ -164,7 +164,10 @@ describe('shared presentation slots', () => {
 
 it('compacts only tail survivors when departures reduce the population below capacity', () => {
 	const { stage } = room();
-	stage.inventory(participants.filter(p => ['c', 'd'].includes(p.participant_id)), {});
+	stage.inventory(
+		participants.filter((p) => ['c', 'd'].includes(p.participant_id)),
+		{},
+	);
 	expect(stage.snapshot.presentationOrders?.[4]).toEqual(['c', 'd']);
 	stage.inventory(participants, {});
 	expect(stage.snapshot.presentationOrders?.[4]).toEqual(['c', 'd', 'a', 'b']);
@@ -173,14 +176,20 @@ it('compacts only tail survivors when departures reduce the population below cap
 
 it('keeps remote slots when local self enters and exits the ranked prefix', () => {
 	const { stage } = room();
-	stage.activity(['d']); vi.advanceTimersByTime(1000); stage.activity([]);
-	stage.activity(['b']); vi.advanceTimersByTime(1000); stage.activity([]);
+	stage.activity(['d']);
+	vi.advanceTimersByTime(1000);
+	stage.activity([]);
+	stage.activity(['b']);
+	vi.advanceTimersByTime(1000);
+	stage.activity([]);
 	const before = stage.snapshotFor('a');
 	expect(before.presentationOrders?.[2]).toEqual(['b', 'd']);
-	stage.activity(['a']); vi.advanceTimersByTime(1000);
+	stage.activity(['a']);
+	vi.advanceTimersByTime(1000);
 	expect(stage.snapshotFor('a').participantIds[0]).toBe('a');
 	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'd']);
-	stage.activity([]); vi.advanceTimersByTime(120000);
+	stage.activity([]);
+	vi.advanceTimersByTime(120000);
 	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
 	expect(stage.snapshotFor('a').excludedParticipantId).toBe('a');
 	stage.close();
@@ -188,13 +197,37 @@ it('keeps remote slots when local self enters and exits the ranked prefix', () =
 
 it('gives equal hidden-self viewers and a late viewer the same remote slots', () => {
 	const { stage } = room();
-	const viewers = ['viewer-one', 'viewer-two'].map(id => ({ ...participants[0], participant_id: id, video_enabled: false }));
+	const viewers = ['viewer-one', 'viewer-two'].map((id) => ({
+		...participants[0],
+		participant_id: id,
+		video_enabled: false,
+	}));
 	stage.inventory([...participants, ...viewers], {});
-	stage.activity(['d']); vi.advanceTimersByTime(1000);
-	expect(stage.snapshotFor('viewer-one').presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
-	expect(stage.snapshotFor('viewer-two').presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
-	stage.inventory([...participants, ...viewers, { ...viewers[0], participant_id: 'late-viewer' }], {});
-	expect(stage.snapshotFor('late-viewer').presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
+	stage.activity(['d']);
+	vi.advanceTimersByTime(1000);
+	expect(stage.snapshotFor('viewer-one').presentationOrders?.[3]).toEqual([
+		'a',
+		'b',
+		'd',
+	]);
+	expect(stage.snapshotFor('viewer-two').presentationOrders?.[3]).toEqual([
+		'a',
+		'b',
+		'd',
+	]);
+	stage.inventory(
+		[
+			...participants,
+			...viewers,
+			{ ...viewers[0], participant_id: 'late-viewer' },
+		],
+		{},
+	);
+	expect(stage.snapshotFor('late-viewer').presentationOrders?.[3]).toEqual([
+		'a',
+		'b',
+		'd',
+	]);
 	const reconnect = stage.snapshotFor('viewer-one');
 	expect(reconnect.presentationOrders?.[3]).toEqual(['a', 'b', 'd']);
 	stage.close();
@@ -225,9 +258,20 @@ it('discards departed projections after identity churn', () => {
 		);
 	}
 	stage.inventory(participants, {});
-	expect(stage.snapshotFor('guest-5').presentationOrders?.[2]).toEqual(['a', 'b']);
-	stage.inventory([...participants, { ...participants[0], participant_id: 'guest-5' }], {});
-	expect(stage.snapshotFor('guest-5').presentationOrders?.[4]).toEqual(['a', 'b', 'c', 'd']);
+	expect(stage.snapshotFor('guest-5').presentationOrders?.[2]).toEqual([
+		'a',
+		'b',
+	]);
+	stage.inventory(
+		[...participants, { ...participants[0], participant_id: 'guest-5' }],
+		{},
+	);
+	expect(stage.snapshotFor('guest-5').presentationOrders?.[4]).toEqual([
+		'a',
+		'b',
+		'c',
+		'd',
+	]);
 	expect(stage.snapshotFor('a').presentationOrders?.[2]).toEqual(['b', 'c']);
 	stage.close();
 });
@@ -235,7 +279,7 @@ it('discards departed projections after identity churn', () => {
 it('publishes activity changes even when ranking and presentation remain unchanged', () => {
 	vi.useFakeTimers();
 	const updates: import('../../types').SharedStageState[] = [];
-	const stage = new SharedStage(state => updates.push(state));
+	const stage = new SharedStage((state) => updates.push(state));
 	stage.inventory(participants, {});
 	stage.activity(['a']);
 	vi.advanceTimersByTime(1000);

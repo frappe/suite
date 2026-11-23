@@ -4,13 +4,17 @@ from suite.mail.doctype.sieve_script.sieve_script import enqueue_automation_siev
 
 
 def execute() -> None:
-    """Regenerate the automation Sieve script of every account with screening enabled.
+    """Regenerate the automation Sieve script of every account with screening enabled, for a change
+    to the Screening gate. Rerun under a new suffix in patches.txt for each such change.
 
-    The Screening gate screened only mail whose spamtest value was below 2. That held while Stalwart
+    First run: the Screening gate screened only mail whose spamtest value was below 2. That held while Stalwart
     reported nothing but 1 (ham) or 10 (spam); from v0.16.19 it reports 2-4 for ham with a positive
     score, so that mail from unscreened senders skipped the Screener and landed in the Inbox. The gate
     now cuts at 5 — Stalwart's spam verdict — and recreates a missing Screener instead of letting the
     server fall back to the Inbox.
+
+    Second run (#delivery-reports): the gate marked bounces from MAILER-DAEMON unscreened, as mail
+    from a new sender; it now keeps a delivery report that is not spam unmarked.
 
     Each account keeps its stored script until something rebuilds it, and nothing does on a schedule —
     ``build_automation_sieve`` only runs when a user touches a folder, a rule, or screening. Only

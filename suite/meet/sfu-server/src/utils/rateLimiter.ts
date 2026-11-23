@@ -3,6 +3,11 @@ interface RateLimitEntry {
 	resetTime: number;
 }
 
+interface RateLimiterStats {
+	totalKeys: number;
+	activeKeys: number;
+}
+
 export class RateLimiter {
 	private limits: Map<string, RateLimitEntry> = new Map();
 	private cleanupInterval: NodeJS.Timeout;
@@ -67,7 +72,7 @@ export class RateLimiter {
 		}
 	}
 
-	getStats(): { totalKeys: number; activeKeys: number } {
+	getStats(): RateLimiterStats {
 		const now = Date.now();
 		let activeKeys = 0;
 

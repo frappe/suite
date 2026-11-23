@@ -6,7 +6,7 @@ SCHEDULER_SMOKE_METHOD = "suite.meet.api.recording.reconcile_pending_recordings"
 
 
 def enqueue_worker_smoke() -> str:
-    job = frappe.enqueue(mark_worker_ready, queue="short", job_id="suite-ci-worker-ready")
+    job = frappe.enqueue(mark_worker_ready, queue="short", job_id="suite-ci-worker-ready", at_front=True)
     return job.id
 
 

@@ -1,17 +1,18 @@
 import { ref } from 'vue'
-import { activeElementIds, activeElement } from '@/apps/slides/stores/element'
+
+import { activeElement, activeElementIds } from '@/apps/slides/stores/element'
 
 const isNavigationPanelOpen = ref(true)
 
 const toggleNavigationPanel = (e) => {
-	if (!activeElementIds.value.length || e.type === 'click') {
-		isNavigationPanelOpen.value = !isNavigationPanelOpen.value
-	}
+  if (!activeElementIds.value.length || e.type === 'click') {
+    isNavigationPanelOpen.value = !isNavigationPanelOpen.value
+  }
 }
 
 export const useNavigationPanel = () => {
-	return {
-		isNavigationPanelOpen,
-		toggleNavigationPanel,
-	}
+  return {
+    isNavigationPanelOpen,
+    toggleNavigationPanel,
+  }
 }

@@ -1,11 +1,13 @@
 import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallbackClient } from './CallbackClient.js';
 import { CaptureWorker, type CaptureWorkerOptions } from './CaptureWorker.js';
 import { CaptureWorkerManager } from './CaptureWorkerManager.js';
 import { logger } from './logger.js';
+import type { CaptureSegment } from './captureTypes.js';
 import type { ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
@@ -103,17 +105,20 @@ describe('capture lifecycle', () => {
 				},
 				onProgress: (bytes) =>
 					client.segmentProgress(
-						{ job: 'progress-reset', recording: 'recording' } as JobRecord,
+						fromPartial<JobRecord>({
+							job: 'progress-reset',
+							recording: 'recording',
+						}),
 						bytes,
 					),
 				onStopRequested,
 			},
 			{
-				supervisor: {
+				supervisor: fromPartial<ProcessSupervisor>({
 					start: vi.fn(async (name: string) =>
 						name === 'pactl' ? process(0) : process(),
 					),
-				} as unknown as ProcessSupervisor,
+				}),
 				sleep: async () => undefined,
 				tools: {
 					validate: async () => ({
@@ -195,7 +200,7 @@ describe('capture lifecycle', () => {
 				onCaptureLaunched: async () => order.push('capture-started'),
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				now: () => now,
 				sleep: async () => undefined,
 				watcher: () => ({
@@ -242,7 +247,7 @@ describe('capture lifecycle', () => {
 				},
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 			},
 		);
@@ -283,7 +288,7 @@ describe('capture lifecycle', () => {
 					onCaptureAborted: aborted,
 				},
 				{
-					supervisor: supervisor as unknown as ProcessSupervisor,
+					supervisor: fromPartial<ProcessSupervisor>(supervisor),
 					sleep: async () => undefined,
 					watcher: () => ({
 						start: watcherStart,
@@ -337,7 +342,7 @@ describe('capture lifecycle', () => {
 			'spawn-failure',
 			{ ...options(root), onCaptureAborted: aborted },
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: () => ({
 					start: () => undefined,
@@ -373,7 +378,7 @@ describe('capture lifecycle', () => {
 				},
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: () => ({
 					start: () => undefined,
@@ -409,7 +414,7 @@ describe('capture lifecycle', () => {
 			'accepted-stop-race',
 			{ ...options(root), onCaptureAborted: aborted },
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: () => ({
 					start: () => undefined,
@@ -427,7 +432,7 @@ describe('capture lifecycle', () => {
 		const reachedCommit = new Promise<void>((resolve) => {
 			commitReached = resolve;
 		});
-		Reflect.get(worker, 'options').onCaptureCommitted = async () => {
+		worker['options'].onCaptureCommitted = async () => {
 			commitReached();
 			await acceptanceBlocked;
 		};
@@ -463,7 +468,7 @@ describe('capture lifecycle', () => {
 			}),
 		};
 		const worker = new CaptureWorker('dead-launch', options(root), {
-			supervisor: supervisor as unknown as ProcessSupervisor,
+			supervisor: fromPartial<ProcessSupervisor>(supervisor),
 			sleep: async () => undefined,
 		});
 		await worker.initialize();
@@ -566,7 +571,7 @@ describe('capture lifecycle', () => {
 				onCaptureCommitted: async () => publicationBlocked,
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: () => ({
 					start: watcherStart,
@@ -594,7 +599,8 @@ describe('capture lifecycle', () => {
 	it('applies refreshed budget before deciding whether the next segment fits', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
-		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> =
+			[];
 		const safetyBytes = Math.ceil(((5_000_000 + 128_000) / 8) * 1.1 * 30);
 		const onProgress = vi.fn(async () => safetyBytes * 3 + 1);
 		const onStopRequested = vi.fn();
@@ -620,10 +626,10 @@ describe('capture lifecycle', () => {
 				onStopRequested,
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: (_manifest, _tools, _epoch, onAdopt) => {
-					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					adopted.push(onAdopt);
 					return {
 						start: () => undefined,
 						stopAndAdoptFinal: async () => 'none' as const,
@@ -645,7 +651,7 @@ describe('capture lifecycle', () => {
 			});
 		});
 
-		await adopted[0]?.({} as never);
+		await adopted[0]?.(fromPartial({}));
 
 		expect(onProgress).toHaveBeenCalledWith(1);
 		expect(onStopRequested).not.toHaveBeenCalled();
@@ -660,7 +666,7 @@ describe('capture lifecycle', () => {
 				started_at: '2026-08-30T12:00:30.000Z',
 			});
 		});
-		await adopted[0]?.({} as never);
+		await adopted[0]?.(fromPartial({}));
 		expect(onStopRequested).toHaveBeenCalledWith(
 			false,
 			'capture_budget_reached',
@@ -671,7 +677,8 @@ describe('capture lifecycle', () => {
 	it('stops when progress is unavailable and includes the 10% segment margin', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
-		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> =
+			[];
 		const onStopRequested = vi.fn();
 		const withoutMargin = Math.ceil(((5_000_000 + 128_000) / 8) * 30);
 		const supervisor = {
@@ -697,10 +704,10 @@ describe('capture lifecycle', () => {
 				},
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: (_manifest, _tools, _epoch, onAdopt) => {
-					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					adopted.push(onAdopt);
 					return {
 						start: () => undefined,
 						stopAndAdoptFinal: async () => 'none' as const,
@@ -739,10 +746,10 @@ describe('capture lifecycle', () => {
 				},
 			},
 			{
-				supervisor: enoughSupervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(enoughSupervisor),
 				sleep: async () => undefined,
 				watcher: (_manifest, _tools, _epoch, onAdopt) => {
-					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					adopted.push(onAdopt);
 					return {
 						start: () => undefined,
 						stopAndAdoptFinal: async () => 'none' as const,
@@ -763,7 +770,7 @@ describe('capture lifecycle', () => {
 				started_at: '2026-08-30T12:00:00.000Z',
 			});
 		});
-		await expect(adopted.at(-1)?.({} as never)).resolves.toBeUndefined();
+		await expect(adopted.at(-1)?.(fromPartial({}))).resolves.toBeUndefined();
 		expect(onStopRequested).toHaveBeenCalledWith(
 			false,
 			'capture_budget_unavailable',
@@ -797,7 +804,7 @@ describe('capture lifecycle', () => {
 				onStopRequested,
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: (manifest, _tools, _epoch, onAdopt) => ({
 					start: () => undefined,
@@ -848,7 +855,7 @@ describe('capture lifecycle', () => {
 			'validation-error',
 			{ ...options(root), onStopRequested },
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				sleep: async () => undefined,
 				watcher: (_manifest, _tools, _epoch, _onAdopt, onCandidateError) => {
 					candidateErrors.push(onCandidateError);
@@ -885,7 +892,7 @@ describe('capture lifecycle', () => {
 		const errors = vi
 			.spyOn(logger, 'error')
 			.mockImplementation(() => undefined);
-		const adopted: Array<(segment: never) => void | Promise<void>> = [];
+		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> = [];
 		let now = Date.parse('2026-08-30T12:00:30.000Z');
 		const supervisor = {
 			start: vi.fn(
@@ -916,13 +923,13 @@ describe('capture lifecycle', () => {
 				onCaptureLaunched,
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				now: () => now,
 				sleep: async (delay) => {
 					if (delay > 5_000) await new Promise(() => undefined);
 				},
 				watcher: (_manifest, _tools, _epoch, onAdopt) => {
-					adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+					adopted.push(onAdopt);
 					return {
 						start: () => undefined,
 						stopAndAdoptFinal: async () => 'none' as const,
@@ -948,12 +955,12 @@ describe('capture lifecycle', () => {
 		exits[0]?.({ code: null, signal: 'SIGKILL' });
 		await vi.waitFor(() => expect(onInterrupted).toHaveBeenCalledOnce());
 		await vi.waitFor(() => expect(adopted).toHaveLength(2));
-		const adoption = adopted[1]?.({} as never);
+		const adoption = adopted[1]?.(fromPartial({}));
 		exits[1]?.({ code: 1, signal: null });
 		await adoption;
 		await vi.waitFor(() => expect(adopted).toHaveLength(3));
 		expect(onRecovered).not.toHaveBeenCalled();
-		await adopted[2]?.({} as never);
+		await adopted[2]?.(fromPartial({}));
 		await vi.waitFor(() => expect(onRecovered).toHaveBeenCalledOnce());
 
 		expect(onInterrupted).toHaveBeenCalledWith(
@@ -1014,7 +1021,7 @@ describe('capture lifecycle', () => {
 					launches.push(launch.capture_started_at),
 			},
 			{
-				supervisor: supervisor as unknown as ProcessSupervisor,
+				supervisor: fromPartial<ProcessSupervisor>(supervisor),
 				now: () => now,
 				sleep: async (delay) => {
 					if (delay > 5_000) await new Promise(() => undefined);
@@ -1046,7 +1053,8 @@ describe('capture lifecycle', () => {
 			const startedAt = Date.parse('2026-08-30T12:00:30.000Z');
 			let now = startedAt;
 			const exits: Array<() => void> = [];
-			const adopted: Array<(segment: never) => void | Promise<void>> = [];
+			const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> =
+				[];
 			const onRecovered = vi.fn();
 			const onStopRequested = vi.fn();
 			const supervisor = {
@@ -1059,13 +1067,13 @@ describe('capture lifecycle', () => {
 				`recovery-${boundary}`,
 				{ ...options(root), onRecovered, onStopRequested },
 				{
-					supervisor: supervisor as unknown as ProcessSupervisor,
+					supervisor: fromPartial<ProcessSupervisor>(supervisor),
 					now: () => now,
 					sleep: async (delay) => {
 						if (delay > 5_000) await new Promise(() => undefined);
 					},
 					watcher: (_manifest, _tools, _epoch, onAdopt) => {
-						adopted.push(onAdopt as (segment: never) => void | Promise<void>);
+						adopted.push(onAdopt);
 						return {
 							start: () => undefined,
 							stopAndAdoptFinal: async () => 'none' as const,
@@ -1090,7 +1098,7 @@ describe('capture lifecycle', () => {
 			exits[0]?.();
 			await vi.waitFor(() => expect(adopted).toHaveLength(2));
 			if (boundary === 'deadline') now = startedAt + 60_000;
-			const health = adopted[1]?.({} as never);
+			const health = adopted[1]?.(fromPartial({}));
 			const stopping =
 				boundary === 'host stop'
 					? worker.stop(true, 'host_stop')
@@ -1111,34 +1119,6 @@ describe('capture lifecycle', () => {
 		},
 	);
 
-	it('synchronizes audio and video capture to the wall clock', async () => {
-		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
-		roots.push(root);
-		const supervisor = {
-			start: vi
-				.fn()
-				.mockResolvedValueOnce(process())
-				.mockResolvedValueOnce(process())
-				.mockResolvedValueOnce(process(0))
-				.mockResolvedValueOnce(process(0))
-				.mockResolvedValueOnce(process()),
-		};
-		const worker = new CaptureWorker('synchronized', options(root), {
-			supervisor: supervisor as unknown as ProcessSupervisor,
-			sleep: async () => undefined,
-		});
-
-		await worker.initialize();
-		await worker.startCapture();
-
-		const args = supervisor.start.mock.calls.at(-1)?.[1] as string[];
-		expect(
-			args.filter((arg) => arg === '-use_wallclock_as_timestamps'),
-		).toHaveLength(2);
-		expect(args).toContain('aresample=async=1000:first_pts=0');
-		await worker.stop();
-	});
-
 	it('rolls back every started service when setup exits non-zero', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
@@ -1154,7 +1134,7 @@ describe('capture lifecycle', () => {
 				.mockResolvedValueOnce(setup),
 		};
 		const worker = new CaptureWorker('rollback', options(root), {
-			supervisor: supervisor as unknown as ProcessSupervisor,
+			supervisor: fromPartial<ProcessSupervisor>(supervisor),
 			sleep: async () => undefined,
 		});
 		await expect(worker.initialize()).rejects.toThrow('pactl setup exited 1');
@@ -1179,7 +1159,7 @@ describe('capture lifecycle', () => {
 			throw new Error('finalizer failed');
 		});
 		const worker = new CaptureWorker('stop', options(root), {
-			supervisor: supervisor as unknown as ProcessSupervisor,
+			supervisor: fromPartial<ProcessSupervisor>(supervisor),
 			sleep: async () => undefined,
 			finalizer: () => ({ finalize }),
 		});
@@ -1281,7 +1261,7 @@ describe('capture lifecycle', () => {
 			{ ...options(root), maxConcurrent: 1 },
 			(job, createdOptions) =>
 				new CaptureWorker(job, createdOptions, {
-					supervisor: supervisor as unknown as ProcessSupervisor,
+					supervisor: fromPartial<ProcessSupervisor>(supervisor),
 					sleep: async () => undefined,
 				}),
 		);

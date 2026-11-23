@@ -7,11 +7,17 @@ on:
     paths:
       - "suite/**"
       - "frontend/**"
+      - "scripts/**"
+      - "*.js"
+      - "*.ts"
+      - "tsconfig*.json"
       - "e2e/**"
       - "package.json"
-      - "yarn.lock"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
       - "knip.json"
       - "pyproject.toml"
+      - ".coveragerc"
       - ".github/scripts/**"
       - ".github/workflows/suite-linter.yml"
   workflow_dispatch:
@@ -65,8 +71,8 @@ jobs:
             ${{ runner.os }}-pip-
             ${{ runner.os }}-
 
-      - name: Install Ruff
-        run: pip install ruff==0.12.3
+      - name: Install Python check tools
+        run: pip install ruff==0.12.3 "coverage~=7.14.1"
 
       - name: Test CI scripts
         run: python -m unittest discover .github/scripts -p 'test_*.py'
@@ -74,11 +80,8 @@ jobs:
       - name: Check formatting
         run: ruff format --check .
 
-      # Existing lint findings make this evidence-only until the baseline is clean.
-      - name: Check lint baseline
-        continue-on-error: true
-        run: |
-          ruff check .
+      - name: Lint
+        run: ruff check .
 
       - name: Install and run pip-audit
         if: ${{ !cancelled() }}
@@ -94,40 +97,49 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v6
+
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: yarn
-          cache-dependency-path: yarn.lock
+          cache: pnpm
 
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
 
-      # Existing findings make these evidence-only until their baselines are clean.
+      # Unused files, dependencies, unresolved imports and duplicate exports fail.
+      # Phase 2 of the tooling work fixes the current findings and removes
+      # `continue-on-error` here.
       - name: Check frontend dead code
         continue-on-error: true
-        run: yarn knip:frontend
+        run: pnpm knip:root --exclude exports,types
 
+      # Unused exports and types are evidence-only until that baseline is clean.
+      - name: Report frontend unused exports
+        continue-on-error: true
+        run: pnpm knip:root --include exports,types
+
+      # Existing findings make these evidence-only until their baselines are clean.
       - name: Check E2E dead code
         continue-on-error: true
-        run: yarn knip:e2e
+        run: pnpm knip:e2e
 
       - name: Check SFU dead code
         continue-on-error: true
-        run: yarn knip:sfu-server
+        run: pnpm knip:sfu-server
 
       - name: Check Sheets collaboration dead code
         continue-on-error: true
-        run: yarn knip:sheets-collab
+        run: pnpm knip:sheets-collab
 
       - name: Audit production dependencies
         continue-on-error: true
         run: |
           mkdir -p test-results
           status=0
-          yarn audit --groups dependencies --level high 2>&1 | tee test-results/yarn-audit.txt || status=1
-          yarn --cwd suite/meet/sfu-server audit --groups dependencies --level high 2>&1 | tee -a test-results/yarn-audit.txt || status=1
-          yarn --cwd suite/meet/recorder-server audit --groups dependencies --level high 2>&1 | tee -a test-results/yarn-audit.txt || status=1
+          pnpm audit --prod --audit-level high 2>&1 | tee test-results/dependency-audit.txt || status=1
+          yarn --cwd suite/meet/sfu-server audit --groups dependencies --level high 2>&1 | tee -a test-results/dependency-audit.txt || status=1
+          yarn --cwd suite/meet/recorder-server audit --groups dependencies --level high 2>&1 | tee -a test-results/dependency-audit.txt || status=1
           exit "$status"
 
       - name: Upload dependency audit
@@ -135,6 +147,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: suite-javascript-health
-          path: test-results/yarn-audit.txt
+          path: test-results/dependency-audit.txt
           if-no-files-found: warn
           retention-days: 30

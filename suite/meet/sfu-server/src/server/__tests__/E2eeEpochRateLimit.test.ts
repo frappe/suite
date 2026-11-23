@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it } from 'vitest';
 import type { RateLimiter } from '../../utils/rateLimiter';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
@@ -12,15 +13,17 @@ describe('E2EE epoch relay rate limiting', () => {
 			senderId: 7,
 			scope: 'full',
 		});
-		const fakeIo = {
-			sockets: {
-				adapter: { rooms: new Map([['meeting-1', new Set(['socket-1'])]]) },
-				sockets: new Map([['socket-1', socket]]),
+		const fakeIo = fromPartial<ConstructorParameters<typeof E2EEEpochRelay>[0]>(
+			{
+				sockets: {
+					adapter: { rooms: new Map([['meeting-1', new Set(['socket-1'])]]) },
+					sockets: new Map([['socket-1', socket]]),
+				},
 			},
-		} as never;
-		const rateLimiter = {
+		);
+		const rateLimiter = fromPartial<RateLimiter>({
 			checkRateLimit: () => false,
-		} as unknown as RateLimiter;
+		});
 		const relay = new E2EEEpochRelay(
 			fakeIo,
 			new Map([['meeting-1', new Set(['socket-1'])]]),

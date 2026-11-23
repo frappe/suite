@@ -106,21 +106,18 @@ async function call(
 
 function authenticated(
 	method = 'GET',
-	body?: object,
+	body?: unknown,
 	signed = token(),
 ): RequestInit {
-	return {
-		method,
-		headers: {
-			Authorization: `Bearer ${signed}`,
-			...(body ? { 'Content-Type': 'application/json' } : {}),
-		},
-		...(body
-			? {
-					body: JSON.stringify({ protocol_version: PROTOCOL_VERSION, ...body }),
-				}
-			: {}),
-	};
+	const headers = new Headers({ Authorization: `Bearer ${signed}` });
+	if (body) headers.set('Content-Type', 'application/json');
+	const request: RequestInit = { method, headers };
+	if (body)
+		request.body = JSON.stringify({
+			protocol_version: PROTOCOL_VERSION,
+			...body,
+		});
+	return request;
 }
 
 describe('configuration', () => {

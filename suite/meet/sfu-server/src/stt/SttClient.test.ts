@@ -1,4 +1,5 @@
 import { createServer, type Server } from 'node:http';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type WebSocket, WebSocketServer } from 'ws';
 import {
@@ -42,7 +43,7 @@ describe('SttClient Realtime protocol', () => {
 		);
 	});
 
-	it('configures a transcription session and maps committed item events to Meet transcripts', async () => {
+	it('ignores malformed server packets and maps committed item events to Meet transcripts', async () => {
 		server = createServer((_request, response) => {
 			response.writeHead(200, { 'Content-Type': 'application/json' });
 			response.end('{"status":"ok"}');
@@ -57,6 +58,8 @@ describe('SttClient Realtime protocol', () => {
 
 		const clientEvents: ClientEvent[] = [];
 		websocketServer.on('connection', (socket) => {
+			for (const malformed of ['null', '[]', '{"type":7}'])
+				socket.send(malformed);
 			socket.send(
 				JSON.stringify({
 					type: 'session.created',
@@ -65,7 +68,7 @@ describe('SttClient Realtime protocol', () => {
 				}),
 			);
 			socket.on('message', (raw) => {
-				const event = JSON.parse(raw.toString()) as ClientEvent;
+				const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
 				clientEvents.push(event);
 				if (event.type === 'session.update') {
 					socket.send(
@@ -150,14 +153,18 @@ describe('SttClient Realtime protocol', () => {
 			'Siobhan',
 		]);
 		expect(
-			clientEvents
-				.filter((event) => event.type === 'session.update')
-				.map((event) => event.session?.audio?.input?.transcription?.names),
+			clientEvents.flatMap((event) =>
+				event.type === 'session.update'
+					? [event.session?.audio?.input?.transcription?.names]
+					: [],
+			),
 		).toEqual([['Siobhan'], ['Zubair']]);
 		expect(
 			clientEvents
+				.values()
 				.filter((event) => event.type === 'session.update')
-				.map((event) => event.session?.audio?.input?.transcription?.title),
+				.map((event) => event.session?.audio?.input?.transcription?.title)
+				.toArray(),
 		).toEqual(['Atlas review', 'Atlas review']);
 		expect(append).toMatchObject({
 			audio: Buffer.from([0, 0, 1, 0]).toString('base64'),
@@ -172,64 +179,69 @@ describe('SttClient Realtime protocol', () => {
 	it.each([
 		{ transcript: '', expected: '' },
 		{ transcript: undefined, expected: 'tentative guess' },
-	])('uses the final transcript when it is $transcript', async ({
-		transcript,
-		expected,
-	}) => {
-		server = createServer((_request, response) => response.end('ok'));
-		websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
-		await new Promise<void>((resolve) =>
-			server!.listen(0, '127.0.0.1', resolve),
-		);
-		const address = server.address();
-		if (!address || typeof address === 'string')
-			throw new Error('Missing test server address');
+	])(
+		'uses the final transcript when it is $transcript',
+		async ({ transcript, expected }) => {
+			server = createServer((_request, response) => response.end('ok'));
+			websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
+			await new Promise<void>((resolve) =>
+				server!.listen(0, '127.0.0.1', resolve),
+			);
+			const address = server.address();
+			if (!address || typeof address === 'string')
+				throw new Error('Missing test server address');
 
-		websocketServer.on('connection', (socket) => {
-			socket.send(JSON.stringify({ type: 'session.created' }));
-			socket.on('message', (raw) => {
-				const event = JSON.parse(raw.toString()) as ClientEvent;
-				if (event.type === 'session.update')
-					socket.send(JSON.stringify({ type: 'session.updated' }));
-				if (event.type !== 'input_audio_buffer.commit') return;
-				socket.send(
-					JSON.stringify({
-						type: 'input_audio_buffer.committed',
-						item_id: 'item-1',
-					}),
-				);
-				socket.send(
-					JSON.stringify({
-						type: 'conversation.item.input_audio_transcription.delta',
-						item_id: 'item-1',
-						delta: 'tentative guess',
-					}),
-				);
-				socket.send(
-					JSON.stringify({
-						type: 'conversation.item.input_audio_transcription.completed',
-						item_id: 'item-1',
-						transcript,
-					}),
-				);
+			websocketServer.on('connection', (socket) => {
+				socket.send(JSON.stringify({ type: 'session.created' }));
+				socket.on('message', (raw) => {
+					const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
+					if (event.type === 'session.update')
+						socket.send(JSON.stringify({ type: 'session.updated' }));
+					if (event.type !== 'input_audio_buffer.commit') return;
+					socket.send(
+						JSON.stringify({
+							type: 'input_audio_buffer.committed',
+							item_id: 'item-1',
+						}),
+					);
+					socket.send(
+						JSON.stringify({
+							type: 'conversation.item.input_audio_transcription.delta',
+							item_id: 'item-1',
+							delta: 'tentative guess',
+						}),
+					);
+					socket.send(
+						JSON.stringify({
+							type: 'conversation.item.input_audio_transcription.completed',
+							item_id: 'item-1',
+							transcript,
+						}),
+					);
+				});
 			});
-		});
 
-		client = new SttClient(`http://127.0.0.1:${address.port}`);
-		const transcripts: SttTranscriptEvent[] = [];
-		const stream = await client.createStream(
-			{ sessionId: 'meet-session-1', sampleRate: 24000 },
-			(event) => transcripts.push(event),
-		);
-		stream.sendAudio(Buffer.alloc(4800));
-		stream.markFinal(100);
-		await stream.close();
+			client = new SttClient(`http://127.0.0.1:${address.port}`);
+			const transcripts: SttTranscriptEvent[] = [];
+			const stream = await client.createStream(
+				{ sessionId: 'meet-session-1', sampleRate: 24000 },
+				(event) => transcripts.push(event),
+			);
+			stream.sendAudio(Buffer.alloc(4800));
+			stream.markFinal(100);
+			await stream.close();
 
-		expect(transcripts).toEqual([
-			{ text: 'tentative guess', isFinal: false, durationMs: 100, sequence: 1 },
-			{ text: expected, isFinal: true, durationMs: 100, sequence: 2 },
-		]);
-	});
+			expect(transcripts).toEqual([
+				{
+					text: 'tentative guess',
+					isFinal: false,
+					durationMs: 100,
+					sequence: 1,
+				},
+				{ text: expected, isFinal: true, durationMs: 100, sequence: 2 },
+			]);
+		},
+	);
 
 	it('reports a configured Realtime stream closing unexpectedly', async () => {
 		server = createServer((_request, response) => {
@@ -249,7 +261,7 @@ describe('SttClient Realtime protocol', () => {
 			serverSocket = socket;
 			socket.send(JSON.stringify({ type: 'session.created' }));
 			socket.on('message', (raw) => {
-				const event = JSON.parse(raw.toString()) as ClientEvent;
+				const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
 				if (event.type === 'session.update') {
 					socket.send(JSON.stringify({ type: 'session.updated' }));
 				}
@@ -285,7 +297,7 @@ describe('SttClient Realtime protocol', () => {
 		websocketServer.on('connection', (socket) => {
 			socket.send(JSON.stringify({ type: 'session.created' }));
 			socket.on('message', (raw) => {
-				const event = JSON.parse(raw.toString()) as ClientEvent;
+				const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
 				if (event.type === 'session.update') {
 					socket.send(JSON.stringify({ type: 'session.updated' }));
 				}
@@ -301,7 +313,7 @@ describe('SttClient Realtime protocol', () => {
 		);
 		const unexpectedClose = vi.fn();
 		stream.onUnexpectedClose(unexpectedClose);
-		const socket = (stream as unknown as { socket: WebSocket }).socket;
+		const socket = stream['socket'];
 		Object.defineProperty(socket, 'bufferedAmount', { value: 1024 * 1024 });
 
 		expect(stream.sendAudio(Buffer.alloc(2))).toBe(false);
@@ -331,7 +343,7 @@ describe('SttClient Realtime protocol', () => {
 			socket.once('close', signalServerSocketClosed);
 			socket.send(JSON.stringify({ type: 'session.created' }));
 			socket.on('message', (raw) => {
-				const event = JSON.parse(raw.toString()) as ClientEvent;
+				const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
 				if (event.type === 'session.update') {
 					socket.send(JSON.stringify({ type: 'session.updated' }), () => {
 						socket.close(1011, 'backend failure');
@@ -375,7 +387,7 @@ describe('SttClient Realtime protocol', () => {
 			authHeaders.push(request.headers.authorization);
 			socket.send(JSON.stringify({ type: 'session.created' }));
 			socket.on('message', (raw) => {
-				const event = JSON.parse(raw.toString()) as ClientEvent;
+				const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
 				if (event.type === 'session.update') {
 					socket.send(JSON.stringify({ type: 'session.updated' }));
 				}
@@ -414,7 +426,8 @@ describe('SttClient Realtime protocol', () => {
 			socket.send(JSON.stringify({ type: 'session.created' }));
 			socket.on('message', (raw) => {
 				if (
-					(JSON.parse(raw.toString()) as ClientEvent).type === 'session.update'
+					fromPartial<ClientEvent>(JSON.parse(raw.toString())).type ===
+					'session.update'
 				)
 					socket.send(JSON.stringify({ type: 'session.updated' }));
 			});
@@ -427,7 +440,7 @@ describe('SttClient Realtime protocol', () => {
 			{ sessionId: 'quiet-participant', sampleRate: 24000 },
 			vi.fn(),
 		);
-		const socket = (stream as unknown as { socket: WebSocket }).socket;
+		const socket = stream['socket'];
 		const send = vi.spyOn(socket, 'send');
 		try {
 			await vi.advanceTimersByTimeAsync(15_000);
@@ -459,7 +472,8 @@ describe('SttClient Realtime protocol', () => {
 			socket.send(JSON.stringify({ type: 'session.created' }));
 			socket.on('message', (raw) => {
 				if (
-					(JSON.parse(raw.toString()) as ClientEvent).type === 'session.update'
+					fromPartial<ClientEvent>(JSON.parse(raw.toString())).type ===
+					'session.update'
 				)
 					socket.send(JSON.stringify({ type: 'session.updated' }));
 			});
@@ -472,7 +486,7 @@ describe('SttClient Realtime protocol', () => {
 			{ sessionId: 'external-participant', sampleRate: 24000 },
 			vi.fn(),
 		);
-		const socket = (stream as unknown as { socket: WebSocket }).socket;
+		const socket = stream['socket'];
 		const send = vi.spyOn(socket, 'send');
 		try {
 			await vi.advanceTimersByTimeAsync(30_000);
@@ -510,45 +524,49 @@ describe('SttClient Realtime protocol', () => {
 	});
 
 	it('treats a missing health endpoint as unavailable', async () => {
-		vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-			ok: false,
-			status: 404,
-		} as Response);
+		vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+			fromPartial<Response>({
+				ok: false,
+				status: 404,
+			}),
+		);
 		client = new SttClient('http://stt.example');
-		const internals = client as unknown as {
-			checkHealth: () => void;
-			healthCheckInFlight: boolean;
-		};
+		const internals = client;
 
-		internals.checkHealth();
+		internals['checkHealth']();
 
-		await vi.waitFor(() => expect(internals.healthCheckInFlight).toBe(false));
+		await vi.waitFor(() =>
+			expect(internals['healthCheckInFlight']).toBe(false),
+		);
 		expect(client.isAvailable()).toBe(false);
 	});
 
 	it('notifies after each unhealthy-to-healthy recovery', async () => {
 		const fetchMock = vi
 			.spyOn(globalThis, 'fetch')
-			.mockResolvedValueOnce({ ok: false, status: 503 } as Response)
-			.mockResolvedValueOnce({ ok: true } as Response)
-			.mockResolvedValueOnce({ ok: false, status: 503 } as Response)
-			.mockResolvedValueOnce({ ok: true } as Response);
+			.mockResolvedValueOnce(fromPartial<Response>({ ok: false, status: 503 }))
+			.mockResolvedValueOnce(fromPartial<Response>({ ok: true }))
+			.mockResolvedValueOnce(fromPartial<Response>({ ok: false, status: 503 }))
+			.mockResolvedValueOnce(fromPartial<Response>({ ok: true }));
 		client = new SttClient('http://stt.example');
 		const recovered = vi.fn();
 		client.onAvailable(recovered);
-		const internals = client as unknown as {
-			checkHealth: () => void;
-			healthCheckInFlight: boolean;
-		};
+		const internals = client;
 
-		await vi.waitFor(() => expect(internals.healthCheckInFlight).toBe(false));
-		internals.checkHealth();
+		await vi.waitFor(() =>
+			expect(internals['healthCheckInFlight']).toBe(false),
+		);
+		internals['checkHealth']();
 		await vi.waitFor(() => expect(recovered).toHaveBeenCalledTimes(1));
-		await vi.waitFor(() => expect(internals.healthCheckInFlight).toBe(false));
-		internals.checkHealth();
-		await vi.waitFor(() => expect(internals.healthCheckInFlight).toBe(false));
+		await vi.waitFor(() =>
+			expect(internals['healthCheckInFlight']).toBe(false),
+		);
+		internals['checkHealth']();
+		await vi.waitFor(() =>
+			expect(internals['healthCheckInFlight']).toBe(false),
+		);
 		expect(client.isAvailable()).toBe(false);
-		internals.checkHealth();
+		internals['checkHealth']();
 		await vi.waitFor(() => expect(recovered).toHaveBeenCalledTimes(2));
 
 		expect(fetchMock).toHaveBeenCalledTimes(4);

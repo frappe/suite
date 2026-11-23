@@ -1,4 +1,7 @@
+import hashlib
 import os
+import time
+from contextlib import suppress
 from email.utils import parseaddr
 
 import frappe
@@ -6,7 +9,6 @@ from frappe import _
 from frappe.utils import cint, random_string
 from frappe.utils.file_manager import save_file
 from werkzeug.datastructures.file_storage import FileStorage
-from werkzeug.utils import secure_filename
 
 from suite.mail.api.auth import validate_user
 from suite.mail.doctype.mail_queue.mail_queue import MailQueue
@@ -18,6 +20,9 @@ from suite.mail.utils import get_config, get_messages_directory
 from suite.mail.utils.dt import from_utc_z
 from suite.mail.utils.logger import get_outbound_logger
 from suite.utils.rate_limiter import dynamic_rate_limit
+
+# A chunked upload whose last chunk hasn't come in this long is not coming.
+ABANDONED_UPLOAD_AGE = 24 * 60 * 60
 
 
 @frappe.whitelist(methods=["POST"])
@@ -150,6 +155,9 @@ def send_raw(
     logger.debug("send-raw-started", is_newsletter=is_newsletter, has_raw_message=bool(raw_message))
 
     try:
+        # Checked on the first chunk too, not only once the message is whole.
+        get_user_personal_jmap_account(frappe.session.user, raise_exception=True)
+
         chunk_index = frappe.form_dict.get("chunk_index")
         total_chunks = frappe.form_dict.get("total_chunk_count")
         upload_session = frappe.form_dict.get("uuid")
@@ -230,9 +238,7 @@ def _handle_chunked_upload(
     if not file:
         frappe.throw(_("No file part named 'raw_message' found."))
 
-    upload_dir = get_messages_directory()
-    filename = secure_filename(f"{session_id}.eml")
-    temp_path = os.path.join(upload_dir, filename)
+    temp_path = _chunked_upload_path(frappe.session.user, session_id)
     offset = int(frappe.form_dict.get("chunk_byte_offset", 0))
 
     with open(temp_path, "ab") as f:
@@ -258,6 +264,24 @@ def _handle_chunked_upload(
     os.remove(temp_path)
 
     return _enqueue_mail(from_, to, raw_message, is_newsletter, priority)
+
+
+def _chunked_upload_path(user: str, session_id: str) -> str:
+    """Where one user's chunked upload collects: the same uuid from two users is two files."""
+
+    name = hashlib.sha256(f"{user}\0{session_id}".encode()).hexdigest()
+    return os.path.join(get_messages_directory(), f"{name}.eml")
+
+
+def clean_abandoned_chunked_uploads() -> None:
+    """Called by the scheduler: removes uploads whose last chunk never came."""
+
+    directory = get_messages_directory()
+    cutoff = time.time() - ABANDONED_UPLOAD_AGE
+    for entry in os.scandir(directory):
+        if entry.is_file() and entry.stat().st_mtime < cutoff:
+            with suppress(FileNotFoundError):  # its last chunk came while we looked
+                os.remove(entry.path)
 
 
 def _normalize_recipients(
