@@ -257,13 +257,12 @@ class TestDocumentWrites(DriveCallbackCase):
 
     def test_a_replace_that_can_keep_no_version_writes_nothing(self):
         node = self.create("First.")
-        root = drive.ensure_personal_root(WRITER)
-        quota = frappe.db.get_value("Drive Root", root, "quota_bytes")
-        self.addCleanup(frappe.db.set_value, "Drive Root", root, "quota_bytes", quota)
-        # A Drive with no room for one more byte
-        frappe.db.set_value("Drive Root", root, "quota_bytes", 1)
+        full = drive.DriveOverQuota("The drive is full")
 
-        with self.assertRaisesRegex(WriteRefused, "No version could be kept"):
+        with (
+            patch.object(drive, "take_version", side_effect=full),
+            self.assertRaisesRegex(WriteRefused, "No version could be kept"),
+        ):
             writer_routes.document_write(node, "Only this.", "replace")
 
         self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
