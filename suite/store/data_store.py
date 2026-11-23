@@ -1,4 +1,5 @@
 from collections import OrderedDict
+from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from enum import Enum
 from threading import RLock
@@ -388,8 +389,15 @@ class DataStore(BaseStore):
     def get_value_sizes(self, entity: Enum) -> dict[str, int]:
         """Return each key's stored size in bytes, without copying or deserializing values."""
 
+        return dict(self._iter_value_sizes(entity))
+
+    def get_total_value_size(self, entity: Enum) -> int:
+        """Return the stored size in bytes of all of an entity's values."""
+
+        return sum(size for _key, size in self._iter_value_sizes(entity))
+
+    def _iter_value_sizes(self, entity: Enum) -> Iterator[tuple[str, int]]:
         entity_prefix = self._entity_prefix(entity).encode()
-        sizes = {}
 
         with self._txn(write=False, buffers=True) as txn:
             cursor = txn.cursor()
@@ -397,11 +405,9 @@ class DataStore(BaseStore):
                 for db_key, value in cursor:
                     key = bytes(db_key)
                     if not key.startswith(entity_prefix):
-                        break
+                        return
 
-                    sizes[key.removeprefix(entity_prefix).decode()] = len(value)
-
-        return sizes
+                    yield key.removeprefix(entity_prefix).decode(), len(value)
 
     def delete_all(self, entity: Enum) -> None:
         """Delete all keys for a given entity type."""

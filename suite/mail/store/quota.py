@@ -17,14 +17,9 @@ _ACCOUNTS_PER_JOB = 25
 
 
 def enforce_message_cache_quotas() -> None:
-    """Fan every account with a quota out into long-queue jobs."""
+    """Fan every account out into long-queue jobs. Those with no limit still get stale stamps dropped."""
 
-    accounts = frappe.db.get_all(
-        "JMAP Account",
-        filters={"message_cache_quota_mb": [">", 0]},
-        fields=["name", "message_cache_quota_mb"],
-        as_list=True,
-    )
+    accounts = frappe.db.get_all("JMAP Account", fields=["name", "message_cache_quota_mb"], as_list=True)
     for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_JOB)):
         enqueue_job(
             enforce_quotas,
@@ -74,7 +69,8 @@ class MessageCacheQuota:
             self.store.set_many(Entity.EMAIL_ACCESS, stale)
 
     def enforce(self, quota_mb: int) -> int:
-        """Evict down to `quota_mb` and return how many messages went."""
+        """Drop stale stamps and evict down to `quota_mb`, where 0 means no limit. Returns how many
+        messages went."""
 
         # Stamps first: a message is cached before it is stamped, so any stamp without a message
         # in the later read really has lost its message.
@@ -83,16 +79,27 @@ class MessageCacheQuota:
         self.store.delete_many(Entity.EMAIL_ACCESS, [id for id in stamps if id not in sizes])
 
         excess = sum(sizes.values()) - quota_mb * BYTES_PER_MB
-        if excess <= 0:
+        if not quota_mb or excess <= 0:
             return 0
 
         stamps |= self.backfill_stamps([id for id in sizes if id not in stamps])
         victims = self.get_eviction_candidates(sizes, stamps, excess)
-        for batch in create_batch(victims, _BATCH_SIZE):
+        self.evict(victims)
+        self.store.logger.info(
+            "message-cache-evicted",
+            evicted=len(victims),
+            freed_bytes=sum(sizes[id] for id in victims),
+            quota_mb=quota_mb,
+        )
+        return len(victims)
+
+    def evict(self, ids: list[str]) -> None:
+        """Remove messages, marked so a later re-fetch can't overwrite newer names in the index."""
+
+        for batch in create_batch(ids, _BATCH_SIZE):
+            self.store.set_many(Entity.EVICTED_EMAIL, dict.fromkeys(batch, True))
             self.store.delete_many(Entity.EMAIL, batch)
             self.store.delete_many(Entity.EMAIL_ACCESS, batch)
-
-        return len(victims)
 
     def backfill_stamps(self, ids: list[str]) -> dict[str, str]:
         """Date messages cached before access tracking by when they arrived."""

@@ -24,6 +24,7 @@ class CacheMessages(unittest.TestCase):
         store = mock.Mock()
         # Whatever the store reports as new is what the batch is judged by.
         store.set_many.return_value = set(messages) if new_ids is None else new_ids
+        store.get_many.return_value = {}
         store.delete_many.side_effect = rollback_error
 
         index = mock.Mock()
@@ -135,6 +136,7 @@ class CacheMessages(unittest.TestCase):
         # Redis down on top of the rest. The failures are logged; caching does not raise.
         store = mock.Mock()
         store.set_many.return_value = {"m1"}
+        store.get_many.return_value = {}
         store.delete_many.side_effect = RuntimeError("store is down")
 
         index = mock.Mock()
