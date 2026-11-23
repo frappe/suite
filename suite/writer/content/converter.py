@@ -1,6 +1,7 @@
 """Writer's converter: the Node bundle that turns an old document into a collaborative one, and a run of it."""
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 from suite.content import checker, convert
@@ -20,9 +21,9 @@ def run(legacy: dict) -> convert.Converted | convert.Refused:
     return answer
 
 
-def markdown_of(html: str) -> str:
-    """Answer a document's HTML as Markdown, written as the browser's Markdown download writes it."""
-    answer = checker.ask(CONVERTER_BUILD, {"html": html}, minimum=convert.NODE_MIN)
+def markdown_of(checkpoint: bytes | None, rows: Sequence[bytes]) -> str:
+    """Answer the document a log's `checkpoint` and `rows` make as Markdown, as the browser's download writes it."""
+    answer = checker.ask(CONVERTER_BUILD, {"markdown": True}, checkpoint, rows, minimum=convert.NODE_MIN)
     if answer is None or "markdown" not in answer:
         raise RuntimeError(NEEDS_BUILD)
 

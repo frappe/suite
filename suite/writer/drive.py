@@ -80,8 +80,8 @@ import pycrdt
 from frappe import _
 
 from suite import drive
-from suite.content import checker, with_content
-from suite.writer.content import converter
+from suite.content import checker, find, read, with_content
+from suite.writer.content import APP, converter
 from suite.writer.content.files import (
     BODY_FRAGMENT,
     elements,
@@ -175,14 +175,20 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
 
 
 def markdown_export(docname: str) -> tuple[io.BytesIO, str]:
-    """Stream one document as Markdown, made from the HTML its Download gives, to a signed-in reader."""
+    """Stream one document as Markdown, made from its log as it stands, to a signed-in reader."""
     if frappe.session.user == "Guest":
         # The site runs one converter at a time, and a public link's reader never takes its turn
         raise drive.DriveForbidden(_("Sign in to read a document as Markdown"))
 
-    html, _mime = SPEC.export(docname, HTML_FORMAT)
+    node = frappe.db.get_value(DOCTYPE, docname, NODE_FIELD)
+    log = find(APP, node)
+    # Read in Drive's transaction, which a callback may not commit: it takes no lock and saves nothing
+    log_read = log and read(APP, log.id, own_snapshot=False)
+    if not log_read:
+        raise drive.DriveConflict(_("This document is not converted yet"))
+
     try:
-        markdown = converter.markdown_of(html.read().decode("utf-8"))
+        markdown = converter.markdown_of(log_read.checkpoint, log_read.payloads())
     except checker.CheckerFailed:
         # Busy, out of time or crashed: the document is not at fault, so the same read works later
         frappe.throw(_("The converter gave no answer. Try again in a moment."), frappe.RateLimitExceededError)

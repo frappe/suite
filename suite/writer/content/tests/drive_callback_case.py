@@ -38,6 +38,18 @@ def move_as_writer(node: str, folder: str) -> None:
     drive_core.nodes.update(owner, node, parent_node=folder)
 
 
+def exported(node: str, file_format: str) -> str:
+    # Drive's export for the session's user, so the app's callback runs inside Drive's guard as a GET's does
+    user = frappe.session.user
+    own: tuple[str, ...] = ()
+    if user != "Guest":
+        own = (user, "$GENERAL")
+
+    reader = drive_core.principals.Principals(user, own, ("$PUBLIC",))
+    stream, _mime, _filename = drive_core.content.export_document(reader, node, file_format)
+    return stream.read().decode()
+
+
 def version_of(docname: str) -> dict:
     stream, mime = writer_drive.SPEC.version_bytes(docname)
     assert mime == "application/json"

@@ -33,7 +33,6 @@ from suite.content.backfill import backfill_clocks
 from suite.content.checkpoints import replace_start
 from suite.content.editors import editors, for_type, spec_of, wrapped
 from suite.content.snapshot import Snapshot, read
-from suite.content.steps import rebuild_copy
 
 # The update format of every state the layer keeps
 CODEC = "yjs1"
@@ -133,11 +132,6 @@ def html(app: str, node: str) -> str | None:
         return None
 
     readable_copy = copies.readable_copy(app, doc.id)
-    if readable_copy is None and frappe.session.user != "Guest":
-        # No tab rendered the head, so a signed-in read does; a public link's reader never starts a render
-        rebuild_copy(app, doc.id, doc.head_rev, doc.lineage, doc.q_epoch)
-        readable_copy = copies.readable_copy(app, doc.id)
-
     if readable_copy is None:
         raise NotReady()
 

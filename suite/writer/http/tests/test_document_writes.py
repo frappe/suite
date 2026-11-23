@@ -1,6 +1,7 @@
 import os
 import re
 import tempfile
+import threading
 import uuid
 from datetime import timedelta
 from pathlib import Path
@@ -23,6 +24,7 @@ from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefus
 from suite.writer.content.tests.drive_callback_case import (
     DriveCallbackCase,
     embed,
+    exported,
     share_as_writer,
 )
 from suite.writer.content.tests.support import OUTSIDER, READER, WRITER, call_route, read_open
@@ -72,10 +74,41 @@ class TestDocumentWrites(DriveCallbackCase):
         return re.sub(r' (id|data-toc-id)="[^"]*"', "", self.body_of(node))
 
     def markdown_of(self, node: str) -> str:
-        # The document as Drive's content route asks Writer for it
-        docname = frappe.db.get_value(writer_drive.DOCTYPE, {"node": node})
-        stream, _mime = writer_drive.SPEC.export(docname, "markdown")
-        return stream.read().decode()
+        return exported(node, "markdown")
+
+    def saved_of(self, node: str) -> dict:
+        # Every row a read could write: the log's control row, its projection row and the app's row
+        control = self.doc_row(node)
+        return {
+            "control": control,
+            "projection": frappe.db.sql(
+                "SELECT * FROM `__writer_content_projection` WHERE `doc_id` = %s", control.id
+            ),
+            "app row": frappe.db.get_value(
+                "Writer Document", {"node": node}, ["html", "content", "modified"]
+            ),
+        }
+
+    def elsewhere(self, work) -> list[Exception]:
+        # Run `work` as another request would, on a connection of its own
+        site = frappe.local.site
+        errors: list[Exception] = []
+
+        def run():
+            frappe.init(site=site)
+            frappe.connect()
+            frappe.set_user(WRITER)
+            try:
+                work()
+            except Exception as error:
+                errors.append(error)
+            finally:
+                frappe.destroy()
+
+        thread = threading.Thread(target=run)
+        thread.start()
+        thread.join()
+        return errors
 
     def failing_converter(self, script: str):
         # A bundle whose child fails as a real one does
@@ -379,20 +412,42 @@ class TestDocumentWrites(DriveCallbackCase):
 
         self.assertEqual(self.markdown_of(node), "First. Typed.")
 
-        # A read's request ends in a rollback, which the copy the read made outlives
-        frappe.db.rollback()
-        self.assertIn("<p>First. Typed.</p>", writer_routes.document(self.docname_of(node))["html"])
-
-    def test_a_guests_read_after_typing_in_a_tab_starts_no_render(self):
+    def test_a_read_saves_nothing(self):
         node = self.create("First.")
         self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed."))
-        frappe.set_user("Guest")
+        before = self.saved_of(node)
+
+        self.markdown_of(node)
+
+        self.assertEqual(self.saved_of(node), before)
+
+    def test_a_tab_pushes_while_a_read_is_open(self):
+        node = self.create("First.")
+        self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed."))
+
+        # The read's request stays open after it, so a lock it took would still be held
+        self.markdown_of(node)
+        refused = self.elsewhere(
+            lambda: self.push_edit(node, lambda body: body.children[0].children[0].insert(0, "Now. "))
+        )
+
+        self.assertEqual(refused, [])
+
+    def test_a_new_empty_document_reads_as_no_markdown(self):
+        node = self.new_document()
+
+        self.assertEqual(self.markdown_of(node), "")
+
+    def test_a_document_not_converted_yet_refuses_a_read(self):
+        node = self.create("Hello")
+        self.delete_log(node)
 
         with self.assertRaises(drive.DriveConflict):
-            writer_drive.SPEC.export(self.docname_of(node), "html")
+            self.markdown_of(node)
 
-    def test_a_guest_cannot_read_markdown(self):
+    def test_a_guest_on_a_public_link_cannot_read_markdown(self):
         node = self.create("Hello")
+        share_as_writer(node, "$PUBLIC", drive.READ)
         frappe.set_user("Guest")
 
         with self.assertRaises(drive.DriveForbidden):
