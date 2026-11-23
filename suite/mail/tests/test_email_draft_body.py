@@ -130,5 +130,14 @@ class ReplyTo(unittest.TestCase):
         self.assertNotIn("replyTo", draft())
 
 
+class MailerHeaders(unittest.TestCase):
+    def test_both_mailer_headers_name_the_client_and_its_version(self):
+        # Rspamd scores XM_UA_NO_VERSION when either header holds no digit.
+        payload = draft()
+
+        for header in ("header:User-Agent", "header:X-Mailer"):
+            self.assertRegex(payload[header], r"^Frappe Mail v\d")
+
+
 if __name__ == "__main__":
     unittest.main()
