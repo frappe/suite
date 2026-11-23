@@ -153,6 +153,28 @@ const operationDocumentWrite: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDocumentWrite,
 }
 
+export type AgentGuideInput = Record<string, never>
+
+export type AgentGuideOutput = Blob
+
+export type AgentGuideError = never
+
+const operationAgentGuide: QueryRef<AgentGuideInput, AgentGuideOutput, AgentGuideError> = {
+  id: 'agent_guide',
+  owner: 'writer',
+  kind: 'query',
+  publicName: 'agentGuide.read',
+  bytes: true,
+  method: 'GET',
+  path: 'agent-guide',
+  prefix: '/api/suite/writer/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationAgentGuide,
+}
+
 export type OldBodyInput = { node: string }
 
 export type OldBodyOutput = { content?: string }
@@ -206,6 +228,9 @@ export const api = {
     create: operationDocumentCreate,
     write: operationDocumentWrite,
     oldBody: operationOldBody,
+  },
+  agentGuide: {
+    read: operationAgentGuide,
   },
   versions: {
     convert: operationConvertVersion,

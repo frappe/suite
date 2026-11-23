@@ -3,12 +3,14 @@
 import functools
 from collections.abc import Callable
 from datetime import UTC
+from pathlib import Path
 from typing import Literal, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import get_datetime, get_system_timezone
+from frappe.utils import get_datetime, get_system_timezone, get_url
+from werkzeug.wrappers import Response
 
 from suite import drive
 from suite.composition.http import Route, refuse
@@ -145,6 +147,18 @@ def document_write(node: str, markdown: Given = None, mode: Given = None) -> Wri
     return {"node": node, "rev": markdown_body.write(node, text(markdown, "markdown"), mode)}
 
 
+AGENT_GUIDE = Path(__file__).parents[1] / "agent-guide.md"
+GUIDE_SITE = "https://suite.example.com"
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def agent_guide() -> Response:
+    """Answer the agent guide with this site's address in its calls. It holds no data, so a guest reads it."""
+    return Response(
+        AGENT_GUIDE.read_text(encoding="utf-8").replace(GUIDE_SITE, get_url()), mimetype="text/markdown"
+    )
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
 def unknown() -> None:
     """Answer an address no route names as not found."""
@@ -199,6 +213,15 @@ ROUTES = (
         errors=MARKDOWN_ERRORS,
         kind="mutation",
         public_name="documents.write",
+    ),
+    Route(
+        "GET",
+        "agent-guide",
+        "agent_guide",
+        stream=True,
+        kind="query",
+        public_name="agentGuide.read",
+        allow_guest=True,
     ),
 )
 

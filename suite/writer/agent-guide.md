@@ -1,7 +1,5 @@
 # Working on a document as an agent
 
-Status: accepted
-
 How an agent, or any script, finds, writes, reads and shares a Writer document with no tab open. A write takes Markdown, and a read gives Markdown back.
 
 ## The loop

@@ -323,6 +323,24 @@
       "bytes": false
     },
     {
+      "id": "agent_guide",
+      "kind": "query",
+      "publicName": "agentGuide.read",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "agent-guide",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": true,
+      "bytes": true
+    },
+    {
       "id": "old_body",
       "kind": "query",
       "publicName": "documents.oldBody",
