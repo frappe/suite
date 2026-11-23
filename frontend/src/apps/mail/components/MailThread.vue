@@ -75,11 +75,12 @@
 				     too, on its card. -->
               <!-- Not over a draft that is the whole thread: its own Subject field says it, a line
 				     below, and a heading there repeated it or read "[No subject]" mid-sentence. -->
-              <!-- On a phone the subject heads the cards on the grey they sit on, under the top
-                   bar's line, with any other folders the conversation is filed in under it. -->
+              <!-- On a phone the subject heads the cards on the grey they sit on, with any other
+                   folders the conversation is filed in under it. The top bar has no line, so the
+                   space under its buttons is the gap: a small top keeps it to the list title's. -->
               <div
                 v-if="thread?.length && !isDraftAlone"
-                class="max-sm:px-4 max-sm:pb-2 max-sm:pt-4"
+                class="max-sm:px-4 max-sm:pb-2 max-sm:pt-1"
               >
                 <h1
                   class="text-ink-gray-8 text-xl-semibold group/subject flex items-start gap-1 !leading-7"
