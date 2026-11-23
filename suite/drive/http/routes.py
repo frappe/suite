@@ -43,7 +43,9 @@ import base64
 import binascii
 import functools
 import unicodedata
+from collections.abc import Callable
 from datetime import datetime
+from typing import NoReturn
 from urllib.parse import quote
 from uuid import uuid4
 
@@ -134,10 +136,12 @@ def _refuse(kind: type, message: str, **fields) -> None:
     refuse(kind, message, **fields)
 
 
-@_route
-def throw_again(refusal: Exception) -> None:
-    """Answer `refusal` as every route here does, for a route of another product that calls Drive."""
+def _raise(refusal: Exception) -> NoReturn:
     raise refusal
+
+
+# Answers a refusal as every route here does, for a route of another product that calls Drive
+throw_again: Callable[[Exception], NoReturn] = _route(_raise)
 
 
 def _principals():

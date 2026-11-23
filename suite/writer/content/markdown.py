@@ -151,10 +151,13 @@ def append_element(
 ) -> pycrdt.XmlElement:
     """Add an element under `parent` with `source`'s tag and attributes, and answer it."""
     element = parent.children.append(pycrdt.XmlElement(source.tag))
-    # The converter numbers heading ids within one conversion, so a heading gets its own, as a typed one does
-    own_id = str(uuid.uuid4())
     for name, value in source.attributes.__iter__():
-        is_heading_id = source.tag == "heading" and name in HEADING_IDS
-        element.attributes[name] = own_id if is_heading_id else value
+        element.attributes[name] = value
+
+    if source.tag == "heading":
+        # The converter numbers heading ids within one conversion, so a heading gets its own, as a typed one does
+        own_id = str(uuid.uuid4())
+        for name in HEADING_IDS:
+            element.attributes[name] = own_id
 
     return element

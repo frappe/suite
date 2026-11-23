@@ -240,7 +240,7 @@ def transfer_user_drive(
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, NoReturn
 
 from suite.drive._core.content import (
     ContentTypeSpec,
@@ -292,7 +292,7 @@ def check(node: str, role: int) -> str | None:
     return row.content_doctype
 
 
-def throw_again(refusal: Exception) -> None:
+def throw_again(refusal: Exception) -> NoReturn:
     """Throw `refusal` as a Drive route answers it, so an app's route that calls Drive answers the same."""
     from suite.drive.http.routes import throw_again as _throw_again
 
