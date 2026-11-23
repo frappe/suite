@@ -1,6 +1,6 @@
 <template>
   <div
-    class="participant-tile group relative rounded-4 overflow-hidden min-h-0"
+    class="participant-tile group relative rounded-7 overflow-hidden min-h-0"
     :class="tileBackgroundClass"
     :data-testid="`participant-tile-${participant.user_id}`"
     :data-active-speaker="String(isActiveSpeaker)"
