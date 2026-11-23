@@ -8,7 +8,7 @@ How an agent, or any script, writes a Writer document with no tab open. Two call
 
 Sign in as the user the agent works for, here with an API key. History and versions name that user.
 
-Create a document in a folder. `parent` is the folder's Drive node id. The user needs upload access to it.
+Create a document in a folder. `parent` is the folder's Drive node id. With the folder open in Drive, it is in the address bar: `/drive/f/<node>/…`. The user needs upload access to it.
 
 ```sh
 curl -X POST https://suite.example.com/api/suite/writer/documents \
@@ -44,29 +44,30 @@ Both answer the document's Drive node id and the revision the write made:
 ## Markdown
 
 - Headings, paragraphs, bold, italic, links, lists, quotes, rules, tables, pictures by address, code and fenced code with a language.
+- Name a fenced block's language in full, as `javascript`. A short name such as `js` still colours the code, but the editor's language picker shows it as auto.
 - A write keeps all of the Markdown or refuses all of it. Only what shows nothing is left out: an HTML comment, and a link with no text.
 - Raw HTML the editor can't hold is refused, such as a `<div>`.
 - Task lists and strikethrough are not read: `- [ ]` and `~~` stay as typed.
-- One call takes up to 128 KB of Markdown. Write a longer document in parts: create it, then append.
+- One call takes up to 128 KB of Markdown, which is 131072 UTF-8 bytes. Write a longer document in parts: create it, then append.
 
 ## Refusals
 
 A refusal answers its class and a message:
 
 ```json
-{ "errors": [{ "type": "MarkdownRefused", "message": "A document can't keep this Markdown: empty-link" }] }
+{ "errors": [{ "type": "MarkdownRefused", "message": "A document can't keep this Markdown: raw HTML the editor can't hold" }] }
 ```
 
 | Class | Status | Meaning |
 | --- | --- | --- |
-| `DriveError` | 400 | An argument is wrong, such as an empty title |
+| `AuthenticationError` | 401 | The API key or secret is wrong |
+| `PermissionError` | 403 | The call has no `Authorization` header |
+| `DriveError` | 400 | A field is missing or wrong, such as an empty title or a `mode` other than `replace` or `append`. The message names it. Nothing was written |
 | `DriveNotFound` | 404 | The folder or document does not exist for this user, or the item is not a Writer document |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the document, or the document is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
-| `DriveConflict` | 409 | The title is taken in the folder. `free_title` names one that is free. Nothing was created |
+| `DriveConflict` | 409 | The title is taken in the folder, and `free_title` names one that is free. Or `parent` is not a folder, and the answer has no `free_title`. Nothing was created |
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, or the Markdown is over 128 KB. Nothing was written |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted` or `doc_full`. The same call gets the same answer until that changes |
 | `WriteBusy` | 429 | The converter or the document is busy. Send the same call again, after `retry_ms` milliseconds when the answer has it |
-
-A `mode` other than `replace` or `append` is refused before anything is written.

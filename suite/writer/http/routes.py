@@ -97,6 +97,11 @@ def document_settings(name: str, data: str) -> None:
 
 WRITE_REFUSALS = (markdown_body.MarkdownRefused, markdown_body.WriteRefused, markdown_body.WriteBusy)
 
+# As in Drive's handlers, a body field is annotated to take anything and checked in the handler: a narrow
+# annotation refuses a wrong type before the handler runs, with no message
+Given = str | int | float | bool | list | dict | None
+MODES: tuple[Literal["replace", "append"], ...] = ("replace", "append")
+
 
 def refusing(handler: Callable) -> Callable:
     """Throw a workflow's refusal again, as the answer carries the message of a thrown error only."""
@@ -113,19 +118,31 @@ def refusing(handler: Callable) -> Callable:
     return answered
 
 
+def text(value: Given, name: str) -> str:
+    """Answer the body field `name` when it is a string, and refuse it by name when it is not."""
+    if not isinstance(value, str):
+        raise frappe.ValidationError(_("{0} must be a string").format(name))
+
+    return value
+
+
 @frappe.whitelist(methods=["POST"])
 @refusing
-def document_create(parent: str, title: str, markdown: str) -> WrittenDocument:
+def document_create(parent: Given = None, title: Given = None, markdown: Given = None) -> WrittenDocument:
     """Create a document from Markdown, as an agent does."""
-    node, rev = markdown_body.create(parent, title, markdown)
+    body = text(markdown, "markdown")
+    node, rev = markdown_body.create(text(parent, "parent"), text(title, "title"), body)
     return {"node": node, "rev": rev}
 
 
 @frappe.whitelist(methods=["POST"])
 @refusing
-def document_write(node: str, markdown: str, mode: Literal["replace", "append"]) -> WrittenDocument:
+def document_write(node: str, markdown: Given = None, mode: Given = None) -> WrittenDocument:
     """Replace a document's body with Markdown, or append it."""
-    return {"node": node, "rev": markdown_body.write(node, markdown, mode)}
+    if mode not in MODES:
+        raise frappe.ValidationError(_("mode must be replace or append"))
+
+    return {"node": node, "rev": markdown_body.write(node, text(markdown, "markdown"), mode)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])

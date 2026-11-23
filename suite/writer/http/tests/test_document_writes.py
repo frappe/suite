@@ -83,7 +83,7 @@ class TestDocumentWrites(DriveCallbackCase):
         )
 
     def test_markdown_a_document_cannot_keep_creates_nothing(self):
-        with self.assertRaises(MarkdownRefused):
+        with self.assertRaisesRegex(MarkdownRefused, "raw HTML the editor can't hold"):
             writer_routes.document_create(
                 self.folder, "Agent refused", 'Kept\n\n<div class="callout">Lost</div>'
             )
@@ -165,10 +165,16 @@ class TestDocumentWrites(DriveCallbackCase):
         node = self.create("First.")
 
         # By name, as a request's arguments come
-        with self.assertRaises(frappe.exceptions.FrappeTypeError):
+        with self.assertRaisesRegex(drive.DriveError, "mode must be replace or append"):
             writer_routes.document_write(node=node, markdown="Second.", mode="prepend")
 
         self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
+    def test_a_field_left_out_is_a_bad_request_that_names_it(self):
+        with self.assertRaisesRegex(drive.DriveError, "markdown must be a string") as refused:
+            writer_routes.document_create(parent=self.folder, title="Agent refused")
+
+        self.assertEqual(refused.exception.http_status_code, 400)
 
     def test_a_reader_cannot_write(self):
         node = self.create("First.")
@@ -282,7 +288,7 @@ class TestDocumentWrites(DriveCallbackCase):
     def test_fenced_code_keeps_its_language(self):
         node = self.create("```python\nx = 1\n```")
 
-        self.assertEqual(self.blocks_of(node), '<codeBlock language="python">x = 1\n</codeBlock>')
+        self.assertEqual(self.blocks_of(node), '<codeBlock language="python">x = 1</codeBlock>')
 
     def test_markdown_the_converter_would_drop_part_of_answers_what_it_drops(self):
         with self.assertRaises(MarkdownRefused) as refused:

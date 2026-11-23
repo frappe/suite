@@ -23,6 +23,8 @@ MARKDOWN_MAX = 128 * 1024
 HEADING_IDS = ("id", "data-toc-id")
 # The layer's refusals that pass by themselves: another push holds the document, or a compaction makes room
 PASSING = ("busy", "compacting")
+# The converter's check names no tag; in Markdown it fails on HTML the editor has no place for
+PLAIN_REASONS = {"check": "raw HTML the editor can't hold"}
 
 
 class MarkdownRefused(frappe.ValidationError):
@@ -80,6 +82,10 @@ def body_state(markdown: str) -> bytes:
     for image in soup.select('img[class="screenshot"]'):
         del image["class"]
 
+    for code in soup.select("pre > code"):
+        # The Markdown reader ends the code with a newline that a typed block doesn't have
+        code.string = code.get_text().removesuffix("\n")
+
     for code in soup.select("pre > code[class]"):
         language = code["class"][-1]
         if code["class"] == [language.removeprefix("language-"), language]:
@@ -102,7 +108,7 @@ def converted(html: str) -> convert.Converted:
         raise WriteBusy(_("The converter is busy. Try again in a moment.")) from None
 
     if isinstance(answer, convert.Refused):
-        refusal = " ".join(filter(None, [answer.reason, answer.detail]))
+        refusal = PLAIN_REASONS.get(answer.reason, answer.reason)
         raise MarkdownRefused(_("A document can't keep this Markdown: {0}").format(refusal))
 
     return answer
