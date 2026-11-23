@@ -38,6 +38,8 @@ Both answer the document's Drive node id and the revision the write made:
 - The automatic version and the readable copy follow it.
 - `append` adds the Markdown after the body. Text someone is typing at that moment stays.
 - `replace` removes every block the body had and writes the Markdown. Text typed at that moment into a removed block goes with it. A block added at that moment stays.
+- A heading gets an id of its own, as a typed heading does, so a repeated heading never shares one.
+- In a document with tabs, `append` lands at the end of the first tab, and `replace` removes every tab.
 
 ## Markdown
 
@@ -45,6 +47,7 @@ Both answer the document's Drive node id and the revision the write made:
 - A write keeps all of the Markdown or refuses all of it. Only what shows nothing is left out: an HTML comment, and a link with no text.
 - Raw HTML the editor can't hold is refused, such as a `<div>`.
 - Task lists and strikethrough are not read: `- [ ]` and `~~` stay as typed.
+- One call takes up to 128 KB of Markdown. Write a longer document in parts: create it, then append.
 
 ## Refusals
 
@@ -56,11 +59,12 @@ A refusal answers its class and a message:
 
 | Class | Status | Meaning |
 | --- | --- | --- |
-| `DriveNotFound` | 404 | The folder or document does not exist for this user |
+| `DriveNotFound` | 404 | The folder or document does not exist for this user, or the item is not a Writer document |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the document, or the document is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
-| `MarkdownRefused` | 422 | The document can't keep part of the Markdown. Nothing was written |
-| `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted` |
-| `WriteBusy` | 429 | The converter or the document is busy. Send the same call again in a moment |
+| `DriveConflict` | 409 | The title is taken in the folder. `free_title` names one that is free. Nothing was created |
+| `MarkdownRefused` | 422 | The document can't keep part of the Markdown, or the Markdown is over 128 KB. Nothing was written |
+| `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted` or `doc_full`. The same call gets the same answer until that changes |
+| `WriteBusy` | 429 | The converter or the document is busy. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 
 A `mode` other than `replace` or `append` is refused before anything is written.
