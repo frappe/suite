@@ -54,10 +54,10 @@ curl -X POST $SITE/api/suite/writer/documents/<node>/body -H "$AUTH" -H 'Content
   -d '{"markdown": "## Later\n\nOne more thing.", "mode": "append"}'
 ```
 
-Create and write both answer the document's node id and the revision the write made:
+Create and write both answer the document as its row in step 2, shown here with the fields an agent needs, and `rev`, the revision the write made:
 
 ```json
-{ "data": { "node": "l0e2q0u66a", "rev": 2 } }
+{ "data": { "name": "l0e2q0u66a", "title": "Plan", "kind": "document", "parent_node": "84n0kmpagb", "mime": "frappe/writer", "rev": 2 } }
 ```
 
 **6. Share it with a user.** The user needs manage access, which the one who made the document has. `role` is a number: `10` read, `20` comment, `40` edit, `50` manage, and `0` shuts the user out. On a folder, `30` lets the user add to it.

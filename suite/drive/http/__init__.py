@@ -1,6 +1,6 @@
 """Drive's HTTP surface: real routes under `/api/suite/drive/`.
 
-Three modules, one job each.
+Four modules, one job each.
 
 - `translator` is the `before_request` hook. It rewrites a Drive path onto
   Frappe's v2 method URL and does nothing else. Authentication, the session,
@@ -12,6 +12,8 @@ Three modules, one job each.
   nothing else and it decides no policy.
 - `shapes` turns a stored row into §11.3's node shape and coerces the strings
   a query string delivers into the types a workflow expects.
+- `node_shape` holds §11.3's node shape as types, which the package root
+  exports without loading the node workflows.
 
 Seven rules hold across every route.
 

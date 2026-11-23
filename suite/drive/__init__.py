@@ -166,6 +166,7 @@ which is what an offboarded user looks like.
 | `legacy_node` | one primary-key read of `Drive Legacy Route` |
 | `node_url` | one primary-key read of the node's kind |
 | `node_owner` | one primary-key read of the node's owner |
+| `get_node` | one primary-key read of the node, one READ check, and one read of its owner as a person |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
 | `record_visit` | one READ check and one upsert of the caller's `Drive Recent` row |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
@@ -275,6 +276,7 @@ from suite.drive._core.roots import (
 from suite.drive._core.roots import (
     provision_personal_root as ensure_personal_root,
 )
+from suite.drive.http.node_shape import NodeShape
 
 if TYPE_CHECKING:
     from werkzeug.wrappers import Response
@@ -417,6 +419,14 @@ def node_url(node: str) -> str:
     from suite.drive._core.nodes import node_url as _node_url
 
     return _node_url(node)
+
+
+def get_node(node: str) -> NodeShape:
+    """Answer one node the caller can read, as a Drive write answers it: `GET nodes/{node}` with no expansion."""
+    from suite.drive._core.nodes import get
+    from suite.drive.http.shapes import node_shape
+
+    return node_shape(get(_principals(), node))
 
 
 def node_owner(node: str) -> str:
@@ -687,6 +697,7 @@ __all__ = (
     "DriveNotFound",
     "DriveOverQuota",
     "DriveStorageUnmeasured",
+    "NodeShape",
     "PersonOnNode",
     "Satellite",
     "administration_usage",
@@ -700,6 +711,7 @@ __all__ = (
     "create_storage_reservation",
     "ensure_folder",
     "ensure_personal_root",
+    "get_node",
     "get_storage_reservation",
     "get_storage_usage",
     "get_version",

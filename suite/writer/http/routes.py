@@ -47,8 +47,9 @@ class WriteMarkdown(TypedDict):
     mode: Literal["replace", "append"]
 
 
-class WrittenDocument(TypedDict):
-    node: str
+class WrittenDocument(drive.NodeShape):
+    """The document's node as Drive answers it, and the revision the write made."""
+
     rev: int
 
 
@@ -134,7 +135,7 @@ def document_create(parent: Given = None, title: Given = None, markdown: Given =
     """Create a document from Markdown, as an agent does."""
     body = text(markdown, "markdown")
     node, rev = markdown_body.create(text(parent, "parent"), text(title, "title"), body)
-    return {"node": node, "rev": rev}
+    return {**drive.get_node(node), "rev": rev}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -144,7 +145,8 @@ def document_write(node: str, markdown: Given = None, mode: Given = None) -> Wri
     if mode not in MODES:
         raise frappe.ValidationError(_("mode must be replace or append"))
 
-    return {"node": node, "rev": markdown_body.write(node, text(markdown, "markdown"), mode)}
+    rev = markdown_body.write(node, text(markdown, "markdown"), mode)
+    return {**drive.get_node(node), "rev": rev}
 
 
 AGENT_GUIDE = Path(__file__).parents[1] / "agent-guide.md"

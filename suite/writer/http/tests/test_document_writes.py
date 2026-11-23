@@ -43,11 +43,12 @@ class TestDocumentWrites(DriveCallbackCase):
         root = drive.ensure_personal_root(WRITER)
         self.folder = frappe.db.get_value("Drive Root", root, "node")
 
-    def create(self, markdown: str) -> str:
-        written = writer_routes.document_create(self.folder, f"Agent {uuid.uuid4().hex[:8]}", markdown)
-        self.addCleanup(self.delete_document, written["node"])
-        self.addCleanup(self.delete_log, written["node"])
-        return written["node"]
+    def create(self, markdown: str, title: str | None = None) -> str:
+        title = title or f"Agent {uuid.uuid4().hex[:8]}"
+        node = writer_routes.document_create(self.folder, title, markdown)["name"]
+        self.addCleanup(self.delete_document, node)
+        self.addCleanup(self.delete_log, node)
+        return node
 
     def body_of(self, node: str) -> str:
         # The body as a tab opening the document gets it
@@ -89,6 +90,19 @@ class TestDocumentWrites(DriveCallbackCase):
             self.blocks_of(node),
             '<heading level="1">Plan</heading><paragraph>Ship <bold>today</bold>, café ✓.</paragraph>',
         )
+
+    def test_a_write_answers_the_document_and_the_rev_it_made(self):
+        title = f"Agent {uuid.uuid4().hex[:8]}"
+        node = self.create("First.", title)
+        before = self.doc_row(node).head_rev
+
+        written = writer_routes.document_write(node, "Second.", "append")
+
+        self.assertEqual(
+            (written["name"], written["title"], written["parent_node"], written["kind"]),
+            (node, title, self.folder, "document"),
+        )
+        self.assertEqual(written["rev"], before + 1)
 
     def test_a_user_who_cannot_add_to_the_folder_creates_nothing(self):
         frappe.set_user(OUTSIDER)
