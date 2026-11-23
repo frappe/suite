@@ -794,8 +794,7 @@ export class CallbackClient {
 	}
 
 	private gapReason(reason: string): string {
-		if (reason.includes('ffmpeg') || reason.includes('segment'))
-			return 'ffmpeg_exited';
+		if (reason.includes('ffmpeg')) return 'ffmpeg_exited';
 		if (reason.includes('renderer')) return 'renderer_interrupted';
 		return 'capture_interrupted';
 	}

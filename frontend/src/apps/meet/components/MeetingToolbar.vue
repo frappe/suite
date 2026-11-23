@@ -263,14 +263,14 @@ const moreOptions = computed(() => [
           icon: ['Recording', 'Interrupted', 'Stopping'].includes(props.recordingStatus || '')
             ? 'lucide-circle-stop'
             : 'lucide-disc',
-          label:
-            props.recordingStatus === 'Pending'
-              ? __('Starting recording…')
-              : ['Recording', 'Interrupted', 'Stopping'].includes(props.recordingStatus || '')
-                ? __('Stop recording')
-                : __('Start recording'),
+          label: ['Pending', 'Starting'].includes(props.recordingStatus || '')
+            ? __('Starting capture…')
+            : ['Recording', 'Interrupted', 'Stopping'].includes(props.recordingStatus || '')
+              ? __('Stop capture')
+              : __('Capture'),
           disabled:
-            props.recordingLoading || ['Pending', 'Stopping'].includes(props.recordingStatus || ''),
+            props.recordingLoading ||
+            ['Pending', 'Starting', 'Stopping'].includes(props.recordingStatus || ''),
           onClick: () => {
             emit('manage-recording')
             resetHideTimer()

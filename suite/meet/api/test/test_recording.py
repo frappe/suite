@@ -537,15 +537,19 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(artifact.kind, "file")
             self.assertEqual(artifact.state, "Active")
             self.assertEqual(artifact.size, len(content))
-            self.assertTrue(artifact.title.startswith(f"{self.room.name} - "))
-            self.assertTrue(artifact.title.endswith(".mp4"))
+            self.assertEqual(artifact.title, "Recording.mp4")
+            self.assertEqual(artifact.parent_node, completed.capture_folder)
             folder = frappe.db.get_value(
                 "Drive Node", artifact.parent_node, ["title", "kind", "parent_node", "owner"], as_dict=True
             )
-            self.assertEqual(folder.title, "Meet Recordings")
+            self.assertTrue(folder.title.endswith(recording.name[:10]))
             self.assertEqual(folder.kind, "folder")
             self.assertEqual(folder.owner, self.owner)
-            self.assertEqual(folder.parent_node, recording.drive_home_folder)
+            meet_folder = frappe.db.get_value(
+                "Drive Node", folder.parent_node, ["title", "parent_node"], as_dict=True
+            )
+            self.assertRegex(meet_folder.title, r"^Meet(?: \(\d+\))?$")
+            self.assertEqual(meet_folder.parent_node, recording.drive_home_folder)
             self.assertEqual(recording.drive_home_folder, drive.personal_root_for(self.owner))
 
             frappe.set_user(self.owner)

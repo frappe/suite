@@ -1,0 +1,27 @@
+# Merge into the existing host nginx configuration after substituting
+# ${TRANSCRIPTION_DOMAIN} and provisioning its certificate. Do not start
+# another nginx or the Compose proxy profile on a host already serving HTTPS.
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name ${TRANSCRIPTION_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${TRANSCRIPTION_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${TRANSCRIPTION_DOMAIN}/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    # Match Caddyfile exactly: health is public; the worker checks the
+    # metrics bearer token. Forward Authorization without logging its value.
+    location = /health {
+        proxy_pass http://127.0.0.1:8011;
+        proxy_set_header Host $host;
+    }
+    location = /metrics {
+        proxy_pass http://127.0.0.1:8011;
+        proxy_set_header Host $host;
+        proxy_set_header Authorization $http_authorization;
+    }
+    location / {
+        return 404;
+    }
+}

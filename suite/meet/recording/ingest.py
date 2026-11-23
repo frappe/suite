@@ -657,7 +657,7 @@ def _validate_media(path: Path) -> dict:
         raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is too large"))
     try:
         media = json.loads(result.stdout)
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
     if not isinstance(media, dict):
         raise DeterministicFinalizationError("invalid_media", _("Recording media metadata is invalid"))
@@ -685,7 +685,7 @@ def _validate_media(path: Path) -> dict:
             and float(audio.get("start_time", -1)) >= 0
             and abs(float(video.get("start_time", 0)) - float(audio.get("start_time", 0))) <= 0.1
         )
-    except (TypeError, ValueError, ZeroDivisionError):
+    except TypeError, ValueError, ZeroDivisionError:
         valid_profile = False
     if not valid_profile:
         raise DeterministicFinalizationError(
@@ -694,7 +694,7 @@ def _validate_media(path: Path) -> dict:
     try:
         media_format = media.get("format", {})
         duration = float(media_format.get("duration", 0)) if isinstance(media_format, dict) else 0
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         duration = 0
     if not math.isfinite(duration) or duration <= 0:
         raise DeterministicFinalizationError("invalid_duration", _("Recording artifact duration is invalid"))
@@ -731,7 +731,7 @@ def _callback_datetime(value):
         frappe.throw(_("Recording callback timestamps must use canonical UTC milliseconds"))
     try:
         parsed = get_datetime(value)
-    except (TypeError, ValueError, OverflowError):
+    except TypeError, ValueError, OverflowError:
         frappe.throw(_("Recording callback timestamp is invalid"))
     if parsed.tzinfo is None:
         frappe.throw(_("Recording callback timestamps must include a timezone"))
@@ -744,10 +744,23 @@ def _recordings_folder(recording) -> str:
     Runs as the room owner: Drive reuses only a folder the owner created, so a
     same-named folder a co-host made in the owner's Drive is never written to.
     """
+    if recording.capture_contract:
+        from suite.meet.transcription.artifacts import capture_folder
+
+        recording.capture_folder = capture_folder(
+            recording.name,
+            recording.drive_home_folder,
+            frappe.db.get_value("Meet Room", recording.meet_room, "title") or "Meet",
+            recording.started_at,
+            recording.capture_folder,
+        )
+        return recording.capture_folder
     return drive.ensure_folder(recording.drive_home_folder, "Meet Recordings")
 
 
 def _artifact_name(recording) -> str:
+    if recording.capture_contract:
+        return "Recording.mp4"
     title = frappe.db.get_value("Meet Room", recording.meet_room, "title")
     title = title or recording.meet_room or "Meet Recording"
     timezone = frappe.db.get_value("User", recording.room_owner, "time_zone") or get_system_timezone()
@@ -774,6 +787,7 @@ def delete_recordings_for_purged_artifacts():
         FROM `tabMeet Recording` recording
         LEFT JOIN `tabDrive Node` node ON node.name = recording.artifact
         WHERE recording.artifact IS NOT NULL AND recording.artifact <> '' AND node.name IS NULL
+          AND NOT EXISTS (SELECT 1 FROM `tabMeet Transcription Job` job WHERE job.capture = recording.name)
         """,
         pluck=True,
     )

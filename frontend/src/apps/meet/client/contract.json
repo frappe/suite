@@ -621,7 +621,8 @@
                   "Ready",
                   "Partial",
                   "Failed",
-                  "Cancelled"
+                  "Cancelled",
+                  "Captured"
                 ],
                 "title": "Status",
                 "type": "string"
@@ -684,6 +685,60 @@
                   }
                 ],
                 "title": "Interruption Deadline"
+              },
+              "video_enabled": {
+                "title": "Video Enabled",
+                "type": "boolean"
+              },
+              "transcription_enabled": {
+                "title": "Transcription Enabled",
+                "type": "boolean"
+              },
+              "transcription_language": {
+                "anyOf": [
+                  {
+                    "const": "en",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Transcription Language"
+              },
+              "transcription_capture_state": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "capturing",
+                      "complete",
+                      "partial",
+                      "failed"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Transcription Capture State"
+              },
+              "video_capture_state": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "starting",
+                      "capturing",
+                      "complete",
+                      "failed"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Video Capture State"
               }
             },
             "required": [
@@ -724,12 +779,25 @@
           "meeting_id": {
             "title": "Meeting Id",
             "type": "string"
+          },
+          "video_enabled": {
+            "title": "Video Enabled",
+            "type": "boolean"
+          },
+          "transcription_enabled": {
+            "title": "Transcription Enabled",
+            "type": "boolean"
+          },
+          "language": {
+            "const": "en",
+            "title": "Language",
+            "type": "string"
           }
         },
         "required": [
           "meeting_id"
         ],
-        "title": "RoomRef",
+        "title": "RecordingSelection",
         "type": "object"
       },
       "body": null,
@@ -741,6 +809,18 @@
           },
           "global_enabled": {
             "title": "Global Enabled",
+            "type": "boolean"
+          },
+          "transcription_available": {
+            "title": "Transcription Available",
+            "type": "boolean"
+          },
+          "video_enabled": {
+            "title": "Video Enabled",
+            "type": "boolean"
+          },
+          "transcription_enabled": {
+            "title": "Transcription Enabled",
             "type": "boolean"
           },
           "e2ee_conflict": {
@@ -783,6 +863,9 @@
         "required": [
           "eligible",
           "global_enabled",
+          "transcription_available",
+          "video_enabled",
+          "transcription_enabled",
           "e2ee_conflict",
           "storage_available",
           "recorder_available",
@@ -818,6 +901,19 @@
             "title": "Meeting Id",
             "type": "string"
           },
+          "video_enabled": {
+            "title": "Video Enabled",
+            "type": "boolean"
+          },
+          "transcription_enabled": {
+            "title": "Transcription Enabled",
+            "type": "boolean"
+          },
+          "language": {
+            "const": "en",
+            "title": "Language",
+            "type": "string"
+          },
           "request_id": {
             "title": "Request Id",
             "type": "string"
@@ -849,7 +945,8 @@
                   "Ready",
                   "Partial",
                   "Failed",
-                  "Cancelled"
+                  "Cancelled",
+                  "Captured"
                 ],
                 "title": "Status",
                 "type": "string"
@@ -857,6 +954,10 @@
               "grant_delivered": {
                 "title": "Grant Delivered",
                 "type": "boolean"
+              },
+              "state_revision": {
+                "title": "State Revision",
+                "type": "integer"
               }
             },
             "required": [
@@ -938,7 +1039,8 @@
                   "Ready",
                   "Partial",
                   "Failed",
-                  "Cancelled"
+                  "Cancelled",
+                  "Captured"
                 ],
                 "title": "Status",
                 "type": "string"
@@ -946,6 +1048,10 @@
               "grant_delivered": {
                 "title": "Grant Delivered",
                 "type": "boolean"
+              },
+              "state_revision": {
+                "title": "State Revision",
+                "type": "integer"
               }
             },
             "required": [

@@ -80,6 +80,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 					},
 				);
 				assertParticipantOwnership(deps, socket, scopedRoomId, participantId);
+				deps.mediasoup.pinRoomSpeechHints(scopedRoomId, socket.speechContext);
 			}
 
 			socket.join(scopedRoomId);

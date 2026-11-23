@@ -12,7 +12,7 @@
       <MeetingHeader :meeting-id="meetingId" :meeting-title="meetingTitle">
         <template #right>
           <RecordingIndicator
-            v-if="!showPreview && recording.isLive.value && recording.state.value"
+            v-if="!showPreview && recording.isCapturing.value && recording.state.value"
             :recording="recording.state.value"
             :can-stop="isCurrentUserHost || isCurrentUserCohost"
             @click="handleRecordingAction"
@@ -265,12 +265,13 @@
 
     <RecordingPreflightDialog
       v-model:open="recordingDialogOpen"
-      :preflight="recordingPreflight"
-      :confirm="confirmRecordingStart"
+      :confirm="recording.start"
+      :e2ee="e2eeState.isContextReady.value"
     />
     <RecordingStopDialog
       v-model="recordingStopDialogOpen"
       :loading="recording.stopLoading.value"
+      :recording="recording.state.value"
       @confirm="confirmRecordingStop"
     />
   </div>
@@ -343,7 +344,7 @@ import { useRaiseHand } from '../composables/useRaiseHand'
 import { useRaiseHandStore } from '../composables/useRaiseHandStore'
 import { useReactions } from '../composables/useReactions'
 import { useReactionStore } from '../composables/useReactionStore'
-import { useRecording, type RecordingPreflight } from '../composables/useRecording'
+import { useRecording } from '../composables/useRecording'
 import { useResponsiveGrid } from '../composables/useResponsiveGrid'
 import { useSFUConnection, type SFUScreenShareData } from '../composables/useSFUConnection'
 import { autoHideToolbar, selectedSpeakerId } from '../data/mediaPreferences'
@@ -413,19 +414,17 @@ const isCurrentUserCohost = ref(false)
 const recording = useRecording(meetingId.value, { signedIn: () => session.isLoggedIn })
 const recordingDialogOpen = ref(false)
 const recordingStopDialogOpen = ref(false)
-const recordingPreflight = ref<RecordingPreflight | null>(null)
-async function handleRecordingAction() {
+function handleRecordingAction() {
   try {
-    if (recording.isStarting.value) return
+    if (recording.isStarting.value || recording.state.value?.status === 'Stopping') return
     if (recording.isLive.value) {
       if (!isCurrentUserHost.value && !isCurrentUserCohost.value) return
-      if (recording.state.value?.status !== 'Stopping') recordingStopDialogOpen.value = true
+      recordingStopDialogOpen.value = true
       return
     }
-    recordingPreflight.value = await recording.getPreflight()
     recordingDialogOpen.value = true
   } catch (error) {
-    toast.error(refusalOr(error, __('Could not manage recording')))
+    toast.error(refusalOr(error, __('Could not manage capture')))
   }
 }
 async function confirmRecordingStop() {
@@ -433,15 +432,7 @@ async function confirmRecordingStop() {
     await recording.stop()
     recordingStopDialogOpen.value = false
   } catch (error) {
-    toast.error(refusalOr(error, __('Could not stop recording')))
-  }
-}
-async function confirmRecordingStart() {
-  try {
-    await recording.start()
-  } catch (error) {
-    toast.error(refusalOr(error, __('Could not start recording')))
-    throw error
+    toast.error(refusalOr(error, __('Could not stop capture')))
   }
 }
 const previewDetails = useQuery(api.meet.rooms.preview, () => ({ meeting_id: meetingId.value }))
@@ -592,6 +583,7 @@ const sfuConnection = useSFUConnection({
   onE2EERequired: () => captions.disableCaptionsForE2EE(),
   onRecordingState: recording.syncState,
   beginRecordingAdmissionSync: recording.beginAdmissionSync,
+  onTranscriptionCaptureState: recording.syncTranscriptionCapture,
   onRecordingEnabled: recording.setGlobalEnabled,
   onRole: (isHost, isCohost) => {
     isCurrentUserHost.value = isHost

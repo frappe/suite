@@ -26,6 +26,7 @@ function normalizeErrorMessage(message: unknown): string {
     .replace(/\s+/g, ' ')
     .replace(/\s+([.,!?;:])/g, '$1')
     .trim()
+    .replace(/^(?:[\w.]+\.)?(?:[A-Z]\w*(?:Error|Exception)|Error|Exception):\s*/, '')
 }
 
 /** The server's own refusal when it sent one, else `fallback`: never a raw network or browser error. */

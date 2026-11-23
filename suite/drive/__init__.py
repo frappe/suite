@@ -618,6 +618,7 @@ def store_file(
     *,
     content_modified: datetime | int | float | str | None = None,
     reservation: str | None = None,
+    read_only: bool = False,
 ) -> str:
     """Store bytes this process holds as a private file node below `parent`.
 
@@ -628,6 +629,7 @@ def store_file(
     reservation the caller charged these bytes to in advance; it is consumed
     in the same step, so the bytes never count twice against the root.
     Needs UPLOAD on `parent`.
+    A read-only file keeps its original bytes while remaining movable and shareable.
     """
     from suite.drive._core.nodes import store_file as _store_file
 
@@ -638,6 +640,7 @@ def store_file(
         stream,
         content_modified=content_modified,
         reservation=reservation,
+        read_only=read_only,
     )
 
 

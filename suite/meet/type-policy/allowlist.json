@@ -3,7 +3,7 @@
   "exceptions": [
     {
       "path": "frontend/src/apps/meet/types.ts",
-      "line": 107,
+      "line": 95,
       "column": 59,
       "rule": "MTP001",
       "lineText": "export function isUnknownRecord(value: unknown): value is Record<string, unknown> {",

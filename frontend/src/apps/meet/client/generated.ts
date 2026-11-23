@@ -321,12 +321,18 @@ export type RecordingStateOutputRecordingState = {
     | 'Partial'
     | 'Failed'
     | 'Cancelled'
+    | 'Captured'
   state_revision: number
   started_at?: string | null
   capture_started_at?: string | null
   interruption_id?: string | null
   interrupted_at?: string | null
   interruption_deadline?: string | null
+  video_enabled?: boolean
+  transcription_enabled?: boolean
+  transcription_language?: 'en' | null
+  transcription_capture_state?: ('capturing' | 'complete' | 'partial' | 'failed') | null
+  video_capture_state?: ('starting' | 'capturing' | 'complete' | 'failed') | null
 }
 
 export type RecordingStateInput = { meeting_id: string }
@@ -354,11 +360,19 @@ const operationRecordingState: QueryRef<
   loadValidators: async () => (await import('./validators')).operationRecordingState,
 }
 
-export type RecordingPreflightInput = { meeting_id: string }
+export type RecordingPreflightInput = {
+  meeting_id: string
+  video_enabled?: boolean
+  transcription_enabled?: boolean
+  language?: 'en'
+}
 
 export type RecordingPreflightOutput = {
   eligible: boolean
   global_enabled: boolean
+  transcription_available: boolean
+  video_enabled: boolean
+  transcription_enabled: boolean
   e2ee_conflict: boolean
   storage_available: boolean
   recorder_available: boolean
@@ -404,12 +418,20 @@ export type RecordingStartOutputRecordingCommand = {
     | 'Partial'
     | 'Failed'
     | 'Cancelled'
+    | 'Captured'
   grant_delivered?: boolean
+  state_revision?: number
 }
 
 export type RecordingStartOutputRejectedRecording = { status: 'Rejected' }
 
-export type RecordingStartInput = { meeting_id: string; request_id: string }
+export type RecordingStartInput = {
+  meeting_id: string
+  video_enabled?: boolean
+  transcription_enabled?: boolean
+  language?: 'en'
+  request_id: string
+}
 
 export type RecordingStartOutput =
   RecordingStartOutputRecordingCommand | RecordingStartOutputRejectedRecording
@@ -448,7 +470,9 @@ export type RecordingStopOutputRecordingCommand = {
     | 'Partial'
     | 'Failed'
     | 'Cancelled'
+    | 'Captured'
   grant_delivered?: boolean
+  state_revision?: number
 }
 
 export type RecordingStopInput = { meeting_id: string }

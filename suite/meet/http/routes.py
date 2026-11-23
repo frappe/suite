@@ -59,7 +59,13 @@ class GuestJoin(RoomRef):
     guest_session_token: NotRequired[str]
 
 
-class RecordingStart(RoomRef):
+class RecordingSelection(RoomRef):
+    video_enabled: NotRequired[bool]
+    transcription_enabled: NotRequired[bool]
+    language: NotRequired[Literal["en"]]
+
+
+class RecordingStart(RecordingSelection):
     request_id: str
 
 
@@ -240,7 +246,7 @@ ROUTES: tuple[Route, ...] = (
         "GET",
         "recordings/preflight",
         "recording_preflight",
-        query=RoomRef,
+        query=RecordingSelection,
         output=shapes.RecordingPreflight,
         kind="query",
         public_name="recordings.preflight",

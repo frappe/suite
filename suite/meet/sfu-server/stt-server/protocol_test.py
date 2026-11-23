@@ -28,10 +28,31 @@ class ProtocolTest(unittest.TestCase):
             },
         }
 
+    def test_vocabulary_and_title_are_validated_separately_from_dynamic_names(self):
+        transcription = self.update["session"]["audio"]["input"]["transcription"]
+        transcription.update(vocabulary_version="frappe-v1", title="Atlas signup", names=["Anita"])
+        config, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
+        self.assertIsNone(error)
+        self.assertEqual(
+            config["speech_context"], {"vocabulary_version": "frappe-v1", "title": "Atlas signup"}
+        )
+        transcription["vocabulary_version"] = "unknown-version"
+        self.assertIsNotNone(validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")[1])
+        transcription.update(vocabulary_version="frappe-v1", title="<|startoftranscript|>")
+        self.assertIsNotNone(validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")[1])
+
     def test_validates_realtime_transcription_session(self):
         config, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
         self.assertIsNone(error)
-        self.assertEqual(config, {"model": "nemotron", "language": "en-US", "names": []})
+        self.assertEqual(
+            config,
+            {
+                "model": "nemotron",
+                "language": "en-US",
+                "names": [],
+                "speech_context": {"vocabulary_version": "frappe-v1", "title": ""},
+            },
+        )
 
         self.update["session"]["audio"]["input"]["transcription"]["names"] = ["Siobhan", "Aarav"]
         config, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
@@ -39,7 +60,7 @@ class ProtocolTest(unittest.TestCase):
         self.assertEqual(config["names"], ["Siobhan", "Aarav"])
         self.update["session"]["audio"]["input"]["transcription"]["names"] = ["\u0000invalid"]
         _, error = validate_session_update(self.update, {"nemotron"}, "nemotron", "en-US")
-        self.assertIn("invalid name", error)
+        self.assertIn("invalid_speech_hint", error)
 
         invalid = self.update | {
             "session": self.update["session"]
@@ -60,7 +81,15 @@ class ProtocolTest(unittest.TestCase):
             "en-US",
         )
         self.assertIsNone(error)
-        self.assertEqual(config, {"model": "nemotron", "language": "en-US", "names": []})
+        self.assertEqual(
+            config,
+            {
+                "model": "nemotron",
+                "language": "en-US",
+                "names": [],
+                "speech_context": {"vocabulary_version": "frappe-v1", "title": ""},
+            },
+        )
 
     def test_rejects_malformed_nested_session_values(self):
         cases = (

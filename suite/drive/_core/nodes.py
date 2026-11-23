@@ -86,6 +86,7 @@ NODE_FIELD_NAMES = (
     "blob",
     "size",
     "mime",
+    "read_only",
     "url",
     "content_doctype",
     "content_docname",
@@ -1244,6 +1245,7 @@ def create_file(
     _via_link: str | None = None,
     _client_named_blob: bool = False,
     _reservation: str | None = None,
+    _read_only: bool = False,
 ) -> str:
     """Create one private blob-backed file and charge its root atomically.
 
@@ -1299,6 +1301,7 @@ def create_file(
                 "blob": blob_row.name,
                 "size": blob_row.file_size,
                 "mime": blob_row.mime_type,
+                "read_only": _read_only,
                 "state": "Active",
                 "content_modified": _content_time(content_modified),
                 "is_template": 0,
@@ -1334,6 +1337,7 @@ def store_file(
     *,
     content_modified: datetime | int | float | str | None = None,
     reservation: str | None = None,
+    read_only: bool = False,
 ) -> str:
     """Store bytes this process holds as a private blob and create their file node.
 
@@ -1374,6 +1378,7 @@ def store_file(
             mime=blob.mime_type,
             content_modified=content_modified,
             _reservation=reservation,
+            _read_only=read_only,
         )
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
@@ -1486,6 +1491,11 @@ def _stamp_content_time(
     return _node(current.name)
 
 
+def require_replaceable(node: Mapping) -> None:
+    if node.get("read_only"):
+        raise DriveForbidden(_("This file is read-only. Download a copy to edit."))
+
+
 def _replace_file(
     principals: Principals,
     node: str,
@@ -1518,6 +1528,7 @@ def _replace_file(
     try:
         current = _lock_node(node)
         via_link = require(current, EDIT, principals)
+        require_replaceable(current)
         if _via_link is not None:
             # The exact link remains bound to the original upload parent. EDIT
             # on the replacement target is a separate, fresh authorization.

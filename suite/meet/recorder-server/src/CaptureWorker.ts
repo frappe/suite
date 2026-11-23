@@ -329,7 +329,13 @@ export class CaptureWorker {
 				{
 					env: this.env,
 					logPath: join(this.manifest.directory, `logs/ffmpeg-${epoch}.log`),
-					onUnexpectedExit: () => {
+					onUnexpectedExit: (result) => {
+						logger.error({
+							event: 'capture_process_exited',
+							job: this.job,
+							exit_code: result?.code ?? null,
+							signal: result?.signal ?? null,
+						});
 						if (committed) this.queueRecovery();
 						else exitError = new Error('ffmpeg exited during capture launch');
 					},
