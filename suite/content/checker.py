@@ -100,10 +100,7 @@ def ask(
     minimum: tuple[int, int] = (NODE_MAJOR, 0),
 ) -> dict | None:
     """Run `bundle` on one request and answer its reply, or None without a Node at `minimum` or the bundle."""
-    wait_s = REQUEST_WAIT_S
-    if getattr(frappe.local, "job", None):
-        wait_s = WAIT_S
-
+    wait_s = WAIT_S if getattr(frappe.local, "job", None) else REQUEST_WAIT_S
     node_path = usable_node(minimum)
     if not node_path or not bundle.is_file():
         return None

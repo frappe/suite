@@ -178,10 +178,11 @@ def own_update(log_read: Snapshot, client_id: int, change: Callable[[pycrdt.Doc]
 def rebuild_copy(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int) -> None:
     """Make the app's render of the document at `rev` the readable copy, as no tab is here to render it."""
     html_copy = spec_of(app).readable_copy
-    try:
-        if isinstance(html_copy, HtmlCopy) and html_copy.render:
-            copies.install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return
 
+    try:
+        copies.install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
     except Exception:
         frappe.db.rollback()
         # The row is committed; the next tab to open the document renders the copy

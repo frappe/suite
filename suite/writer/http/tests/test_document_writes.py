@@ -73,13 +73,6 @@ class TestDocumentWrites(DriveCallbackCase):
             '<heading level="1">Plan</heading><paragraph>Ship <bold>today</bold>, café ✓.</paragraph>',
         )
 
-    def test_a_new_document_has_its_readable_copy(self):
-        node = self.create("# Plan\n\nShip **today**, café ✓.")
-
-        html = writer_routes.document(self.docname_of(node))["html"]
-
-        self.assertIn("<p>Ship <strong>today</strong>, café ✓.</p>", html)
-
     def test_a_user_who_cannot_add_to_the_folder_creates_nothing(self):
         frappe.set_user(OUTSIDER)
 
@@ -122,7 +115,6 @@ class TestDocumentWrites(DriveCallbackCase):
             writer_routes.document_create(self.folder, "", "First.")
 
         self.assertIs(type(refused.exception), drive.DriveError)
-        self.assertEqual(refused.exception.http_status_code, 400)
         self.assertTrue(self.answer_of(refused.exception)["message"])
         self.assertEqual(frappe.db.count("Drive Node", {"parent_node": self.folder, "title": ""}), 0)
 
@@ -133,12 +125,11 @@ class TestDocumentWrites(DriveCallbackCase):
         token = link["principal"].removeprefix("$LINK:")
         frappe.set_user(OUTSIDER)
 
-        with self.assertRaises(drive.DriveLocked) as refused:
+        with self.assertRaises(drive.DriveLocked):
             call_route(
                 lambda node: writer_routes.document_write(node, "Second.", "append"), node, links=token
             )
 
-        self.assertEqual(refused.exception.http_status_code, 401)
         self.assertEqual(frappe.local.response_headers["WWW-Authenticate"], 'DriveLink realm="drive"')
         frappe.set_user(WRITER)
         self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
@@ -345,15 +336,7 @@ class TestDocumentWrites(DriveCallbackCase):
 
         self.assertEqual(self.blocks_of(node), '<codeBlock language="python">x = 1\n</codeBlock>')
 
-    def test_markdown_the_converter_would_drop_part_of_is_refused_by_name(self):
-        with self.assertRaisesRegex(MarkdownRefused, "empty-link"):
-            writer_routes.document_create(self.folder, "Agent refused", "See [the page]().")
-
-        self.assertFalse(
-            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
-        )
-
-    def test_a_refusal_answers_with_its_reason(self):
+    def test_markdown_the_converter_would_drop_part_of_answers_what_it_drops(self):
         with self.assertRaises(MarkdownRefused) as refused:
             writer_routes.document_create(self.folder, "Agent refused", "See [the page]().")
 

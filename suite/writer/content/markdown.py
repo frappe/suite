@@ -49,6 +49,7 @@ class WriteBusy(frappe.ValidationError):
 
 def create(parent: str, title: str, markdown: str) -> dict:
     """Create a document in the folder `parent` with `markdown` as its body."""
+    # Before the converter runs, so a user who can't add here takes none of its turn
     drive.check(parent, drive.UPLOAD)
     body = body_state(markdown)
     node = drive.create_document(parent, title, content_doctype=EDITOR.doctype)
@@ -151,11 +152,12 @@ def append_element(
 ) -> pycrdt.XmlElement:
     """Add an element under `parent` with `source`'s tag and attributes, and answer it."""
     element = parent.children.append(pycrdt.XmlElement(source.tag))
+    # Called by name, as pycrdt types the view as no iterable
     for name, value in source.attributes.__iter__():
         element.attributes[name] = value
 
     if source.tag == "heading":
-        # The converter numbers heading ids within one conversion, so a heading gets its own, as a typed one does
+        # The converter's ids repeat across conversions, so a heading gets its own, as a typed one does
         own_id = str(uuid.uuid4())
         for name in HEADING_IDS:
             element.attributes[name] = own_id

@@ -1,8 +1,8 @@
 """Encoding a starter presentation's slides as its first deck, in the request that makes it.
 
 The converter, which reads every other deck, answers busy to a request after a short wait for its
-turn, so a starter is encoded here instead, as the converter writes the same slides. It covers only the welcome
-kickoff's two text element forms (welcome.py's _text), whose only free parts are an id's number
+turn, so a starter is encoded here instead, as the converter writes the same slides. It covers only the
+welcome kickoff's two text element forms (welcome.py's _text), whose only free parts are an id's number
 and plain text. Anything else raises. test_starter checks the result against the converter's
 answer and the checker.
 """
