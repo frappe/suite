@@ -143,6 +143,21 @@ class FetchChangesRealtime(unittest.TestCase):
     def test_deleted_mail_is_announced_to_the_user(self):
         self.assertEqual(self._events(destroyed=["e1"]), [mock.call("mail_changed", user=USER)])
 
+    def test_mail_deleted_on_the_server_is_removed_for_good(self):
+        server = _server()
+        server.respond("Email/changes", _changes(destroyed=["e1"]))
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
+            mock.patch.object(mail_message, "_remove_cached_messages") as remove,
+            mock.patch.object(mail_message.frappe, "publish_realtime"),
+        ):
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        remove.assert_called_once_with(ACCOUNT, ["e1"], is_destroyed=True)
+
     def test_updated_mail_is_announced_to_the_user(self):
         self.assertEqual(self._events(updated=["e1"]), [mock.call("mail_changed", user=USER)])
 

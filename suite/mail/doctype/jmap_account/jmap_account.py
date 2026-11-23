@@ -4,7 +4,7 @@
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint
+from frappe.utils import cint, flt
 
 from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve, maybe_build_automation_sieve
 from suite.mail.doctype.user_account.user_account import account_apps_cache_key, get_user_jmap_accounts
@@ -27,6 +27,7 @@ from suite.mail.store import (
     get_data_store,
     rebuild_email_address_index,
 )
+from suite.mail.store.quota import BYTES_PER_MB
 from suite.mail.utils.user import get_account_emails
 from suite.store import destroy_namespace, get_search_base_path
 from suite.utils import execute_with_logging, user_context
@@ -64,6 +65,7 @@ class JMAPAccount(Document):
         is_readonly: DF.Check
         keep_forwarded_email_in_thread: DF.Check
         last_active_sieve_script_id: DF.Data | None
+        message_cache_quota_mb: DF.Int
     # end: auto-generated types
 
     """Per-account settings shared across every user that has JMAP access to the account.
@@ -112,6 +114,12 @@ class JMAPAccount(Document):
         """Get the total number of cached mail messages for the account."""
 
         return get_data_store(self.name).count(Entity.EMAIL)
+
+    @property
+    def message_cache_size_mb(self) -> float:
+        """Get the size of the account's cached mail messages in MB."""
+
+        return flt(get_data_store(self.name).get_total_value_size(Entity.EMAIL) / BYTES_PER_MB, 1)
 
     @property
     def total_cached_contact_cards(self) -> int:
