@@ -60,8 +60,8 @@
               v-else
               class="space-y-2 sm:px-5 sm:pt-5"
               :class="{
-                /* Clear of the reply bar over the foot (57px, and the phone's own inset under
-                   it), with a gutter's gap to spare. */
+                /* Clear of the reply island over the foot (48px over a 12px gap, and the
+                   phone's own inset under it), with a gutter's gap to spare. */
                 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]': isMobile && !thread?.at(-1)?.draft,
                 'pb-3': isMobile && thread?.at(-1)?.draft,
                 'sm:pb-24': isComposeWindowOpen(),
@@ -786,36 +786,42 @@
                 </template>
               </template>
 
-              <!-- A phone answers from a bar along the screen's foot: a field that starts a reply to
-                   the newest message, then Reply All and Forward. -->
+              <!-- A phone answers from an island floating over the screen's foot, as compose's tools
+                   do, so a reply opens on the same shape: a field that starts a reply to the newest
+                   message, then Reply All and Forward. The wrapper lets taps through to the mail
+                   beside the island. -->
               <div
                 v-if="!readonly && thread.length && !thread?.at(-1)?.draft && isMobile"
-                class="bg-surface-base absolute bottom-0 left-0 right-0 z-20 flex items-center gap-1 border-t px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+                class="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
               >
-                <Button
-                  variant="subtle"
-                  size="lg"
-                  class="text-ink-gray-5 min-w-0 flex-1 !justify-start rounded-full"
-                  :label="replyLabel"
-                  @click="replyToNewest"
+                <div
+                  class="bg-surface-elevation-2 pointer-events-auto flex h-12 items-center gap-1 rounded-full border p-1 shadow-xl"
                 >
-                  <template #prefix>
-                    <Reply class="icon shrink-0" />
-                  </template>
-                </Button>
-                <Button
-                  v-for="action in replyForwardActions.filter((action) => action.icon !== Reply)"
-                  :key="action.label"
-                  variant="ghost"
-                  size="lg"
-                  class="touch-target"
-                  :aria-label="action.label"
-                  @click="action.onClick"
-                >
-                  <template #icon>
-                    <component :is="action.icon" class="icon" />
-                  </template>
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    class="text-ink-gray-5 min-w-0 flex-1 !justify-start !rounded-full"
+                    :label="replyLabel"
+                    @click="replyToNewest"
+                  >
+                    <template #prefix>
+                      <Reply class="size-5 shrink-0" />
+                    </template>
+                  </Button>
+                  <Button
+                    v-for="action in replyForwardActions.filter((action) => action.icon !== Reply)"
+                    :key="action.label"
+                    variant="ghost"
+                    size="lg"
+                    class="shrink-0 !rounded-full"
+                    :aria-label="action.label"
+                    @click="action.onClick"
+                  >
+                    <template #icon>
+                      <component :is="action.icon" class="size-5" />
+                    </template>
+                  </Button>
+                </div>
               </div>
               <div
                 v-else-if="!readonly && thread.length && !thread?.at(-1)?.draft"
