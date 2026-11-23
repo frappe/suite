@@ -126,8 +126,11 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
-/** The compose page, open on a new mail, reached from `from` (the folder, unless a test says). */
-async function openComposePage(from = '/mail') {
+/**
+ * The compose page, open on a new mail, reached from `from` (the folder, unless a test says), or
+ * opened at its own address with no page behind it (`from` null). Its router, for where it went.
+ */
+async function openComposePage(from: string | null = '/mail') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -139,9 +142,12 @@ async function openComposePage(from = '/mail') {
       { path: '/mail/compose', component: ComposeView },
     ],
   })
-  await router.push(from)
-  // The page it came from, as a browser's history records it (memory history records nothing).
-  await router.push({ path: '/mail/compose', state: { back: from } })
+  if (from === null) await router.push('/mail/compose')
+  else {
+    await router.push(from)
+    // The page it came from, as a browser's history records it (memory history records nothing).
+    await router.push({ path: '/mail/compose', state: { back: from } })
+  }
   const app = createApp({ render: () => h(RouterView) })
   app.config.globalProperties.__ = translate
   app.provide('$user', { data: { name: 'maya@example.com', undo_send_period: 10 } })
@@ -149,6 +155,7 @@ async function openComposePage(from = '/mail') {
   app.mount(document.body.appendChild(document.createElement('div')))
   apps.push(app)
   await vi.waitFor(() => expect(button('Attach')).not.toBeNull())
+  return router
 }
 
 const button = (name: string) =>
@@ -340,6 +347,69 @@ describe('scheduling from the compose page', () => {
     await vi.waitFor(() =>
       expect(toasts.success.mock.calls.map(([message]) => message)).toContain('Send scheduled'),
     )
+  })
+})
+
+describe("the compose page's Send, held", () => {
+  it('opens the time to send at, and sends nothing', async () => {
+    handoff.draft = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Brief',
+      html_body: '<p>Looks good.</p>',
+      attachments: [],
+    }
+    await openComposePage()
+    const send = button('Send')!
+
+    // A finger held on Send, then lifted: the lift ends in a click, as it does on a phone.
+    send.dispatchEvent(new Event('pointerdown'))
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    send.dispatchEvent(new Event('pointerup'))
+    send.click()
+
+    await vi.waitFor(() => expect(button('Monday 9 AM')).not.toBeNull())
+    // A send would be asked for by now (see the locking test below).
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(server.asked).not.toContain('update_draft_mail')
+  })
+})
+
+describe('closing the compose page', () => {
+  it('lands in Mail when it was opened at its own address, with no page behind it', async () => {
+    const router = await openComposePage(null)
+
+    button('Close')!.click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/mail'))
+  })
+})
+
+describe("the compose page's reminder", () => {
+  it('asks when to be reminded', async () => {
+    await openComposePage()
+
+    await openSheet('Remind me if no reply')
+
+    expect(sheetRows()).toContain('Pick a date and time…')
+  })
+
+  it('says when it is set for, opened again, and offers to change or remove it', async () => {
+    await openComposePage()
+    await openSheet('Remind me if no reply')
+    document.querySelector<HTMLElement>('[role="dialog"] button')!.click()
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
+
+    const bell = [...document.querySelectorAll('button')].find((b) =>
+      b.getAttribute('aria-label')?.startsWith('Reminder '),
+    )!
+    bell.click()
+
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+    const sheet = document.querySelector('[role="dialog"]')!.textContent
+    expect(sheet).toMatch(/Reminder set for /)
+    expect(sheet).toContain('Change to')
+    expect(sheetRows()).toContain('Remove reminder')
   })
 })
 

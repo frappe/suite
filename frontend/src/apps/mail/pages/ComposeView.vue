@@ -25,16 +25,22 @@
     :inert="isSending || undefined"
   >
     <header
-      class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
+      class="bg-surface-base z-20 flex shrink-0 items-center gap-2 pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
     >
-      <Button variant="ghost" class="touch-target" :label="__('Close')" @click="closeCompose">
+      <Button
+        variant="ghost"
+        class="touch-target !h-8 !w-8"
+        :label="__('Close')"
+        @click="closeCompose"
+      >
         <template #icon>
           <X class="text-ink-gray-5 size-5" />
         </template>
       </Button>
-      <!-- The subject, or until there is one what the page is for: New message, Reply, Forward. -->
+      <!-- What the page is for: New message, Reply, Forward. -->
       <h2 class="text-ink-gray-8 min-w-0 flex-1 truncate text-base font-medium">{{ title }}</h2>
-      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. -->
+      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. Sized
+           and spaced as the thread page's header buttons are. -->
       <Button
         v-if="isSaveFailed"
         variant="ghost"
@@ -43,21 +49,35 @@
         :label="__('Not saved · Retry')"
         @click="saveDraft()"
       />
+      <ReminderMenu
+        :current="remindAt"
+        :removable="!!remindAt"
+        @pick="setRemindAt"
+        @remove="setRemindAt()"
+      >
+        <Button
+          variant="ghost"
+          class="touch-target !h-8 !w-8"
+          :class="{ '!bg-surface-gray-3': remindAt }"
+          :label="remindLabel"
+        >
+          <template #icon>
+            <span
+              :class="remindAt ? 'lucide-bell' : 'lucide-bell-plus'"
+              class="text-ink-gray-5 size-5"
+              aria-hidden="true"
+            />
+          </template>
+        </Button>
+      </ReminderMenu>
       <AdaptiveDropdown :options="ACTIONS">
-        <Button variant="ghost" class="touch-target" :label="__('More actions')">
+        <Button variant="ghost" class="touch-target !h-8 !w-8" :label="__('More actions')">
           <template #icon>
             <span class="lucide-ellipsis text-ink-gray-5 size-5" aria-hidden="true" />
           </template>
         </Button>
       </AdaptiveDropdown>
     </header>
-    <ReplyReminderStrip
-      v-if="remindAt"
-      class="mt-2 shrink-0"
-      :remind-at="remindAt"
-      @change="setRemindAt"
-      @cancel="setRemindAt()"
-    />
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
@@ -78,7 +98,9 @@
           <div
             ref="scroller"
             class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-            @pointerdown="focusWithoutReveal"
+            @touchstart.passive="startTap"
+            @touchend="endTap"
+            @scroll.passive="noteScroll"
             @focusin="onFocusIn"
           >
             <!-- Each row is a label + control on one line, tap target spanning the full width —
@@ -108,7 +130,6 @@
                   class="-ml-[9px] min-w-0 !text-ink-gray-8"
                 />
               </div>
-
               <!-- Each recipient row is a column: the field on top, and under it the target the
 						     input teleports its suggestions into. That target spans the row rather than
 						     the field, which is what lets the list reach both edges of the page. -->
@@ -214,10 +235,16 @@
               />
 
               <div class="mt-auto cursor-default space-y-2.5 pt-2.5" @click.stop>
+                <!-- The quote this reply carries, folded away. Labelled, as the reader's toggle is: a
+                     bare '···' chip was easy to miss, and read as dots. A size up from desktop's,
+                     with the touch target, so a finger finds it; lg would also enlarge its text. -->
                 <Button
                   v-if="mail.quoted_content"
-                  label="&middot;&middot;&middot;"
-                  class="max-h-4 w-fit"
+                  variant="subtle"
+                  size="md"
+                  class="touch-target"
+                  icon-left="lucide-align-left"
+                  :label="__('Show trimmed content')"
                   @click="openQuotedContent"
                 />
 
@@ -272,7 +299,7 @@
 					     a 24px target for a thumb, so the row sizes every button up with arbitrary variants,
 					     the markup being the menu's rather than ours. -->
             <div
-              class="bg-surface-elevation-2 flex h-14 min-w-0 flex-1 items-center gap-1 rounded-full border p-1.5 shadow-xl [&_button]:min-h-11 [&_button]:min-w-11 [&_button]:items-center [&_button]:justify-center [&_button]:rounded-full [&_span[class*=lucide-]]:size-5"
+              class="bg-surface-elevation-2 flex h-12 min-w-0 flex-1 items-center gap-1 rounded-full border p-1 shadow-xl [&_button]:min-h-10 [&_button]:min-w-10 [&_button]:items-center [&_button]:justify-center [&_button]:rounded-full [&_span[class*=lucide-]]:size-5"
             >
               <Button
                 variant="ghost"
@@ -302,20 +329,23 @@
                     </Button>
                   </ComposeAttachMenu>
                   <EditorFixedMenu :items="INSERTS" class="shrink-0" />
-                  <!-- A sending option, not something put into the mail: at the end, beside Send, as
-                       it stands beside Send on desktop. -->
-                  <span class="flex-1" />
-                  <ComposeReminderButton :remind-at @remind="setRemindAt" @clear="setRemindAt()" />
                 </template>
               </div>
             </div>
+            <!-- A tap sends. Held, it sends later: the time picker opens, as desktop's Send splits
+                 off Schedule send. More actions has it too. -->
             <Button
               variant="solid"
-              class="!h-14 !w-14 shrink-0 !rounded-full shadow-xl"
+              class="!h-12 !w-12 shrink-0 select-none !rounded-full shadow-xl [-webkit-touch-callout:none]"
               :label="__('Send')"
               :disabled="isRecipientsEmpty || isUploading"
               :loading="isSending"
-              @click="sendMail()"
+              @pointerdown="holdSend"
+              @pointerup="letGoOfSend"
+              @pointercancel="letGoOfSend"
+              @pointerleave="letGoOfSend"
+              @contextmenu.prevent
+              @click="onSendClick"
             >
               <template #icon>
                 <span class="lucide-send-horizontal size-6" aria-hidden="true" />
@@ -347,16 +377,16 @@ import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch 
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
 import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
-import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
-import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
+import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
 import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
 import { composeName } from '@/apps/mail/utils/composeName'
+import { describeReminderTime, useMinuteClock } from '@/apps/mail/utils/datetime'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
 import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
@@ -403,7 +433,10 @@ let leaving = false
 const closeCompose = () => {
   if (leaving) return
   leaving = true
-  router.back()
+  // Opened straight at its address (from outside the app, or the app launched on it) there is no
+  // page behind it to go back to, and going back left the reader stuck on it: Mail takes its place.
+  if (back) router.back()
+  else void router.replace('/mail')
 }
 // The composer closes the page itself once the mail is sent or discarded. Any other way off it is
 // the reader leaving.
@@ -459,7 +492,9 @@ const { height: viewportHeight, top: keyboardTop, bottom: keyboardBottom } = use
 // The subject once there is one, as iOS Mail's header and desktop's folded window do: the fields
 // scroll away while the body is written, and this is what still says which mail it is. Until then,
 // what the page is for.
-const title = computed(() => mail.subject?.trim() || composeName(mailDetails))
+// What the page is for: New message, Reply, Reply all or Forward. Not the subject, which the field
+// under it already shows.
+const title = composeName(mailDetails)
 
 // Hold the document still for as long as this page is open.
 //
@@ -548,7 +583,7 @@ const caretFromPoint = (x: number, y: number) => {
  * the reveal turned off. `revealFocused` still runs afterwards and does the scrolling itself, in the
  * scroller, where it costs nothing.
  */
-const focusWithoutReveal = (event: PointerEvent) => {
+const focusWithoutReveal = (event: TouchEvent, x: number, y: number) => {
   const target = event.target instanceof Element ? event.target : null
   const editor = textEditor.value?.editor
   const body = editor?.view?.dom
@@ -560,16 +595,18 @@ const focusWithoutReveal = (event: PointerEvent) => {
   if (body && quote instanceof HTMLElement && quote !== body && body.contains(quote)) {
     event.preventDefault()
     quote.focus({ preventScroll: true })
-    const caret = caretFromPoint(event.clientX, event.clientY)
+    const caret = caretFromPoint(x, y)
     if (caret && quote.contains(caret.node))
       document.getSelection()?.collapse(caret.node, caret.offset)
     return
   }
 
   // The body: place the caret from the tap's own coordinates, since preventing the default is what
-  // would otherwise have done it.
+  // would otherwise have done it. Once it has the focus there is no reveal to stop, and the tap is
+  // the browser's: its caret placement, its edit menu on the caret, its word on a double tap.
   if (body && target && body.contains(target)) {
-    const pos = editor!.view.posAtCoords({ left: event.clientX, top: event.clientY })
+    if (body.contains(document.activeElement)) return
+    const pos = editor!.view.posAtCoords({ left: x, top: y })
     if (!pos) return
 
     event.preventDefault()
@@ -585,6 +622,34 @@ const focusWithoutReveal = (event: PointerEvent) => {
 
   event.preventDefault()
   field.focus({ preventScroll: true })
+}
+
+// Only a tap focuses: taken at the touch's start, every scroll focused the body, bringing the
+// keyboard up and moving the caret to where the finger landed. A drag, or a hold (iOS's own
+// selection and Paste), is left alone. Cancelling the touch's end is what keeps the browser's own
+// focus, with its reveal, from following. A touch while the body is still gliding from a flick only
+// stops it, as it does anywhere on iOS.
+const TAP_SLOP = 10
+const TAP_MS = 400
+const GLIDING_MS = 100
+let scrolledAt = -Infinity
+const noteScroll = (event: Event) => (scrolledAt = event.timeStamp)
+let tapFrom: { x: number; y: number; at: number } | undefined
+const startTap = (event: TouchEvent) => {
+  const { clientX, clientY } = event.touches[0]
+  const gliding = event.timeStamp - scrolledAt < GLIDING_MS
+  tapFrom =
+    event.touches.length === 1 && !gliding
+      ? { x: clientX, y: clientY, at: event.timeStamp }
+      : undefined
+}
+const endTap = (event: TouchEvent) => {
+  const from = tapFrom
+  tapFrom = undefined
+  const { clientX: x, clientY: y } = event.changedTouches[0]
+  if (!from || event.timeStamp - from.at > TAP_MS) return
+  if (Math.hypot(x - from.x, y - from.y) > TAP_SLOP) return
+  focusWithoutReveal(event, x, y)
 }
 
 const onFocusIn = (event: FocusEvent) =>
@@ -675,8 +740,6 @@ const onFilesSelected = async (files: File[]) => {
   }
 }
 
-// The reminder is the island's bell, as it is desktop's.
-// Discard in a group of its own, kept apart from sending.
 const ACTIONS = [
   {
     group: '',
@@ -691,6 +754,27 @@ const ACTIONS = [
     ],
   },
 ]
+
+const now = useMinuteClock()
+const remindLabel = computed(() =>
+  remindAt.value ? describeReminderTime(remindAt.value, now.value) : __('Remind me if no reply'),
+)
+
+// A hold as long as a row's long-press schedules instead; the click that ends it sends nothing.
+let holdTimer: ReturnType<typeof setTimeout> | undefined
+let held = false
+const holdSend = () => {
+  held = false
+  holdTimer = setTimeout(() => {
+    held = true
+    openScheduleModal()
+  }, 450)
+}
+const letGoOfSend = () => clearTimeout(holdTimer)
+const onSendClick = () => {
+  if (held) held = false
+  else void sendMail()
+}
 
 // Start where there is still something to write: the body on a reply (recipients and subject came
 // with the thread), the subject when the draft arrived addressed but unnamed (a `mailto:` link, or a
