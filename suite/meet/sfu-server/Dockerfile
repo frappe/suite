@@ -19,6 +19,7 @@ RUN corepack prepare yarn@1.22.22 --activate
 RUN ONNXRUNTIME_NODE_INSTALL=skip yarn install --frozen-lockfile
 COPY sfu-server/src ./src
 COPY sfu-server/assets ./assets
+COPY speech-vocabulary.json /app/speech-vocabulary.json
 RUN yarn build \
   && ONNXRUNTIME_NODE_INSTALL=skip yarn install --production --frozen-lockfile
 
