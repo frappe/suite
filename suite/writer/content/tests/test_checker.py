@@ -10,6 +10,7 @@ import frappe
 import pycrdt
 from frappe.tests import UnitTestCase
 from frappe.utils import CallbackManager
+from frappe.utils.synchronization import filelock
 
 from suite.content import checker
 
@@ -138,10 +139,20 @@ class TestChecker(UnitTestCase):
         with patch.object(checker, "node_version", return_value="v22.12.0"):
             self.assertIsNone(checker.covers(BUNDLE, rows[0], rows))
 
-    def test_runs_only_in_background_jobs(self):
+    def test_judges_in_a_request(self):
         with patch.object(frappe.local, "job", None):
-            with self.assertRaises(RuntimeError):
-                checker.judge(BUNDLE, None, [])
+            verdict = checker.judge(BUNDLE, None, typed_rows(table_cell()))
+
+        self.assertEqual(verdict.index, 0)
+
+    def test_a_request_gives_up_on_a_busy_child_after_its_short_wait(self):
+        with (
+            patch.object(frappe.local, "job", None),
+            patch.object(checker, "REQUEST_WAIT_S", 0.2),
+            filelock(checker.LOCK),
+            self.assertRaises(checker.CheckerBusy),
+        ):
+            checker.judge(BUNDLE, None, typed_rows(table_cell()))
 
     def test_gives_no_verdict_without_node_24(self):
         for version in (None, "v22.12.0"):
