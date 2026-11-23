@@ -3,12 +3,12 @@
 
 import frappe
 
-from suite.mail.api import get_branding, get_signup_domains, get_signup_settings, get_translations
+from suite.mail.api import get_signup_domains, get_signup_settings
 from suite.mail.tests.base import StalwartIntegrationTestCase
 
 
 class TestMailMisc(StalwartIntegrationTestCase):
-    """Small public endpoints backing the client shell (branding, signup, translations, push keys)."""
+    """Signup settings and persisted push keys backing the client shell."""
 
     def test_signup_settings_and_domains(self):
         with self.set_user("Guest"):
@@ -19,14 +19,6 @@ class TestMailMisc(StalwartIntegrationTestCase):
             with self.set_user("Guest"):
                 self.assertTrue(get_signup_settings()["allow_signup"])
                 self.assertIn(self.domain, get_signup_domains())
-
-    def test_branding_and_translations(self):
-        with self.set_user("Guest"):
-            branding = get_branding()
-            self.assertIsInstance(branding, dict)
-            self.assertIn("brand_name", branding)
-
-            self.assertIsInstance(get_translations(), dict)
 
     def test_generate_jmap_push_keys(self):
         settings = frappe.get_doc("Mail Settings")

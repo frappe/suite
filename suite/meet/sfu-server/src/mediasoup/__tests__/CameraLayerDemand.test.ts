@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CameraLayerDemand } from '../CameraLayerDemand';
 
@@ -29,7 +30,7 @@ function setup() {
 	const notify = vi.fn();
 	const demand = new CameraLayerDemand(notify);
 	const camera = producer();
-	demand.addProducer(camera as never, 'room', 'publisher');
+	demand.addProducer(fromPartial(camera), 'room', 'publisher');
 	return { notify, demand, camera };
 }
 afterEach(() => vi.useRealTimers());
@@ -47,10 +48,12 @@ describe('camera upload demand', () => {
 	});
 	it('keeps the highest requested layer, even when the receiver currently gets a lower layer', () => {
 		const { demand, notify } = setup();
-		const thumbnail = consumer('thumbnail', 0),
-			pin = consumer('pin', 2);
-		demand.addConsumer(thumbnail as never);
-		demand.addConsumer({ ...pin, currentLayers: { spatialLayer: 0 } } as never);
+		const thumbnail = consumer('thumbnail', 0);
+		const pin = consumer('pin', 2);
+		demand.addConsumer(fromPartial(thumbnail));
+		demand.addConsumer(
+			fromPartial({ ...pin, currentLayers: { spatialLayer: 0 } }),
+		);
 		vi.advanceTimersByTime(5000);
 		expect(notify).not.toHaveBeenCalled();
 		pin.observer.emit('close');
@@ -61,7 +64,7 @@ describe('camera upload demand', () => {
 		const { demand } = setup();
 		vi.advanceTimersByTime(3000);
 		const recorder = consumer('recorder');
-		demand.addConsumer(recorder as never);
+		demand.addConsumer(fromPartial(recorder));
 		expect(demand.get('camera')).toEqual({
 			producerId: 'camera',
 			version: 3,
@@ -71,21 +74,21 @@ describe('camera upload demand', () => {
 	it('updates demand when a receiver changes size and cancels reductions when demand returns', () => {
 		const { demand, notify } = setup();
 		const viewer = consumer('viewer', 0);
-		demand.addConsumer(viewer as never);
+		demand.addConsumer(fromPartial(viewer));
 		vi.advanceTimersByTime(2000);
 		viewer.preferredLayers = { spatialLayer: 2 };
-		demand.preferencesChanged(viewer as never);
+		demand.preferencesChanged(fromPartial(viewer));
 		vi.advanceTimersByTime(4000);
 		expect(notify).not.toHaveBeenCalled();
 		viewer.preferredLayers = { spatialLayer: 1 };
-		demand.preferencesChanged(viewer as never);
+		demand.preferencesChanged(fromPartial(viewer));
 		vi.advanceTimersByTime(3000);
 		expect(demand.get('camera')?.maxSpatialLayer).toBe(1);
 	});
 	it('drops demand on pause and restores it on resume without waiting', () => {
 		const { demand } = setup();
 		const viewer = consumer('viewer', 2);
-		demand.addConsumer(viewer as never);
+		demand.addConsumer(fromPartial(viewer));
 		viewer.paused = true;
 		viewer.observer.emit('pause');
 		vi.advanceTimersByTime(3000);
@@ -100,7 +103,7 @@ describe('camera upload demand', () => {
 		vi.advanceTimersByTime(3000);
 		expect(demand.get('camera')).toBeNull();
 		expect(notify).not.toHaveBeenCalled();
-		demand.addProducer(producer() as never, 'room', 'publisher');
+		demand.addProducer(fromPartial(producer()), 'room', 'publisher');
 		demand.cleanup();
 		vi.advanceTimersByTime(3000);
 		expect(notify).not.toHaveBeenCalled();
@@ -117,7 +120,7 @@ describe('camera upload demand', () => {
 	])('leaves unsupported/legacy publications unchanged: %j', (overrides) => {
 		const { demand, camera, notify } = setup();
 		camera.observer.emit('close');
-		demand.addProducer(producer(overrides) as never, 'room', 'publisher');
+		demand.addProducer(fromPartial(producer(overrides)), 'room', 'publisher');
 		vi.advanceTimersByTime(5000);
 		expect(demand.get('camera')).toBeNull();
 		expect(notify).not.toHaveBeenCalled();

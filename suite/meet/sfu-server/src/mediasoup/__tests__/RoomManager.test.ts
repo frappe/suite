@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type {
 	AudioLevelObserver,
 	Router,
@@ -11,30 +12,34 @@ import { RoomManager } from '../RoomManager';
 
 function makeAudioLevelObserver(): AudioLevelObserver {
 	const emitter = new EventEmitter();
-	const observer = Object.assign(emitter, {
-		close: vi.fn(),
-	}) as unknown as AudioLevelObserver;
+	const observer = fromPartial<AudioLevelObserver>(
+		Object.assign(emitter, {
+			close: vi.fn(),
+		}),
+	);
 	return observer;
 }
 
 function makeWorker(opts: { router: Router }): Worker {
-	return {
+	return fromPartial<Worker>({
 		createRouter: vi.fn(async () => opts.router),
-	} as unknown as Worker;
+	});
 }
 
 function makeWebRtcServer(): WebRtcServer {
-	return { close: vi.fn() } as unknown as WebRtcServer;
+	return fromPartial<WebRtcServer>({ close: vi.fn() });
 }
 
 function makeRouter(): Router {
 	const emitter = new EventEmitter();
-	return Object.assign(emitter, {
-		close: vi.fn(),
-		rtpCapabilities: { codecs: [], headerExtensions: [] },
-		canConsume: vi.fn().mockReturnValue(true),
-		createAudioLevelObserver: vi.fn(async () => makeAudioLevelObserver()),
-	}) as unknown as Router;
+	return fromPartial<Router>(
+		Object.assign(emitter, {
+			close: vi.fn(),
+			rtpCapabilities: { codecs: [], headerExtensions: [] },
+			canConsume: vi.fn().mockReturnValue(true),
+			createAudioLevelObserver: vi.fn(async () => makeAudioLevelObserver()),
+		}),
+	);
 }
 
 function addPeersTo(room: Room, ...peerIds: string[]): void {
@@ -70,7 +75,7 @@ describe('RoomManager', () => {
 		const webRtcServer = makeWebRtcServer();
 
 		const roomA = await mgr.createRoom('r1', 1, worker, webRtcServer, codecs);
-		const routerSpy = worker.createRouter as ReturnType<typeof vi.fn>;
+		const routerSpy = vi.mocked(worker.createRouter);
 		expect(routerSpy).toHaveBeenCalledTimes(1);
 		expect(mgr.getRoom('r1')).toBe(roomA);
 		expect(mgr.getRouter('r1')).toBe(router);
@@ -98,12 +103,14 @@ describe('RoomManager', () => {
 		);
 		addPeersTo(room, 'p1');
 		const p1 = room.peers.get('p1')!;
-		const fakeProducer = { id: 'prod-1' } as { id: string };
-		p1.producers.set('prod-1', fakeProducer as never);
+		const fakeProducer = { id: 'prod-1' };
+		p1.producers.set('prod-1', fromPartial(fakeProducer));
 
-		const observer = mgr.getRoom('r1')!
-			.audioLevelObserver as unknown as EventEmitter;
-		observer.emit('volumes', [{ producer: fakeProducer, volume: -30 }]);
+		const observer = mgr.getRoom('r1')!.audioLevelObserver!;
+		observer.emit(
+			'volumes',
+			fromPartial([{ producer: fakeProducer, volume: -30 }]),
+		);
 
 		expect(onActiveSpeaker).toHaveBeenCalledWith('r1', ['p1']);
 	});
@@ -125,12 +132,14 @@ describe('RoomManager', () => {
 		);
 		addPeersTo(room, 'p1');
 		const p1 = room.peers.get('p1')!;
-		const fakeProducer = { id: 'prod-1' } as { id: string };
-		p1.producers.set('prod-1', fakeProducer as never);
+		const fakeProducer = { id: 'prod-1' };
+		p1.producers.set('prod-1', fromPartial(fakeProducer));
 
-		const observer = mgr.getRoom('r1')!
-			.audioLevelObserver as unknown as EventEmitter;
-		observer.emit('volumes', [{ producer: fakeProducer, volume: -71 }]);
+		const observer = mgr.getRoom('r1')!.audioLevelObserver!;
+		observer.emit(
+			'volumes',
+			fromPartial([{ producer: fakeProducer, volume: -71 }]),
+		);
 
 		expect(onActiveSpeaker).toHaveBeenCalledWith('r1', []);
 	});
@@ -144,7 +153,7 @@ describe('RoomManager', () => {
 
 		await mgr.closeRoom('r1');
 
-		expect(router.close as ReturnType<typeof vi.fn>).toHaveBeenCalled();
+		expect(vi.mocked(router.close)).toHaveBeenCalled();
 		expect(mgr.getRoom('r1')).toBeUndefined();
 		expect(mgr.getRouter('r1')).toBeUndefined();
 		expect(mgr.getRoomCount()).toBe(0);

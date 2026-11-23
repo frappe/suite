@@ -44,7 +44,7 @@ The minute scheduler reconciles retained capture manifests, SFU restarts, abando
 
 Source audio remains on the recorder's existing persistent volume. Reproducible model caches may use ephemeral GPU storage; queue rows, speech results, and captured sources may not. Completed results use deterministic publication and capture-folder identities, private Drive permission boundaries, and normal Drive trash/restore. Permanent deletion revokes leases and clears speech metadata before source purge; stale completions cannot recreate a transcript. Video and transcription source cleanup remain independent.
 
-Generated text cannot be overwritten through File REST updates or WebDAV. Owners may rename, move, share, trash, restore, permanently delete, or download a copy. Existing `Meet Recordings` artifacts retain their original locations; captures using the new contract use `Meet/<room + start + capture identity>/Recording.mp4` and/or `Original Transcript.txt`.
+Generated text cannot be overwritten through Drive uploads, version restores, or WebDAV. Owners may rename, move, share, trash, restore, permanently delete, or download a copy. Existing `Meet Recordings` artifacts retain their original locations; captures using the new contract use `Meet/<room + start + capture identity>/Recording.mp4` and/or `Original Transcript.txt`.
 
 ## Verification
 

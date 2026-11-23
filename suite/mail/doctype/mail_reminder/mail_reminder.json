@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-11-05 19:00:00.000000",
+ "description": "A conversation due back in someone's Inbox: snoozed, or waiting on a reply. Worked by suite.mail.reminders.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "kind",
+  "status",
+  "due_at",
+  "column_break_jhmw",
+  "user",
+  "account",
+  "thread_id",
+  "email_id"
+ ],
+ "fields": [
+  {
+   "fieldname": "kind",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Kind",
+   "options": "Snooze\nNo Reply",
+   "reqd": 1,
+   "set_only_once": 1
+  },
+  {
+   "default": "Waiting",
+   "description": "Waiting: not due back yet. Returned: back in the Inbox; kept to say when it was snoozed and when it came back.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Waiting\nReturned",
+   "reqd": 1
+  },
+  {
+   "fieldname": "due_at",
+   "fieldtype": "Datetime",
+   "in_list_view": 1,
+   "label": "Due At",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "column_break_jhmw",
+   "fieldtype": "Column Break"
+  },
+  {
+   "description": "Who set it, and who is told.",
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "account",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Account",
+   "options": "JMAP Account",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "thread_id",
+   "fieldtype": "Data",
+   "label": "Thread ID",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "description": "For No Reply: the sent message a reply would answer.",
+   "fieldname": "email_id",
+   "fieldtype": "Data",
+   "label": "Email ID"
+  }
+ ],
+ "grid_page_length": 50,
+ "in_create": 1,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-11-05 19:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Mail",
+ "name": "Mail Reminder",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "due_at",
+ "sort_order": "ASC",
+ "states": []
+}

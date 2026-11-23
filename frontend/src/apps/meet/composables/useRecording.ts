@@ -1,238 +1,271 @@
-import { captureLabel, captureNotice, defaultCaptureOptions, type CaptureOptions, captureActivityLabel, type TranscriptionCaptureState, type VideoCaptureState } from "../utils/capturePresentation";
-export type { CaptureOptions } from "../utils/capturePresentation";
-import { toast, useCall } from "frappe-ui";
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useSocket } from "../socket";
-import { submit } from "../utils/request";
+import { toast } from 'frappe-ui'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
-type RecordingStatus =
-	| "Pending"
-	| "Starting"
-	| "Recording"
-	| "Interrupted"
-	| "Stopping"
-	| "Processing"
-	| "Ready"
-	| "Partial"
-	| "Failed"
-	| "Cancelled"
-	| "Captured";
+import { api, client, useMutation } from '@/api'
+import { randomId } from '@/platform/random-id'
+import { translate as __ } from '@/platform/translation'
 
-export interface RecordingState extends Partial<CaptureOptions> {
-	name: string;
-	status: RecordingStatus;
-	started_at?: string;
-	capture_started_at?: string;
-	interruption_id?: string;
-	interrupted_at?: string;
-	interruption_deadline?: string;
-	state_revision: number;
-	transcription_capture_state?: TranscriptionCaptureState;
-	video_capture_state?: VideoCaptureState;
-}
+import type { RecordingStateOutput } from '../client/generated'
+import { useSocket } from '../socket'
+import {
+  captureActivityLabel,
+  captureLabel,
+  captureNotice,
+  defaultCaptureOptions,
+  type CaptureOptions,
+  type TranscriptionCaptureState,
+} from '../utils/capturePresentation'
 
-type RecordingCommandResult = Pick<RecordingState, "name" | "status"> &
-	Partial<RecordingState>;
-type RecordingStartResult = RecordingCommandResult | { status: "Rejected" };
+export type { CaptureOptions } from '../utils/capturePresentation'
+
+export type RecordingState = NonNullable<RecordingStateOutput>
 
 type RecordingEvent = {
-	meeting_id: string;
-	recording: RecordingState | null;
-};
+  meeting_id: string
+  recording: RecordingState | null
+}
 
-export function useRecording(meetingId: string) {
-	const state = ref<RecordingState | null>(null);
-	const globalEnabled = ref(false);
-	const requestId = ref<string | null>(null);
-	const socket = useSocket();
-	let stateVersion = 0;
-	let sourceTerminal: { capture: string; state: TranscriptionCaptureState } | null = null;
-	let sourceInterrupted: string | null = null;
+/**
+ * The recording state of a meeting, for its indicator and controls. `signedIn` says whether the
+ * page has a session: the state route needs one. A guest without a session gets the state in its
+ * join answer (`syncState`) and on its own realtime room instead, so it never asks the route.
+ * Call it in a component's setup.
+ */
+export function useRecording(meetingId: string, { signedIn }: { signedIn: () => boolean }) {
+  const state = ref<RecordingState | null>(null)
+  const globalEnabled = ref(false)
+  const requestId = ref<string | null>(null)
+  const socket = useSocket()
+  let stateVersion = 0
+  let sourceTerminal: { capture: string; state: TranscriptionCaptureState } | null = null
+  let sourceInterrupted: string | null = null
 
-	function setState(next: RecordingState | null) {
-		if (next && sourceTerminal?.capture === next.name && (!next.transcription_capture_state || next.transcription_capture_state === "capturing"))
-			next = { ...next, transcription_capture_state: sourceTerminal.state };
-		state.value = next;
-		stateVersion += 1;
-	}
+  function setState(next: RecordingState | null) {
+    if (
+      next &&
+      sourceTerminal?.capture === next.name &&
+      (!next.transcription_capture_state || next.transcription_capture_state === 'capturing')
+    )
+      next = { ...next, transcription_capture_state: sourceTerminal.state }
+    state.value = next
+    stateVersion += 1
+  }
 
-	const stateCall = useCall<RecordingState | null, { meeting_id: string }>({
-		url: "/api/v2/method/suite.meet.api.recording.get_state",
-		immediate: false,
-	});
-	const startCall = useCall<
-		RecordingStartResult,
-		{ meeting_id: string; request_id: string } & CaptureOptions
-	>({
-		url: "/api/v2/method/suite.meet.api.recording.start",
-		method: "POST",
-		immediate: false,
-	});
-	const stopCall = useCall<RecordingCommandResult | null, { meeting_id: string }>({
-		url: "/api/v2/method/suite.meet.api.recording.stop",
-		method: "POST",
-		immediate: false,
-	});
+  const startCall = useMutation(api.meet.recordings.start, { silent: true })
+  const stopCall = useMutation(api.meet.recordings.stop, { silent: true })
 
-	const isLive = computed(() =>
-		["Recording", "Interrupted"].includes(state.value?.status || ""),
-	);
-	const isCapturing = computed(() => isLive.value && captureActivityLabel(state.value) !== null);
-	const isStarting = computed(() =>
-		["Pending", "Starting"].includes(state.value?.status || ""),
-	);
+  const isLive = computed(() => ['Recording', 'Interrupted'].includes(state.value?.status || ''))
+  const isCapturing = computed(() => isLive.value && captureActivityLabel(state.value) !== null)
+  const isStopping = computed(() => state.value?.status === 'Stopping')
+  const isStarting = computed(() => ['Pending', 'Starting'].includes(state.value?.status || ''))
 
-	async function loadState() {
-		try {
-			const version = stateVersion;
-			const recordingName = state.value?.name;
-			const revision = state.value?.state_revision;
-			const loaded = (await stateCall.submit({ meeting_id: meetingId })) ?? null;
-			if (loaded === null && stateCall.error) throw stateCall.error;
-			if (stateVersion !== version) return;
-			if (state.value?.state_revision !== revision) return;
-			if (
-				loaded?.name === recordingName &&
-				revision !== undefined &&
-				loaded.state_revision < revision
-			)
-				return;
-			const wasLive = isLive.value;
-			setState(loaded);
-			if (!wasLive && loaded?.status === "Recording") toast.info(captureNotice(loaded));
-		} catch {
-			// Guests may receive state through the room-scoped realtime channel instead.
-		}
-	}
+  async function loadState() {
+    if (!signedIn()) return
+    try {
+      const version = stateVersion
+      const recordingName = state.value?.name
+      const revision = state.value?.state_revision
+      const loaded = await client.query(api.meet.recordings.get, { meeting_id: meetingId })
+      if (stateVersion !== version) return
+      if (state.value?.state_revision !== revision) return
+      if (
+        loaded &&
+        loaded.name === recordingName &&
+        revision !== undefined &&
+        loaded.state_revision < revision
+      )
+        return
+      const wasLive = isLive.value
+      setState(loaded)
+      if (!wasLive && loaded?.status === 'Recording') toast.info(captureNotice(loaded))
+    } catch {
+      // A member the meeting no longer admits is refused; realtime still carries the state.
+    }
+  }
 
-	async function start(options = defaultCaptureOptions()) {
-		if (!options.video_enabled && !options.transcription_enabled)
-			throw new Error("Select video recording or transcription");
-		if (isLive.value || state.value?.status === "Stopping")
-			throw new Error("Stop the active capture before starting another");
-		requestId.value ||= crypto.randomUUID();
-		const result = await submit(startCall, {
-			meeting_id: meetingId,
-			request_id: requestId.value,
-			...options,
-		});
-		if (result.status === "Rejected") {
-			setState(null);
-			requestId.value = null;
-			if (options.transcription_enabled) await loadState();
-			toast.error(isLive.value && state.value?.transcription_enabled ? "Video recording could not start. Transcription capture continues." : `${captureLabel(options)} capacity is unavailable`);
-			return result;
-		}
-		if (!["Pending", "Starting", "Recording", "Interrupted", "Stopping"].includes(result.status)) {
-			requestId.value = null;
-			await loadState();
-			throw new Error(`${captureLabel(options)} did not start. Try again.`);
-		}
-		const preserveLiveState = state.value?.name === result.name && isLive.value && result.state_revision === undefined;
-		if (!preserveLiveState) setState({
-			...state.value,
-			...options,
-			...result,
-			state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
-		});
-		if (result.status === "Recording" || options.transcription_enabled) await loadState();
-		if (!["Pending", "Starting"].includes(result.status)) requestId.value = null;
-		if (result.status === "Recording" && !isCapturing.value && state.value?.status !== "Stopping")
-			throw new Error(`${captureLabel(options)} did not start. Try again.`);
-		if (["Pending", "Starting"].includes(result.status)) toast.info(`${captureLabel(options)} is starting`);
-		else if (result.status === "Stopping" || state.value?.status === "Stopping")
-			toast.error(`${captureLabel(options)} could not start and is stopping`);
-		else toast.success(`${captureLabel(options)} started`);
-		return result;
-	}
+  async function start(options: CaptureOptions = defaultCaptureOptions()) {
+    if (!options.video_enabled && !options.transcription_enabled)
+      throw new Error(__('Select video recording or transcription'))
+    if (isLive.value || isStopping.value)
+      throw new Error(__('Stop the active capture before starting another'))
+    requestId.value ||= randomId()
+    const result = await startCall.run({
+      meeting_id: meetingId,
+      request_id: requestId.value,
+      ...options,
+    })
+    if (result.status === 'Rejected') {
+      setState(null)
+      requestId.value = null
+      if (options.transcription_enabled) await loadState()
+      toast.error(
+        isLive.value && state.value?.transcription_enabled
+          ? __('Video recording could not start. Transcription capture continues.')
+          : options.transcription_enabled
+            ? __('Could not start capture. Capture capacity is unavailable.')
+            : __('Could not start recording. Recording capacity is unavailable.'),
+      )
+      return result
+    }
+    if (!['Pending', 'Starting', 'Recording', 'Interrupted', 'Stopping'].includes(result.status)) {
+      requestId.value = null
+      await loadState()
+      throw new Error(__('{0} did not start. Try again.', [captureLabel(options)]))
+    }
+    const preserveLiveState =
+      state.value?.name === result.name && isLive.value && result.state_revision === undefined
+    if (!preserveLiveState)
+      setState({
+        ...state.value,
+        ...options,
+        ...result,
+        state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
+      })
+    if (result.status === 'Recording' || options.transcription_enabled) await loadState()
+    if (!['Pending', 'Starting'].includes(result.status)) requestId.value = null
+    if (result.status === 'Recording' && !isCapturing.value && !isStopping.value)
+      throw new Error(__('{0} did not start. Try again.', [captureLabel(options)]))
+    if (['Pending', 'Starting'].includes(result.status))
+      toast.info(__('{0} is starting', [captureLabel(options)]))
+    else if (result.status === 'Stopping' || isStopping.value)
+      toast.error(
+        __('Could not start {0}. Capture is stopping.', [captureLabel(options).toLowerCase()]),
+      )
+    else toast.success(__('{0} started', [captureLabel(options)]))
+    return result
+  }
 
-	async function stop() {
-		const result = await stopCall.submit({ meeting_id: meetingId });
-		if (!result) {
-			if (stopCall.error) throw stopCall.error;
-			return null;
-		}
-		setState({
-			...state.value,
-			...result,
-			state_revision: result.state_revision ?? state.value?.state_revision ?? 0,
-		});
-		await loadState();
-		toast.info(`${captureLabel(state.value)} is stopping`);
-		return result;
-	}
+  async function stop() {
+    const label = captureLabel(state.value)
+    const result = await stopCall.run({ meeting_id: meetingId })
+    if (!result) {
+      return null
+    }
+    setState({
+      ...state.value,
+      ...result,
+      state_revision: state.value?.state_revision ?? 0,
+    })
+    await loadState()
+    toast.info(__('{0} is stopping', [label]))
+    return result
+  }
 
-	function handleState(event: RecordingEvent) {
-		if (event.meeting_id !== meetingId) return;
-		if (!event.recording) {
-			const wasPending = ["Pending", "Starting"].includes(state.value?.status || "");
-			const label = captureLabel(state.value);
-			setState(null);
-			requestId.value = null;
-			if (wasPending) toast.error(`${label} could not start`);
-			return;
-		}
-		if (
-			state.value &&
-			event.recording.name === state.value.name &&
-			event.recording.state_revision < state.value.state_revision
-		)
-			return;
-		const previous = state.value?.status;
-		setState(event.recording);
-		if (event.recording.status === "Recording" && previous !== "Recording")
-			toast.info(captureNotice(event.recording));
-		if (event.recording.status === "Interrupted")
-			toast.error(`${captureLabel(event.recording)} was interrupted and is trying to recover`);
-	}
+  function handleState(event: RecordingEvent) {
+    if (event.meeting_id !== meetingId) return
+    if (!event.recording) {
+      const wasPending = ['Pending', 'Starting'].includes(state.value?.status || '')
+      const label = captureLabel(state.value)
+      setState(null)
+      requestId.value = null
+      if (wasPending) toast.error(__('Could not start {0}', [label.toLowerCase()]))
+      return
+    }
+    if (
+      state.value &&
+      event.recording.name === state.value.name &&
+      event.recording.state_revision < state.value.state_revision
+    )
+      return
+    const previous = state.value?.status
+    setState(event.recording)
+    if (event.recording.status === 'Recording' && previous !== 'Recording')
+      toast.info(captureNotice(event.recording))
+    if (event.recording.status === 'Interrupted')
+      toast.error(
+        __('Could not continue {0}. Trying to recover.', [
+          captureLabel(event.recording).toLowerCase(),
+        ]),
+      )
+  }
 
-	function syncTranscriptionCapture(value: unknown) {
-		if (typeof value !== "object" || value === null || !("room" in value) || !("capture" in value) || !("state" in value)) return;
-		const current = state.value;
-		if (!current?.transcription_enabled || value.room !== meetingId || value.capture !== current.name) return;
-		const activity = value.state;
-		if (activity !== "capturing" && activity !== "complete" && activity !== "partial" && activity !== "failed") return;
-		if (sourceTerminal?.capture === current.name && activity === "capturing") return;
-		if ("interrupted" in value && value.interrupted === true && sourceInterrupted !== current.name) {
-			sourceInterrupted = current.name;
-			toast.error("Transcription capture was interrupted. Missing speech will be marked in any recovered transcript.");
-		}
-		const previous = current.transcription_capture_state;
-		if (activity !== "capturing") sourceTerminal = { capture: current.name, state: activity };
-		setState({ ...current, transcription_capture_state: activity });
-		if (activity !== "capturing" && previous !== activity) {
-			if (sourceInterrupted !== current.name)
-				toast.info(current.video_enabled === false || current.video_capture_state === "complete" || current.video_capture_state === "failed" || !isLive.value ? "Transcription capture has ended" : "Transcription capture has ended. Video recording continues.");
-			void loadState();
-		}
-	}
+  function syncTranscriptionCapture(value: unknown) {
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      !('room' in value) ||
+      !('capture' in value) ||
+      !('state' in value)
+    )
+      return
+    const current = state.value
+    if (
+      !current?.transcription_enabled ||
+      value.room !== meetingId ||
+      value.capture !== current.name
+    )
+      return
+    const activity = value.state
+    if (
+      activity !== 'capturing' &&
+      activity !== 'complete' &&
+      activity !== 'partial' &&
+      activity !== 'failed'
+    )
+      return
+    if (sourceTerminal?.capture === current.name && activity === 'capturing') return
+    if (
+      'interrupted' in value &&
+      value.interrupted === true &&
+      sourceInterrupted !== current.name
+    ) {
+      sourceInterrupted = current.name
+      toast.error(
+        __(
+          'Transcription capture was interrupted. Missing speech will be marked in any recovered transcript.',
+        ),
+      )
+    }
+    const previous = current.transcription_capture_state
+    if (activity !== 'capturing') sourceTerminal = { capture: current.name, state: activity }
+    setState({ ...current, transcription_capture_state: activity })
+    if (activity !== 'capturing' && previous !== activity) {
+      if (sourceInterrupted !== current.name)
+        toast.info(
+          current.video_enabled === false ||
+            current.video_capture_state === 'complete' ||
+            current.video_capture_state === 'failed' ||
+            !isLive.value
+            ? __('Transcription capture has ended')
+            : __('Transcription capture has ended. Video recording continues.'),
+        )
+      void loadState()
+    }
+  }
 
-	function syncState(recording: RecordingState | null) {
-		handleState({ meeting_id: meetingId, recording });
-	}
+  function syncState(recording: RecordingState | null) {
+    handleState({ meeting_id: meetingId, recording })
+  }
 
-	function setGlobalEnabled(enabled: boolean) {
-		globalEnabled.value = enabled;
-	}
+  function beginAdmissionSync() {
+    const version = stateVersion
+    return (recording: RecordingState | null) => {
+      if (version === stateVersion) syncState(recording)
+    }
+  }
 
-	onMounted(() => {
-		void loadState();
-		socket?.on("meeting:recording_state", handleState);
-	});
-	onUnmounted(() => socket?.off("meeting:recording_state", handleState));
+  function setGlobalEnabled(enabled: boolean) {
+    globalEnabled.value = enabled
+  }
 
-	return {
-		state,
-		globalEnabled,
-		isLive,
-		isCapturing,
-		syncTranscriptionCapture,
-		isStarting,
-		startLoading: computed(() => startCall.loading),
-		stopLoading: computed(() => stopCall.loading),
-		setGlobalEnabled,
-		syncState,
-		start,
-		stop,
-	};
+  onMounted(() => {
+    socket?.on('meeting:recording_state', handleState)
+  })
+  onUnmounted(() => socket?.off('meeting:recording_state', handleState))
+
+  return {
+    state,
+    globalEnabled,
+    isLive,
+    isCapturing,
+    syncTranscriptionCapture,
+    isStarting,
+    startLoading: computed(() => startCall.isPending),
+    stopLoading: computed(() => stopCall.isPending),
+    setGlobalEnabled,
+    syncState,
+    beginAdmissionSync,
+    start,
+    stop,
+  }
 }

@@ -1,0 +1,93 @@
+"""What a restore tells people: the name of the version kept before it, and the notice other tabs show."""
+
+from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+
+import frappe
+from frappe import _
+from frappe.utils import format_datetime, get_system_timezone
+
+from suite import drive
+from suite.content import restores
+
+# Long enough for the pull a tab makes on hearing a restore landed, polling included
+LANDED_SECONDS = 300
+
+
+def restored_version(node: str, seq: int) -> dict | None:
+    """The Drive version a restore brings back; None when the node has no such version."""
+    try:
+        return drive.get_version(node, seq)
+    except drive.DriveNotFound:
+        return None
+
+
+def before_restoring_label(version: dict | None, seq: int) -> str:
+    """Names the version kept before a restore after the version restored: its name, or when it was taken."""
+    if version is None:
+        return _("Before restoring version {0}").format(seq)
+
+    if version["label"]:
+        return _("Before restoring “{0}”").format(version["label"])
+
+    return _("Before restoring the version from {0}").format(local_time(version["creation"]))
+
+
+def local_time(stored: datetime) -> str:
+    """A stored time in the person's own time zone: the time today, with the date on other days."""
+    zone = frappe.db.get_value("User", frappe.session.user, "time_zone") or get_system_timezone()
+    moment = site_aware(stored).astimezone(ZoneInfo(zone))
+    today = datetime.now(ZoneInfo(zone)).date()
+    pattern = "h:mm a" if moment.date() == today else "d MMM, h:mm a"
+    return format_datetime(moment.replace(tzinfo=None), pattern)
+
+
+def hold(app: str, doc_id: str, token: str, version: dict | None) -> None:
+    """Keep what other tabs learn once the restore under `token` lands: who ran it and which version.
+
+    It lasts as long as the fence. Only the restoring tab holds `token`, and it gets it after this.
+    """
+    restored = None
+    if version is not None:
+        taken_at = site_aware(version["creation"]).astimezone(UTC).isoformat(timespec="seconds")
+        restored = {"seq": version["seq"], "label": version["label"], "taken_at": taken_at}
+
+    notice = {"by": frappe.session.user, "version": restored}
+    frappe.cache.set_value(held_key(app, doc_id, token), notice, expires_in_sec=restores.FENCE_SECONDS)
+
+
+def landed(app: str, doc_id: str, token: str, rev: int) -> None:
+    """Keep the notice of the restore under `token` for the pulls its control message sets off.
+
+    It stays out of the room's messages, which public readers' sockets hear. Empty once it lapsed.
+    """
+    notice = frappe.cache.get_value(held_key(app, doc_id, token)) or {}
+    latest = {**notice, "restore_rev": rev}
+    frappe.cache.set_value(latest_key(app, doc_id), latest, expires_in_sec=LANDED_SECONDS)
+
+
+def for_reader(app: str, doc_id: str, node: str) -> dict:
+    """A pull's field naming the last restore, only for someone who may read the node's versions."""
+    notice = frappe.cache.get_value(latest_key(app, doc_id))
+    if not notice:
+        return {}
+
+    try:
+        drive.check_history_reader(node)
+    except drive.DriveError:
+        return {}
+
+    return {"restored": notice}
+
+
+def held_key(app: str, doc_id: str, token: str) -> str:
+    return f"suite_content_restore_notice:held:{app}:{doc_id}:{token}"
+
+
+def latest_key(app: str, doc_id: str) -> str:
+    return f"suite_content_restore_notice:latest:{app}:{doc_id}"
+
+
+def site_aware(stored: datetime) -> datetime:
+    """Stored times are naive in the site's zone."""
+    return stored.replace(tzinfo=ZoneInfo(get_system_timezone()))

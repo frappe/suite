@@ -49,7 +49,7 @@ export class ParticipantConnectionLifecycle {
 			loggers.socketHandler.warn(
 				'Join rollback failed for user %s: %s',
 				participantId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 		} finally {
 			this.roomLifecycle.scheduleCleanupIfHumanEmpty(roomId);

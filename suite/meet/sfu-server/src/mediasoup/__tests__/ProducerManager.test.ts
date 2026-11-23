@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { ProducerManager } from '../ProducerManager';
 
@@ -21,10 +22,10 @@ describe('ProducerManager', () => {
 		manager.on('producer_transport_closed', transportClosed);
 
 		await manager.createProducer(
-			transport as never,
+			fromPartial(transport),
 			'room-1',
 			'peer-1',
-			{} as never,
+			fromPartial({}),
 			'video',
 		);
 		producer.emit('transportclose');
@@ -44,10 +45,10 @@ describe('ProducerManager', () => {
 		manager.on('producer_closed', closed);
 
 		await manager.createProducer(
-			transport as never,
+			fromPartial(transport),
 			'room-1',
 			'peer-1',
-			{} as never,
+			fromPartial({}),
 			'video',
 		);
 		manager.closeProducer('producer-1');

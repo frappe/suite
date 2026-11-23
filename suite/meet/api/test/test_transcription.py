@@ -9,6 +9,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
 
+from suite import drive
 from suite.meet.api import transcription
 from suite.meet.api.recording import get_preflight, start
 from suite.meet.speech_context import make_hints
@@ -25,6 +26,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 frappe.get_doc(
                     {"doctype": "User", "email": email, "first_name": "Transcription Test", "enabled": 1}
                 ).insert(ignore_permissions=True)
+        drive.ensure_personal_root(self.owner)
         frappe.db.delete("Meet Transcription Job", {"room_owner": self.owner})
         frappe.db.delete("Meet Recording", {"room_owner": self.owner})
         frappe.set_user(self.owner)
@@ -154,9 +156,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertFalse(job.artifact)
 
     def test_partial_publication_failure_is_terminal_without_artifact_rows(self):
-        from suite.drive.utils import get_user_folder
-
-        get_user_folder(self.owner)
+        drive.ensure_personal_root(self.owner)
         for transient, attempts in ((False, 0), (True, 3)):
             with self.subTest(transient=transient):
                 job = self.job()
@@ -170,14 +170,14 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 job.manifest = json.dumps({"segments": [source], "gaps": []})
                 job.attempts = attempts
                 job.save(ignore_permissions=True)
-                files_before = set(frappe.get_all("File", pluck="name"))
+                files_before = set(frappe.get_all("Drive Node", pluck="name"))
                 with (
                     patch.object(transcription, "_authenticate"),
                     patch(
                         "suite.meet.transcription.client.authorize_manifest", return_value={"segments": []}
                     ),
                     patch(
-                        "suite.meet.transcription.artifacts.FileManager.upload_file",
+                        "suite.meet.transcription.artifacts.drive.store_file",
                         side_effect=OSError("Storage unavailable"),
                     ) as upload,
                 ):
@@ -200,7 +200,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 self.assertFalse(job.artifact)
                 self.assertFalse(job.capture_folder)
                 self.assertFalse(job.ready_at)
-                self.assertEqual(set(frappe.get_all("File", pluck="name")), files_before)
+                self.assertEqual(set(frappe.get_all("Drive Node", pluck="name")), files_before)
 
     def test_fully_filtered_capture_publishes_no_speech(self):
         job = self.job()
@@ -272,8 +272,8 @@ class IntegrationTestTranscription(IntegrationTestCase):
             transcription._lease(job, "old-token", "worker")
 
     def test_transcript_only_capture_publishes_once_for_owner_and_purges_source(self):
-        from suite.drive.api.permissions import get_user_access_for_user
-        from suite.drive.utils.files import FileManager
+        from suite.drive._core import access, nodes
+        from suite.drive.framework import principals_for
         from suite.meet.api.recording import get_state, stop
         from suite.meet.transcription.capture import reconcile_capture
 
@@ -348,28 +348,46 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     job.name, claimed["lease_token"], "worker", [result], processed_source_ids=["speech-1"]
                 )
             self.assertEqual(ready["artifact"], duplicate["artifact"])
-            artifact = frappe.get_doc("File", ready["artifact"])
-            self.assertEqual(artifact.file_name, "Original Transcript.txt")
-            with FileManager().get_file(artifact) as content:
+            artifact = frappe.get_doc("Drive Node", ready["artifact"])
+            self.assertEqual(artifact.title, "Original Transcript.txt")
+            content, _mime = drive.read_file(artifact.name)
+            with content:
                 self.assertEqual(
                     content.read().decode("utf-8"),
                     "Transcript\n\n[00:00:01 - 00:00:03] Anita: कल Atlas signup की क़ीमत confirm करेंगे।\n",
                 )
             self.assertEqual(artifact.owner, self.owner)
-            self.assertTrue(get_user_access_for_user(artifact, self.owner)["read"])
-            self.assertFalse(get_user_access_for_user(artifact, self.attendee)["read"])
+            principals = principals_for()
+            root = drive.personal_root_for(self.owner)
+            access.grant(root, self.attendee, drive.READ, principals, tell_target=False)
+            frappe.set_user(self.attendee)
+            try:
+                with self.assertRaises(drive.DriveNotFound):
+                    drive.read_file(artifact.name)
+                with self.assertRaises(drive.DriveNotFound):
+                    drive.check(artifact.parent_node, drive.READ)
+            finally:
+                frappe.set_user(self.owner)
+            access.grant(artifact.name, self.attendee, drive.READ, principals, tell_target=False)
+            frappe.set_user(self.attendee)
+            try:
+                stream, _mime = drive.read_file(artifact.name)
+                with stream:
+                    self.assertIn(b"Transcript", stream.read())
+            finally:
+                frappe.set_user(self.owner)
             self.assertFalse(
-                frappe.db.exists("File", {"folder": artifact.folder, "file_name": "Recording.mp4"})
+                frappe.db.exists(
+                    "Drive Node", {"parent_node": artifact.parent_node, "title": "Recording.mp4"}
+                )
             )
-            artifact.file_url = "/different-content.txt"
-            with self.assertRaises(frappe.PermissionError):
-                artifact.save()
-            artifact.reload()
-            from suite.drive.api.files import remove_or_restore
-
-            remove_or_restore([artifact.name])
+            with self.assertRaises(drive.DriveForbidden):
+                nodes.update(
+                    principals, artifact.name, blob=artifact.blob, size=artifact.size, mime=artifact.mime
+                )
+            nodes.update(principals, artifact.name, state="Trashed")
             self.assertEqual(frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready")
-            remove_or_restore([artifact.name])
+            nodes.update(principals, artifact.name, state="Active")
             # Ready delivery survives recorder failure; cleanup remains retryable.
             with (
                 patch("frappe.sendmail") as notify,
@@ -390,13 +408,14 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertTrue(job.source_deleted)
             self.assertTrue(job.notification_sent_at)
             self.assertEqual(recorder.call_args.args[2], "delete")
-            artifact.reload()
-            artifact.permanent_delete()
+            nodes.update(principals, artifact.name, state="Trashed")
+            nodes.purge(principals, artifact.name)
+            access.revoke(root, self.attendee, principals)
             transcription.maintenance()
             self.assertFalse(frappe.db.exists("Meet Transcription Job", job.name))
             with patch.object(transcription, "_authenticate"), self.assertRaises(frappe.DoesNotExistError):
                 transcription.complete(job.name, claimed["lease_token"], "worker", [result])
-            self.assertEqual(frappe.db.get_value("File", artifact.name, "status"), "Removed")
+            self.assertFalse(frappe.db.exists("Drive Node", artifact.name))
             frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
             frappe.clear_cache(doctype="Meet Settings")
             frappe.db.delete("Meet Recording", {"name": recording["name"]})
@@ -522,8 +541,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertTrue(job.notification_pending)
 
     def test_deleted_transcript_does_not_remove_processing_video_metadata(self):
-        from suite.drive.utils import get_user_folder
-
         recording = frappe.get_doc(
             {
                 "doctype": "Meet Recording",
@@ -538,7 +555,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 "budget_bytes": 1000,
                 "recorder_job_id": frappe.generate_hash(),
                 "request_id": frappe.generate_hash(),
-                "drive_home_folder": get_user_folder(self.owner).name,
+                "drive_home_folder": drive.personal_root_for(self.owner),
             }
         ).insert(ignore_permissions=True)
         frappe.db.set_value("Meet Recording", recording.name, "status", "Processing")

@@ -1,0 +1,39 @@
+import { onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router'
+
+export type DocumentSaveState = 'clean' | 'saving' | 'unsaved' | 'failed'
+
+interface LeaveGuardOptions {
+  state: () => DocumentSaveState
+  flush: () => Promise<void>
+  retainRecovery: () => boolean
+}
+
+export async function resolveDocumentLeave(options: LeaveGuardOptions): Promise<boolean> {
+  if (options.state() === 'clean') return true
+  if (options.state() === 'saving') await options.flush()
+  if (options.state() === 'clean') return true
+
+  const isKept = options.retainRecovery()
+  return window.confirm(
+    isKept
+      ? 'Your latest changes are kept as a recovery copy. Leave this presentation?'
+      : 'Your latest changes could not be kept on this device. Leave this presentation anyway?',
+  )
+}
+
+// A closing tab can't wait for a save, so it keeps a recovery copy and asks the browser to confirm
+export function resolveDocumentUnload(
+  options: Pick<LeaveGuardOptions, 'state' | 'retainRecovery'>,
+  event: Event,
+): void {
+  if (options.state() === 'clean') return
+
+  event.preventDefault()
+  options.retainRecovery()
+}
+
+export function useDocumentLeaveGuard(options: LeaveGuardOptions): void {
+  const guard = () => resolveDocumentLeave(options)
+  onBeforeRouteLeave(guard)
+  onBeforeRouteUpdate((to, from) => (to.params.node === from.params.node ? true : guard()))
+}

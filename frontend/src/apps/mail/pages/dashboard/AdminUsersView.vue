@@ -1,0 +1,126 @@
+<template>
+  <DashboardLayout area="admin" :breadcrumbs="[{ label: __('Users') }]">
+    <template #actions>
+      <Button :label="__('Add user')" @click="adding = true">
+        <template #prefix>
+          <span class="lucide-user-plus size-4" aria-hidden="true" />
+        </template>
+      </Button>
+    </template>
+    <div class="flex min-h-0 flex-1 flex-col gap-5">
+      <Alert
+        v-if="tab === 'users' && onlyActiveAdmin"
+        theme="amber"
+        :title="__('Only one active admin')"
+        :description="__('Make another user an admin so someone else can manage the workspace.')"
+      />
+      <section
+        v-if="tab === 'users' && failedUsers.length"
+        class="space-y-3"
+        :aria-label="__('User accounts needing attention')"
+      >
+        <Alert
+          v-for="user in failedUsers"
+          :key="user.name"
+          class="account-alert"
+          theme="red"
+          :title="
+            user.setup_status === 'Setup failed'
+              ? __('{0}: Mail account setup failed', [user.full_name])
+              : __('{0}: Mail deletion needs a retry', [user.full_name])
+          "
+          :description="user.account || user.email"
+        >
+          <template v-if="user.account" #actions>
+            <FailedCreationActions
+              v-if="failedCreation(user.account)"
+              :request="failedCreation(user.account)!"
+              @settled="reloadUsers"
+            />
+            <Button
+              v-else
+              variant="ghost"
+              :label="__('Review account')"
+              :route="`/admin/mail/accounts/${encodeURIComponent(user.account)}`"
+            />
+          </template>
+        </Alert>
+      </section>
+      <slot v-if="tab === 'users'" name="users" />
+      <InvitesView v-else ref="invitations">
+        <template #lead><slot name="tabs" /></template>
+      </InvitesView>
+    </div>
+  </DashboardLayout>
+  <AddAccountModal v-if="adding" v-model="adding" @reload="reload" />
+</template>
+
+<script setup lang="ts">
+import { Alert, Button } from 'frappe-ui'
+import { computed, defineAsyncComponent, nextTick, ref, useTemplateRef } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+
+import { api, useQuery } from '@/api'
+import InvitesView from '@/apps/mail/pages/dashboard/InvitesView.vue'
+import { useAddOnArrival } from '@/apps/mail/utils/addOnArrival'
+import { DashboardLayout } from '@/platform/dashboard'
+import { translate as __ } from '@/platform/translation'
+
+const AddAccountModal = defineAsyncComponent(
+  () => import('@/apps/mail/components/Modals/AddAccountModal.vue'),
+)
+const FailedCreationActions = defineAsyncComponent(
+  () => import('@/apps/mail/pages/dashboard/FailedCreationActions.vue'),
+)
+
+// Suite composition supplies its preserved-identity directory; Mail owns invitations (§4.3).
+// `tabs` switches between the two and leads each page's filter row.
+defineSlots<{ users: () => unknown; tabs: () => unknown }>()
+
+const route = useRoute()
+const router = useRouter()
+// The tab is the URL: /admin/users or /admin/users/invitations.
+const tab = computed({
+  get: () => (route.path.endsWith('/invitations') ? 'invitations' : 'users'),
+  set: (value: string) =>
+    void router.push(value === 'invitations' ? '/admin/users/invitations' : '/admin/users'),
+})
+const users = useQuery(api.suite.users.list)
+const onlyActiveAdmin = computed(
+  () => !users.error && users.data?.filter((user) => user.enabled && user.is_admin).length === 1,
+)
+const failedUsers = computed(() =>
+  (users.data ?? []).filter(
+    (user) => user.setup_status === 'Setup failed' || user.setup_status === 'Deletion failed',
+  ),
+)
+// An Admin's direct creation that did not finish; Retry and Remove settle it from its user's alert.
+const failedCreations = useQuery(api.mail.admin.invites.list, () => ({
+  status: 'Setup failed' as const,
+  start: 0,
+  page_length: 100,
+}))
+function failedCreation(account: string) {
+  return failedCreations.data?.items.find((request) => request.account === account)
+}
+const reloadUsers = () => Promise.all([users.refetch(), failedCreations.refetch()]).catch(() => {})
+const adding = ref(false)
+useAddOnArrival(adding)
+const invitations = useTemplateRef('invitations')
+// An invitation waits under Invitations; an account created directly, set up or not, is a user.
+async function reload(invited: boolean) {
+  if (!invited) {
+    tab.value = 'users'
+    return reloadUsers()
+  }
+  if (tab.value !== 'invitations') await router.push('/admin/users/invitations')
+  await nextTick()
+  await invitations.value?.reloadInvites()
+}
+</script>
+
+<style scoped>
+.account-alert[data-color='red'] {
+  background-color: var(--surface-red-2);
+}
+</style>

@@ -1,66 +1,123 @@
-import { computed, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import type { Transaction } from '@tiptap/pm/state'
 import { watchDebounced } from '@vueuse/core'
-import { createResource, toast } from 'frappe-ui'
+import { toast } from 'frappe-ui'
 import { Mention } from 'frappe-ui/editor'
+import { computed, effectScope, inject, nextTick, onScopeDispose, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
+import { api, client, useMutation, type InputOf, type OutputOf } from '@/api'
+import { useDriveDialogs } from '@/apps/drive'
 import { getAttachmentUrl } from '@/apps/mail/resources'
-import { processInlineImages, raiseToast } from '@/apps/mail/utils'
-import { useUndo } from '@/apps/mail/utils/composables'
-import { createEditorBody } from '@/apps/mail/utils/editorBody'
-import { createMentionSuggestion } from '@/apps/mail/utils/mentionSuggestion'
-import { moveRecipient as moveRecipientBetweenFields } from '@/apps/mail/utils/recipientFields'
-import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import type {
+  Attachment,
+  ComposeMailData,
+  DraftRecipient,
+  Identity,
+  UserResource,
+} from '@/apps/mail/types'
+import {
+  commitAfterUndo,
+  formatBytes,
+  processInlineImages,
+  raiseError,
+  raiseToast,
+} from '@/apps/mail/utils'
 import { injectAccountScope } from '@/apps/mail/utils/accountScope'
+import {
+  useComposeMail as useComposeRequest,
+  useDiscardingDrafts,
+  useListReload,
+  useUndo,
+} from '@/apps/mail/utils/composables'
+import { forgetDraftInList, showDraftInList } from '@/apps/mail/utils/draftsInList'
+import { createEditorBody } from '@/apps/mail/utils/editorBody'
+import { embeddedImagesIn, uploadEmbeddedImages } from '@/apps/mail/utils/embeddedImages'
+import { createMentionSuggestion, type MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
+import { QuotedContentExtension } from '@/apps/mail/utils/quotedContentExtension'
+import {
+  moveRecipient as moveRecipientBetweenFields,
+  type RecipientField,
+} from '@/apps/mail/utils/recipientFields'
+import {
+  CustomImageExtension,
+  mailEditorKit,
+  type uploadFunction,
+} from '@/apps/mail/utils/text-editor'
+import { undoSendPeriodOf } from '@/apps/mail/utils/undoSend'
+import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
+import { translate as __ } from '@/platform/translation'
 
-import type { ComposeMailData, DraftRecipient, Identity, UserResource } from '@/apps/mail/types'
-import type { RecipientField } from '@/apps/mail/utils/recipientFields'
-import type { MentionCandidate } from '@/apps/mail/utils/mentionSuggestion'
-
-/** The mounted TextEditor instance, as far as this composable cares about it. */
+/** The mounted editor, as far as this composable cares about it. */
 interface EditorHost {
-	$el?: HTMLElement
-	editor?: {
-		commands: {
-			insertContent: (content: string) => void
-			focus: () => void
-			setTextSelection: (range: { from: number; to: number }) => void
-		}
-		state: {
-			doc: { descendants: (fn: (node: any) => void) => void }
-			selection: { from: number; to: number }
-		}
-	}
+  editor?: {
+    getHTML: () => string
+    commands: {
+      insertContent: (content: string) => void
+      focus: () => void
+      setTextSelection: (range: { from: number; to: number }) => void
+      command: (fn: (props: { tr: Transaction }) => boolean) => boolean
+    }
+    state: {
+      doc: {
+        descendants: (fn: (node: any) => void) => void
+      }
+      selection: { from: number; to: number }
+    }
+  } | null
+}
+interface ComposeMailOptions {
+  /** A draft being resumed, or the reply/forward this composition starts from. */
+  mailDetails?: ComposeMailData
+  /** Inline in a thread (desktop), rather than a composer of its own. */
+  isInThread?: boolean
+  reloadMails: () => void
+  /**
+   * A thread's reply: the host shows the mail as sent, in place, and resolves once it has. The
+   * send waits for it, so the composer stays locked until the thread has the reply, and is never
+   * seen done with its mail still in it. Without it, a send reloads the list.
+   */
+  showSent?: () => Promise<void>
+  /**
+   * The thread on screen once the composer has gone, where the route does not say it: the phone's
+   * compose page goes back to the page it was opened from. Defaults to the route's thread.
+   */
+  shownThread?: () => string | undefined
+  /** Take the composer off screen — the dialog's v-model on desktop, a route pop on mobile. */
+  close: () => void
+  /** Whether the composer is still on screen. Drives whether a result is worth a toast. */
+  isOpen: () => boolean
+  /** Called as a discard takes the draft off screen, so a host showing it elsewhere drops it too. */
+  onDiscardUnsaved?: () => void
+  /**
+   * Fired the moment Discard is pressed, before the composer comes off screen — unlike
+   * `onDiscardUnsaved`, which reports the outcome once the network is done. A host that shows the
+   * draft somewhere else needs the earlier signal: `discardMail` closes first and deletes after,
+   * so anything keyed on the composer being open takes the draft back for the moment in between.
+   */
+  onDiscardStarted?: () => void
+  /** The mounted editor, for mention bookkeeping and emoji insertion. */
+  host: () => EditorHost | null | undefined
+  /** The composer's outermost element: the part a send locks (see `isSending`). */
+  root: () => HTMLElement | null | undefined
+  /** Whether a file is still being attached. Sending must wait until it is part of the draft. */
+  isUploading?: () => boolean
+  /**
+   * How the host uploads an image dropped or pasted into the body, with its own size checks. An
+   * image already in the body is checked for size before it gets here (see `outgoingBody`).
+   */
+  uploadInlineImage: typeof uploadFunction
 }
 
-interface ComposeMailOptions {
-	/** A draft being resumed, or the reply/forward this composition starts from. */
-	mailDetails?: ComposeMailData
-	/** Inline in a thread (desktop), rather than a composer of its own. */
-	isInThread?: boolean
-	reloadMails: () => void
-	/** Take the composer off screen — the dialog's v-model on desktop, a route pop on mobile. */
-	close: () => void
-	/** Whether the composer is still on screen. Drives whether a result is worth a toast. */
-	isOpen: () => boolean
-	/** Called instead of a server delete when discarding something never saved. */
-	onDiscardUnsaved?: () => void
-	/**
-	 * Fired the moment Discard is pressed, before the composer comes off screen — unlike
-	 * `onDiscardUnsaved`, which reports the outcome once the network is done. A host that shows the
-	 * draft somewhere else needs the earlier signal: `discardMail` closes first and deletes after,
-	 * so anything keyed on the composer being open takes the draft back for the moment in between.
-	 */
-	onDiscardStarted?: () => void
-	/** The mounted TextEditor, for mention bookkeeping and emoji insertion. */
-	host: () => EditorHost | null | undefined
-	/** Whether a file is still being attached. Sending must wait until it is part of the draft. */
-	isUploading?: () => boolean
-	/**
-	 * Where the mention dropdown should render. The dialog on desktop, which holds the rest of the
-	 * page inert; null anywhere `<body>` will do.
-	 */
-	mentionContainer?: () => HTMLElement | null
+/** A send refused because an image in the body is still a data URL; the message names it. */
+class UnsentImageError extends Error {}
+/** An image in the body over the Mail attachment limit, so not uploaded. */
+class OversizedImageError extends Error {
+  constructor(
+    readonly size: number,
+    readonly limit: number,
+  ) {
+    super()
+  }
 }
 
 /**
@@ -72,569 +129,936 @@ interface ComposeMailOptions {
  * for the behaviour to live in one place and only the markup to differ.
  */
 export const useComposeMail = (options: ComposeMailOptions) => {
-	const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
-
-	// A composer that has gone away must not still be writing drafts of its own accord. Saving is
-	// debounced by two seconds, and the timer outlives the component: pop a draft out inside that
-	// window and the editor left behind in the thread would wake up and create a second draft, next
-	// to the one the composer window creates. The window's copy is the only one that should land.
-	//
-	// Stopping the watcher is not enough to arrange that. @vueuse's debounceFilter keeps its timer
-	// in a closure and returns only the watch handle, so a call already pending arrives whether or
-	// not anything is still listening — which is why the guard is a flag read at the last moment.
-	//
-	// It gates the debounced callback and nothing else. An explicit save is a decision, not a
-	// leftover timer, and the composer makes one on the way out: Vue's unmountComponent stops the
-	// effect scope — running this hook — before it so much as queues `onUnmounted`, which is a
-	// post-render effect on top of that, so a `saveDraft` gated on disposal would be a no-op exactly
-	// when it is needed most, and everything typed since the last tick would go with the component.
-	let disposed = false
-	onScopeDispose(() => (disposed = true))
-
-	const router = useRouter()
-	const route = useRoute()
-
-	// Sends as the enclosing pane's account (the thread's owning account in All Inboxes, the active
-	// one everywhere else): identities, the default outgoing address and every draft call resolve
-	// through this scope.
-	const user = inject('$user') as UserResource
-	const scope = injectAccountScope()
-	const { accountId: scopeAccountId, identities, mailboxIds } = scope
-
-	const getIdentity = (email: string) =>
-		identities.value.data?.find((identity: Identity) => identity.email === email)
-
-	const viewSentMessage = (threadID: string) =>
-		router.push({
-			name: 'mail-mail',
-			params: { accountId: scopeAccountId.value, mailbox: mailboxIds.value.sent, threadID },
-		})
-
-	const getDefaultFromEmail = () => {
-		const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
-		const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
-		// Matched case-insensitively; the identity's own spelling is what goes out.
-		const identityMatching = (email?: string) =>
-			identityEmails.find((e) => e.toLowerCase() === email?.toLowerCase())
-
-		return (
-			identityMatching(mailDetails?.from_email) ??
-			identityMatching(defaultOutgoingEmail) ??
-			identityEmails[0] ??
-			// An account with no identities at all still has to send as somebody.
-			user.data.name
-		)
-	}
-
-	const mail = reactive<ComposeMailData>({
-		name: mailDetails?.name || '',
-		id: mailDetails?.id || '',
-		from_email: getDefaultFromEmail(),
-		to: mailDetails?.to || [],
-		cc: mailDetails?.cc || [],
-		bcc: mailDetails?.bcc || [],
-		attachments: mailDetails?.attachments || [],
-		subject: mailDetails?.subject || '',
-		html_body: mailDetails?.html_body || '',
-		quoted_content: mailDetails?.quoted_content || '',
-		in_reply_to: mailDetails?.in_reply_to || '',
-		in_reply_to_id: mailDetails?.in_reply_to_id || '',
-		forwarded_from_id: mailDetails?.forwarded_from_id || '',
-	})
-
-	const originalMail = ref<ComposeMailData>()
-	const updateOriginalMail = () => (originalMail.value = JSON.parse(JSON.stringify(mail)))
-	const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
-
-	// ── What's in the mail ──────────────────────────────────────────────────────────────────────
-
-	const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
-
-	/**
-	 * Re-addressing someone: To → Cc, Cc → Bcc, either way round. Held here because the draft owns
-	 * all three lists and a recipient field owns only its own — a field asked to give someone up has
-	 * nowhere to put them.
-	 */
-	const moveRecipient = (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
-		moveRecipientBetweenFields(mail, recipient.email, from, to)
-
-	const isBodyEmpty = computed(() => {
-		if (!mail.html_body) return true
-
-		const element = document.createElement('div')
-		element.innerHTML = mail.html_body
-
-		return !element.textContent?.trim() && element.querySelector('img, video, svg') === null
-	})
-
-	const isMailEmpty = computed(
-		() =>
-			!mail.subject &&
-			!mail.quoted_content &&
-			!mail.attachments?.length &&
-			isRecipientsEmpty.value &&
-			isBodyEmpty.value,
-	)
-
-	// The editor takes the unfolded body as new content, and leaves the quote selected: the next
-	// keystroke would type it away. The caret goes back to where the writer left it.
-	const openQuotedContent = () => {
-		const editor = host()?.editor
-		const caret = editor?.state.selection
-		mail.html_body += `<br>${mail.quoted_content}`
-		mail.quoted_content = ''
-		if (editor && caret)
-			nextTick(() => editor.commands.setTextSelection({ from: caret.from, to: caret.to }))
-	}
-
-	// ── Signature ───────────────────────────────────────────────────────────────────────────────
-
-	// The wrapper is what lets the text/plain alternative introduce the block with RFC 3676's
-	// "-- " separator; by the time a body reaches the server the signature is ordinary markup.
-	// Gated on the HTML form, which is the one actually inserted.
-	const buildSignature = (email?: string) => {
-		const identity = getIdentity(email!)
-		return identity?.html_signature
-			? '<div><br></div><div><br></div><div class="frappe_mail_signature">' +
-					identity.html_signature +
-					'</div>'
-			: ''
-	}
-
-	const bodyText = (html: string) => {
-		const element = document.createElement('div')
-		element.innerHTML = html || ''
-		return element.textContent?.trim() ?? ''
-	}
-
-	// A draft that already exists on the server arrives with the body it was left with, and an empty
-	// one is a decision: the signature was deleted and the draft saved that way. So nothing is put
-	// back into it — not on the way in (this watcher is immediate, and a composer starts afresh every
-	// time a draft is opened), and not when the identity changes later.
-	//
-	// A composition that has never been saved is the other case entirely: its empty body is merely
-	// empty, and is where a signature belongs.
-	const isSavedDraft = !!mailDetails?.id
-
-	// A fresh composition can open with prefilled content — a forward's header block. It rides
-	// along untouched: the signature is inserted above it, and the pristine-body comparison
-	// below includes it.
-	const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
-
-	// Swap the signature when the From identity changes — but only while the body is still the
-	// auto-inserted signature (or empty/prefilled), so a message the user has written isn't
-	// overwritten. Compared by text so the editor's HTML normalization doesn't defeat the match.
-	watch(
-		() => mail.from_email,
-		(val, oldVal) => {
-			if (isBodyEmpty.value && isSavedDraft) return
-			if (
-				isBodyEmpty.value ||
-				bodyText(mail.html_body) === bodyText(buildSignature(oldVal) + prefilledBody)
-			)
-				mail.html_body = buildSignature(val) + prefilledBody
-		},
-		{ immediate: true },
-	)
-
-	// ── Sending, saving, discarding ─────────────────────────────────────────────────────────────
-
-	const isSavingDraft = ref(false)
-	const isDiscarding = ref(false)
-
-	// Discarding is the end of this composition, and nothing may save after it. `isDiscarding` cannot
-	// say that on its own: the host clears it through `onClosed` as soon as the composer is off
-	// screen, which is well before the component is torn down — so the save on the way out would find
-	// the flag down and write back a draft that is already being deleted, or worse, create one for a
-	// message that was never saved in the first place. This one is not cleared, because there is
-	// nothing to come back to.
-	let discarded = false
-
-	// Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
-	let listOwesReload = false
-
-	/**
-	 * Bring the list up to date with the draft, once the editor is done with it.
-	 *
-	 * Called on the way out, after the last save has landed — earlier and the reload would fetch the
-	 * draft as it was a keystroke ago and put that back on screen.
-	 */
-	const payListDebt = () => {
-		if (!listOwesReload) return
-		listOwesReload = false
-		reloadMails()
-	}
-
-	const saveDraft = async () => {
-		if (discarded || !isDraftUpdated.value || isLoading.value || isDiscarding.value) return
-
-		isSavingDraft.value = true
-		if (mail.id) await updateDraft.submit({ submit: false })
-		else if (!isMailEmpty.value) await createMail.submit({ save_as_draft: true })
-		isSavingDraft.value = false
-	}
-
-	watchDebounced(
-		mail,
-		() => {
-			if (disposed) return
-			saveDraft()
-		},
-		{ debounce: 2000 },
-	)
-
-	// The Undo toast lives for the period the server actually held delivery for (it echoes it back
-	// with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
-	// lands in time). The user's own setting is only a fallback for a result without one: the
-	// setting can change under a mounted composer (Settings, Desk, another tab), and a toast timed
-	// from a stale copy would either vanish early or offer an Undo the server can no longer honour.
-	const undoSendWindowMs = (period?: number | null) =>
-		(period ?? undoSendPeriodOf(user.data)) * 1000
-
-	// A plain Send holds delivery for the undo window ('undo'); Schedule send passes an explicit time
-	// ('scheduled'). Both come back as 'Submitted' with a send_at, so the toast has to know which one
-	// it confirms — and which account it went out as. The scope follows the active account, and the
-	// hold is long enough to switch accounts in, so an undo names the account pinned at send time
-	// rather than whichever the scope has moved on to.
-	const sendMode = ref<'undo' | 'scheduled'>('undo')
-	let sentAs = scopeAccountId.value
-
-	const sendMail = async (sendAt?: string) => {
-		if (deleteMail.loading) return
-
-		if (options.isUploading?.())
-			return raiseToast(__('Please wait for attachments to finish uploading.'), 'error')
-
-		if (isRecipientsEmpty.value)
-			return raiseToast(__('Please add at least one recipient.'), 'error')
-
-		sendMode.value = sendAt ? 'scheduled' : 'undo'
-		isSavingDraft.value = false
-		close()
-		if (createMail.loading) await createMail.promise
-		if (updateDraft.loading) await updateDraft.promise
-
-		sentAs = scopeAccountId.value
-		if (mail.id) updateDraft.submit({ submit: true, send_at: sendAt, undo_send: !sendAt })
-		else createMail.submit({ save_as_draft: false, send_at: sendAt, undo_send: !sendAt })
-	}
-
-	const discardMail = async () => {
-		if (deleteMail.loading) return
-
-		discarded = true
-		isDiscarding.value = true
-		// Before close(), and synchronously: the host has to learn the draft is going while it is
-		// still on screen. Told afterwards, it sees the composer close first and puts the draft
-		// back for as long as the delete takes.
-		options.onDiscardStarted?.()
-		close()
-		if (createMail.loading) await createMail.promise
-		if (updateDraft.loading) await updateDraft.promise
-		if (mail.id) deleteMail.submit()
-		else options.onDiscardUnsaved?.()
-	}
-
-	/** Reset the in-flight flags once the composer is off screen. */
-	const onClosed = () => {
-		isDiscarding.value = false
-		isSavingDraft.value = false
-	}
-
-	// Schedule send (FUTURERELEASE)
-
-	const showScheduleModal = ref(false)
-
-	const openScheduleModal = () => {
-		if (isRecipientsEmpty.value)
-			return raiseToast(__('Please add at least one recipient.'), 'error')
-
-		showScheduleModal.value = true
-	}
-
-	const scheduleSend = (sendAt: string) => sendMail(sendAt)
-
-	// Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
-	// is just cancelling that submission — the message lands back in Drafts.
-	const undoSend = createResource({
-		url: 'suite.mail.api.scheduled.cancel_scheduled_mail',
-		makeParams: ({ account, id }: { account: string; id: string }) => ({ account, id }),
-		onSuccess: () => {
-			reloadMails()
-			raiseToast(__('Sending undone. The message is back in your drafts.'))
-		},
-		onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-	})
-
-	const { setUndoAction, retireUndoAction } = useUndo()
-
-	// The sent toast, with Undo on it for as long as the server holds delivery. The same undo goes in
-	// the ⌘Z slot for the same time, so the key that takes back an archive takes back a send too.
-	// The two are one action: whichever fires takes the toast and the slot with it, so the other
-	// cannot cancel twice. When the window closes the slot is only vacated if it is still this
-	// send's — a list action taken since has its own undo in there, and the toasts are its.
-	//
-	// It outlives the view it was sent from: cancelling a hold is a server call, as good from the
-	// Outbox or the Screener as from the inbox, and looking at Sent right after sending is exactly
-	// when a typo gets noticed.
-	const offerUndoSend = (
-		account: string,
-		submissionId: string,
-		windowMs: number,
-		threadId?: string,
-	) => {
-		const undoSendNow = () => {
-			toast.dismiss(sentToast)
-			retireUndoAction(undoSendNow)
-			undoSend.submit({ account, id: submissionId })
-		}
-		setUndoAction(undoSendNow, { outlivesView: true })
-		setTimeout(() => retireUndoAction(undoSendNow), windowMs)
-
-		// Two buttons, and they are not equals: Undo expires with the toast, so it takes the urgent
-		// slot; View is an aside you could reach any time from Sent, offered only when the thread
-		// isn't already the one in front of you.
-		const sentToast = raiseToast(
-			__('Message sent.'),
-			'success',
-			{ label: __('Undo'), onClick: undoSendNow },
-			windowMs,
-			threadId && route.params.threadID !== threadId
-				? { label: __('View'), onClick: () => viewSentMessage(threadId) }
-				: undefined,
-		)
-	}
-
-	const onMailUpdateSuccess = ({
-		id,
-		status,
-		error,
-		thread_id,
-		submission_id,
-		send_at,
-		undo_send_period,
-	}: {
-		name: string
-		id: string
-		status: string
-		error: string
-		thread_id?: string
-		/** The held delivery's EmailSubmission id — what Undo cancels. */
-		submission_id?: string
-		/** Set when the server is holding delivery (undo window or scheduled send). */
-		send_at?: string
-		/** Seconds the server held an undo-send for, before its grace; null for a scheduled send. */
-		undo_send_period?: number | null
-	}) => {
-		if (id) mail.id = id
-		updateOriginalMail()
-		if (error) return raiseToast(error, 'error')
-		if (isDiscarding.value) return
-
-		if (!isInThread || status === 'Submitted') reloadMails()
-		// In a thread the list is where the messages come from — the pane is built from the rows the
-		// list is holding, not from a fetch of its own. So a draft saved in here goes to the server
-		// and the list goes on holding the version from before this sitting: leave the thread, open
-		// it again, and the edits are not there. Nothing was lost; the list simply never asked again.
-		//
-		// It cannot be a reload on each autosave, which is why this is a debt and not a call: that
-		// rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
-		// when the editor goes — see `payListDebt`.
-		else if (status === 'Drafted') listOwesReload = true
-
-		if (isOpen()) return
-
-		if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved.'))
-		else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
-			offerUndoSend(sentAs, submission_id, undoSendWindowMs(undo_send_period), thread_id)
-		else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
-			raiseToast(__('Send scheduled.'), 'success', {
-				label: __('View'),
-				onClick: () =>
-					router.push({
-						name: 'mail-outbox',
-						params: { accountId: scopeAccountId.value },
-					}),
-			})
-		else if (status === 'Submitted')
-			raiseToast(
-				__('Message sent.'),
-				'success',
-				// No View action when the sent mail's thread is already open in front of the user.
-				thread_id && route.params.threadID !== thread_id
-					? { label: __('View'), onClick: () => viewSentMessage(thread_id) }
-					: undefined,
-			)
-	}
-
-	// ── Resources ───────────────────────────────────────────────────────────────────────────────
-
-	const createMail = createResource({
-		url: 'suite.mail.api.mail.create_mail',
-		makeParams: ({
-			save_as_draft,
-			send_at,
-			undo_send,
-		}: {
-			save_as_draft: boolean
-			send_at?: string
-			undo_send?: boolean
-		}) => ({
-			account: scopeAccountId.value,
-			...mail,
-			...processInlineImages(mail, { sending: !save_as_draft }),
-			from_name: getIdentity(mail.from_email!)._name,
-			save_as_draft,
-			send_at,
-			undo_send,
-		}),
-		onSuccess: onMailUpdateSuccess,
-		onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-	})
-
-	const updateDraft = createResource({
-		url: 'suite.mail.api.mail.update_draft_mail',
-		makeParams: ({
-			submit,
-			send_at,
-			undo_send,
-		}: {
-			submit: boolean
-			send_at?: string
-			undo_send?: boolean
-		}) => ({
-			account: scopeAccountId.value,
-			...mail,
-			...processInlineImages(mail, { sending: submit }),
-			from_name: getIdentity(mail.from_email!)._name,
-			submit,
-			send_at,
-			undo_send,
-		}),
-		onSuccess: onMailUpdateSuccess,
-		onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-	})
-
-	const deleteMail = createResource({
-		url: 'suite.mail.api.mail.delete_mail',
-		makeParams: () => ({ account: scopeAccountId.value, id: mail.id }),
-		onSuccess: () => {
-			reloadMails()
-			raiseToast(__('Draft discarded.'))
-		},
-		onError: (error: { message: string }) => raiseToast(error.message, 'error'),
-	})
-
-	const isLoading = computed(() => createMail.loading || updateDraft.loading || deleteMail.loading)
-
-	// ── Attachments ─────────────────────────────────────────────────────────────────────────────
-
-	const openAttachment = async (blob_id?: string, type?: string) => {
-		if (!blob_id) return
-
-		// Opened up front, while the click's user activation is still live: Safari blocks
-		// window.open() once the gesture has expired, which it has by the time the attachment has
-		// been fetched. A null tab means the popup blocker got it — retrying after the fetch would
-		// hit the same block, so just say so.
-		const tab = window.open('', '_blank')
-		if (!tab) return raiseToast(__('Allow popups to open attachments.'), 'error')
-
-		try {
-			tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
-		} catch {
-			tab.close()
-		}
-	}
-
-	// ── Mentions ────────────────────────────────────────────────────────────────────────────────
-
-	// Picking a mention adds that person to To — reaching back up to the recipient fields is the trip
-	// the shortcut exists to save. Only the pick adds, so a mention arriving with pasted or forwarded
-	// content doesn't quietly address the mail to anyone.
-	//
-	// Recipients this composer added that way, and only those: deleting the mention takes them back
-	// out again, while someone typed into To by hand and then mentioned stays put — the mention
-	// didn't put them there and doesn't get to remove them.
-	const mentionedRecipients = new Set<string>()
-
-	const addMentionedRecipient = ({ email, display_name, image }: MentionCandidate) => {
-		if ([...mail.to, ...mail.cc, ...mail.bcc].some((r) => r.email === email)) return
-
-		mail.to.push({ email, display_name, image })
-		mentionedRecipients.add(email)
-	}
-
-	const dropUnmentionedRecipients = () => {
-		const editor = host()?.editor
-		if (!editor || !mentionedRecipients.size) return
-
-		const mentioned = new Set<string>()
-		editor.state.doc.descendants((node) => {
-			if (node.type.name === 'mention' && node.attrs.id) mentioned.add(node.attrs.id)
-		})
-
-		for (const email of mentionedRecipients) {
-			// Still named somewhere in the body — mentioning someone twice and deleting one of the
-			// two keeps them addressed.
-			if (mentioned.has(email)) continue
-
-			mail.to = mail.to.filter((recipient) => recipient.email !== email)
-			mentionedRecipients.delete(email)
-		}
-	}
-
-	const mentionExtensions = [
-		// The inline node. Its own `@` suggester stays inert with no item source of its own — the
-		// search below is the one wired up.
-		Mention,
-		createMentionSuggestion({
-			account: () => scopeAccountId.value,
-			onSelect: addMentionedRecipient,
-			container: () => options.mentionContainer?.() ?? null,
-		}),
-	]
-
-	const appendEmoji = (emoji: string) => {
-		const editor = host()?.editor
-		editor?.commands.insertContent(emoji)
-		editor?.commands.focus()
-	}
-
-	const editorBody = createEditorBody()
-	const editorContent = computed(() => editorBody.toEditor(mail.html_body))
-	const onEditorChange = (value: string) => {
-		mail.html_body = editorBody.fromEditor(value)
-		dropUnmentionedRecipients()
-	}
-
-	return {
-		mail,
-		scope,
-		scopeAccountId,
-		identities,
-		getIdentity,
-		updateOriginalMail,
-		isDraftUpdated,
-		isRecipientsEmpty,
-		moveRecipient,
-		isBodyEmpty,
-		isMailEmpty,
-		isLoading,
-		isSavingDraft,
-		isDiscarding,
-		saveDraft,
-		payListDebt,
-		sendMail,
-		discardMail,
-		onClosed,
-		showScheduleModal,
-		openScheduleModal,
-		scheduleSend,
-		openQuotedContent,
-		openAttachment,
-		mentionExtensions,
-		appendEmoji,
-		editorContent,
-		onEditorChange,
-	}
+  const { mailDetails, isInThread = false, reloadMails, close, isOpen, host } = options
+
+  // A composer that has gone away must not still be writing drafts of its own accord. Saving is
+  // debounced by two seconds, and the timer outlives the component: pop a draft out inside that
+  // window and the editor left behind in the thread would wake up and create a second draft, next
+  // to the one the composer window creates. The window's copy is the only one that should land.
+  //
+  // Stopping the watcher is not enough to arrange that. @vueuse's debounceFilter keeps its timer
+  // in a closure and returns only the watch handle, so a call already pending arrives whether or
+  // not anything is still listening — which is why the guard is a flag read at the last moment.
+  //
+  // It gates the debounced callback and nothing else. An explicit save is a decision, not a
+  // leftover timer, and the composer makes one on the way out: Vue's unmountComponent stops the
+  // effect scope — running this hook — before it so much as queues `onUnmounted`, which is a
+  // post-render effect on top of that, so a `saveDraft` gated on disposal would be a no-op exactly
+  // when it is needed most, and everything typed since the last tick would go with the component.
+  let disposed = false
+  const { requestCompose } = useComposeRequest()
+  const { requestListReload } = useListReload()
+  const { holdDraft, releaseDraft, restoreDraft } = useDiscardingDrafts()
+  onScopeDispose(() => (disposed = true))
+  const router = useRouter()
+  const route = useRoute()
+
+  // Sends as the enclosing pane's account (the thread's owning account in All Inboxes, the active
+  // one everywhere else): identities, the default outgoing address and every draft call resolve
+  // through this scope.
+  const user = inject<UserResource>('$user')
+  if (!user) throw new Error('Mail user resource is not provided')
+  const scope = injectAccountScope()
+  const { accountId: scopeAccountId, identities, mailboxIds } = scope
+  const getIdentity = (email: string) =>
+    identities.value.data?.find((identity: Identity) => identity.email === email)
+  // The toasts' links go by path rather than route name: the composer also opens over other apps,
+  // and there Mail's routes are not registered until the first visit to /mail. The folder goes by
+  // its slug, as the URL names it: an id would be answered with a redirect that replaces the page
+  // the reader came from, and Back would skip it.
+  const accountPath = () => `/mail/account/${encodeURIComponent(scopeAccountId.value)}`
+  // The thread in front of the reader once the composer goes: on the phone, the page it goes back to.
+  const shownThread = () => options.shownThread?.() ?? route.params.threadID
+  // The sent toast's View, opening the thread in Sent. Not offered while the thread is already open,
+  // nor when the account has no Sent mailbox to open it in (none has that role, or the mailboxes
+  // have not loaded): the link needs one.
+  const viewSentAction = (threadID: string | null | undefined) => {
+    const sentId = mailboxIds.value.sent
+    if (!threadID || !sentId || shownThread() === threadID) return undefined
+    return {
+      label: __('View'),
+      onClick: () => {
+        const sent = mailboxParam(sentId, scope.mailboxes.value.data)
+        return router.push(
+          `${accountPath()}/mailbox/${encodeURIComponent(sent)}/${encodeURIComponent(threadID)}`,
+        )
+      },
+    }
+  }
+  const getDefaultFromEmail = () => {
+    const identityEmails = identities.value.data?.map((i: Identity) => i.email) ?? []
+    const defaultOutgoingEmail = scope.account.value?.default_outgoing_email
+    // Matched case-insensitively; the identity's own spelling is what goes out.
+    const identityMatching = (email?: string | null) =>
+      identityEmails.find((e) => e.toLowerCase() === email?.toLowerCase())
+    return (
+      identityMatching(mailDetails?.from_email) ??
+      identityMatching(defaultOutgoingEmail) ??
+      identityEmails[0] ??
+      // An account with no identities at all still has to send as somebody.
+      user.data.name
+    )
+  }
+  const mail = reactive({
+    name: mailDetails?.name || '',
+    id: mailDetails?.id || '',
+    from_email: getDefaultFromEmail(),
+    to: mailDetails?.to || [],
+    cc: mailDetails?.cc || [],
+    bcc: mailDetails?.bcc || [],
+    attachments: mailDetails?.attachments || [],
+    subject: mailDetails?.subject || '',
+    html_body: mailDetails?.html_body || '',
+    quoted_content: mailDetails?.quoted_content || '',
+    in_reply_to: mailDetails?.in_reply_to || '',
+    in_reply_to_id: mailDetails?.in_reply_to_id || '',
+    forwarded_from_id: mailDetails?.forwarded_from_id || '',
+    composed: true,
+  })
+  const originalMail = ref<ComposeMailData>()
+  // `saved` is the mail as a save sent it. What was typed while the save was out is not in it, and
+  // stays to be saved. The id is the one the save came back with.
+  const updateOriginalMail = (saved = JSON.stringify(mail)) =>
+    (originalMail.value = { ...JSON.parse(saved), id: mail.id })
+  const isDraftUpdated = computed(() => JSON.stringify(mail) !== JSON.stringify(originalMail.value))
+
+  // ── What's in the mail ──────────────────────────────────────────────────────────────────────
+
+  const isRecipientsEmpty = computed(() => [mail.to, mail.cc, mail.bcc].every((d) => !d.length))
+
+  /**
+   * Re-addressing someone: To → Cc, Cc → Bcc, either way round. Held here because the draft owns
+   * all three lists and a recipient field owns only its own — a field asked to give someone up has
+   * nowhere to put them.
+   */
+  const moveRecipient = (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
+    moveRecipientBetweenFields(mail, recipient.email, from, to)
+  const isBodyEmpty = computed(() => {
+    if (!mail.html_body) return true
+    const element = document.createElement('div')
+    element.innerHTML = mail.html_body
+    return !element.textContent?.trim() && element.querySelector('img, video, svg') === null
+  })
+  const isMailEmpty = computed(
+    () =>
+      !mail.subject &&
+      !mail.quoted_content &&
+      !mail.attachments?.length &&
+      isRecipientsEmpty.value &&
+      isBodyEmpty.value,
+  )
+  // A fresh composition the reader has not written in: its fields still what it opened with (a
+  // reply's recipients and quote, a forward's attachments) and its body only the signature and any
+  // prefill. A draft reopened from Drafts is never this — what it holds was written before.
+  const fieldsOf = () =>
+    JSON.stringify([
+      mail.to,
+      mail.cc,
+      mail.bcc,
+      mail.subject,
+      mail.attachments,
+      mail.quoted_content,
+    ])
+  const openedWith = fieldsOf()
+  const isUntouched = computed(
+    () =>
+      !isSavedDraft &&
+      fieldsOf() === openedWith &&
+      bodyText(mail.html_body) === bodyText(buildSignature(mail.from_email) + prefilledBody) &&
+      // Text alone missed a pasted or inserted image: a body that was only that read as untouched,
+      // and leaving it closed the draft without an Undo.
+      imageCount(mail.html_body) === imageCount(buildSignature(mail.from_email) + prefilledBody),
+  )
+  // The editor takes the unfolded body as new content, and leaves the quote selected: the next
+  // keystroke would type it away. The caret goes back to where the writer left it.
+  const openQuotedContent = () => {
+    const editor = host()?.editor
+    const caret = editor?.state.selection
+    // One blank line above the quote. A bare `<br>` between blocks became a line holding a break,
+    // drawn two lines tall.
+    mail.html_body += `<div><br></div>${mail.quoted_content}`
+    mail.quoted_content = ''
+    if (editor && caret)
+      nextTick(() => editor.commands.setTextSelection({ from: caret.from, to: caret.to }))
+  }
+
+  // ── Signature ───────────────────────────────────────────────────────────────────────────────
+
+  // The wrapper is what lets the text/plain alternative introduce the block with RFC 3676's
+  // "-- " separator; by the time a body reaches the server the signature is ordinary markup.
+  // Gated on the HTML form, which is the one actually inserted.
+  const buildSignature = (email?: string) => {
+    const identity = getIdentity(email!)
+    return identity?.html_signature
+      ? '<div><br></div><div><br></div><div class="frappe_mail_signature">' +
+          identity.html_signature +
+          '</div>'
+      : ''
+  }
+  const imageCount = (html: string) => (html?.match(/<img\b/gi) ?? []).length
+  const bodyText = (html: string) => {
+    const element = document.createElement('div')
+    element.innerHTML = html || ''
+    return element.textContent?.trim() ?? ''
+  }
+
+  // A draft that already exists on the server arrives with the body it was left with, and an empty
+  // one is a decision: the signature was deleted and the draft saved that way. So nothing is put
+  // back into it — not on the way in (this watcher is immediate, and a composer starts afresh every
+  // time a draft is opened), and not when the identity changes later.
+  //
+  // A composition that has never been saved is the other case entirely: its empty body is merely
+  // empty, and is where a signature belongs. Unless it was written in another composer first — a
+  // reply popped out of its thread before its first save. Its body is the one written there,
+  // signature included; read as a fresh one's prefill, it got a second signature above the first.
+  const isSavedDraft = !!mailDetails?.id || !!mailDetails?.composed
+
+  // A fresh composition can open with prefilled content — a forward's header block. It rides
+  // along untouched: the signature is inserted above it, and the pristine-body comparison
+  // below includes it.
+  const prefilledBody = isSavedDraft ? '' : mailDetails?.html_body || ''
+
+  // A fresh compose can open before the identities load, and then starts from the person's
+  // sign-in address, which on Suite Cloud is not a mailbox address. Once they arrive, move off an
+  // address that is not one of them.
+  watch(
+    () => identities.value.data,
+    (loaded) => {
+      if (loaded?.length && !getIdentity(mail.from_email)) mail.from_email = getDefaultFromEmail()
+    },
+  )
+
+  // Swap the signature when it changes — a different From identity, or the identities arriving
+  // after the composer opened (a fresh compose can open before they have loaded, and then starts
+  // from the account's address with no signature to put in) — but only while the body is still the
+  // auto-inserted signature (or empty/prefilled), so a message the user has written isn't
+  // overwritten. Compared by text so the editor's HTML normalization doesn't defeat the match.
+  watch(
+    () => buildSignature(mail.from_email),
+    (signature, previous) => {
+      if (isBodyEmpty.value && isSavedDraft) return
+      if (
+        isBodyEmpty.value ||
+        bodyText(mail.html_body) === bodyText((previous ?? '') + prefilledBody)
+      ) {
+        mail.html_body = signature + prefilledBody
+        // The editor takes the new body as a reset, which leaves the caret at its end: below the
+        // signature, where a reply opened before the identities arrived was then typed. Nothing
+        // has been written yet, so the place to write is still the top.
+        void nextTick(() => host()?.editor?.commands.setTextSelection({ from: 0, to: 0 }))
+      }
+    },
+    {
+      immediate: true,
+    },
+  )
+
+  // ── Sending, saving, discarding ─────────────────────────────────────────────────────────────
+
+  const isSavingDraft = ref(false)
+  const isDiscarding = ref(false)
+  // The last save was refused: what is on screen is ahead of the server until a save lands.
+  const isSaveFailed = ref(false)
+
+  // Discarding is the end of this composition, and nothing may save after it. `isDiscarding` cannot
+  // say that on its own: the host clears it through `onClosed` as soon as the composer is off
+  // screen, which is well before the component is torn down — so the save on the way out would find
+  // the flag down and write back a draft that is already being deleted, or worse, create one for a
+  // message that was never saved in the first place. This one is not cleared, because there is
+  // nothing to come back to.
+  let discarded = false
+
+  // Set by a draft save made inside a thread, cleared by paying it. See onMailUpdateSuccess.
+  let listOwesReload = false
+  // The conversation an inline reply's draft shows in, on its list row, while the list owes it.
+  let shownInList: { account: string; threadId: string } | undefined
+  const forgetShownDraft = () => {
+    if (shownInList) forgetDraftInList(shownInList.account, shownInList.threadId)
+    shownInList = undefined
+  }
+
+  /**
+   * Bring the list up to date with the draft, once the editor is done with it.
+   *
+   * Called on the way out, after the last save has landed — earlier and the reload would fetch the
+   * draft as it was a keystroke ago and put that back on screen.
+   */
+  const payListDebt = () => {
+    if (!listOwesReload) return
+    listOwesReload = false
+    reloadMails()
+  }
+  // A draft is not edited in place: each save replaces it, under a new id. A list that has not
+  // reloaded since still shows it by an earlier one, so a discard has to hold all of them.
+  const formerIds = new Set<string>()
+  let pendingSave: Promise<void> | undefined
+  // From Send until the send is answered. The send uploads before it reaches the server (see
+  // outgoingBody), and a save starting in between would create a second draft beside it, or race it
+  // to the same one.
+  //
+  // The composer is locked for as long (see ComposeMailEditor and ComposeView): what is typed after
+  // Send is in no request, so it would be lost without a word.
+  const isSending = ref(false)
+  // From a send's answer on: the message is the server's to deliver, and a draft save made for it
+  // after that (autosave, Close, the editor unmounting) is refused as "not a draft", and comes back
+  // as "Draft not saved". Undo send brings it back as a draft of its own, in Drafts.
+  let submitted = false
+  // `inert` takes the focus out of the locked composer, and does not give it back: it falls to the
+  // page. What was typed next went to the thread's own shortcuts, so `e` archived the thread being
+  // answered and Backspace trashed it, and after a refusal ⌘Enter could not send again. So while a
+  // send that took the focus is out, keys at the page stop there, and a refusal gives it back.
+  let heldFocus = false
+  const holdKeys = (e: KeyboardEvent) => {
+    if (!isSending.value || !heldFocus) return
+    const focused = document.activeElement
+    // Focus the reader has since put somewhere else is theirs.
+    if (!focused || focused === document.body) e.stopPropagation()
+  }
+  window.addEventListener('keydown', holdKeys, true)
+  onScopeDispose(() => window.removeEventListener('keydown', holdKeys, true))
+  const saveDraft = async () => {
+    if (
+      pendingSave ||
+      isSending.value ||
+      submitted ||
+      discarded ||
+      !isDraftUpdated.value ||
+      isLoading.value ||
+      isDiscarding.value
+    )
+      return
+    isSavingDraft.value = true
+    pendingSave = mail.id
+      ? updateDraftSubmit({
+          submit: false,
+        })
+      : !isMailEmpty.value
+        ? createMailSubmit({
+            save_as_draft: true,
+          })
+        : Promise.resolve()
+    try {
+      await pendingSave
+      isSaveFailed.value = false
+    } catch {
+      // The draft stays dirty, so the next edit or Retry saves it again.
+      isSaveFailed.value = true
+      if (!isOpen()) keepUnsavedDraft()
+    } finally {
+      isSavingDraft.value = false
+      pendingSave = undefined
+    }
+    // Closed while this save was out. The save on the way out found it under way and stood down,
+    // so whatever was typed meanwhile goes now.
+    if (!isSaveFailed.value && !isOpen()) await saveDraft()
+  }
+  watchDebounced(
+    mail,
+    () => {
+      if (disposed) return
+      saveDraft()
+    },
+    {
+      debounce: 2000,
+    },
+  )
+
+  /**
+   * The composer is on screen. What it opened with counts as saved, so only an edit saves it —
+   * except a draft Undo brought back, whose text may never have reached the server: that is saved
+   * now, or closing it unedited lost the last of it, and a draft never saved at all went with it.
+   * Every composer calls this once mounted: the window, a thread's reply and the phone's page.
+   */
+  const onOpened = () => (mailDetails?.restored ? void saveDraft() : updateOriginalMail())
+
+  // The Undo toast lives for the period the server actually held delivery for (it echoes it back
+  // with the send result; the hold is that plus a few seconds' grace, so a last-moment Undo still
+  // lands in time). The user's own setting is only a fallback for a result without one: the
+  // setting can change under a mounted composer (Settings, Desk, another tab), and a toast timed
+  // from a stale copy would either vanish early or offer an Undo the server can no longer honour.
+  const undoSendWindowMs = (period?: number | null) =>
+    (period ?? undoSendPeriodOf(user.data)) * 1000
+
+  // A plain Send holds delivery for the undo window ('undo'); Schedule send passes an explicit time
+  // ('scheduled'). Both come back as 'Submitted' with a send_at, so the toast has to know which one
+  // it confirms — and which account it went out as. The scope follows the active account, and the
+  // hold is long enough to switch accounts in, so an undo names the account pinned at send time
+  // rather than whichever the scope has moved on to.
+  const sendMode = ref<'undo' | 'scheduled'>('undo')
+  let sentAs = scopeAccountId.value
+  const sendMail = async (sendAt?: string) => {
+    // One send per mail: a second ⌘Enter while the first is out would send it again.
+    if (isSending.value || submitted) return
+    if (isUploading.value) {
+      const message = __('Wait for attachments to finish uploading')
+      if (sendAt) throw new Error(message)
+      return raiseToast(message, 'error')
+    }
+    if (isRecipientsEmpty.value) {
+      const message = __('Add at least one recipient')
+      if (sendAt) throw new Error(message)
+      return raiseToast(message, 'error')
+    }
+    sendMode.value = sendAt ? 'scheduled' : 'undo'
+    isSavingDraft.value = false
+    // Read before the lock is drawn, which is when `inert` takes the focus.
+    heldFocus = !!options.root()?.contains(document.activeElement)
+    isSending.value = true
+    try {
+      await pendingSave
+      sentAs = scopeAccountId.value
+      if (mail.id)
+        await updateDraftSubmit({
+          submit: true,
+          send_at: sendAt,
+          undo_send: !sendAt,
+        })
+      else
+        await createMailSubmit({
+          save_as_draft: false,
+          send_at: sendAt,
+          undo_send: !sendAt,
+        })
+      submitted = true
+      close()
+    } catch (error) {
+      if (sendAt) throw error /* Keep the composer open after refusal. */
+      if (error instanceof UnsentImageError) raiseToast(error.message, 'error')
+    } finally {
+      isSending.value = false
+      // After the lock is gone: an inert composer takes no focus.
+      if (!submitted && heldFocus) void nextTick(() => host()?.editor?.commands.focus())
+    }
+  }
+  // The composer is gone and its last save was refused: the draft lives only in this copy, which a
+  // toast holds until it is reopened, where it saves again (see onOpened).
+  const keepUnsavedDraft = () => {
+    const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
+    const account = scopeAccountId.value
+    toast.error(__('Draft not saved'), {
+      description: __('Your changes are kept here until you reopen the draft'),
+      duration: Infinity,
+      action: {
+        label: __('Reopen'),
+        onClick: () => requestCompose({ ...draft, account, restored: true }),
+      },
+    })
+  }
+  // Discarding closes the composer at once and offers Undo; the draft is deleted only once the
+  // toast has passed (see commitAfterUndo). Undo reopens it, as it was, in the compose window — the
+  // composer that held it is gone, and nothing on the server has changed.
+  const discardMail = async () => {
+    isDiscarding.value = true
+    try {
+      await pendingSave
+    } catch {
+      /* A failed last save leaves the draft as the server has it, which is what Undo brings back. */
+    }
+    const draft: ComposeMailData = JSON.parse(JSON.stringify(mail))
+    const account = scopeAccountId.value
+    // Discarded from a thread, it comes back to that thread on Undo — not into a composer window.
+    // Read before the composer closes: the last draft in Drafts takes the pane back to the list,
+    // and Undo returns it here.
+    const thread = isInThread && draft.id ? router.currentRoute.value.fullPath : undefined
+    discarded = true
+    forgetShownDraft()
+    options.onDiscardUnsaved?.()
+    options.onDiscardStarted?.()
+    close()
+    isDiscarding.value = false
+    // Nothing written: no toast and nothing to undo. One already autosaved (a body that is only the
+    // signature still saves) goes quietly.
+    if (isUntouched.value) {
+      if (draft.id)
+        void client
+          .mutation(api.mail.messages.deleteDraft, { account, id: draft.id })
+          .then(requestListReload, () => {})
+      return
+    }
+    // Off every list now, like a discard from the list itself; back on Undo.
+    const heldIds = draft.id ? [draft.id, ...formerIds] : []
+    heldIds.forEach(holdDraft)
+    commitAfterUndo({
+      message: __('Draft discarded'),
+      // A draft never saved has nothing on the server to remove: only Undo's reopening matters.
+      removal: draft.id
+        ? { kind: 'draft', account, id: draft.id }
+        : { kind: 'messages', names: [] },
+      onSent: requestListReload,
+      restore: () => {
+        if (thread) {
+          // Under whichever id the list still has it, it reopens as the editor had it — and the
+          // list is brought up to date, off the ids the saves have since replaced.
+          const copy = { ...draft, account, restored: true }
+          heldIds.forEach((id) => restoreDraft(id, copy))
+          requestListReload()
+          if (router.currentRoute.value.fullPath !== thread) void router.push(thread)
+          return
+        }
+        heldIds.forEach(releaseDraft)
+        requestCompose({ ...draft, account, restored: true })
+      },
+      // Reopening a draft needs no particular list on screen, so its Cmd/Ctrl+Z outlives the view.
+      undoSlot: {
+        set: (action) => setUndoAction(action, { outlivesView: true }),
+        retire: retireUndoAction,
+      },
+    })
+  }
+
+  /** Reset the in-flight flags once the composer is off screen. */
+  const onClosed = () => {
+    isDiscarding.value = false
+    isSavingDraft.value = false
+  }
+
+  // Schedule send (FUTURERELEASE)
+
+  const showScheduleModal = ref(false)
+  const openScheduleModal = () => {
+    if (isRecipientsEmpty.value) return raiseToast(__('Add at least one recipient'), 'error')
+    showScheduleModal.value = true
+  }
+  // Remind me if nobody replies: chosen here, and set by the send itself, so it exists only for mail
+  // that went out (see suite/mail/reminders.py). The server refuses a time before the mail goes out.
+  const remindAt = ref<string>()
+  const setRemindAt = async (at?: string) => {
+    remindAt.value = at
+  }
+
+  const scheduleSend = (sendAt: string) => sendMail(sendAt)
+
+  // Undo send: Send actually scheduled delivery a few seconds out (a server-side hold), so undoing
+  // is just cancelling that submission — the message lands back in Drafts.
+  const undoSend = useMutation(api.mail.scheduled.cancel)
+  async function undoSendSubmit({ account, id }: { account: string; id: string }) {
+    const input: InputOf<typeof api.mail.scheduled.cancel> = {
+      account,
+      id,
+    }
+    await undoSend.run(input)
+    reloadMails()
+    raiseToast(__('Message unsent. It is back in your drafts.'))
+  }
+  const { setUndoAction, retireUndoAction } = useUndo()
+
+  // The sent toast, with Undo on it for as long as the server holds delivery. The same undo goes in
+  // the ⌘Z slot for the same time, so the key that takes back an archive takes back a send too.
+  // The two are one action: whichever fires takes the toast and the slot with it, so the other
+  // cannot cancel twice. When the window closes the slot is only vacated if it is still this
+  // send's — a list action taken since has its own undo in there, and the toasts are its.
+  //
+  // It outlives the view it was sent from: cancelling a hold is a server call, as good from the
+  // Outbox or the Screener as from the inbox, and looking at Sent right after sending is exactly
+  // when a typo gets noticed.
+  const offerUndoSend = (
+    account: string,
+    submissionId: string,
+    windowMs: number,
+    threadId?: string,
+  ) => {
+    const undoSendNow = () => {
+      toast.dismiss(sentToast)
+      retireUndoAction(undoSendNow)
+      void undoSendSubmit({
+        account,
+        id: submissionId,
+      }).catch(() => {})
+    }
+    setUndoAction(undoSendNow, {
+      outlivesView: true,
+    })
+    setTimeout(() => retireUndoAction(undoSendNow), windowMs)
+
+    // Two buttons, and they are not equals: Undo expires with the toast, so it takes the urgent
+    // slot; View is an aside you could reach any time from Sent, offered only where it can open.
+    const sentToast = raiseToast(
+      __('Message sent'),
+      'success',
+      {
+        label: __('Undo'),
+        onClick: undoSendNow,
+      },
+      windowMs,
+      viewSentAction(threadId),
+    )
+  }
+  const onMailUpdateSuccess = async (
+    result: OutputOf<typeof api.mail.messages.create>,
+    sent: string,
+  ) => {
+    const { id, status, error, thread_id } = result
+    if (id && mail.id && mail.id !== id) formerIds.add(mail.id)
+    if (id) mail.id = id
+    if (error) {
+      const failure = new Error(error)
+      // The mail server's own reason, such as an address it will not take: without it, a refused send
+      // read only as "Could not complete the action", and the mail looked as if it had gone. A
+      // scheduled send says it in its dialog instead (see ScheduleSendModal).
+      if (!isSending.value) raiseError(failure)
+      else if (sendMode.value === 'undo') toast.error(__('Mail not sent'), { description: error })
+      throw failure
+    }
+    updateOriginalMail(sent)
+    if (status === 'Submitted') forgetShownDraft()
+    if (isDiscarding.value) return
+    // The toast, with its Undo, goes up as the answer lands: the server holds delivery for the undo
+    // window from the send, so an Undo raised after the thread's own fetch could outlive the hold.
+    confirmResult(result)
+    if (status === 'Submitted' && options.showSent) {
+      // What the saves owed the list goes with it: paid on the way out, it rebuilt the thread.
+      listOwesReload = false
+      await options.showSent().catch(reloadMails)
+      return
+    }
+    if (!isInThread || status === 'Submitted') reloadMails()
+    // In a thread the list is where the messages come from — the pane is built from the rows the
+    // list is holding, not from a fetch of its own. So a draft saved in here goes to the server
+    // and the list goes on holding the version from before this sitting: leave the thread, open
+    // it again, and the edits are not there. Nothing was lost; the list simply never asked again.
+    //
+    // It cannot be a reload on each autosave, which is why this is a debt and not a call: that
+    // rebuilds the thread around the reader every couple of seconds, mid-sentence. It is settled
+    // when the editor goes — see `payListDebt`.
+    // The row shows the draft meanwhile, from the text just saved: the reply's Draft badge and its
+    // words, while the pane is left as it is.
+    else if (status === 'Drafted') {
+      listOwesReload = true
+      if (thread_id && id) {
+        shownInList = { account: scopeAccountId.value, threadId: thread_id }
+        showDraftInList(scopeAccountId.value, thread_id, id, mail.html_body)
+      }
+    }
+  }
+  // Says how the save or send went, once the composer is off screen (a send is always said).
+  const confirmResult = ({
+    status,
+    thread_id,
+    submission_id,
+    send_at,
+    undo_send_period,
+  }: OutputOf<typeof api.mail.messages.create>) => {
+    if (isOpen() && status !== 'Submitted') return
+    if (status === 'Drafted' && isSavingDraft.value) raiseToast(__('Draft saved'))
+    else if (status === 'Submitted' && send_at && submission_id && sendMode.value === 'undo')
+      offerUndoSend(
+        sentAs,
+        submission_id,
+        undoSendWindowMs(undo_send_period),
+        thread_id ?? undefined,
+      )
+    else if (status === 'Submitted' && send_at && sendMode.value === 'scheduled')
+      raiseToast(__('Send scheduled'), 'success', {
+        label: __('View'),
+        onClick: () => router.push(`${accountPath()}/outbox`),
+      })
+    else if (status === 'Submitted')
+      raiseToast(__('Message sent'), 'success', viewSentAction(thread_id))
+  }
+
+  // ── Resources ───────────────────────────────────────────────────────────────────────────────
+
+  // Kept clear of the composer's own scope. A mutation made in a component cancels whatever it
+  // still has in flight when that component goes, and closing the composer is what makes it go:
+  // an autosave from two seconds earlier was cut off on its way to the server, and the cancel came
+  // back as a refusal ("Draft not saved") for a draft that was fine.
+  const writes = effectScope(true)
+  const createMail = writes.run(() => useMutation(api.mail.messages.create))!
+  async function createMailSubmit({
+    save_as_draft,
+    send_at,
+    undo_send,
+  }: {
+    save_as_draft: boolean
+    send_at?: string
+    undo_send?: boolean
+  }) {
+    const body = await outgoingBody({ sending: !save_as_draft })
+    const input: InputOf<typeof api.mail.messages.create> = {
+      account: scopeAccountId.value,
+      from_email: mail.from_email,
+      to: mail.to,
+      cc: mail.cc,
+      bcc: mail.bcc,
+      subject: mail.subject,
+      in_reply_to: mail.in_reply_to,
+      in_reply_to_id: mail.in_reply_to_id,
+      forwarded_from_id: mail.forwarded_from_id,
+      ...body,
+      from_name: getIdentity(mail.from_email)?._name ?? '',
+      save_as_draft,
+      send_at,
+      undo_send,
+      remind_at: save_as_draft ? undefined : remindAt.value,
+    }
+    const sent = JSON.stringify(mail)
+    const result = await createMail.run(input)
+    await onMailUpdateSuccess(result, sent)
+  }
+  const updateDraft = writes.run(() => useMutation(api.mail.messages.updateDraft))!
+  // The body and its inline attachments as a save or a send carries them. An image left in the body
+  // or the quote as a data URL goes as a file, not as base64 in the HTML (see uploadEmbeddedImages).
+  // Not while the editor's own uploads are running: one of those is about to replace its image, and
+  // uploading it here as well would send it twice. The host's upload counts towards that too, so a
+  // save starting meanwhile leaves these alone. The files are pointed at in the body as it is once
+  // they are up, which holds whatever was typed while they went: in the editor's own document when
+  // one is mounted, so its caret and anything it is still uploading stay put.
+  //
+  // A send goes with no data URL at all: Gmail and Outlook block them, and base64 can take a mail
+  // past the size limit. One whose upload failed refuses the send, naming the image. A save keeps it
+  // for the next try, quietly: an image over the limit is refused here, not by the host's upload, so
+  // the host's toast for it doesn't come back with every autosave.
+  async function outgoingBody({ sending }: { sending: boolean }) {
+    let failures = new Map<string, unknown>()
+    if (!options.isUploading?.()) {
+      const uploads = await uploadEmbeddedImages(
+        mail.html_body + mail.quoted_content,
+        uploadEmbeddedImage,
+      )
+      failures = uploads.failures
+      if (uploads.uploaded) {
+        const editor = host()?.editor
+        if (editor) {
+          editor.commands.command(({ tr }) => uploads.inDocument(tr.setMeta('addToHistory', false)))
+          onEditorChange(editor.getHTML())
+        } else mail.html_body = uploads.inHtml(mail.html_body)
+        mail.quoted_content = uploads.inHtml(mail.quoted_content)
+      }
+    }
+    const [unsent] = sending ? embeddedImagesIn(mail.html_body + (mail.quoted_content ?? '')) : []
+    if (unsent) {
+      const image = unsent.name
+        ? `“${unsent.name}”`
+        : __('Image {0} in the mail', [unsent.position])
+      const failure = failures.get(unsent.url)
+      throw new UnsentImageError(
+        failure instanceof OversizedImageError
+          ? __('{0} is {1}. Mail can attach files up to {2}. Remove it or use a smaller one.', [
+              image,
+              formatBytes(failure.size),
+              formatBytes(failure.limit),
+            ])
+          : __('{0} did not upload, so the mail was not sent. Try again, or remove it.', [image]),
+      )
+    }
+    return processInlineImages(mail, { sending })
+  }
+  const uploadEmbeddedImage = async (file: File) => {
+    const limit = user.data?.max_attachment_size
+    if (limit && file.size > limit) throw new OversizedImageError(file.size, limit)
+    return options.uploadInlineImage(file)
+  }
+  async function updateDraftSubmit({
+    submit,
+    send_at,
+    undo_send,
+  }: {
+    submit: boolean
+    send_at?: string
+    undo_send?: boolean
+  }) {
+    const body = await outgoingBody({ sending: submit })
+    const input: InputOf<typeof api.mail.messages.updateDraft> = {
+      account: scopeAccountId.value,
+      id: mail.id,
+      from_email: mail.from_email,
+      to: mail.to,
+      cc: mail.cc,
+      bcc: mail.bcc,
+      subject: mail.subject,
+      ...body,
+      from_name: getIdentity(mail.from_email)?._name ?? '',
+      submit,
+      send_at,
+      undo_send,
+      remind_at: submit ? remindAt.value : undefined,
+    }
+    const sent = JSON.stringify(mail)
+    const result = await updateDraft.run(input)
+    await onMailUpdateSuccess(result, sent)
+  }
+  const isLoading = computed(() => createMail.isPending || updateDraft.isPending)
+
+  // ── Attachments ─────────────────────────────────────────────────────────────────────────────
+
+  const openAttachment = async (blob_id?: string, type?: string) => {
+    if (!blob_id) return
+
+    // Opened up front, while the click's user activation is still live: Safari blocks
+    // window.open() once the gesture has expired, which it has by the time the attachment has
+    // been fetched. A null tab means the popup blocker got it — retrying after the fetch would
+    // hit the same block, so just say so.
+    const tab = window.open('', '_blank')
+    if (!tab) return raiseToast(__('Allow popups to open attachments'), 'error')
+    try {
+      tab.location.href = await getAttachmentUrl(blob_id, type, scopeAccountId.value)
+    } catch {
+      tab.close()
+    }
+  }
+
+  /**
+   * Puts a file just stored on the site on the mail: an upload from the device, or a copy from
+   * Drive. It has no blob until the draft is saved, so until then it opens from its URL.
+   */
+  const attachFile = (
+    doc: { file_name?: string; file_url?: string; file_size?: number },
+    type?: string,
+  ) => {
+    const file: Attachment & { file_name: string; file_size: number } = {
+      filename: doc.file_name ?? '',
+      file_name: doc.file_name ?? '',
+      blob_id: '',
+      // Kept for the pill's icon; the server reads the type from the file itself.
+      type: type ?? '',
+      size: doc.file_size ?? 0,
+      file_size: doc.file_size ?? 0,
+      file_url: doc.file_url ?? null,
+      disposition: 'attachment',
+    }
+    mail.attachments.push(file)
+  }
+
+  // Drive's own picker, then copies made on the server (attach_drive_files): what the mail carries
+  // is the file as it was picked, under the name Drive gives it. A refusal — a file too large, too
+  // much at once, or one the user can no longer read — comes back in the server's words, as an
+  // upload's does, and attaches none of the picked files.
+  const driveDialogs = useDriveDialogs()
+  const attachingFromDrive = ref(0)
+  const attachFromDrive = async () => {
+    const files = await driveDialogs.pickFiles({
+      title: __('Attach from Drive'),
+      action: __('Attach'),
+    })
+    if (!files?.length) return
+    attachingFromDrive.value++
+    try {
+      const attached = await client.mutation(api.mail.attachments.fromDrive, {
+        nodes: files.map(({ name }) => name),
+      })
+      for (const file of attached) attachFile(file)
+    } catch {
+      // The refusal has been shown already, as every refused write is.
+    } finally {
+      attachingFromDrive.value--
+    }
+  }
+  // Whether a file is still on its way to the mail, from the device or from Drive. Sending waits.
+  const isUploading = computed(() => !!options.isUploading?.() || attachingFromDrive.value > 0)
+
+  // ── Mentions ────────────────────────────────────────────────────────────────────────────────
+
+  // Picking a mention adds that person to To — reaching back up to the recipient fields is the trip
+  // the shortcut exists to save. Only the pick adds, so a mention arriving with pasted or forwarded
+  // content doesn't quietly address the mail to anyone.
+  //
+  // Recipients this composer added that way, and only those: deleting the mention takes them back
+  // out again, while someone typed into To by hand and then mentioned stays put — the mention
+  // didn't put them there and doesn't get to remove them.
+  const mentionedRecipients = new Set<string>()
+  const addMentionedRecipient = ({ email, display_name, image }: MentionCandidate) => {
+    if ([...mail.to, ...mail.cc, ...mail.bcc].some((r) => r.email === email)) return
+    mail.to.push({
+      email,
+      display_name,
+      image,
+    })
+    mentionedRecipients.add(email)
+  }
+  const dropUnmentionedRecipients = () => {
+    const editor = host()?.editor
+    if (!editor || !mentionedRecipients.size) return
+    const mentioned = new Set<string>()
+    editor.state.doc.descendants((node) => {
+      if (node.type.name === 'mention' && node.attrs.id) mentioned.add(node.attrs.id)
+    })
+    for (const email of mentionedRecipients) {
+      // Still named somewhere in the body — mentioning someone twice and deleting one of the
+      // two keeps them addressed.
+      if (mentioned.has(email)) continue
+      mail.to = mail.to.filter((recipient) => recipient.email !== email)
+      mentionedRecipients.delete(email)
+    }
+  }
+  // One body for both composers, so the window and the phone parse and send it alike.
+  const editorExtensions = [
+    ...mailEditorKit({
+      image: CustomImageExtension.configure({ uploadFunction: options.uploadInlineImage }),
+    }),
+    QuotedContentExtension,
+    // The inline node. Its own `@` suggester stays inert with no item source of its own — the
+    // search below is the one wired up.
+    Mention,
+    createMentionSuggestion({
+      account: () => scopeAccountId.value,
+      onSelect: addMentionedRecipient,
+    }),
+  ]
+  const appendEmoji = (emoji: string) => {
+    const editor = host()?.editor
+    editor?.commands.insertContent(emoji)
+    editor?.commands.focus()
+  }
+
+  const editorBody = createEditorBody()
+  const editorContent = computed(() => editorBody.toEditor(mail.html_body))
+  let lastFromEditor = ''
+  const onEditorChange = (value: unknown) => {
+    if (typeof value !== 'string') return
+    lastFromEditor = editorBody.fromEditor(value)
+    mail.html_body = lastFromEditor
+    dropUnmentionedRecipients()
+  }
+  // A body set from here — a quote unfolded, a signature swapped in — goes into the editor without
+  // the editor reporting back. What it made of it is what the mail has to carry, or the draft would
+  // save and send the raw string until the next keystroke.
+  watch(
+    () => mail.html_body,
+    (body) => {
+      if (body === lastFromEditor) return
+      void nextTick(() => {
+        const editor = host()?.editor
+        if (editor) onEditorChange(editor.getHTML())
+      })
+    },
+  )
+  return {
+    mail,
+    scope,
+    scopeAccountId,
+    identities,
+    getIdentity,
+    updateOriginalMail,
+    onOpened,
+    isDraftUpdated,
+    isRecipientsEmpty,
+    moveRecipient,
+    isBodyEmpty,
+    isMailEmpty,
+    isUntouched,
+    isLoading,
+    isSavingDraft,
+    isSaveFailed,
+    isDiscarding,
+    saveDraft,
+    payListDebt,
+    sendMail,
+    isSending,
+    discardMail,
+    onClosed,
+    showScheduleModal,
+    openScheduleModal,
+    scheduleSend,
+    remindAt,
+    setRemindAt,
+    openQuotedContent,
+    openAttachment,
+    attachFile,
+    attachFromDrive,
+    isUploading,
+    editorExtensions,
+    appendEmoji,
+    editorContent,
+    onEditorChange,
+  }
 }

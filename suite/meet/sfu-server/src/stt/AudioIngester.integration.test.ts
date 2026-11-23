@@ -2,6 +2,7 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import dgram from 'node:dgram';
 import { setTimeout as delay } from 'node:timers/promises';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Producer, Router } from 'mediasoup/types';
 import { expect, it, vi } from 'vitest';
 import { AudioIngester } from './AudioIngester';
@@ -37,7 +38,7 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 			isAvailable: () => true,
 			onAvailable: () => {},
 		};
-		const router = {
+		const router = fromPartial<Router>({
 			createPlainTransport: async () => ({
 				consume: async () => ({
 					rtpParameters: { codecs: [{ payloadType: 111 }] },
@@ -48,11 +49,11 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 				},
 				close: () => {},
 			}),
-		} as unknown as Router;
+		});
 		const ingester = new AudioIngester({
 			roomId,
 			participantId: 'synthetic-speaker',
-			producer: { id: 'synthetic-producer' } as Producer,
+			producer: fromPartial<Producer>({ id: 'synthetic-producer' }),
 			router,
 			sttClient: client,
 			speechDetector: {
@@ -166,8 +167,8 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 		const ingester = new AudioIngester({
 			roomId: `source-${randomUUID()}`,
 			participantId: 'speaker',
-			producer: { id: 'producer' } as Producer,
-			router: {
+			producer: fromPartial<Producer>({ id: 'producer' }),
+			router: fromPartial<Router>({
 				createPlainTransport: async () => ({
 					consume: async () => ({
 						rtpParameters: { codecs: [{ payloadType: 111 }] },
@@ -178,7 +179,7 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 					},
 					close() {},
 				}),
-			} as unknown as Router,
+			}),
 			sttClient: { createStream, isAvailable: () => false, onAvailable() {} },
 			onPcm: (pcm) => {
 				received += pcm.length;

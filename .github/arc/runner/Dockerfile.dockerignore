@@ -1,11 +1,5 @@
 *
-!package.json
-!yarn.lock
 !pyproject.toml
-
-!frontend/
-frontend/*
-!frontend/package.json
 
 !e2e/
 e2e/*

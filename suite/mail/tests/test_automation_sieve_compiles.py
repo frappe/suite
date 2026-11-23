@@ -13,16 +13,16 @@ JMAP_CORE = "urn:ietf:params:jmap:core"
 JMAP_SIEVE = "urn:ietf:params:jmap:sieve"
 
 
-def render_automation_script() -> str:
+def render_automation_script(classify: bool = True) -> str:
     """The automation script for an account using every block the generator writes, with the lookups
-    it would make over JMAP stubbed out. Paths and keywords carry quotes and backslashes."""
+    it would make over JMAP stubbed out. Paths and keywords carry quotes and backslashes. `classify`
+    is whether Mail Settings has mail classified, and so whether the Category block is there."""
 
     from suite.mail.doctype.sieve_script import sieve_script
 
     screened = [
-        frappe._dict(email="rejected@example.org", action="Reject"),
-        frappe._dict(email="@rejected.example.org", action="Reject"),
         frappe._dict(email="spammer@example.org", action="Spam"),
+        frappe._dict(email="@spammers.example.org", action="Spam"),
         frappe._dict(email="boss@example.org", action="Accepted"),
         frappe._dict(email="@partner.example.org", action="Accepted"),
     ]
@@ -35,13 +35,13 @@ def render_automation_script() -> str:
     }
 
     with (
+        patch.object(sieve_script.classification, "is_enabled", return_value=classify),
         patch.object(sieve_script, "get_mailboxes", return_value=[{"id": "m1", "_name": "Gold"}]),
         patch.object(sieve_script, "get_mailbox_automation_rules", return_value=rules),
         patch.object(sieve_script, "get_mailbox_path", return_value='Clients/"VIP" \\ Gold'),
         patch.object(sieve_script, "get_effective_screened_email_addresses", return_value=screened),
         patch.object(sieve_script, "get_junk_mailbox_path", return_value="Junk Mail"),
         patch.object(sieve_script, "is_screening_enabled", return_value=True),
-        patch.object(sieve_script, "get_screening_mailbox_path", return_value="Screener"),
         patch.object(sieve_script, "get_inbox_mailbox_path", return_value="INBOX"),
         patch.object(sieve_script, "get_account_emails", return_value=["me@example.org"]),
     ):
@@ -105,5 +105,5 @@ class TestAutomationSieveCompiles(IntegrationTestCase):
         self.assertIsNone(self.validate(script), script)
 
     def test_a_script_missing_a_require_does_not(self):
-        # Keeps the check above honest: `:create` needs the `mailbox` extension declared.
-        self.assertIsNotNone(self.validate('require ["fileinto"];\nfileinto :create "Screener";\n'))
+        # Keeps the check above honest: `:flags` needs the `imap4flags` extension declared.
+        self.assertIsNotNone(self.validate('require ["fileinto"];\nkeep :flags "unscreened";\n'))

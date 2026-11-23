@@ -7,6 +7,10 @@ import type {
 	TranscriptionStore,
 } from './TranscriptionStore.js';
 
+function isMissingFile(error: unknown): boolean {
+	return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
 export function transcriptionRoutes(
 	app: Application,
 	config: Config,
@@ -73,7 +77,7 @@ export function transcriptionRoutes(
 							? 507
 							: reason === 'capacity'
 								? 429
-								: (error as NodeJS.ErrnoException).code === 'ENOENT' ||
+								: isMissingFile(error) ||
 										reason === 'source_missing'
 									? 404
 									: 422,
@@ -213,7 +217,7 @@ export function transcriptionRoutes(
 				if (m.room !== c.room) throw new Error('unauthorized');
 			} catch (error) {
 				if (
-					(error as NodeJS.ErrnoException).code !== 'ENOENT' &&
+					!isMissingFile(error) &&
 					!(
 						error instanceof Error &&
 						error.message === 'source_manifest_unavailable'

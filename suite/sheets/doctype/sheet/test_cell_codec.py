@@ -14,7 +14,7 @@ from suite.sheets.doctype.sheet.cell_codec import cell_map
 
 class CellMapCompact(unittest.TestCase):
     def test_reads_compact_v2_slice(self):
-        # As produced by packSheet: rows keyed by 0-based row, value arrays by
+        # As the old editor saved it: rows keyed by 0-based row, value arrays by
         # 0-based column.
         slice_ = {
             "v": 2,

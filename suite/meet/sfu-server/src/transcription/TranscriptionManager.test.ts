@@ -1,9 +1,10 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Room } from '../types';
 import { TranscriptionManager } from './TranscriptionManager';
 
 function room(): Room {
-	return {
+	return fromPartial<Room>({
 		peers: new Map([
 			[
 				'human',
@@ -14,7 +15,7 @@ function room(): Room {
 				},
 			],
 		]),
-	} as Room;
+	});
 }
 afterEach(() => {
 	vi.useRealTimers();

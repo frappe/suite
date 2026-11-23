@@ -8,6 +8,7 @@ import { isRecordingProofRequest } from '../SocketHandlerManager';
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
 
+// SAFETY: The repository-owned recording/contracts/v1.json defines these vectors; each accepted and rejected proof is checked against the protocol validators below.
 const contract = JSON.parse(
 	readFileSync(
 		resolve(process.cwd(), '../recording/contracts/v1.json'),

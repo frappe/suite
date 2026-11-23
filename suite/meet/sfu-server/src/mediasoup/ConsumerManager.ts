@@ -110,7 +110,7 @@ export class ConsumerManager {
 						loggers.consumerManager.warn(
 							'Failed to request key frame for consumer %s: %s',
 							consumer.id,
-							(error as Error).message,
+							error instanceof Error ? error.message : String(error),
 						);
 					});
 			}
@@ -125,7 +125,10 @@ export class ConsumerManager {
 		} catch (consumeError) {
 			if (createdConsumer) this.removeConsumer(createdConsumer.id, true);
 			loggers.consumerManager.error('Failed to create consumer: %o', {
-				error: (consumeError as Error).message,
+				error:
+					consumeError instanceof Error
+						? consumeError.message
+						: String(consumeError),
 				producerId,
 				transportId: transport.id,
 				transportState: transport.dtlsState,
@@ -154,7 +157,7 @@ export class ConsumerManager {
 				loggers.consumerManager.warn(
 					'Error closing consumer %s: %s',
 					consumerId,
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
 			}
 		}
@@ -190,7 +193,7 @@ export class ConsumerManager {
 			loggers.consumerManager.warn(
 				'Failed to request key frame for consumer %s: %s',
 				consumerId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			return false;
 		}
@@ -230,7 +233,7 @@ export class ConsumerManager {
 			loggers.consumerManager.warn(
 				'Failed to pause consumer %s: %s',
 				consumerId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			return false;
 		}
@@ -258,7 +261,7 @@ export class ConsumerManager {
 			loggers.consumerManager.warn(
 				'Failed to resume consumer %s: %s',
 				consumerId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			return false;
 		}
@@ -281,10 +284,11 @@ export class ConsumerManager {
 
 		// An omitted temporal cap means the highest available frame rate. Keeping
 		// the previous cap here can leave a downscaled camera unnecessarily choppy.
-		await consumer.setPreferredLayers({
+		const layers: Parameters<typeof consumer.setPreferredLayers>[0] = {
 			spatialLayer,
-			...(temporalLayer == null ? {} : { temporalLayer }),
-		});
+		};
+		if (temporalLayer != null) layers.temporalLayer = temporalLayer;
+		await consumer.setPreferredLayers(layers);
 		return {
 			spatialLayer: consumer.preferredLayers?.spatialLayer ?? spatialLayer,
 			temporalLayer:

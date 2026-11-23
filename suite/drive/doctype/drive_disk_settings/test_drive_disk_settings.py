@@ -1,7 +1,11 @@
 # Copyright (c) 2025, Frappe Technologies Pvt. Ltd. and Contributors
 # See license.txt
 
-# import frappe
+import json
+import re
+from pathlib import Path
+
+import frappe
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
 # On IntegrationTestCase, the doctype test records and all
@@ -17,7 +21,14 @@ class UnitTestDriveDiskSettings(UnitTestCase):
     Use this class for testing individual functions and methods.
     """
 
-    pass
+    def test_preview_size_defaults_to_512_pixels(self):
+        """§9.2: one derived preview is a 512 px longest-side WebP."""
+        doctype = json.loads((Path(__file__).parent / "drive_disk_settings.json").read_text())
+        field = next(f for f in doctype["fields"] if f["fieldname"] == "preview_size")
+        self.assertEqual(field["default"], "512")
+        self.assertIn("pixels", field["description"].lower())
+        self.assertIn("longest side", field["description"].lower())
+        self.assertNotIn("megabyte", field["description"].lower())
 
 
 class IntegrationTestDriveDiskSettings(IntegrationTestCase):
@@ -26,4 +37,27 @@ class IntegrationTestDriveDiskSettings(IntegrationTestCase):
     Use this class for testing interactions between multiple components.
     """
 
-    pass
+    def test_guest_safe_settings_publish_the_pixel_preview_size(self):
+        from suite.drive.webdav.settings import site_settings
+
+        frappe.db.set_single_value("Drive Disk Settings", "preview_size", 512)
+        frappe.clear_document_cache("Drive Disk Settings", "Drive Disk Settings")
+        with self.set_user("Guest"):
+            result = site_settings()
+
+        self.assertEqual(result, {"is_admin": False, "preview_size": 512})
+
+    def test_saving_refuses_a_preview_size_outside_the_pixel_range(self):
+        for implausible in (0, 127, 2049, 250000):
+            with self.subTest(implausible=implausible):
+                settings = frappe.get_doc("Drive Disk Settings")
+                settings.preview_size = implausible
+                with self.assertRaises(frappe.ValidationError):
+                    settings.save()
+
+        for plausible in (128, 2048):
+            with self.subTest(plausible=plausible):
+                settings = frappe.get_doc("Drive Disk Settings")
+                settings.preview_size = plausible
+                settings.save()
+                self.assertEqual(frappe.db.get_single_value("Drive Disk Settings", "preview_size"), plausible)

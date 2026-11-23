@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import type { Producer, Router } from 'mediasoup/types';
@@ -12,9 +13,14 @@ import { transcriptionRoutes } from '../../../recorder-server/src/TranscriptionR
 import { TranscriptionStore } from '../../../recorder-server/src/TranscriptionStore';
 import { SourceCapture } from './SourceCapture';
 
-const decoder = vi.hoisted(() => ({
-	tap: undefined as undefined | ((pcm: Buffer) => void),
-}));
+interface DecoderFixture {
+	tap?: (pcm: Buffer) => void;
+}
+
+const decoder = vi.hoisted(() => {
+	const state: DecoderFixture = {};
+	return state;
+});
 // Decoder transport and Silero behavior each have dedicated tests; this exercises
 // their speech-source integration against the actual authenticated durable store.
 vi.mock('../stt/AudioIngester', () => ({
@@ -110,8 +116,8 @@ async function setup(failUploads = false) {
 		capture: 'capture',
 		speakerId: 'person',
 		speakerName: 'A Speaker',
-		producer: { id: 'producer' } as Producer,
-		router: {} as Router,
+		producer: fromPartial<Producer>({ id: 'producer' }),
+		router: fromPartial<Router>({}),
 		epoch: performance.now() - 1000,
 		maxDurationMs: 10000,
 		recorderOrigin: `http://127.0.0.1:${address.port}`,

@@ -1,0 +1,50 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "node",
+  "source_blob",
+  "blob"
+ ],
+ "fields": [
+  {
+   "fieldname": "node",
+   "fieldtype": "Link",
+   "label": "Node",
+   "options": "Drive Node",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "source_blob",
+   "fieldtype": "Link",
+   "label": "Source Blob",
+   "options": "File Blob",
+   "search_index": 1
+  },
+  {
+   "fieldname": "blob",
+   "fieldtype": "Link",
+   "label": "Blob",
+   "options": "File Blob",
+   "reqd": 1,
+   "search_index": 1
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "module": "Drive",
+ "name": "Drive Node Preview",
+ "naming_rule": "Random",
+ "permissions": [
+  {
+   "read": 1,
+   "role": "System Manager"
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -682,6 +682,9 @@ def format_push_subscription(user: str, push_subscription: dict) -> dict:
         "id": push_subscription["id"],
         "name": f"{user}|{push_subscription['id']}",
         "device_client_id": push_subscription["deviceClientId"],
+        # The mail server knows a subscription only by ids; this site's own is the one wearing the id
+        # it derives for the user, which is what lets the list name it rather than show a bare id.
+        "this_site": push_subscription["deviceClientId"] == get_site_device_client_id(user),
         "expires": expires,
         "types": json.dumps(types, indent=4),
         "creation": today(),

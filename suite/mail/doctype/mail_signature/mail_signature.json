@@ -9,7 +9,8 @@
   "column_break_yaxd",
   "signature_name",
   "section_break_tvbn",
-  "html_body"
+  "html_body",
+  "identities"
  ],
  "fields": [
   {
@@ -39,12 +40,20 @@
    "label": "User",
    "options": "User",
    "reqd": 1
+  },
+  {
+   "description": "The identities that use this signature. An edit reaches them while they still carry it.",
+   "fieldname": "identities",
+   "fieldtype": "Table",
+   "label": "Identities",
+   "options": "Mail Signature Identity",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-31 09:42:50.179296",
+ "modified": "2026-11-20 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Signature",

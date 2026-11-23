@@ -24,7 +24,7 @@ export function registerRaiseHandHandlers(deps: HandlerDeps) {
 			} catch (e) {
 				loggers.socketHandler.warn(
 					'raise_hand handling failed: %s',
-					(e as Error).message || e,
+					(e instanceof Error ? e.message : String(e)) || e,
 				);
 				callback({ success: false, error: 'Internal error' });
 			}

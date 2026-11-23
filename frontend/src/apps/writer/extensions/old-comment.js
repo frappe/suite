@@ -3,6 +3,7 @@ import { Mark, mergeAttributes } from '@tiptap/core'
 const CommentExtension = Mark.create({
   name: 'comment',
 
+  /** @returns {{ HTMLAttributes: Record<string, unknown>, onCommentActivated: (id: string) => void }} */
   addOptions() {
     return {
       HTMLAttributes: {},

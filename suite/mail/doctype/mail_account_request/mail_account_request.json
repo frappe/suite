@@ -15,9 +15,15 @@
   "disable_receiving",
   "account_details_column_break",
   "invited_by",
-  "account",
+   "account",
+   "suite_user",
   "aliases",
-  "quota_gb",
+   "quota_gb",
+   "combined_cap_bytes",
+   "first_name",
+   "last_name",
+   "locale",
+   "time_zone",
   "membership_details_section",
   "groups",
   "membership_details_column_break",
@@ -30,7 +36,44 @@
   "expires_at",
   "request_key"
  ],
- "fields": [
+  "fields": [
+   {"fieldname": "suite_user", "fieldtype": "Link", "options": "User", "label": "Suite user", "read_only": 1},
+   {
+    "fieldname": "combined_cap_bytes",
+    "fieldtype": "Int",
+    "length": 20,
+    "label": "Combined personal cap (bytes)",
+    "description": "Creation-time combined cap. Zero means uncapped; never a Mail quota.",
+    "default": "0"
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "first_name",
+    "fieldtype": "Data",
+    "label": "First Name",
+    "read_only": 1
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "last_name",
+    "fieldtype": "Data",
+    "label": "Last Name",
+    "read_only": 1
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "locale",
+    "fieldtype": "Data",
+    "label": "Language",
+    "read_only": 1
+   },
+   {
+    "description": "What the Admin chose for a direct creation, so a retry keeps it.",
+    "fieldname": "time_zone",
+    "fieldtype": "Data",
+    "label": "Time Zone",
+    "read_only": 1
+   },
   {
    "fieldname": "account_details_column_break",
    "fieldtype": "Column Break"
@@ -56,7 +99,7 @@
    "label": "Backup Email",
    "length": 255,
    "options": "Email",
-   "reqd": 1,
+    "reqd": 0,
    "search_index": 1,
    "set_only_once": 1
   },
@@ -105,7 +148,7 @@
   },
   {
    "description": "The email address of the mail account to create; becomes the Frappe User and the Stalwart account's primary address.",
-   "fieldname": "account",
+    "fieldname": "account",
    "fieldtype": "Data",
    "in_list_view": 1,
    "in_standard_filter": 1,
@@ -113,8 +156,7 @@
    "length": 255,
    "options": "Email",
    "reqd": 1,
-   "search_index": 1,
-   "set_only_once": 1
+    "search_index": 1
   },
   {
    "description": "Additional email addresses (one per line) added as aliases to the account.",
@@ -189,7 +231,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "When this request stops being valid and can no longer create an account. Defaults to one day after creation.",
+    "description": "When this request stops being valid. Links expire within seven days.",
    "fieldname": "expires_at",
    "fieldtype": "Datetime",
    "label": "Expires At",
@@ -211,12 +253,11 @@
   {
    "default": "0",
    "description": "If enabled, the created user gets the Suite Admin role in Frappe.",
-   "fieldname": "is_admin",
+    "fieldname": "is_admin",
    "fieldtype": "Check",
    "label": "Is Admin",
    "no_copy": 1,
-   "search_index": 1,
-   "set_only_once": 1
+    "search_index": 1
   },
   {
    "default": "0",
@@ -231,7 +272,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-07 13:20:00.000000",
+ "modified": "2026-11-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "Mail Account Request",

@@ -16,10 +16,20 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 			try {
 				deps.authManager.ensureFullAccess(socket);
 				const { roomId } = ensureParticipantOwner(socket, deps.registry);
-				deps.mediasoup.assertProducerAccess(data?.producerId, roomId, getPeerId(socket));
-				callback({ success: true, demand: deps.mediasoup.getCameraLayerDemand(data.producerId) });
+				deps.mediasoup.assertProducerAccess(
+					data?.producerId,
+					roomId,
+					getPeerId(socket),
+				);
+				callback({
+					success: true,
+					demand: deps.mediasoup.getCameraLayerDemand(data.producerId),
+				});
 			} catch (error) {
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -58,7 +68,9 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 						loggers.socketHandler.warn(
 							'Producer rollback failed for %s: %s',
 							producer.id,
-							(cleanupError as Error).message,
+							cleanupError instanceof Error
+								? cleanupError.message
+								: String(cleanupError),
 						);
 					}
 					throw error;
@@ -81,9 +93,12 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error creating producer: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			} finally {
 				deps.telemetry.recordMediaOperation(
 					{
@@ -131,9 +146,12 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error closing producer: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -164,9 +182,12 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error pausing producer: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -197,9 +218,12 @@ export function registerProducerHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error resuming producer: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 	};

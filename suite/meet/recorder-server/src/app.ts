@@ -97,6 +97,22 @@ export function stopBody(value: unknown): value is StopBody {
 	);
 }
 
+type CommandResponse = Response<unknown, { command: CommandClaims }>;
+
+interface AcceptedJobDetails {
+	milestones?: Record<string, string>;
+	reason_code?: string;
+	replacement_ready_at?: string;
+	interruption?: {
+		id: string;
+		interrupted_at: JobRecord['interrupted_at'];
+		deadline: JobRecord['interruption_deadline'];
+		omission_started_at: JobRecord['omission_started_at'];
+		resumed_capture_started_at: string | null;
+		recovered_at: string | null;
+	};
+}
+
 function accepted(job: JobRecord) {
 	const milestoneEntries = [
 		['configured', job.configured_at],
@@ -104,13 +120,12 @@ function accepted(job: JobRecord) {
 		['joined', job.joined_at],
 		['capture_started', job.capture_started_at],
 	] as const;
-	const milestones = Object.fromEntries(
-		milestoneEntries.filter(([, value]) => value) as readonly (readonly [
-			string,
-			string,
-		])[],
-	);
-	return {
+	const milestones: Record<string, string> = {};
+	for (const [name, occurredAt] of milestoneEntries) {
+		if (occurredAt) milestones[name] = occurredAt;
+	}
+
+	const response = {
 		protocol_version: PROTOCOL_VERSION,
 		status: 'accepted',
 		job: job.job,
@@ -119,26 +134,24 @@ function accepted(job: JobRecord) {
 		endpoint_generation: job.endpoint_generation,
 		state: job.state,
 		event_sequence: job.event_sequence ?? 1,
-		...(Object.keys(milestones).length ? { milestones } : {}),
-		...(job.health_reason
-			? { reason_code: healthReasonCode(job.health_reason) }
-			: {}),
-		...(job.replacement_ready_at
-			? { replacement_ready_at: job.replacement_ready_at }
-			: {}),
-		...(job.interruption_id
-			? {
-					interruption: {
-						id: job.interruption_id,
-						interrupted_at: job.interrupted_at,
-						deadline: job.interruption_deadline,
-						omission_started_at: job.omission_started_at,
-						resumed_capture_started_at: job.resumed_capture_started_at ?? null,
-						recovered_at: job.recovered_at ?? null,
-					},
-				}
-			: {}),
 	};
+	const details: AcceptedJobDetails = {};
+	if (Object.keys(milestones).length) details.milestones = milestones;
+	if (job.health_reason)
+		details.reason_code = healthReasonCode(job.health_reason);
+	if (job.replacement_ready_at)
+		details.replacement_ready_at = job.replacement_ready_at;
+	if (job.interruption_id) {
+		details.interruption = {
+			id: job.interruption_id,
+			interrupted_at: job.interrupted_at,
+			deadline: job.interruption_deadline,
+			omission_started_at: job.omission_started_at,
+			resumed_capture_started_at: job.resumed_capture_started_at ?? null,
+			recovered_at: job.recovered_at ?? null,
+		};
+	}
+	return Object.assign(response, details);
 }
 
 function healthReasonCode(reason: string): string {
@@ -225,7 +238,7 @@ export function createApp(
 	});
 
 	function command(operation: CommandClaims['operation']) {
-		return (req: Request, res: Response, next: NextFunction): void => {
+		return (req: Request, res: CommandResponse, next: NextFunction): void => {
 			try {
 				const claims = auth.authenticate(
 					req.header('authorization'),
@@ -251,9 +264,9 @@ export function createApp(
 		'/v1/recordings',
 		command('reserve'),
 		json,
-		async (req, res, next) => {
+		async (req, res: CommandResponse, next) => {
 			try {
-				const claims = res.locals.command as CommandClaims;
+				const claims = res.locals.command;
 				const body: unknown = req.body;
 				if (!reserveBody(body) || body.job !== claims.job)
 					return res.status(422).json({
@@ -302,31 +315,35 @@ export function createApp(
 		},
 	);
 
-	app.get('/v1/recordings/:id', command('query'), async (_req, res, next) => {
-		try {
-			const claims = res.locals.command as CommandClaims;
-			await auth.consume(claims);
-			const job = jobs.query(claims);
-			return job
-				? res.json(accepted(job))
-				: res.status(422).json({
-						protocol_version: PROTOCOL_VERSION,
-						status: 'rejected',
-						job: claims.job,
-						reason_code: 'invalid_job',
-					});
-		} catch (error) {
-			next(error);
-		}
-	});
+	app.get(
+		'/v1/recordings/:id',
+		command('query'),
+		async (_req, res: CommandResponse, next) => {
+			try {
+				const claims = res.locals.command;
+				await auth.consume(claims);
+				const job = jobs.query(claims);
+				return job
+					? res.json(accepted(job))
+					: res.status(422).json({
+							protocol_version: PROTOCOL_VERSION,
+							status: 'rejected',
+							job: claims.job,
+							reason_code: 'invalid_job',
+						});
+			} catch (error) {
+				next(error);
+			}
+		},
+	);
 
 	app.post(
 		'/v1/recordings/:id/grant',
 		command('grant'),
 		json,
-		async (req, res, next) => {
+		async (req, res: CommandResponse, next) => {
 			try {
-				const claims = res.locals.command as CommandClaims;
+				const claims = res.locals.command;
 				const body: unknown = req.body;
 				if (!grantBody(body))
 					return res.status(422).json({
@@ -358,9 +375,9 @@ export function createApp(
 		'/v1/recordings/:id/stop',
 		command('stop'),
 		json,
-		async (req, res, next) => {
+		async (req, res: CommandResponse, next) => {
 			try {
-				const claims = res.locals.command as CommandClaims;
+				const claims = res.locals.command;
 				const body: unknown = req.body;
 				if (!stopBody(body) || body.job !== claims.job)
 					return res.status(422).json({

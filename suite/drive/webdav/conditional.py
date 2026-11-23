@@ -32,8 +32,12 @@ def evaluate_preconditions(request: Request, row: frappe._dict | None) -> None:
         elif etag is not None and etag in _any_etags(if_none_match):
             raise PreconditionFailed("If-None-Match matched.")
 
+    # RFC 7232 §6 step 2 evaluates If-Unmodified-Since only "when If-Match is
+    # not present". A validator the client supplied and the server matched is
+    # the stronger statement about the same state, so a stale date beside it
+    # must not turn an accepted write into a 412.
     if_unmodified = request.headers.get("If-Unmodified-Since")
-    if if_unmodified is not None and row is not None:
+    if if_match is None and if_unmodified is not None and row is not None:
         since = parse_date(if_unmodified)
         if since is not None and modified_utc(row).replace(microsecond=0) > since:
             raise PreconditionFailed("Resource was modified.")

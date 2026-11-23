@@ -1,0 +1,179 @@
+import { Editor } from '@tiptap/core'
+import Collaboration from '@tiptap/extension-collaboration'
+import Document from '@tiptap/extension-document'
+import Paragraph from '@tiptap/extension-paragraph'
+import Text from '@tiptap/extension-text'
+import { fromPartial } from '@total-typescript/shoehorn'
+import { toast } from 'frappe-ui'
+import { afterEach, expect, it, vi } from 'vitest'
+import * as Y from 'yjs'
+
+import { client } from '@/api'
+
+import {
+  closeOpeningEditor,
+  isOpening,
+  OpeningHandover,
+  placeOpeningEditor,
+  releaseOpeningEditor,
+} from './openingEditor'
+
+vi.mock('@/api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/api')>()),
+  client: { query: vi.fn(async () => ({ rows: [] })) },
+}))
+vi.mock('@/platform/session', async (importOriginal) => {
+  const session = await importOriginal<typeof import('@/platform/session')>()
+  return {
+    ...session,
+    useSession: () => ({ ...session.useSession(), user: { value: 'me@x.test' } }),
+  }
+})
+vi.mock('frappe-ui', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('frappe-ui')>()),
+  toast: { info: vi.fn(), error: vi.fn() },
+}))
+vi.mock('@/apps/writer/utils', () => ({ insertTemplate: () => {} }))
+vi.mock('@/apps/writer/resources', () => ({ getTemplates: {} }))
+
+// jsdom has no layout; a paste scrolls the caret into view.
+Range.prototype.getClientRects = () => fromPartial<DOMRectList>({ length: 0, item: () => null })
+Range.prototype.getBoundingClientRect = () => new DOMRect()
+
+let live: Editor | undefined
+afterEach(() => {
+  vi.mocked(toast.info).mockClear()
+  live?.destroy()
+  closeOpeningEditor()
+  document.body.replaceChildren()
+})
+
+function place(): HTMLElement {
+  return document.body.appendChild(document.createElement('div'))
+}
+
+function typeInto(where: HTMLElement, text: string) {
+  const view = where.querySelector<HTMLElement & { editor?: Editor }>('.ProseMirror')
+  view!.editor!.commands.insertContent(text)
+}
+
+/** The document's own editor: a shared Y.Doc that may already hold text. */
+async function openLive(node: string, existing = '') {
+  const ydoc = new Y.Doc()
+  if (existing) {
+    const seed = new Editor({
+      extensions: [Document, Paragraph, Text, Collaboration.configure({ document: ydoc })],
+    })
+    seed.commands.insertContent(existing)
+    seed.destroy()
+  }
+  live = new Editor({
+    element: place(),
+    extensions: [
+      Document,
+      Paragraph,
+      Text,
+      Collaboration.configure({ document: ydoc }),
+      OpeningHandover.configure({ node }),
+    ],
+  })
+  await new Promise((resolve) => setTimeout(resolve))
+  return { editor: live, ydoc }
+}
+
+it('keeps what was typed while the document opened, once, with the caret after it', async () => {
+  const first = place()
+  placeOpeningEditor('doc-1', first)
+  typeInto(first, 'Hello')
+  // The page moves the opening editor as the document loads.
+  const second = place()
+  placeOpeningEditor('doc-1', second)
+  typeInto(second, ' world')
+  first.remove()
+
+  const { editor, ydoc } = await openLive('doc-1')
+  editor.commands.insertContent('!')
+
+  expect(isOpening('doc-1')).toBe(false)
+  expect(editor.getText()).toBe('Hello world!')
+  expect(ydoc.getXmlFragment('default').toString()).toBe('<paragraph>Hello world!</paragraph>')
+})
+
+it('adds what was typed after text the document already holds', async () => {
+  const where = place()
+  placeOpeningEditor('doc-2', where)
+  typeInto(where, 'typed')
+
+  const { editor } = await openLive('doc-2', 'Kept first')
+
+  expect(editor.getJSON().content?.map((block) => block.content?.[0]?.text)).toEqual([
+    'Kept first',
+    'typed',
+  ])
+})
+
+it('leaves another document alone', async () => {
+  const where = place()
+  placeOpeningEditor('doc-3', where)
+  typeInto(where, 'for doc-3')
+
+  const { editor } = await openLive('doc-4')
+
+  expect(editor.getText()).toBe('')
+  expect(isOpening('doc-3')).toBe(true)
+})
+
+it('closes the opening editor once no page shows it', async () => {
+  const where = place()
+  placeOpeningEditor('doc-5', where)
+  where.remove()
+  releaseOpeningEditor('doc-5')
+  await Promise.resolve()
+
+  expect(isOpening('doc-5')).toBe(false)
+})
+
+it('asks about the new document for its mention menu, not the one open before it', () => {
+  placeOpeningEditor('doc-new', place())
+
+  expect(vi.mocked(client.query).mock.lastCall?.[1]).toEqual({ node: 'doc-new' })
+})
+
+/** Pastes into the editor in `where` the way a browser does: a paste event carrying clipboard data. */
+function pasteInto(where: HTMLElement, data: { text?: string; files?: File[] }) {
+  const view = where.querySelector<HTMLElement & { editor?: Editor }>('.ProseMirror')!
+  const event = new Event('paste', { bubbles: true, cancelable: true })
+  const clipboardData = {
+    files: data.files ?? [],
+    items: [],
+    types: data.text ? ['text/plain'] : data.files?.length ? ['Files'] : [],
+    getData: (type: string) => (type === 'text/plain' ? (data.text ?? '') : ''),
+  }
+  Object.defineProperty(event, 'clipboardData', { value: clipboardData })
+  view.dispatchEvent(event)
+  return view.editor!
+}
+
+it('refuses a pasted file while the document opens, and says to try again', () => {
+  const info = vi.mocked(toast.info)
+  const where = place()
+  placeOpeningEditor('doc-6', where)
+  const picture = new File([new Uint8Array([137, 80, 78, 71])], 'shot.png', { type: 'image/png' })
+
+  const editor = pasteInto(where, { files: [picture] })
+
+  expect(info).toHaveBeenCalledOnce()
+  expect(info).toHaveBeenCalledWith('Wait a moment for the document to open, then try again')
+  expect(editor.isEmpty).toBe(true)
+})
+
+it('still takes pasted text while the document opens', () => {
+  const info = vi.mocked(toast.info)
+  const where = place()
+  placeOpeningEditor('doc-7', where)
+
+  const editor = pasteInto(where, { text: 'Pasted words' })
+
+  expect(editor.getText()).toBe('Pasted words')
+  expect(info).not.toHaveBeenCalled()
+})

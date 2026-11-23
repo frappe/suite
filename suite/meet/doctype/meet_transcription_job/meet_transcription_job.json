@@ -68,7 +68,7 @@
    "fieldname": "capture_folder",
    "fieldtype": "Link",
    "label": "Capture Folder",
-   "options": "File"
+   "options": "Drive Node"
   },
   {
    "fieldname": "status",
@@ -155,7 +155,7 @@
    "fieldname": "artifact",
    "fieldtype": "Link",
    "label": "Artifact",
-   "options": "File"
+   "options": "Drive Node"
   },
   {
    "fieldname": "failure_code",

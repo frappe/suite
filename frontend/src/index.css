@@ -1,6 +1,6 @@
 /* frappe-ui/style.css already provides @tailwind base/components/utilities + Inter.
    Suite design tokens (bg-surface-*, text-ink-*, border-outline-*) are frappe-ui
-   CSS-layer classes in the beta line — use them in markup (see SuiteLayout.vue),
+   CSS-layer classes — use them in markup,
    NOT via @apply (they are not registered Tailwind color utilities). */
 @import 'frappe-ui/style.css';
 
@@ -29,6 +29,118 @@ html.theme-switching * {
   scrollbar-width: thin;
 }
 
+/* The page behind every area follows the theme. It shows in the phone's safe-area
+   strips, in iOS rubber-band overscroll, and through translucent bars. */
 body {
   margin: 0;
+  background-color: var(--surface-base);
+}
+
+/* The Cursor preference (platform/cursor). Normal, the default, shows the
+   arrow on controls and in-app links, and the hand only on external links.
+   Pointer (`data-cursor='pointer'`) keeps each component's own cursor.
+
+   These two rules undo the hand that the browser gives links and that
+   Tailwind's preflight gives buttons. They sit in the base layer, so a cursor
+   utility on the element, such as `cursor-not-allowed`, still wins. */
+@layer base {
+  :where(:root:not([data-cursor='pointer'])) :where(a[href]),
+  :where(:root:not([data-cursor='pointer'])) button,
+  :where(:root:not([data-cursor='pointer'])) [role='button'] {
+    cursor: default;
+  }
+}
+
+/* After the utilities, so it overrides `cursor-pointer` but not a variant
+   such as `disabled:cursor-not-allowed`. */
+:where(:root:not([data-cursor='pointer'])) .cursor-pointer {
+  cursor: default;
+}
+
+/* A link is external when its href is an absolute URL: it names a scheme
+   (http, https, mailto, tel) or starts with `//`. In-app links are paths, so
+   they keep the arrow, even with `target="_blank"`. */
+:where(:root:not([data-cursor='pointer']))
+  :is(a[href^='http:'], a[href^='https:'], a[href^='//'], a[href^='mailto:'], a[href^='tel:']) {
+  cursor: pointer;
+}
+
+/* A control smaller than a fingertip still takes one. On a touch screen its hit area grows to at
+   least 44px square around it (Apple's HIG; WCAG 2.5.5), and it looks as it did. Neighbours set
+   closer than 44px, centre to centre, overlap by the difference, and the later one, drawn on top,
+   takes a tap there, even on the edge of the earlier one's own box. So in a row of controls every
+   one takes the class, or its neighbours' areas cover it. A control positioned already keeps its
+   own position. */
+@media (pointer: coarse) {
+  .touch-target:where(:not(.absolute, .fixed, .sticky)) {
+    position: relative;
+  }
+  .touch-target::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* A row in a list of rows, such as the sidebar's folders, sits closer than 44px to the next one, so
+   an area grown over its neighbours would take their taps. Its link or button takes the hit area
+   beneath the boxes around it instead: a tap on a row, or on the list between rows, goes where it
+   did, and the area takes only taps past the ends of the list. So the first and last rows reach
+   out, and the rows between keep their own box. The list must be `isolate`, or the area sinks
+   beneath the page around it and takes nothing. */
+@media (pointer: coarse) {
+  .touch-target-row > :is(a, button) {
+    position: relative;
+  }
+  .touch-target-row > :is(a, button)::after {
+    content: '';
+    position: absolute;
+    inset-inline: 0;
+    top: 50%;
+    z-index: -1;
+    height: max(100%, 44px);
+    transform: translateY(-50%);
+  }
+}
+
+/* A tooltip's text keeps the line breaks it is given. The rail's Mail item puts each account with
+   unread mail on a line of its own. `bubble` is the hook frappe-ui offers for styling its tooltips;
+   text without a line break looks as it did. */
+[data-slot='bubble'] {
+  white-space: pre-line;
+}
+
+/* frappe-ui's toast centres its icon on the whole message, so a two-line message
+   leaves the icon between its lines. The icon and message start at the top
+   instead, so the icon sits on the first line. The margin centres one text line
+   within the height of the h-7 action button, so a one-line message lines up with
+   the button. */
+[data-sonner-toast] > [data-icon],
+[data-sonner-toast] > [data-content] {
+  @apply text-p-base;
+  align-self: flex-start;
+  margin-block: calc((theme(spacing.7) - 1lh) / 2);
+}
+
+[data-sonner-toast] > [data-icon] {
+  display: flex;
+  align-items: center;
+  height: 1lh;
+}
+
+/* frappe-ui's off switch puts a thumb the colour of the page on a dark track, which is
+   about 1.8:1 in dark mode. A light thumb reads as a control. */
+:root[data-theme='dark'] [role='switch'][data-state='unchecked'] > span {
+  background-color: var(--ink-gray-7);
+}
+
+/* frappe-ui's settings row makes its title a label as wide as the row, so the empty space
+   after the words lit up the row's switch and toggled it on a click. The label ends with
+   its words. */
+.min-w-0.flex-1 > label[for].text-base-medium.block {
+  width: fit-content;
 }

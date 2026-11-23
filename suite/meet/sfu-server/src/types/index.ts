@@ -14,7 +14,6 @@ import type {
 	RtpParameters,
 	WebRtcServer,
 	WebRtcTransport,
-	WorkerLogLevel,
 	WorkerSettings,
 } from 'mediasoup/types';
 import type {
@@ -100,17 +99,16 @@ export type {
 	RecorderStageSnapshot,
 	RecordingProofChallenge,
 	RecordingProofRequest,
+	RouterRtpCodecCapability,
 	RtpCapabilities,
 	RtpCodecCapability,
 	RtpParameters,
 	ScreenShareStartedEvent,
 	ScreenShareStoppedEvent,
-	SFUScope,
 	SharedStageState,
 	TranscriptSegment,
 	UserData,
 	WebRtcTransport,
-	WorkerLogLevel,
 	WorkerSettings,
 };
 

@@ -11,6 +11,7 @@ from datetime import timedelta
 import frappe
 from frappe.utils import cint, get_datetime, now_datetime
 
+from suite import drive
 from suite.meet.transcription import client
 from suite.meet.transcription.protocol import (
     MODEL,
@@ -354,17 +355,21 @@ def operator_retry(job: str) -> dict:
 
 def maintenance():
     """Recover abandoned leases, enqueue finalized sources, notify and purge."""
+    from suite.meet.transcription.artifacts import reconcile_purged_artifact
     from suite.meet.transcription.capture import reconcile_capture
 
-    for name in frappe.get_all(
-        "Meet Transcription Job",
-        or_filters={
-            "status": ["in", ["Capturing", "Queued", "Processing", "Deleted"]],
-            "source_deleted": 0,
-            "notification_pending": 1,
-        },
-        pluck="name",
-    ):
+    jobs = frappe.db.sql(
+        """
+        SELECT job.name
+        FROM `tabMeet Transcription Job` job
+        LEFT JOIN `tabDrive Node` node ON node.name = job.artifact
+        WHERE job.status IN ('Capturing', 'Queued', 'Processing', 'Deleted')
+           OR job.source_deleted = 0 OR job.notification_pending = 1
+           OR (job.artifact IS NOT NULL AND job.artifact <> '' AND node.name IS NULL)
+        """,
+        pluck=True,
+    )
+    for name in jobs:
         try:
             doc = _locked(name)
             now = now_datetime()
@@ -379,6 +384,7 @@ def maintenance():
             # recorder cleanup. Either downstream service may be unavailable.
             frappe.db.commit()
             doc = _locked(name)
+            reconcile_purged_artifact(doc)
             if doc.notification_pending:
                 try:
                     _notify(doc)
@@ -406,9 +412,7 @@ def maintenance():
                     not capture.video_enabled
                     or (
                         capture.status in ("Ready", "Partial", "Failed", "Cancelled")
-                        and not frappe.db.exists(
-                            "File", {"name": capture.artifact, "status": ["!=", "Removed"]}
-                        )
+                        and (not capture.artifact or not frappe.db.exists("Drive Node", capture.artifact))
                     )
                 ):
                     frappe.delete_doc("Meet Recording", capture.name, ignore_permissions=True)
@@ -426,7 +430,7 @@ def _notify(doc):
 
     ready = doc.status in ("Ready", "Partial")
     subject = "Your Meet transcript is ready" if ready else "Your Meet transcript could not be processed"
-    link = frappe.utils.get_url("/drive/f/" + doc.artifact) if ready else None
+    link = frappe.utils.get_url(drive.node_url(doc.artifact)) if ready else None
     message = (
         (
             f'<p>{"A partial transcript is ready; missing intervals are marked." if doc.status == "Partial" else "Your transcript is ready."}</p><p><a href="{escape(link, quote=True)}">Open transcript in Drive</a></p>'

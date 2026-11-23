@@ -38,21 +38,18 @@ export class TranscriptionManager {
 	}
 	query(site: string, id: string) {
 		const c = this.captures.get(this.key(site, id));
-		return c
-			? {
-					capture: c.capture,
-					speech_context: { ...c.speechContext },
-					room: c.room,
-					site: c.site,
-					state:
-						c.closing && c.state === 'capturing'
-							? ('stopping' as const)
-							: c.state,
-					started_at: c.started_at,
-					gaps: c.gaps.map((g) => ({ ...g })),
-					...(c.ended_at ? { ended_at: c.ended_at } : {}),
-				}
-			: undefined;
+		if (!c) return undefined;
+		const state = c.closing && c.state === 'capturing' ? 'stopping' : c.state;
+		return {
+			capture: c.capture,
+			speech_context: { ...c.speechContext },
+			room: c.room,
+			site: c.site,
+			state,
+			started_at: c.started_at,
+			ended_at: c.ended_at,
+			gaps: c.gaps.map((g) => ({ ...g })),
+		};
 	}
 	async start(
 		site: string,
@@ -314,9 +311,11 @@ export class TranscriptionManager {
 	}
 	async close(): Promise<void> {
 		await Promise.allSettled(
-			[...this.captures.values()]
-				.filter((c) => c.state === 'capturing')
-				.map((c) => this.stop(c.site, c.capture, 'service_shutdown')),
+			Array.from(this.captures.values()).flatMap((capture) =>
+				capture.state === 'capturing'
+					? [this.stop(capture.site, capture.capture, 'service_shutdown')]
+					: [],
+			),
 		);
 	}
 }

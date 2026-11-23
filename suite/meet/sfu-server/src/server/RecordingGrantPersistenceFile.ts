@@ -151,19 +151,26 @@ export class RecordingGrantPersistenceFile {
 	}
 }
 
+type GrantFileFields = Partial<Record<keyof FileShape, unknown>>;
+
+function isRecord(value: unknown): value is GrantFileFields {
+	return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
 function isFileShape(value: unknown): value is FileShape {
-	if (!value || typeof value !== 'object') return false;
-	const candidate = value as Partial<FileShape>;
+	if (!isRecord(value)) return false;
+	const candidate = value;
 	if (candidate.schemaVersion !== SCHEMA_VERSION) return false;
 	if (
-		!candidate.consumed ||
-		typeof candidate.consumed !== 'object' ||
-		Array.isArray(candidate.consumed) ||
+		!isRecord(candidate.consumed) ||
 		Object.getPrototypeOf(candidate.consumed) !== Object.prototype
 	)
 		return false;
 	return Object.entries(candidate.consumed).every(
 		([jti, expiresAt]) =>
-			jti.length > 0 && Number.isSafeInteger(expiresAt) && expiresAt > 0,
+			jti.length > 0 &&
+			typeof expiresAt === 'number' &&
+			Number.isSafeInteger(expiresAt) &&
+			expiresAt > 0,
 	);
 }

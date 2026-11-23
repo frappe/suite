@@ -1,305 +1,412 @@
-import { toast } from "frappe-ui";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "vue";
-import type { RecordingState } from "../useRecording";
+import { toast } from 'frappe-ui'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp } from 'vue'
+
+import { useRecording, type RecordingState } from '../useRecording'
+
+const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
 const mocks = vi.hoisted(() => ({
-	startParams: [] as Array<{ meeting_id: string; request_id: string }>,
-	startCount: 0,
-	startResults: [] as Array<RecordingState | { status: "Rejected" }>,
-	getStateCount: 0,
-	getStateCompleted: 0,
-	getStateResults: [] as Array<
-		| RecordingState
-		| null
-		| Promise<RecordingState | null>
-	>,
-	socketHandler: null as ((event: {
-		meeting_id: string;
-		recording: RecordingState | null;
-	}) => void) | null,
-	stopped: false,
-}));
+  startParams: fromPartial<Array<{ meeting_id: string; request_id: string }>>([]),
+  startCount: 0,
+  startResults: fromPartial<Array<RecordingState | { status: 'Rejected' }>>([]),
+  getStateCount: 0,
+  getStateResults: fromPartial<Array<RecordingState | null | Promise<RecordingState | null>>>([]),
+  socketHandler: fromPartial<
+    ((event: { meeting_id: string; recording: RecordingState | null }) => void) | null
+  >(null),
+  stopped: false,
+}))
 
-vi.mock("frappe-ui", () => ({
-	toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() },
-	useCall: (options: { url: string }) => ({
-		loading: false,
-		submit: vi.fn(async (params: { meeting_id: string; request_id?: string }) => {
-			if (options.url.endsWith(".start")) {
-				mocks.startParams.push(params as { meeting_id: string; request_id: string });
-				mocks.startCount += 1;
-				if (mocks.startResults.length) return mocks.startResults.shift();
-				return {
-					name: "recording",
-					status: mocks.startCount === 1 ? "Pending" : "Recording",
-					state_revision: mocks.startCount,
-				};
-			}
-			if (options.url.endsWith(".stop")) {
-				mocks.stopped = true;
-				return { name: "recording", status: "Stopping", state_revision: 3 };
-			}
-			if (options.url.endsWith(".get_state")) {
-				mocks.getStateCount += 1;
-				if (mocks.getStateResults.length) {
-					const result = await mocks.getStateResults.shift();
-					mocks.getStateCompleted += 1;
-					return result;
-				}
-				if (mocks.startCount > 1) return {
-					name: "recording",
-					status: mocks.stopped ? "Stopping" : "Recording",
-					state_revision: mocks.stopped ? 3 : 2,
-				};
-			}
-			return null;
-		}),
-	}),
-}));
+vi.mock('frappe-ui', () => ({ toast: { success: vi.fn(), info: vi.fn(), error: vi.fn() } }))
+vi.mock('@/api', async (original) => {
+  const actual = await original<typeof import('@/api')>()
+  const run = async (
+    reference: { prefix?: string; path: string },
+    params: { meeting_id: string; request_id?: string },
+  ) => {
+    const url = (reference.prefix ?? '') + reference.path
+    return (async (params: { meeting_id: string; request_id?: string }) => {
+      if (url.endsWith('/recordings/starts')) {
+        if (typeof params.request_id !== 'string')
+          throw new Error('Recording starts require a request ID')
+        mocks.startParams.push({ meeting_id: params.meeting_id, request_id: params.request_id })
+        mocks.startCount += 1
+        if (mocks.startResults.length) return mocks.startResults.shift()
+        return {
+          name: 'recording',
+          status: mocks.startCount === 1 ? 'Pending' : 'Recording',
+          state_revision: mocks.startCount,
+        }
+      }
+      if (url.endsWith('/recordings/stops')) {
+        mocks.stopped = true
+        return { name: 'recording', status: 'Stopping', state_revision: 3 }
+      }
+      if (url.endsWith('/recordings/state')) {
+        mocks.getStateCount += 1
+        if (mocks.getStateResults.length) {
+          const result = await mocks.getStateResults.shift()
+          return result
+        }
+        if (mocks.startCount > 1)
+          return {
+            name: 'recording',
+            status: mocks.stopped ? 'Stopping' : 'Recording',
+            state_revision: mocks.stopped ? 3 : 2,
+          }
+      }
+      return null
+    })(params)
+  }
+  return {
+    ...actual,
+    client: { query: run },
+    useMutation: (reference: { prefix?: string; path: string }) => ({
+      isPending: false,
+      run: (params: { meeting_id: string; request_id?: string }) => run(reference, params),
+    }),
+  }
+})
 
-vi.mock("../../socket", () => ({
-	useSocket: () => ({
-		on: vi.fn((_event: string, handler: typeof mocks.socketHandler) => {
-			mocks.socketHandler = handler;
-		}),
-		off: vi.fn(),
-	}),
-}));
+vi.mock('../../socket', () => ({
+  useSocket: () => ({
+    on: vi.fn((_event: string, handler: typeof mocks.socketHandler) => {
+      mocks.socketHandler = handler
+    }),
+    off: vi.fn(),
+  }),
+}))
 
-import { useRecording } from "../useRecording";
+describe('useRecording', () => {
+  beforeEach(() => {
+    mocks.startParams.length = 0
+    mocks.startCount = 0
+    mocks.startResults.length = 0
+    mocks.getStateCount = 0
+    mocks.getStateResults.length = 0
+    mocks.socketHandler = null
+    mocks.stopped = false
+    vi.clearAllMocks()
+  })
 
-describe("useRecording", () => {
-	beforeEach(() => {
-		mocks.startParams.length = 0;
-		mocks.startCount = 0;
-		mocks.startResults.length = 0;
-		mocks.getStateCount = 0;
-		mocks.getStateCompleted = 0;
-		mocks.getStateResults.length = 0;
-		mocks.socketHandler = null;
-		mocks.stopped = false;
-		vi.clearAllMocks();
-	});
+  it.each(['Failed', 'Captured'] as const)(
+    'does not announce a %s retry result as a successful start',
+    async (status) => {
+      const recording = useRecording('room', { signedIn: () => true })
+      mocks.startResults.push({ name: 'failed-start', status, state_revision: 1 })
+      await expect(
+        recording.start({ video_enabled: false, transcription_enabled: true, language: 'en' }),
+      ).rejects.toThrow('Transcription did not start')
+      expect(toast.success).not.toHaveBeenCalled()
+      expect(recording.isCapturing.value).toBe(false)
+    },
+  )
 
-	it.each(["Failed", "Captured"] as const)("does not announce a %s retry result as a successful start", async (status) => {
-		const recording = useRecording("room");
-		mocks.startResults.push({ name: "failed-start", status, state_revision: 1 });
-		await expect(recording.start({ video_enabled: false, transcription_enabled: true, language: "en" })).rejects.toThrow("Transcription did not start");
-		expect(toast.success).not.toHaveBeenCalled();
-		expect(recording.isCapturing.value).toBe(false);
-	});
+  it('does not announce success when the state refresh says capture has ended', async () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    mocks.startResults.push({ name: 'ended-capture', status: 'Recording', state_revision: 1 })
+    mocks.getStateResults.push(null)
+    await expect(
+      recording.start({ video_enabled: false, transcription_enabled: true, language: 'en' }),
+    ).rejects.toThrow('Transcription did not start')
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(recording.isCapturing.value).toBe(false)
+  })
 
-	it("does not announce success when the state refresh says capture has ended", async () => {
-		const recording = useRecording("room");
-		mocks.startResults.push({ name: "ended-capture", status: "Recording", state_revision: 1 });
-		mocks.getStateResults.push(null);
-		await expect(recording.start({ video_enabled: false, transcription_enabled: true, language: "en" })).rejects.toThrow("Transcription did not start");
-		expect(toast.success).not.toHaveBeenCalled();
-		expect(recording.isCapturing.value).toBe(false);
-	});
+  it('reuses the request id while a start remains pending', async () => {
+    const recording = useRecording('room', { signedIn: () => true })
 
-	it("reuses the request id while a start remains pending", async () => {
-		const recording = useRecording("room");
+    await recording.start()
+    expect(recording.state.value?.status).toBe('Pending')
+    expect(recording.isStarting.value).toBe(true)
+    expect(recording.isLive.value).toBe(false)
+    await recording.start()
 
-		await recording.start();
-		expect(recording.state.value?.status).toBe("Pending");
-		expect(recording.isStarting.value).toBe(true);
-		expect(recording.isLive.value).toBe(false);
-		await recording.start();
+    expect(recording.state.value?.status).toBe('Recording')
+    expect(recording.isLive.value).toBe(true)
+    expect(recording.isStarting.value).toBe(false)
+    expect(mocks.startParams).toHaveLength(2)
+    expect(mocks.startParams[0]?.request_id).toBe(mocks.startParams[1]?.request_id)
+  })
 
-		expect(recording.state.value?.status).toBe("Recording");
-		expect(recording.isLive.value).toBe(true);
-		expect(recording.isStarting.value).toBe(false);
-		expect(mocks.startParams).toHaveLength(2);
-		expect(mocks.startParams[0]?.request_id).toBe(
-			mocks.startParams[1]?.request_id,
-		);
-	});
+  it('moves the local state to stopping', async () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    await recording.start()
+    await recording.start()
+    await recording.stop()
+    expect(recording.state.value?.status).toBe('Stopping')
+    expect(recording.isLive.value).toBe(false)
+  })
 
-	it("moves the local state to stopping", async () => {
-		const recording = useRecording("room");
-		await recording.start();
-		await recording.start();
-		await recording.stop();
-		expect(recording.state.value?.status).toBe("Stopping");
-		expect(recording.isLive.value).toBe(false);
-	});
+  it('does not let a stale state load overwrite a newer command revision', async () => {
+    let resolveStale!: (value: RecordingState) => void
+    const stale = new Promise<RecordingState>((resolve) => {
+      resolveStale = resolve
+    })
+    mocks.getStateResults.push(stale, {
+      name: 'recording',
+      status: 'Stopping',
+      state_revision: 3,
+    })
+    const recording = useRecording('room', { signedIn: () => true })
+    await recording.start()
 
-	it("does not let a stale state load overwrite a newer command revision", async () => {
-		let resolveStale!: (value: RecordingState) => void;
-		const stale = new Promise<RecordingState>((resolve) => {
-			resolveStale = resolve;
-		});
-		mocks.getStateResults.push(stale, {
-			name: "recording",
-			status: "Stopping",
-			state_revision: 3,
-		});
-		const recording = useRecording("room");
-		await recording.start();
+    const starting = recording.start()
+    await vi.waitFor(() => expect(mocks.getStateCount).toBe(1))
+    await recording.stop()
+    resolveStale({
+      name: 'recording',
+      status: 'Recording',
+      state_revision: 2,
+    })
+    await starting
 
-		const starting = recording.start();
-		await vi.waitFor(() => expect(mocks.getStateCount).toBe(1));
-		await recording.stop();
-		resolveStale({
-			name: "recording",
-			status: "Recording",
-			state_revision: 2,
-		});
-		await starting;
+    expect(recording.state.value?.status).toBe('Stopping')
+    expect(recording.state.value?.state_revision).toBe(3)
+  })
 
-		expect(recording.state.value?.status).toBe("Stopping");
-		expect(recording.state.value?.state_revision).toBe(3);
-	});
+  it('waits for admission state for a signed-in attendee and listens for live updates', () => {
+    let recording!: ReturnType<typeof useRecording>
+    const app = createApp({
+      setup() {
+        recording = useRecording('room', { signedIn: () => true })
+        return () => null
+      },
+    })
+    app.mount(document.createElement('div'))
 
-	it("does not resurrect state after a realtime null transition", async () => {
-		let resolveStale!: (value: RecordingState) => void;
-		mocks.getStateResults.push(new Promise<RecordingState>((resolve) => {
-			resolveStale = resolve;
-		}));
-		let recording!: ReturnType<typeof useRecording>;
-		const app = createApp({
-			setup() {
-				recording = useRecording("room");
-				return () => null;
-			},
-		});
-		app.mount(document.createElement("div"));
-		await vi.waitFor(() => expect(mocks.getStateCount).toBe(1));
+    expect(mocks.getStateCount).toBe(0)
+    const active = { name: 'recording', status: 'Recording', state_revision: 1 } as const
+    recording.beginAdmissionSync()(active)
+    expect(recording.isLive.value).toBe(true)
 
-		mocks.socketHandler?.({ meeting_id: "room", recording: null });
-		resolveStale({
-			name: "recording",
-			status: "Recording",
-			state_revision: 1,
-		});
-		await vi.waitFor(() => expect(mocks.getStateCompleted).toBe(1));
+    const applyLateActive = recording.beginAdmissionSync()
+    mocks.socketHandler?.({ meeting_id: 'room', recording: null })
+    applyLateActive(active)
+    expect(recording.isLive.value).toBe(false)
 
-		expect(recording.state.value).toBeNull();
-		app.unmount();
-	});
+    const applyLateNull = recording.beginAdmissionSync()
+    mocks.socketHandler?.({ meeting_id: 'room', recording: active })
+    applyLateNull(null)
+    expect(recording.isLive.value).toBe(true)
+    app.unmount()
+  })
 
-	it("syncs active recording state supplied by a guest join", () => {
-		const recording = useRecording("room");
+  it('leaves a guest without a session to its join answer and realtime, never asking the server', async () => {
+    let recording!: ReturnType<typeof useRecording>
+    const app = createApp({
+      setup() {
+        recording = useRecording('room', { signedIn: () => false })
+        return () => null
+      },
+    })
+    app.mount(document.createElement('div'))
+    mocks.socketHandler?.({
+      meeting_id: 'room',
+      recording: { name: 'recording', status: 'Recording', state_revision: 1 },
+    })
 
-		recording.syncState({
-			name: "recording",
-			status: "Recording",
-			state_revision: 1,
-		});
+    expect(mocks.getStateCount).toBe(0)
+    expect(recording.isLive.value).toBe(true)
+    app.unmount()
+  })
 
-		expect(recording.state.value?.status).toBe("Recording");
-		expect(recording.isLive.value).toBe(true);
-		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded");
-	});
+  it('syncs active recording state supplied by a guest join', () => {
+    const recording = useRecording('room', { signedIn: () => true })
 
-	it("accepts a new recording session with a lower revision", () => {
-		const recording = useRecording("room");
-		recording.syncState({
-			name: "old-recording",
-			status: "Processing",
-			state_revision: 4,
-		});
+    recording.syncState({
+      name: 'recording',
+      status: 'Recording',
+      state_revision: 1,
+    })
 
-		recording.syncState({
-			name: "new-recording",
-			status: "Recording",
-			state_revision: 1,
-		});
+    expect(recording.state.value?.status).toBe('Recording')
+    expect(recording.isLive.value).toBe(true)
+    expect(toast.info).toHaveBeenCalledWith('This meeting is being recorded')
+  })
 
-		expect(recording.state.value?.name).toBe("new-recording");
-		expect(recording.isLive.value).toBe(true);
-	});
+  it('accepts a new recording session with a lower revision', () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    recording.syncState({
+      name: 'old-recording',
+      status: 'Processing',
+      state_revision: 4,
+    })
 
-	it("tracks global recording availability", () => {
-		const recording = useRecording("room");
+    recording.syncState({
+      name: 'new-recording',
+      status: 'Recording',
+      state_revision: 1,
+    })
 
-		expect(recording.globalEnabled.value).toBe(false);
-		recording.setGlobalEnabled(true);
-		expect(recording.globalEnabled.value).toBe(true);
-	});
+    expect(recording.state.value?.name).toBe('new-recording')
+    expect(recording.isLive.value).toBe(true)
+  })
 
-	it("does not store or announce an explicit capacity rejection as started", async () => {
-		mocks.startResults.push({ status: "Rejected" });
-		const recording = useRecording("room");
+  it('tracks global recording availability', () => {
+    const recording = useRecording('room', { signedIn: () => true })
 
-		await recording.start();
+    expect(recording.globalEnabled.value).toBe(false)
+    recording.setGlobalEnabled(true)
+    expect(recording.globalEnabled.value).toBe(true)
+  })
 
-		expect(recording.state.value).toBeNull();
-		expect(toast.success).not.toHaveBeenCalled();
-		expect(toast.error).toHaveBeenCalledWith("Recording capacity is unavailable");
-	});
+  it('does not store or announce an explicit capacity rejection as started', async () => {
+    mocks.startResults.push({ status: 'Rejected' })
+    const recording = useRecording('room', { signedIn: () => true })
 
-	it("rejects an empty selection before making a start request", async () => {
-		const recording = useRecording("room");
-		await expect(recording.start({ video_enabled: false, transcription_enabled: false, language: "en" })).rejects.toThrow("Select video recording or transcription");
-		expect(mocks.startParams).toHaveLength(0);
-	});
+    await recording.start()
 
-	it("announces transcription-only and combined capture accurately to late joiners", () => {
-		const recording = useRecording("room");
-		recording.syncState({ name: "transcript", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
-		expect(toast.info).toHaveBeenCalledWith("This meeting is being transcribed");
-		recording.syncState(null);
-		recording.syncState({ name: "both", status: "Recording", state_revision: 1, video_enabled: true, transcription_enabled: true });
-		expect(toast.info).toHaveBeenCalledWith("This meeting is being recorded and transcribed");
-	});
+    expect(recording.state.value).toBeNull()
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith(
+      'Could not start recording. Recording capacity is unavailable.',
+    )
+  })
 
-	it("ignores transcription source events for other rooms and captures", () => {
-		const recording = useRecording("room");
-		recording.syncState({ name: "capture", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
-		vi.clearAllMocks();
-		recording.syncTranscriptionCapture({ room: "another-room", capture: "capture", state: "partial", interrupted: true });
-		recording.syncTranscriptionCapture({ room: "room", capture: "another-capture", state: "complete" });
-		expect(recording.isCapturing.value).toBe(true);
-		expect(recording.state.value?.transcription_capture_state).toBeUndefined();
-		expect(toast.info).not.toHaveBeenCalled();
-		expect(toast.error).not.toHaveBeenCalled();
-	});
+  it('rejects an empty selection before making a start request', async () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    await expect(
+      recording.start({ video_enabled: false, transcription_enabled: false, language: 'en' }),
+    ).rejects.toThrow('Select video recording or transcription')
+    expect(mocks.startParams).toHaveLength(0)
+  })
 
-	it("keeps video live when only transcription has ended", async () => {
-		const recording = useRecording("room");
-		const capture: RecordingState = { name: "capture", status: "Recording", state_revision: 1, video_enabled: true, transcription_enabled: true, transcription_capture_state: "capturing" };
-		recording.syncState(capture);
-		mocks.getStateResults.push(capture);
-		recording.syncTranscriptionCapture({ room: "room", capture: "capture", state: "complete" });
-		await Promise.resolve(); await Promise.resolve();
-		expect(recording.isLive.value).toBe(true);
-		expect(recording.isCapturing.value).toBe(true);
-		expect(recording.state.value).toMatchObject({ video_enabled: true, transcription_enabled: true, transcription_capture_state: "complete" });
-		expect(toast.info).toHaveBeenCalledWith("Transcription capture has ended. Video recording continues.");
-	});
+  it('announces transcription-only and combined capture accurately to late joiners', () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    recording.syncState({
+      name: 'transcript',
+      status: 'Recording',
+      state_revision: 1,
+      video_enabled: false,
+      transcription_enabled: true,
+    })
+    expect(toast.info).toHaveBeenCalledWith('This meeting is being transcribed')
+    recording.syncState(null)
+    recording.syncState({
+      name: 'both',
+      status: 'Recording',
+      state_revision: 1,
+      video_enabled: true,
+      transcription_enabled: true,
+    })
+    expect(toast.info).toHaveBeenCalledWith('This meeting is being recorded and transcribed')
+  })
 
-	it("ends the transcription activity indicator while retaining canonical stop state", () => {
-		const recording = useRecording("room");
-		recording.syncState({ name: "capture", status: "Recording", state_revision: 1, video_enabled: false, transcription_enabled: true });
-		recording.syncTranscriptionCapture({ room: "room", capture: "capture", state: "partial", interrupted: true });
-		expect(recording.isCapturing.value).toBe(false);
-		expect(recording.isLive.value).toBe(true);
-		expect(recording.state.value?.transcription_enabled).toBe(true);
-		expect(toast.error).toHaveBeenCalledWith("Transcription capture was interrupted. Missing speech will be marked in any recovered transcript.");
-		recording.syncTranscriptionCapture({ room: "room", capture: "capture", state: "capturing" });
-		expect(recording.isCapturing.value).toBe(false);
-	});
+  it('ignores transcription source events for other rooms and captures', () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    recording.syncState({
+      name: 'capture',
+      status: 'Recording',
+      state_revision: 1,
+      video_enabled: false,
+      transcription_enabled: true,
+    })
+    vi.clearAllMocks()
+    recording.syncTranscriptionCapture({
+      room: 'another-room',
+      capture: 'capture',
+      state: 'partial',
+      interrupted: true,
+    })
+    recording.syncTranscriptionCapture({
+      room: 'room',
+      capture: 'another-capture',
+      state: 'complete',
+    })
+    expect(recording.isCapturing.value).toBe(true)
+    expect(recording.state.value?.transcription_capture_state).toBeUndefined()
+    expect(toast.info).not.toHaveBeenCalled()
+    expect(toast.error).not.toHaveBeenCalled()
+  })
 
-	it("keeps transcription live when the video output has failed", () => {
-		const recording = useRecording("room");
-		recording.syncState({ name: "capture", status: "Recording", state_revision: 4, video_enabled: true, transcription_enabled: true, video_capture_state: "failed", transcription_capture_state: "capturing" });
-		expect(recording.isLive.value).toBe(true);
-		expect(recording.isCapturing.value).toBe(true);
-		expect(recording.state.value?.video_enabled).toBe(true);
-		expect(toast.info).toHaveBeenCalledWith("This meeting is being transcribed");
-	});
+  it('keeps video live when only transcription has ended', async () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    const capture: RecordingState = {
+      name: 'capture',
+      status: 'Recording',
+      state_revision: 1,
+      video_enabled: true,
+      transcription_enabled: true,
+      transcription_capture_state: 'capturing',
+    }
+    recording.syncState(capture)
+    mocks.getStateResults.push(capture)
+    recording.syncTranscriptionCapture({ room: 'room', capture: 'capture', state: 'complete' })
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(recording.isLive.value).toBe(true)
+    expect(recording.isCapturing.value).toBe(true)
+    expect(recording.state.value).toMatchObject({
+      video_enabled: true,
+      transcription_enabled: true,
+      transcription_capture_state: 'complete',
+    })
+    expect(toast.info).toHaveBeenCalledWith(
+      'Transcription capture has ended. Video recording continues.',
+    )
+  })
 
-	it("refreshes surviving audio after video start is rejected", async () => {
-		mocks.startResults.push({ status: "Rejected" });
-		mocks.getStateResults.push({ name: "capture", status: "Recording", state_revision: 3, video_enabled: true, transcription_enabled: true, video_capture_state: "failed", transcription_capture_state: "capturing" });
-		const recording = useRecording("room");
-		await recording.start({ video_enabled: true, transcription_enabled: true, language: "en" });
-		expect(recording.isCapturing.value).toBe(true);
-		expect(recording.state.value?.transcription_enabled).toBe(true);
-		expect(toast.error).toHaveBeenCalledWith("Video recording could not start. Transcription capture continues.");
-	});
+  it('ends the transcription activity indicator while retaining canonical stop state', () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    recording.syncState({
+      name: 'capture',
+      status: 'Recording',
+      state_revision: 1,
+      video_enabled: false,
+      transcription_enabled: true,
+    })
+    recording.syncTranscriptionCapture({
+      room: 'room',
+      capture: 'capture',
+      state: 'partial',
+      interrupted: true,
+    })
+    expect(recording.isCapturing.value).toBe(false)
+    expect(recording.isLive.value).toBe(true)
+    expect(recording.state.value?.transcription_enabled).toBe(true)
+    expect(toast.error).toHaveBeenCalledWith(
+      'Transcription capture was interrupted. Missing speech will be marked in any recovered transcript.',
+    )
+    recording.syncTranscriptionCapture({ room: 'room', capture: 'capture', state: 'capturing' })
+    expect(recording.isCapturing.value).toBe(false)
+  })
 
-});
+  it('keeps transcription live when the video output has failed', () => {
+    const recording = useRecording('room', { signedIn: () => true })
+    recording.syncState({
+      name: 'capture',
+      status: 'Recording',
+      state_revision: 4,
+      video_enabled: true,
+      transcription_enabled: true,
+      video_capture_state: 'failed',
+      transcription_capture_state: 'capturing',
+    })
+    expect(recording.isLive.value).toBe(true)
+    expect(recording.isCapturing.value).toBe(true)
+    expect(recording.state.value?.video_enabled).toBe(true)
+    expect(toast.info).toHaveBeenCalledWith('This meeting is being transcribed')
+  })
+
+  it('refreshes surviving audio after video start is rejected', async () => {
+    mocks.startResults.push({ status: 'Rejected' })
+    mocks.getStateResults.push({
+      name: 'capture',
+      status: 'Recording',
+      state_revision: 3,
+      video_enabled: true,
+      transcription_enabled: true,
+      video_capture_state: 'failed',
+      transcription_capture_state: 'capturing',
+    })
+    const recording = useRecording('room', { signedIn: () => true })
+    await recording.start({ video_enabled: true, transcription_enabled: true, language: 'en' })
+    expect(recording.isCapturing.value).toBe(true)
+    expect(recording.state.value?.transcription_enabled).toBe(true)
+    expect(toast.error).toHaveBeenCalledWith(
+      'Video recording could not start. Transcription capture continues.',
+    )
+  })
+})

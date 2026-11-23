@@ -1,13 +1,14 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Socket } from 'socket.io';
 import { describe, expect, it } from 'vitest';
 import { RateLimiter } from '../../utils/rateLimiter';
 import { checkSocketRateLimits } from './utils';
 
 function socket(userId: string, address = '127.0.0.1'): Socket {
-	return {
+	return fromPartial<Socket>({
 		userId,
 		handshake: { address, headers: {} },
-	} as unknown as Socket;
+	});
 }
 
 describe('checkSocketRateLimits', () => {

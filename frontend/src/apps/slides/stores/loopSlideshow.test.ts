@@ -1,134 +1,183 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 
-const replace = vi.fn(() => Promise.resolve())
+const replace = vi.fn<(route: { query?: { slide?: number } }) => Promise<void>>(() =>
+  Promise.resolve(),
+)
 
 vi.mock('@/apps/slides/utils/mediaUploads', () => ({ getAttachmentUrl: () => '' }))
 vi.mock('@/apps/slides/router', () => ({
-	router: { replace, currentRoute: { value: { params: { presentationId: 'p1' } } } },
+  router: { replace, currentRoute: { value: { params: { node: 'n1', slug: 'q3-review' } } } },
 }))
 
 const { slides, slideIndex } = await import('./slide')
 const { applyReverseTransition } = await import('./presentation')
 const {
-	startSlideShow,
-	resetSlideShowState,
-	endSlideShow,
-	changeSlideInSlideshow,
-	scheduleAdvance,
-	cancelAdvance,
+  startSlideShow,
+  resetSlideShowState,
+  endSlideShow,
+  changeSlideInSlideshow,
+  scheduleAdvance,
+  cancelAdvance,
 } = await import('./slideshow')
 
 const lastSlideQuery = () => replace.mock.lastCall?.[0]?.query?.slide
 
 const leaveLastSlide = async () => {
-	slideIndex.value = slides.value.length - 1
-	changeSlideInSlideshow(slides.value.length)
-	await nextTick()
+  slideIndex.value = slides.value.length - 1
+  changeSlideInSlideshow(slides.value.length)
+  await nextTick()
 }
 
 describe('presenting from the navbar', () => {
-	beforeEach(() => {
-		vi.useFakeTimers()
-		slides.value = [{ elements: [] }, { elements: [] }, { elements: [], advanceAfter: '1' }] as any
-		slideIndex.value = 0
-		replace.mockClear()
-	})
+  beforeEach(() => {
+    vi.useFakeTimers()
+    slides.value = [{ elements: [] }, { elements: [] }, { elements: [], advanceAfter: '1' }]
+    slideIndex.value = 0
+    replace.mockClear()
+  })
 
-	afterEach(() => {
-		endSlideShow()
-		cancelAdvance()
-		vi.useRealTimers()
-	})
+  afterEach(() => {
+    endSlideShow()
+    cancelAdvance()
+    vi.useRealTimers()
+  })
 
-	it('starts on loop from the first slide', () => {
-		slideIndex.value = 2
-		startSlideShow({ loop: true })
+  it('presents at the node, and comes back to its document on the slide it left', async () => {
+    startSlideShow()
+    expect(replace).toHaveBeenLastCalledWith({
+      name: 'slides-slideshow',
+      params: { node: 'n1' },
+      query: { slide: 1 },
+    })
 
-		expect(lastSlideQuery()).toBe(1)
-	})
+    changeSlideInSlideshow(1)
+    await nextTick()
+    expect(replace).toHaveBeenLastCalledWith({
+      name: 'slides-slideshow',
+      params: { node: 'n1' },
+      query: { slide: 2 },
+    })
 
-	it('starts over after the last slide', async () => {
-		startSlideShow({ loop: true })
-		applyReverseTransition.value = true
+    // the page follows the query
+    slideIndex.value = 1
+    endSlideShow()
+    expect(replace).toHaveBeenLastCalledWith({
+      name: 'document-host',
+      params: { node: 'n1' },
+      query: { slide: 2 },
+    })
+  })
 
-		await leaveLastSlide()
+  it('keeps the rest of the query from the start of the show to its end', async () => {
+    const { router } = await import('@/apps/slides/router')
+    Object.assign(router.currentRoute.value, { query: { from: 'home', slide: '3' } })
 
-		expect(lastSlideQuery()).toBe(1)
-		expect(applyReverseTransition.value).toBe(false)
-	})
+    startSlideShow()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { from: 'home', slide: 1 } }),
+    )
+    changeSlideInSlideshow(1)
+    await nextTick()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ query: { from: 'home', slide: 2 } }),
+    )
+    slideIndex.value = 1
+    endSlideShow()
+    expect(replace).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name: 'document-host', query: { from: 'home', slide: 2 } }),
+    )
+    Object.assign(router.currentRoute.value, { query: undefined })
+  })
 
-	it('starts over on its own as well', async () => {
-		startSlideShow({ loop: true })
-		replace.mockClear()
-		slideIndex.value = 2
-		scheduleAdvance()
+  it('starts on loop from the first slide', () => {
+    slideIndex.value = 2
+    startSlideShow({ loop: true })
 
-		vi.advanceTimersByTime(1000)
-		await nextTick()
+    expect(lastSlideQuery()).toBe(1)
+  })
 
-		expect(lastSlideQuery()).toBe(1)
-	})
+  it('starts over after the last slide', async () => {
+    startSlideShow({ loop: true })
+    applyReverseTransition.value = true
 
-	it('replays a single slide on its own', async () => {
-		slides.value = [{ elements: [], advanceAfter: '1' }] as any
-		const video = document.createElement('video')
-		const play = vi.fn(() => Promise.resolve())
-		Object.defineProperties(video, {
-			autoplay: { value: true },
-			paused: { value: true },
-			ended: { value: true, writable: true },
-			currentTime: { value: 10, writable: true },
-			play: { value: play },
-		})
-		document.body.appendChild(video)
-		startSlideShow({ loop: true })
-		scheduleAdvance()
+    await leaveLastSlide()
 
-		for (const pass of [1, 2]) {
-			vi.advanceTimersByTime(1000)
-			await nextTick()
-			expect(play).toHaveBeenCalledTimes(pass)
-			expect(video.currentTime).toBe(0)
-			video.currentTime = 10
-		}
-		video.remove()
-	})
+    expect(lastSlideQuery()).toBe(1)
+    expect(applyReverseTransition.value).toBe(false)
+  })
 
-	it('opens on the current slide, or on the first when asked', () => {
-		slideIndex.value = 2
+  it('starts over on its own as well', async () => {
+    startSlideShow({ loop: true })
+    replace.mockClear()
+    slideIndex.value = 2
+    scheduleAdvance()
 
-		startSlideShow()
-		expect(lastSlideQuery()).toBe(3)
+    vi.advanceTimersByTime(1000)
+    await nextTick()
 
-		startSlideShow({ fromStart: true })
-		expect(lastSlideQuery()).toBe(1)
-	})
+    expect(lastSlideQuery()).toBe(1)
+  })
 
-	it('ends after the last slide when presented plainly', async () => {
-		startSlideShow()
+  it('replays a single slide on its own', async () => {
+    slides.value = [{ elements: [], advanceAfter: '1' }]
+    const video = document.createElement('video')
+    const play = vi.fn(() => Promise.resolve())
+    Object.defineProperties(video, {
+      autoplay: { value: true },
+      paused: { value: true },
+      ended: { value: true, writable: true },
+      currentTime: { value: 10, writable: true },
+      play: { value: play },
+    })
+    document.body.appendChild(video)
+    startSlideShow({ loop: true })
+    scheduleAdvance()
 
-		await leaveLastSlide()
+    for (const pass of [1, 2]) {
+      vi.advanceTimersByTime(1000)
+      await nextTick()
+      expect(play).toHaveBeenCalledTimes(pass)
+      expect(video.currentTime).toBe(0)
+      video.currentTime = 10
+    }
+    video.remove()
+  })
 
-		expect(lastSlideQuery()).toBe(slides.value.length + 1)
-	})
+  it('opens on the current slide, or on the first when asked', () => {
+    slideIndex.value = 2
 
-	it('ends after the last slide once the show was left', async () => {
-		startSlideShow({ loop: true })
-		endSlideShow()
-		startSlideShow()
+    startSlideShow()
+    expect(lastSlideQuery()).toBe(3)
 
-		await leaveLastSlide()
+    startSlideShow({ fromStart: true })
+    expect(lastSlideQuery()).toBe(1)
+  })
 
-		expect(lastSlideQuery()).toBe(slides.value.length + 1)
-	})
+  it('ends after the last slide when presented plainly', async () => {
+    startSlideShow()
 
-	it('ends after the last slide once the show was navigated away from', async () => {
-		startSlideShow({ loop: true })
-		resetSlideShowState()
+    await leaveLastSlide()
 
-		await leaveLastSlide()
+    expect(lastSlideQuery()).toBe(slides.value.length + 1)
+  })
 
-		expect(lastSlideQuery()).toBe(slides.value.length + 1)
-	})
+  it('ends after the last slide once the show was left', async () => {
+    startSlideShow({ loop: true })
+    endSlideShow()
+    startSlideShow()
+
+    await leaveLastSlide()
+
+    expect(lastSlideQuery()).toBe(slides.value.length + 1)
+  })
+
+  it('ends after the last slide once the show was navigated away from', async () => {
+    startSlideShow({ loop: true })
+    resetSlideShowState()
+
+    await leaveLastSlide()
+
+    expect(lastSlideQuery()).toBe(slides.value.length + 1)
+  })
 })

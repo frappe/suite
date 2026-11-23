@@ -26,6 +26,9 @@ from suite.meet.api.meeting import (
 )
 from suite.meet.api.schedule import create_meet_link, create_scheduled_meeting
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
+from suite.meet.http.routes import room_preview
+from suite.meet.utils.sfu_config import get_sfu_config
+from suite.suite_core.doctype.rate_limit.rate_limit import create_rate_limit
 
 
 class IntegrationTestMeetingApi(IntegrationTestCase):
@@ -96,6 +99,15 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertTrue(decoded["is_host"])
         self.assertFalse(decoded["is_cohost"])
         self.assertFalse(decoded["is_guest"])
+
+    def test_presence_preview_returns_numeric_port_from_string_site_config(self):
+        frappe.set_user(self.host_email)
+        get_sfu_config.clear_cache()
+        self.addCleanup(get_sfu_config.clear_cache)
+        with patch.dict(frappe.conf, {"sfu_server_port": "3000"}):
+            result = get_sfu_presence_preview_token(self.meeting.name)
+        self.assertEqual(result["sfu_port"], 3000)
+        self.assertIsInstance(result["sfu_port"], int)
 
     def test_unapproved_user_gets_restricted_preview_without_sfu_token(self):
         frappe.set_user(self.outsider_email)
@@ -203,6 +215,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
                 frappe.set_user(user)
                 with self.assertRaises(frappe.PermissionError):
                     get_public_meeting_preview(self.meeting.name)
+                self.assertEqual(room_preview(self.meeting.name), {"title": ""})
 
         self.meeting.add_user_to_table("members", self.member_email, save=True, ignore_permissions=True)
         frappe.set_user(self.member_email)
@@ -210,6 +223,26 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
             get_public_meeting_preview(self.meeting.name)["title"],
             "Confidential planning",
         )
+        self.assertEqual(room_preview(self.meeting.name), {"title": "Confidential planning"})
+
+    def test_room_preview_shares_the_legacy_per_ip_rate_limit(self):
+        method = "suite.meet.api.meeting.get_public_meeting_preview"
+        frappe.db.delete("Rate Limit", {"method_path": method})
+        create_rate_limit(method_path=method, limit=2, seconds=60, ignore_in_developer_mode=False)
+        self.addCleanup(frappe.cache.hdel, "rate_limits", method)
+
+        ip = frappe.generate_hash(length=12)
+        request = Request(EnvironBuilder(path="/api/suite/meet/rooms/preview", method="GET").get_environ())
+        frappe.set_user("Guest")
+        with (
+            patch.object(frappe.local, "request", request, create=True),
+            patch.object(frappe.local, "request_ip", ip, create=True),
+            patch.object(frappe.local, "form_dict", frappe._dict()),
+        ):
+            room_preview(self.meeting.name)
+            get_public_meeting_preview(self.meeting.name)
+            with self.assertRaises(frappe.RateLimitExceededError):
+                room_preview(self.meeting.name)
 
     def test_private_and_missing_meeting_access_are_indistinguishable(self):
         self.meeting.db_set("allow_guest", 0)
@@ -281,6 +314,19 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(decoded["meeting_id"], self.meeting.name)
         self.assertEqual(decoded.get("scope", "full"), "full")
 
+    def test_signed_in_attendee_receives_recording_state_when_admitted(self):
+        self.meeting.db_set("meeting_type", "open")
+        frappe.set_user(self.outsider_email)
+        recording = {"name": "active-recording", "status": "Recording", "state_revision": 7}
+
+        with patch("suite.meet.api.meeting.get_active_recording_state", return_value=recording):
+            joined = join_meeting(self.meeting.name)
+            connection = get_sfu_connection_details(self.meeting.name)
+
+        self.assertEqual(joined["status"], "joined")
+        self.assertEqual(joined["recording"], recording)
+        self.assertEqual(connection["recording"], recording)
+
     def test_guest_join_returns_active_recording_state(self):
         self.meeting.db_set("meeting_type", "open")
         frappe.set_user("Guest")
@@ -310,6 +356,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         self.assertEqual(result["status"], "waiting_for_approval")
         self.assertNotIn("auth_token", result)
         self.assertIn("lobby_token", result)
+        self.assertNotIn("recording", result)
 
         decoded = jwt.decode(
             result["lobby_token"],
@@ -495,18 +542,12 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
     def test_guest_proof_is_redacted_before_downstream_endpoint_errors(self):
         original_request = getattr(frappe.local, "request", None)
         original_form_dict = frappe.local.form_dict
+        # `frappe.init` binds `request_ip` to None, and every later test reads it,
+        # so restore the value rather than deleting the attribute.
         original_request_ip = getattr(frappe.local, "request_ip", None)
         self.addCleanup(setattr, frappe.local, "request", original_request)
         self.addCleanup(setattr, frappe.local, "form_dict", original_form_dict)
-        if original_request_ip is not None:
-            self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
-        else:
-
-            def delete_request_ip():
-                if hasattr(frappe.local, "request_ip"):
-                    delattr(frappe.local, "request_ip")
-
-            self.addCleanup(delete_request_ip)
+        self.addCleanup(setattr, frappe.local, "request_ip", original_request_ip)
 
         frappe.local.request_ip = "127.0.0.1"
         proof = "private-proof-that-must-not-reach-telemetry"

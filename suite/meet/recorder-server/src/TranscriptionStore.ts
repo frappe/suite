@@ -60,10 +60,7 @@ function participantNames(value: unknown): string[] {
 		.filter(Boolean)
 		.slice(0, 100);
 }
-function speechContext(value: unknown): {
-	vocabulary_version: string;
-	title: string;
-} {
+function speechContext(value: unknown) {
 	if (
 		!value ||
 		typeof value !== 'object' ||
@@ -350,7 +347,7 @@ export class TranscriptionStore {
 					throw new Error('capture_conflict');
 				return existing;
 			} catch (error) {
-				if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+				if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
 			}
 			if (
 				!Number.isSafeInteger(maxBytes) ||

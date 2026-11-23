@@ -159,7 +159,7 @@ export class SFUServer {
 				if (!this.recordingGrantFailureReported) {
 					loggers.server.error(
 						'Recording authorization unavailable: %s',
-						(error as Error).message,
+						error instanceof Error ? error.message : String(error),
 					);
 					captureException(error);
 					this.recordingGrantFailureReported = true;
@@ -196,7 +196,7 @@ export class SFUServer {
 		} catch (error) {
 			loggers.server.error(
 				'Failed to start SFU server: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			captureException(error);
 			await flushSentry();
@@ -221,7 +221,7 @@ export class SFUServer {
 		} catch (error) {
 			loggers.server.error(
 				'Error during server shutdown: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			this.socketHandlerManager.stop();
 			await this.transcriptionManager.close();
@@ -273,7 +273,7 @@ function main(): void {
 	try {
 		config = loadConfig();
 	} catch (error) {
-		console.error((error as Error).message);
+		console.error(error instanceof Error ? error.message : String(error));
 		process.exit(1);
 	}
 
@@ -285,7 +285,7 @@ function main(): void {
 		sfuServer.start().catch((error) => {
 			loggers.server.error(
 				'Failed to start SFU server: %s',
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			captureException(error);
 			void flushSentry().finally(() => process.exit(1));
@@ -293,7 +293,7 @@ function main(): void {
 	} catch (error) {
 		loggers.server.error(
 			'Failed to configure SFU server: %s',
-			(error as Error).message,
+			error instanceof Error ? error.message : String(error),
 		);
 		captureException(error);
 		void flushSentry().finally(() => process.exit(1));

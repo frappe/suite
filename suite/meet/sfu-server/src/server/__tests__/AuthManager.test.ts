@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import * as jwt from 'jsonwebtoken';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { JWTPayload } from '../../types';
@@ -62,12 +63,12 @@ describe('AuthManager', () => {
 		const manager = new AuthManager(SECRET);
 		const authToken = token();
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: { token: authToken },
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(true);
@@ -78,12 +79,12 @@ describe('AuthManager', () => {
 	it('accepts a null avatar from the participant token issuer', () => {
 		const manager = new AuthManager(SECRET);
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: { token: token({ user_avatar: null }) },
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(true);
@@ -92,14 +93,14 @@ describe('AuthManager', () => {
 	it('rejects legacy guest tokens without an authorization generation', () => {
 		const manager = new AuthManager(SECRET);
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: {
 					token: token({ user_id: 'guest_1', is_guest: true }),
 				},
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(false);
@@ -108,7 +109,7 @@ describe('AuthManager', () => {
 	it('rejects guest tokens with a non-positive authorization generation', () => {
 		const manager = new AuthManager(SECRET);
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: {
 					token: token({
 						user_id: 'guest_1',
@@ -119,7 +120,7 @@ describe('AuthManager', () => {
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(false);
@@ -133,12 +134,12 @@ describe('AuthManager', () => {
 			guest_generation: 3,
 		});
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: { token: authToken },
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(true);
@@ -158,30 +159,33 @@ describe('AuthManager', () => {
 	it.each([
 		['missing', {}],
 		['changed', { guest_generation: 4 }],
-	] as const)('rejects guest token refresh with %s generation', (_case, claims) => {
-		const manager = new AuthManager(SECRET);
-		const socket = createMockSocket({
-			userId: 'guest_1',
-			meetingId: 'room-1',
-			site: 'site-a',
-			scope: 'full',
-			isGuest: true,
-			guestGeneration: 3,
-			handshake: {
-				auth: {},
-				query: {},
-				headers: {},
-				address: '127.0.0.1',
-			} as never,
-		});
+	] as const)(
+		'rejects guest token refresh with %s generation',
+		(_case, claims) => {
+			const manager = new AuthManager(SECRET);
+			const socket = createMockSocket({
+				userId: 'guest_1',
+				meetingId: 'room-1',
+				site: 'site-a',
+				scope: 'full',
+				isGuest: true,
+				guestGeneration: 3,
+				handshake: fromPartial({
+					auth: {},
+					query: {},
+					headers: {},
+					address: '127.0.0.1',
+				}),
+			});
 
-		expect(() =>
-			manager.updateSocketToken(
-				socket,
-				token({ user_id: 'guest_1', is_guest: true, ...claims }),
-			),
-		).toThrow();
-	});
+			expect(() =>
+				manager.updateSocketToken(
+					socket,
+					token({ user_id: 'guest_1', is_guest: true, ...claims }),
+				),
+			).toThrow();
+		},
+	);
 
 	it('rejects guest token refresh with a different guest identity', () => {
 		const manager = new AuthManager(SECRET);
@@ -212,12 +216,12 @@ describe('AuthManager', () => {
 			userId: 'user-1',
 			meetingId: 'room-1',
 			site: 'site-a',
-			handshake: {
+			handshake: fromPartial({
 				auth: {},
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(() =>
@@ -233,12 +237,12 @@ describe('AuthManager', () => {
 			site: 'site-a',
 			isHost: false,
 			isCohost: false,
-			handshake: {
+			handshake: fromPartial({
 				auth: {},
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		manager.updateSocketToken(socket, token({ is_cohost: true }));
@@ -258,12 +262,12 @@ describe('AuthManager', () => {
 			site: 'site-a',
 			scope: 'full',
 			isGuest: false,
-			handshake: {
+			handshake: fromPartial({
 				auth: {},
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(() => manager.updateSocketToken(socket, token(override))).toThrow(
@@ -280,12 +284,12 @@ describe('AuthManager', () => {
 			site: 'site-a',
 			scope: 'full',
 			isGuest: false,
-			handshake: {
+			handshake: fromPartial({
 				auth: {},
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		manager.updateSocketToken(socket, token({ user_name: 'Current Name' }));
@@ -351,12 +355,12 @@ describe('AuthManager', () => {
 	it('rejects recording scope on the participant JWT path', () => {
 		const manager = new AuthManager(SECRET);
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: { token: token({ scope: 'recording' }) },
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(false);
@@ -378,17 +382,17 @@ describe('AuthManager', () => {
 			authorization_expires_at: 3,
 		} as const;
 		const grantManager = { verifyGrant: vi.fn(() => claims) };
-		const manager = new AuthManager(SECRET, grantManager as never);
+		const manager = new AuthManager(SECRET, fromPartial(grantManager));
 		const grant = jwt.sign({}, SECRET, {
 			header: { typ: 'meet-recording-grant+jwt' },
 		});
 		const socket = createMockSocket({
-			handshake: {
+			handshake: fromPartial({
 				auth: { token: grant },
 				query: {},
 				headers: {},
 				address: '127.0.0.1',
-			} as never,
+			}),
 		});
 
 		expect(manager.authenticateSocket(socket)).toBe(true);
