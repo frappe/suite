@@ -340,6 +340,7 @@ scheduler_events = {
         "suite.drive.jobs.sweep_unused_document_media",
         # mail
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
+        "suite.mail.store.quota.enforce_message_cache_quotas",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
         "suite.mail.api.outbound.clean_abandoned_chunked_uploads",
         "suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",

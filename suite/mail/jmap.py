@@ -1117,7 +1117,7 @@ def build_email_draft(
         if rcpts := [{"name": r.get("name"), "email": r["email"]} for r in recipients if r["type"] == kind]:
             draft[kind] = rcpts
 
-    if subject:
+    if subject := (subject or "").strip():
         draft["subject"] = subject
 
     if sent_at:
@@ -1129,7 +1129,7 @@ def build_email_draft(
     draft.update(
         {
             "header:User-Agent": f"Frappe Mail v{__version__} (Frappe v{frappe.__version__})",
-            "header:X-Mailer": "Frappe Mail",
+            "header:X-Mailer": f"Frappe Mail v{__version__}",
             "header:X-Mail-Queue": queue_name,
         }
     )

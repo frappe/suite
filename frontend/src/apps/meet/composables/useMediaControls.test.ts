@@ -431,6 +431,10 @@ function createCameraHarness({
       dispose,
       processedStream: ref(null),
     })
+  Object.defineProperty(navigator, 'permissions', {
+    configurable: true,
+    value: { query: async () => ({ state: 'granted' }) },
+  })
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getDisplayMedia, getUserMedia },
