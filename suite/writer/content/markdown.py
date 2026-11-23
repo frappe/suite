@@ -4,7 +4,6 @@ The Markdown becomes HTML as frappe makes it, then a body through the converter 
 body an agent writes is one the editor could have made. What the converter can't keep refuses the write.
 """
 
-import base64
 import uuid
 from typing import Literal
 
@@ -84,7 +83,7 @@ def body_state(markdown: str) -> bytes:
         if code["class"] == [language.removeprefix("language-"), language]:
             code["class"] = language
 
-    body = converted(html=str(soup))
+    body = converted(str(soup))
     if body.dropped:
         kinds = ", ".join(sorted({drop["kind"] for drop in body.dropped}))
         raise MarkdownRefused(_("A document can't keep this Markdown: {0}").format(kinds))
@@ -92,9 +91,9 @@ def body_state(markdown: str) -> bytes:
     return body.state
 
 
-def converted(**old_body: object) -> convert.Converted:
-    """Run the converter on an old body, refusing what it refuses."""
-    legacy = {"content": None, "html": None, "collab": 0, "ycomments": None, **old_body}
+def converted(html: str) -> convert.Converted:
+    """Run the converter on `html` as an old body, refusing what it refuses."""
+    legacy = {"content": None, "html": html, "collab": 0, "ycomments": None}
     try:
         answer = convert.convert(CONVERTER_BUILD, CONVERTER_VERSION, legacy)
     except checker.CheckerBusy:
@@ -122,7 +121,7 @@ def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> in
         append_copy(fragment, blocks)
 
     try:
-        return content.write(APP, node, change, html_of)
+        return content.write(APP, node, change)
     except content.Refusal as refusal:
         reason = refusal.body["collab"]
         if reason in PASSING:
@@ -160,8 +159,3 @@ def append_element(
         element.attributes[name] = own_id if name in ID_ATTRIBUTES else value
 
     return element
-
-
-def html_of(state: bytes) -> str:
-    """Render a body's state as its readable copy."""
-    return converted(content=base64.b64encode(state).decode(), collab=1).html

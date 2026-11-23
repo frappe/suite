@@ -8,7 +8,7 @@ An app with no readable copy skips all of it.
 
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import timedelta
 from http import HTTPStatus
 from urllib.parse import unquote, urlsplit
@@ -137,15 +137,26 @@ def check_staged(app: str, doc_id: str) -> str | None:
 
 
 def install(
-    app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, html: str, html_copy: ReadableCopy
+    app: str,
+    doc_id: str,
+    rev: int,
+    lineage: str,
+    q_epoch: int,
+    html: str | Callable[[bytes], str],
+    html_copy: ReadableCopy,
 ) -> str:
     """Make a render at `rev` the readable copy if it holds the document then: installed, stale or refused."""
     log_read = read(app, doc_id, integrated=True)
     if log_read is None or not renders_log(log_read, rev, lineage, q_epoch):
         return "stale"
 
+    state = state_at(app, log_read, rev)
+    if not isinstance(html, str):
+        # No tab rendered this rev, so the app's copy renders the state
+        html = html(state)
+
     clean, text = cleaned(html)
-    if not html_copy.is_html_complete(state_at(app, log_read, rev), clean, text):
+    if not html_copy.is_html_complete(state, clean, text):
         keep_evidence(app, doc_id, "copy_refused", clean, rev)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         db.alert("Collab readable copy: refused", f"{app} document {doc_id} at rev {rev}")

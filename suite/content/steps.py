@@ -26,7 +26,7 @@ from suite.content import (
     suspect,
     touches,
 )
-from suite.content.editors import spec_of
+from suite.content.editors import HtmlCopy, spec_of
 from suite.content.pushes import push, put_piece
 from suite.content.snapshot import Snapshot, read, rows_after, with_tombstones
 from suite.content.tables import table
@@ -126,7 +126,7 @@ def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tup
     return 200, push_and_follow(app, logged_doc(app, node), header, payload)
 
 
-def write(app: str, node: str, change: Callable[[pycrdt.Doc], None], render: Callable[[bytes], str]) -> int:
+def write(app: str, node: str, change: Callable[[pycrdt.Doc], None]) -> int:
     """Push what `change` does to the document as the request's user, as a tab would, and answer its rev."""
     # The caller has checked access
     doc = logged_doc(app, node)
@@ -153,7 +153,7 @@ def write(app: str, node: str, change: Callable[[pycrdt.Doc], None], render: Cal
         expected_user=None,
     )
     rev = int(push_and_follow(app, doc, header, payload)["rev"])
-    rebuild_copy(app, doc.id, rev, render)
+    rebuild_copy(app, doc.id, rev, log_read.lineage, log_read.q_epoch)
     return rev
 
 
@@ -175,14 +175,12 @@ def own_update(log_read: Snapshot, client_id: int, change: Callable[[pycrdt.Doc]
     return update
 
 
-def rebuild_copy(app: str, doc_id: str, rev: int, render: Callable[[bytes], str]) -> None:
-    """Make `render` of the document at `rev` the readable copy, as no tab is here to render it."""
+def rebuild_copy(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int) -> None:
+    """Make the app's render of the document at `rev` the readable copy, as no tab is here to render it."""
     html_copy = spec_of(app).readable_copy
     try:
-        log_read = read(app, doc_id, integrated=True)
-        if html_copy is not None and log_read is not None:
-            html = render(copies.state_at(app, log_read, rev))
-            copies.install(app, doc_id, rev, log_read.lineage, log_read.q_epoch, html, html_copy)
+        if isinstance(html_copy, HtmlCopy) and html_copy.render:
+            copies.install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
 
     except Exception:
         frappe.db.rollback()

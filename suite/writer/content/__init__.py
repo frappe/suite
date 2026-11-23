@@ -16,7 +16,7 @@ from suite.writer.content.conversion import (
     read_old,
 )
 from suite.writer.content.files import node_ids, value_rewriter
-from suite.writer.content.readable_copy import is_html_complete
+from suite.writer.content.readable_copy import is_html_complete, render
 
 APP = "writer"
 # The editor's fragment, and tab labels
@@ -57,7 +57,7 @@ EDITOR = content.EditorSpec(
     part_map=PART_MAP,
     schema=SCHEMA,
     checker_build=CHECKER_BUILD,
-    readable_copy=content.HtmlCopy(field="html", is_html_complete=is_html_complete),
+    readable_copy=content.HtmlCopy(field="html", is_html_complete=is_html_complete, render=render),
     media=content.MediaReferences(node_ids=node_ids, value_rewriter=value_rewriter),
     always_on=True,
     conversion=CONVERSION,
