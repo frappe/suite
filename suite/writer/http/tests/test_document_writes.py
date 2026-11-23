@@ -1,0 +1,279 @@
+import os
+import re
+import uuid
+from datetime import timedelta
+from unittest.mock import patch
+
+import frappe
+import pycrdt
+from frappe.utils import now_datetime
+from frappe.utils.synchronization import filelock
+
+from suite import drive
+from suite.content import capacity, checker, convert, touches
+from suite.content.http import routes
+from suite.drive._core import content as drive_content
+from suite.drive._core.nodes import update
+from suite.drive._core.principals import Principals
+from suite.tests.utils import ensure_user
+from suite.writer import content as writer_content
+from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused
+from suite.writer.content.tests.drive_callback_case import DriveCallbackCase, share_as_writer
+from suite.writer.content.tests.support import OUTSIDER, READER, WRITER, call_route, read_open
+from suite.writer.http import routes as writer_routes
+
+
+class TestDocumentWrites(DriveCallbackCase):
+    def setUp(self):
+        super().setUp()
+        if not checker.usable_node(convert.NODE_MIN) or not writer_content.CONVERTER_BUILD.is_file():
+            reason = f"needs Node and the built bundle at {writer_content.CONVERTER_BUILD}; run bench build"
+            # A skip in CI would leave the job green with agents unable to write
+            if os.environ.get("CI"):
+                self.fail(reason)
+
+            self.skipTest(reason)
+
+        root = drive.ensure_personal_root(WRITER)
+        self.folder = frappe.db.get_value("Drive Root", root, "node")
+
+    def create(self, markdown: str) -> str:
+        written = writer_routes.document_create(self.folder, f"Agent {uuid.uuid4().hex[:8]}", markdown)
+        self.addCleanup(self.delete_document, written["node"])
+        self.addCleanup(self.delete_log, written["node"])
+        return written["node"]
+
+    def blocks_of(self, node: str) -> str:
+        # The body as a tab opening the document gets it, without the ids the editor gives headings
+        frame = read_open(call_route(routes.document_get, node).get_data())
+        doc: pycrdt.Doc = pycrdt.Doc()
+        for payload in [frame.checkpoint, *(payload for _rev, payload in frame.rows)]:
+            if payload:
+                doc.apply_update(payload)
+
+        body = str(doc.get("default", type=pycrdt.XmlFragment))
+        return re.sub(r' (id|data-toc-id)="[^"]*"', "", body)
+
+    def test_a_new_document_holds_the_markdown(self):
+        node = self.create("# Plan\n\nShip **today**, café ✓.")
+
+        self.assertEqual(
+            self.blocks_of(node),
+            '<heading level="1">Plan</heading><paragraph>Ship <bold>today</bold>, café ✓.</paragraph>',
+        )
+
+    def test_a_new_document_has_its_readable_copy(self):
+        node = self.create("# Plan\n\nShip **today**, café ✓.")
+
+        html = writer_routes.document(self.docname_of(node))["html"]
+
+        self.assertIn("<p>Ship <strong>today</strong>, café ✓.</p>", html)
+
+    def test_a_user_who_cannot_add_to_the_folder_creates_nothing(self):
+        frappe.set_user(OUTSIDER)
+
+        with self.assertRaises((drive.DriveNotFound, drive.DriveForbidden)):
+            writer_routes.document_create(self.folder, "Agent refused", "Hello")
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_markdown_a_document_cannot_keep_creates_nothing(self):
+        with self.assertRaises(MarkdownRefused):
+            writer_routes.document_create(
+                self.folder, "Agent refused", 'Kept\n\n<div class="callout">Lost</div>'
+            )
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_append_adds_the_markdown_after_the_body(self):
+        node = self.create("First.")
+
+        writer_routes.document_write(node, "Second, *later*.", "append")
+
+        self.assertEqual(
+            self.blocks_of(node),
+            "<paragraph>First.</paragraph><paragraph>Second, <italic>later</italic>.</paragraph>",
+        )
+
+    def test_replace_leaves_only_the_markdown(self):
+        node = self.create("First.\n\nSecond.")
+
+        writer_routes.document_write(node, "Only this.", "replace")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>Only this.</paragraph>")
+
+    def test_the_readable_copy_follows_a_write(self):
+        node = self.create("First.")
+
+        writer_routes.document_write(node, "Second.", "append")
+
+        html = writer_routes.document(self.docname_of(node))["html"]
+        self.assertIn("<p>First.</p><p>Second.</p>", html)
+
+    def test_open_tabs_get_the_write_as_a_row(self):
+        node = self.create("First.")
+
+        with patch("frappe.publish_realtime") as publish:
+            written = writer_routes.document_write(node, "Second.", "append")
+
+        rows: list[int] = []
+        for event in publish.call_args_list:
+            if event.args[0] == "suite_collab_row":
+                rows.append(event.args[1]["rev"])
+
+        self.assertEqual(rows, [written["rev"]])
+
+    def test_a_mode_other_than_replace_or_append_writes_nothing(self):
+        node = self.create("First.")
+
+        # By name, as a request's arguments come
+        with self.assertRaises(frappe.exceptions.FrappeTypeError):
+            writer_routes.document_write(node=node, markdown="Second.", mode="prepend")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
+    def test_a_reader_cannot_write(self):
+        node = self.create("First.")
+        share_as_writer(node, READER, drive.READ)
+        frappe.db.commit()
+        frappe.set_user(READER)
+
+        with self.assertRaises(drive.DriveForbidden):
+            writer_routes.document_write(node, "Second.", "append")
+
+        frappe.set_user(WRITER)
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
+    def test_a_trashed_document_refuses_the_write(self):
+        node = self.create("First.")
+        update(Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)), node, state="Trashed")
+        frappe.db.commit()
+
+        with self.assertRaisesRegex(drive.DriveForbidden, "Trashed"):
+            writer_routes.document_write(node, "Second.", "append")
+
+    def test_a_full_document_answers_busy_with_the_reason_a_tab_gets(self):
+        node = self.create("First.")
+        self.set_doc(node, state_bytes=capacity.STATE_MAX)
+
+        with self.assertRaisesRegex(WriteBusy, "doc_full"):
+            writer_routes.document_write(node, "Second.", "append")
+
+    def test_a_document_not_yet_collaborative_refuses_the_write(self):
+        node = self.create("First.")
+        self.delete_log(node)
+
+        with self.assertRaisesRegex(WriteRefused, "unconverted"):
+            writer_routes.document_write(node, "Second.", "append")
+
+    def test_the_automatic_version_credits_who_wrote(self):
+        ensure_user(OUTSIDER)
+        node = self.create("First.")
+        share_as_writer(node, OUTSIDER, drive.EDIT)
+        frappe.db.commit()
+        later = now_datetime().replace(microsecond=0) + timedelta(hours=1)
+
+        frappe.set_user(OUTSIDER)
+        with (
+            patch.object(touches, "now_datetime", return_value=later),
+            patch.object(drive_content, "now_datetime", return_value=later),
+        ):
+            writer_routes.document_write(node, "Second.", "append")
+
+        actors = frappe.get_all(
+            "Drive Node Version", filters={"node": node, "kind": "auto"}, pluck="actor", order_by="seq"
+        )
+        self.assertEqual(actors, [WRITER, OUTSIDER])
+
+    def test_a_tabs_edit_made_before_an_append_lands_with_it(self):
+        node = self.create("First.")
+
+        def type_then_meet_the_append(fragment: pycrdt.XmlFragment) -> None:
+            fragment.children[0].children[0].insert(6, " Typed.")
+            # The write lands after the tab read the document and before it pushes
+            writer_routes.document_write(node, "Second.", "append")
+
+        self.push_edit(node, type_then_meet_the_append)
+
+        self.assertEqual(
+            self.blocks_of(node), "<paragraph>First. Typed.</paragraph><paragraph>Second.</paragraph>"
+        )
+
+    def test_a_block_a_tab_adds_before_a_replace_stays(self):
+        node = self.create("First.")
+
+        def add_then_meet_the_replace(fragment: pycrdt.XmlFragment) -> None:
+            added = fragment.children.append(pycrdt.XmlElement("paragraph"))
+            added.children.append(pycrdt.XmlText("Added."))
+            writer_routes.document_write(node, "Only this.", "replace")
+
+        self.push_edit(node, add_then_meet_the_replace)
+
+        blocks = self.blocks_of(node)
+        self.assertEqual(
+            sorted(re.findall("<paragraph>.*?</paragraph>", blocks)),
+            ["<paragraph>Added.</paragraph>", "<paragraph>Only this.</paragraph>"],
+        )
+
+    def test_a_busy_converter_answers_busy_and_creates_nothing(self):
+        with (
+            filelock(checker.LOCK),
+            patch.object(checker, "REQUEST_WAIT_S", 0.2),
+            self.assertRaises(WriteBusy),
+        ):
+            writer_routes.document_create(self.folder, "Agent refused", "Hello")
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_a_markdown_table_becomes_a_table(self):
+        node = self.create("| a | b |\n|---|---|\n| 1 | 2 |")
+
+        blocks = re.sub(r' (colspan|rowspan)="1"', "", self.blocks_of(node))
+        self.assertEqual(
+            blocks,
+            "<table>"
+            "<tableRow><tableHeader><paragraph>a</paragraph></tableHeader>"
+            "<tableHeader><paragraph>b</paragraph></tableHeader></tableRow>"
+            "<tableRow><tableCell><paragraph>1</paragraph></tableCell>"
+            "<tableCell><paragraph>2</paragraph></tableCell></tableRow>"
+            "</table>",
+        )
+
+    def test_a_markdown_picture_becomes_a_picture(self):
+        node = self.create("![A chart](https://example.com/chart.png)")
+
+        self.assertRegex(self.blocks_of(node), r'<image [^>]*src="https://example\.com/chart\.png"')
+
+    def test_fenced_code_keeps_its_language(self):
+        node = self.create("```python\nx = 1\n```")
+
+        self.assertEqual(self.blocks_of(node), '<codeBlock language="python">x = 1\n</codeBlock>')
+
+    def test_markdown_the_converter_would_drop_part_of_is_refused_by_name(self):
+        with self.assertRaisesRegex(MarkdownRefused, "empty-link"):
+            writer_routes.document_create(self.folder, "Agent refused", "See [the page]().")
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_a_refusal_answers_with_its_reason(self):
+        frappe.clear_messages()
+
+        with self.assertRaises(MarkdownRefused) as refused:
+            writer_routes.document_create(self.folder, "Agent refused", "See [the page]().")
+
+        # The answer publishes the message stamped with the error's id, and only that
+        stamp = getattr(refused.exception, "__frappe_exc_id", None)
+        published: list[str] = []
+        for entry in frappe.local.message_log:
+            if entry.get("__frappe_exc_id") == stamp:
+                published.append(entry["message"])
+
+        self.assertEqual(published, ["A document can't keep this Markdown: empty-link"])

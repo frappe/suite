@@ -189,6 +189,137 @@
       "bytes": false
     },
     {
+      "id": "document_create",
+      "kind": "mutation",
+      "publicName": "documents.create",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "documents",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          }
+        },
+        "required": [
+          "parent",
+          "title",
+          "markdown"
+        ],
+        "title": "CreateFromMarkdown",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "rev": {
+            "title": "Rev",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node",
+          "rev"
+        ],
+        "title": "WrittenDocument",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "MarkdownRefused",
+        "WriteRefused",
+        "WriteBusy"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "document_write",
+      "kind": "mutation",
+      "publicName": "documents.write",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "documents/{node}/body",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "replace",
+              "append"
+            ],
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "markdown",
+          "mode"
+        ],
+        "title": "WriteMarkdown",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "rev": {
+            "title": "Rev",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node",
+          "rev"
+        ],
+        "title": "WrittenDocument",
+        "type": "object"
+      },
+      "errors": [
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "MarkdownRefused",
+        "WriteRefused",
+        "WriteBusy"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "old_body",
       "kind": "query",
       "publicName": "documents.oldBody",

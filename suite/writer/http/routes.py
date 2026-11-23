@@ -1,7 +1,9 @@
 """Wire shapes for Writer document bodies and named saves."""
 
+import functools
+from collections.abc import Callable
 from datetime import UTC
-from typing import NotRequired, TypedDict
+from typing import Literal, NotRequired, TypedDict
 from zoneinfo import ZoneInfo
 
 import frappe
@@ -14,6 +16,7 @@ from suite.content import log
 from suite.content.conversions import ConversionStatus, conversion_status
 from suite.writer import content as writer_content
 from suite.writer.api.docs import OldBody, VersionConversion, convert_version, old_body
+from suite.writer.content import markdown as markdown_body
 
 
 class WriterRow(TypedDict):
@@ -29,6 +32,22 @@ class WriterRow(TypedDict):
 
 class SaveSettings(TypedDict):
     data: str
+
+
+class CreateFromMarkdown(TypedDict):
+    parent: str
+    title: str
+    markdown: str
+
+
+class WriteMarkdown(TypedDict):
+    markdown: str
+    mode: Literal["replace", "append"]
+
+
+class WrittenDocument(TypedDict):
+    node: str
+    rev: int
 
 
 class OldBodyQuery(TypedDict):
@@ -76,11 +95,49 @@ def document_settings(name: str, data: str) -> None:
     frappe.get_doc("Writer Document", name).update_settings(data)
 
 
+def refusing(handler: Callable) -> Callable:
+    """Throw a workflow's refusal again, as the answer carries the message of a thrown error only."""
+
+    @functools.wraps(handler)
+    def answered(*args: object, **kwargs: object) -> object:
+        try:
+            return handler(*args, **kwargs)
+        except frappe.ValidationError as refusal:
+            # A refusal is an answer, not a crash, so it carries no server traceback
+            frappe.local.flags.disable_traceback = True
+            frappe.throw(str(refusal), type(refusal))
+
+    return answered
+
+
+@frappe.whitelist(methods=["POST"])
+@refusing
+def document_create(parent: str, title: str, markdown: str) -> WrittenDocument:
+    """Create a document from Markdown, as an agent does."""
+    return markdown_body.create(parent, title, markdown)
+
+
+@frappe.whitelist(methods=["POST"])
+@refusing
+def document_write(node: str, markdown: str, mode: Literal["replace", "append"]) -> WrittenDocument:
+    """Replace a document's body with Markdown, or append it."""
+    return markdown_body.write(node, markdown, mode)
+
+
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
 def unknown() -> None:
     """Answer an address no route names as not found."""
     raise frappe.DoesNotExistError(_("That Writer address does not exist"))
 
+
+MARKDOWN_ERRORS = (
+    drive.DriveNotFound,
+    drive.DriveForbidden,
+    drive.DriveLocked,
+    markdown_body.MarkdownRefused,
+    markdown_body.WriteRefused,
+    markdown_body.WriteBusy,
+)
 
 ROUTES = (
     Route(
@@ -102,6 +159,26 @@ ROUTES = (
         errors=(frappe.DoesNotExistError, drive.DriveNotFound, drive.DriveForbidden, drive.DriveLocked),
         kind="mutation",
         public_name="documents.updateSettings",
+    ),
+    Route(
+        "POST",
+        "documents",
+        "document_create",
+        body=CreateFromMarkdown,
+        output=WrittenDocument,
+        errors=MARKDOWN_ERRORS,
+        kind="mutation",
+        public_name="documents.create",
+    ),
+    Route(
+        "POST",
+        "documents/{node}/body",
+        "document_write",
+        body=WriteMarkdown,
+        output=WrittenDocument,
+        errors=MARKDOWN_ERRORS,
+        kind="mutation",
+        public_name="documents.write",
     ),
 )
 

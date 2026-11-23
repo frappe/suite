@@ -48,6 +48,7 @@ from suite.content.steps import (
     stage_piece,
     start_session,
     submit_render,
+    write,
 )
 from suite.content.wire import (
     PROTOCOL_VERSION,
@@ -107,4 +108,5 @@ __all__ = [
     "version",
     "with_content",
     "with_tombstones",
+    "write",
 ]

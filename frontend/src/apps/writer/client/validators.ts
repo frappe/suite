@@ -5,10 +5,14 @@ import { assertSchema } from '@/platform/transport/schema'
 import type {
   ConvertVersionInput,
   ConvertVersionOutput,
+  DocumentCreateInput,
+  DocumentCreateOutput,
   DocumentInput,
   DocumentOutput,
   DocumentSettingsInput,
   DocumentSettingsOutput,
+  DocumentWriteInput,
+  DocumentWriteOutput,
   OldBodyInput,
   OldBodyOutput,
 } from './generated'
@@ -99,6 +103,76 @@ export const operationDocumentSettings: Validators<DocumentSettingsInput, Docume
       assertSchema(value, { type: 'null' }, 'document_settings output')
     },
   }
+
+export const operationDocumentCreate: Validators<DocumentCreateInput, DocumentCreateOutput> = {
+  validateInput(value: unknown): asserts value is DocumentCreateInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          parent: { title: 'Parent', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          markdown: { title: 'Markdown', type: 'string' },
+        },
+        required: ['parent', 'title', 'markdown'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'document_create input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DocumentCreateOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          node: { title: 'Node', type: 'string' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: ['node', 'rev'],
+        title: 'WrittenDocument',
+        type: 'object',
+      },
+      'document_create output',
+    )
+  },
+}
+
+export const operationDocumentWrite: Validators<DocumentWriteInput, DocumentWriteOutput> = {
+  validateInput(value: unknown): asserts value is DocumentWriteInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          markdown: { title: 'Markdown', type: 'string' },
+          mode: { enum: ['replace', 'append'], title: 'Mode', type: 'string' },
+          node: { type: 'string' },
+        },
+        required: ['markdown', 'mode', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'document_write input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DocumentWriteOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          node: { title: 'Node', type: 'string' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: ['node', 'rev'],
+        title: 'WrittenDocument',
+        type: 'object',
+      },
+      'document_write output',
+    )
+  },
+}
 
 export const operationOldBody: Validators<OldBodyInput, OldBodyOutput> = {
   validateInput(value: unknown): asserts value is OldBodyInput {

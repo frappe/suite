@@ -71,6 +71,82 @@ const operationDocumentSettings: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDocumentSettings,
 }
 
+export type DocumentCreateInput = { parent: string; title: string; markdown: string }
+
+export type DocumentCreateOutput = { node: string; rev: number }
+
+export type DocumentCreateError =
+  | 'DriveNotFound'
+  | 'DriveForbidden'
+  | 'DriveLocked'
+  | 'MarkdownRefused'
+  | 'WriteRefused'
+  | 'WriteBusy'
+
+const operationDocumentCreate: MutationRef<
+  DocumentCreateInput,
+  DocumentCreateOutput,
+  DocumentCreateError
+> = {
+  id: 'document_create',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'documents.create',
+  method: 'POST',
+  path: 'documents',
+  prefix: '/api/suite/writer/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [
+    'DriveNotFound',
+    'DriveForbidden',
+    'DriveLocked',
+    'MarkdownRefused',
+    'WriteRefused',
+    'WriteBusy',
+  ],
+  loadValidators: async () => (await import('./validators')).operationDocumentCreate,
+}
+
+export type DocumentWriteInput = { markdown: string; mode: 'replace' | 'append'; node: string }
+
+export type DocumentWriteOutput = { node: string; rev: number }
+
+export type DocumentWriteError =
+  | 'DriveNotFound'
+  | 'DriveForbidden'
+  | 'DriveLocked'
+  | 'MarkdownRefused'
+  | 'WriteRefused'
+  | 'WriteBusy'
+
+const operationDocumentWrite: MutationRef<
+  DocumentWriteInput,
+  DocumentWriteOutput,
+  DocumentWriteError
+> = {
+  id: 'document_write',
+  owner: 'writer',
+  kind: 'mutation',
+  publicName: 'documents.write',
+  method: 'POST',
+  path: 'documents/{node}/body',
+  prefix: '/api/suite/writer/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: [
+    'DriveNotFound',
+    'DriveForbidden',
+    'DriveLocked',
+    'MarkdownRefused',
+    'WriteRefused',
+    'WriteBusy',
+  ],
+  loadValidators: async () => (await import('./validators')).operationDocumentWrite,
+}
+
 export type OldBodyInput = { node: string }
 
 export type OldBodyOutput = { content?: string }
@@ -121,6 +197,8 @@ export const api = {
   documents: {
     get: operationDocument,
     updateSettings: operationDocumentSettings,
+    create: operationDocumentCreate,
+    write: operationDocumentWrite,
     oldBody: operationOldBody,
   },
   versions: {
