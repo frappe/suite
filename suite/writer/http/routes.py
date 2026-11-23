@@ -168,6 +168,8 @@ def unknown() -> None:
 
 
 MARKDOWN_ERRORS = (
+    # A field that is missing or wrong, which `refusing` answers as Drive does
+    drive.DriveError,
     drive.DriveNotFound,
     drive.DriveForbidden,
     drive.DriveLocked,

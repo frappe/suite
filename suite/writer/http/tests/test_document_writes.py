@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import tempfile
@@ -13,8 +14,8 @@ from bs4 import BeautifulSoup
 from frappe.utils import now_datetime
 from frappe.utils.synchronization import filelock
 
-from suite import drive
-from suite.content import capacity, checker, convert, steps
+from suite import content, drive
+from suite.content import capacity, checker, convert, scheduling, steps
 from suite.content.http import routes
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
@@ -220,6 +221,22 @@ class TestDocumentWrites(DriveCallbackCase):
 
         self.assertEqual(self.blocks_of(node), "<paragraph>Only this.</paragraph>")
 
+    def test_an_append_that_shows_nothing_is_refused(self):
+        node = self.create("First.")
+
+        for blank in ("", " \n\n ", "<!-- a note -->"):
+            with self.subTest(blank), self.assertRaises(MarkdownRefused):
+                writer_routes.document_write(node, blank, "append")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
+    def test_a_replace_with_no_markdown_empties_the_document(self):
+        node = self.create("First.")
+
+        writer_routes.document_write(node, "", "replace")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph></paragraph>")
+
     def test_the_readable_copy_follows_a_write(self):
         node = self.create("First.")
 
@@ -274,6 +291,48 @@ class TestDocumentWrites(DriveCallbackCase):
             writer_routes.document_write(node, "Second.", "append")
 
         self.assertEqual(self.answer_of(refused.exception)["retry_ms"], 2000)
+
+    def test_a_write_during_a_restore_answers_busy_and_when_to_retry(self):
+        node = self.create("First.")
+        restore = json.dumps({"seen_rev": int(self.doc_row(node).head_rev), "version": 1}).encode()
+        self.assertEqual(call_route(routes.restore_post, node, body=restore).status_code, 200)
+
+        with self.assertRaisesRegex(WriteBusy, "restoring") as refused:
+            writer_routes.document_write(node, "Second.", "append")
+
+        self.assertEqual(self.answer_of(refused.exception)["retry_ms"], 1000)
+
+    def test_a_write_a_restore_landed_under_answers_busy(self):
+        node = self.create("First.")
+        read = steps.read
+
+        def read_then_restore(app: str, doc_id: str):
+            snapshot = read(app, doc_id)
+            # The restore lands after the write read the document and before it pushes
+            self.set_doc(node, restore_rev=snapshot.head_rev + 1)
+            return snapshot
+
+        with patch.object(steps, "read", read_then_restore), self.assertRaisesRegex(WriteBusy, "restored"):
+            writer_routes.document_write(node, "Second.", "append")
+
+    def test_a_document_held_for_review_refuses_the_write(self):
+        node = self.create("First.")
+        self.set_doc(node, suspect_held="no_node")
+
+        with self.assertRaisesRegex(WriteRefused, "paused"):
+            writer_routes.document_write(node, "Second.", "append")
+
+    def test_a_write_to_a_document_not_converted_yet_asks_for_its_conversion(self):
+        node = self.create("First.")
+        self.delete_log(node)
+
+        with (
+            patch.object(scheduling, "enqueue") as enqueue,
+            self.assertRaisesRegex(WriteRefused, "unconverted"),
+        ):
+            writer_routes.document_write(node, "Only this.", "replace")
+
+        self.assertEqual([queued.kwargs["node"] for queued in enqueue.call_args_list], [node])
 
     def test_the_automatic_version_credits_who_wrote(self):
         ensure_user(OUTSIDER)
@@ -442,7 +501,19 @@ class TestDocumentWrites(DriveCallbackCase):
         node = self.create("Hello")
         self.delete_log(node)
 
-        with self.assertRaises(drive.DriveConflict):
+        with patch.object(scheduling, "enqueue") as enqueue, self.assertRaises(drive.DriveConflict):
+            self.markdown_of(node)
+
+        # The read asks for the conversion it waits on
+        self.assertEqual([queued.kwargs["node"] for queued in enqueue.call_args_list], [node])
+
+    def test_a_read_the_document_changes_under_says_to_try_again(self):
+        node = self.create("Hello")
+
+        with (
+            patch.object(writer_drive, "read", side_effect=content.ChainBroken),
+            self.assertRaisesRegex(drive.DriveConflict, "Try again"),
+        ):
             self.markdown_of(node)
 
     def test_a_guest_on_a_public_link_cannot_read_markdown(self):
@@ -453,13 +524,28 @@ class TestDocumentWrites(DriveCallbackCase):
         with self.assertRaises(drive.DriveForbidden):
             self.markdown_of(node)
 
-    def test_a_converter_that_fails_answers_busy_and_creates_nothing(self):
+    def test_a_converter_of_another_version_answers_busy_and_creates_nothing(self):
+        another_version = """process.stdout.write('{"version": "0"}')"""
+
+        with self.failing_converter(another_version), self.assertRaises(WriteBusy):
+            writer_routes.document_create(self.folder, "Agent refused", "Hello")
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_a_converter_that_fails_on_the_markdown_refuses_it_and_creates_nothing(self):
         failures = {
-            "a crash": "process.exit(1)",
-            "another version": """process.stdout.write('{"version": "0"}')""",
+            "a crash": ("process.exit(1)", "the converter failed on it"),
+            "no answer in time": ("setInterval(() => {}, 1000)", "the converter ran out of time on it"),
         }
-        for failure, script in failures.items():
-            with self.subTest(failure), self.failing_converter(script), self.assertRaises(WriteBusy):
+        for failure, (script, said) in failures.items():
+            with (
+                self.subTest(failure),
+                self.failing_converter(script),
+                patch.object(checker, "TIMEOUT_S", 1),
+                self.assertRaisesRegex(MarkdownRefused, said),
+            ):
                 writer_routes.document_create(self.folder, "Agent refused", "Hello")
 
         self.assertFalse(

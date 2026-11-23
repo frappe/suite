@@ -14,19 +14,23 @@ from frappe import _
 from frappe.utils import md_to_html
 
 from suite import content, drive
-from suite.content import checker, compaction, convert
+from suite.content import checker, compaction, convert, jobs
 from suite.writer.content import APP, EDITOR, converter
 from suite.writer.content.files import BODY_FRAGMENT
 
 MARKDOWN_MAX = 128 * 1024
 # Where a heading keeps its id
 HEADING_IDS = ("id", "data-toc-id")
-# The layer's refusals that pass by themselves: another push holds the document, or a compaction makes room
-PASSING = ("busy", "compacting")
-# The converter's check names no tag; in Markdown it fails on HTML the editor has no place for
-PLAIN_REASONS = {"check": "a link or HTML the editor can't hold"}
-# The converter's own failures, which say nothing about the Markdown
-CONVERTER_FAILURES = ("child_timeout", "child_crash", "bad_answer")
+# The layer's refusals that pass by themselves: another push holds the document, a compaction makes room,
+# or a restore is landing or landed under the write
+PASSING = ("busy", "compacting", "restoring", "restored")
+PLAIN_REASONS = {
+    # The converter's check names no tag; in Markdown it fails on HTML the editor has no place for
+    "check": "a link or HTML the editor can't hold",
+    # The same Markdown meets these again, so they are not for trying again
+    "child_timeout": "the converter ran out of time on it",
+    "child_crash": "the converter failed on it",
+}
 
 
 class MarkdownRefused(frappe.ValidationError):
@@ -113,7 +117,7 @@ def converted(html: str) -> convert.Converted:
     if isinstance(answer, convert.Converted):
         return answer
 
-    if answer is None or answer.reason in CONVERTER_FAILURES:
+    if answer is None or answer.reason == "bad_answer":
         raise WriteBusy(_("The converter gave no answer. Try again in a moment."))
 
     refusal = PLAIN_REASONS.get(answer.reason, answer.reason)
@@ -123,6 +127,9 @@ def converted(html: str) -> convert.Converted:
 def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> int:
     """Push `body`'s blocks to the document as the request's user, and answer the rev they make."""
     blocks = compaction.load_doc([body]).get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
+    if mode == "append" and all(is_empty_paragraph(block) for block in blocks.children):
+        # Empty Markdown, or only what shows nothing, converts to one empty paragraph
+        raise MarkdownRefused(_("The Markdown holds nothing to append"))
 
     def change(state: pycrdt.Doc) -> None:
         fragment = state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
@@ -139,10 +146,26 @@ def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> in
             # The document went away after the access check
             raise drive.DriveNotFound(_("That document was not found")) from None
 
+        if reason == "paused" and refusal.body.get("reason") == "restoring":
+            reason = "restoring"
+
         if reason in PASSING:
             raise WriteBusy(reason, retry_ms=cast("int | None", refusal.body.get("retry_ms"))) from None
 
+        if reason == "unconverted":
+            jobs.request_conversion(APP, node)
+
         raise WriteRefused(reason) from None
+
+
+def is_empty_paragraph(block: pycrdt.XmlText | pycrdt.XmlElement) -> bool:
+    """Whether `block` is a paragraph with nothing in it."""
+    # The converter gives an empty paragraph one text with nothing in it
+    return (
+        isinstance(block, pycrdt.XmlElement)
+        and block.tag == "paragraph"
+        and not any(str(child) for child in block.children)
+    )
 
 
 def append_copy(

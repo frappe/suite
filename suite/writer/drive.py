@@ -80,7 +80,7 @@ import pycrdt
 from frappe import _
 
 from suite import drive
-from suite.content import checker, find, read, with_content
+from suite.content import ChainBroken, checker, find, jobs, read, with_content
 from suite.writer.content import APP, converter
 from suite.writer.content.files import (
     BODY_FRAGMENT,
@@ -182,9 +182,15 @@ def markdown_export(docname: str) -> tuple[io.BytesIO, str]:
 
     node = frappe.db.get_value(DOCTYPE, docname, NODE_FIELD)
     log = find(APP, node)
-    # Read in Drive's transaction, which a callback may not commit: it takes no lock and saves nothing
-    log_read = log and read(APP, log.id, own_snapshot=False)
+    try:
+        # Read in Drive's transaction, which a callback may not commit: it takes no lock and saves nothing
+        log_read = log and read(APP, log.id, own_snapshot=False)
+    except ChainBroken:
+        # A push or a compaction landed between the read's queries, twice; the next read finds the rows whole
+        raise drive.DriveConflict(_("The document changed during the read. Try again.")) from None
+
     if not log_read:
+        jobs.request_conversion(APP, node)
         raise drive.DriveConflict(_("This document is not converted yet"))
 
     try:

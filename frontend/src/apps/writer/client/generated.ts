@@ -130,6 +130,7 @@ export type DocumentCreateOutput = {
 }
 
 export type DocumentCreateError =
+  | 'DriveError'
   | 'DriveNotFound'
   | 'DriveForbidden'
   | 'DriveLocked'
@@ -155,6 +156,7 @@ const operationDocumentCreate: MutationRef<
   nodeParams: [],
   entity: null,
   errors: [
+    'DriveError',
     'DriveNotFound',
     'DriveForbidden',
     'DriveLocked',
@@ -222,6 +224,7 @@ export type DocumentWriteOutput = {
 }
 
 export type DocumentWriteError =
+  | 'DriveError'
   | 'DriveNotFound'
   | 'DriveForbidden'
   | 'DriveLocked'
@@ -246,6 +249,7 @@ const operationDocumentWrite: MutationRef<
   nodeParams: ['node'],
   entity: null,
   errors: [
+    'DriveError',
     'DriveNotFound',
     'DriveForbidden',
     'DriveLocked',
