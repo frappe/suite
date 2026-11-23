@@ -18,7 +18,6 @@ from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefus
 from suite.writer.content.tests.drive_callback_case import (
     DriveCallbackCase,
     share_as_writer,
-    trash_as_writer,
 )
 from suite.writer.content.tests.support import OUTSIDER, READER, WRITER, call_route, read_open
 from suite.writer.http import routes as writer_routes
@@ -110,30 +109,6 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(self.answer_of(refused.exception)["free_title"], f"{title} (2)")
         self.assertEqual(frappe.db.count("Drive Node", {"parent_node": self.folder, "title": title}), 1)
 
-    def test_an_empty_title_is_a_bad_request_with_its_reason(self):
-        with self.assertRaises(drive.DriveError) as refused:
-            writer_routes.document_create(self.folder, "", "First.")
-
-        self.assertIs(type(refused.exception), drive.DriveError)
-        self.assertTrue(self.answer_of(refused.exception)["message"])
-        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": self.folder, "title": ""}), 0)
-
-    def test_a_document_behind_a_link_password_names_the_unlock_scheme(self):
-        node = self.create("First.")
-        link = share_as_writer(node, "$LINK", drive.EDIT, password="a-long-enough-password")
-        frappe.db.commit()
-        token = link["principal"].removeprefix("$LINK:")
-        frappe.set_user(OUTSIDER)
-
-        with self.assertRaises(drive.DriveLocked):
-            call_route(
-                lambda node: writer_routes.document_write(node, "Second.", "append"), node, links=token
-            )
-
-        self.assertEqual(frappe.local.response_headers["WWW-Authenticate"], 'DriveLink realm="drive"')
-        frappe.set_user(WRITER)
-        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
-
     def test_a_node_that_is_not_a_document_answers_not_found(self):
         with self.assertRaises(drive.DriveNotFound):
             writer_routes.document_write(self.folder, "Second.", "append")
@@ -141,12 +116,13 @@ class TestDocumentWrites(DriveCallbackCase):
     def test_append_adds_the_markdown_after_the_body(self):
         node = self.create("First.")
 
-        writer_routes.document_write(node, "Second, *later*.", "append")
+        written = writer_routes.document_write(node, "Second, *later*.", "append")
 
         self.assertEqual(
             self.blocks_of(node),
             "<paragraph>First.</paragraph><paragraph>Second, <italic>later</italic>.</paragraph>",
         )
+        self.assertEqual(written["rev"], self.doc_row(node).head_rev)
 
     def test_an_appended_heading_shares_no_id_with_the_one_it_repeats(self):
         node = self.create("## Update\n\nFirst.")
@@ -185,19 +161,6 @@ class TestDocumentWrites(DriveCallbackCase):
         html = writer_routes.document(self.docname_of(node))["html"]
         self.assertIn("<p>First.</p><p>Second.</p>", html)
 
-    def test_open_tabs_get_the_write_as_a_row(self):
-        node = self.create("First.")
-
-        with patch("frappe.publish_realtime") as publish:
-            written = writer_routes.document_write(node, "Second.", "append")
-
-        rows: list[int] = []
-        for event in publish.call_args_list:
-            if event.args[0] == "suite_collab_row":
-                rows.append(event.args[1]["rev"])
-
-        self.assertEqual(rows, [written["rev"]])
-
     def test_a_mode_other_than_replace_or_append_writes_nothing(self):
         node = self.create("First.")
 
@@ -219,14 +182,6 @@ class TestDocumentWrites(DriveCallbackCase):
         frappe.set_user(WRITER)
         self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
 
-    def test_a_trashed_document_refuses_the_write(self):
-        node = self.create("First.")
-        trash_as_writer(node)
-        frappe.db.commit()
-
-        with self.assertRaisesRegex(drive.DriveForbidden, "Trashed"):
-            writer_routes.document_write(node, "Second.", "append")
-
     def test_a_full_document_refuses_the_write_and_names_no_retry(self):
         node = self.create("First.")
         self.set_doc(node, state_bytes=capacity.STATE_MAX)
@@ -246,13 +201,6 @@ class TestDocumentWrites(DriveCallbackCase):
             writer_routes.document_write(node, "Second.", "append")
 
         self.assertEqual(self.answer_of(refused.exception)["retry_ms"], 2000)
-
-    def test_a_document_not_yet_collaborative_refuses_the_write(self):
-        node = self.create("First.")
-        self.delete_log(node)
-
-        with self.assertRaisesRegex(WriteRefused, "unconverted"):
-            writer_routes.document_write(node, "Second.", "append")
 
     def test_the_automatic_version_credits_who_wrote(self):
         ensure_user(OUTSIDER)

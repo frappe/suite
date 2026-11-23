@@ -80,10 +80,10 @@ export type DocumentCreateError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
-  | 'DriveConflict'
   | 'MarkdownRefused'
   | 'WriteRefused'
   | 'WriteBusy'
+  | 'DriveConflict'
 
 const operationDocumentCreate: MutationRef<
   DocumentCreateInput,
@@ -105,10 +105,10 @@ const operationDocumentCreate: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
-    'DriveConflict',
     'MarkdownRefused',
     'WriteRefused',
     'WriteBusy',
+    'DriveConflict',
   ],
   loadValidators: async () => (await import('./validators')).operationDocumentCreate,
 }
@@ -122,7 +122,6 @@ export type DocumentWriteError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
-  | 'DriveConflict'
   | 'MarkdownRefused'
   | 'WriteRefused'
   | 'WriteBusy'
@@ -147,7 +146,6 @@ const operationDocumentWrite: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
-    'DriveConflict',
     'MarkdownRefused',
     'WriteRefused',
     'WriteBusy',

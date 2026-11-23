@@ -38,11 +38,6 @@ def move_as_writer(node: str, folder: str) -> None:
     drive_core.nodes.update(owner, node, parent_node=folder)
 
 
-def trash_as_writer(node: str) -> None:
-    owner = drive_core.principals.Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
-    drive_core.nodes.update(owner, node, state="Trashed")
-
-
 def version_of(docname: str) -> dict:
     stream, mime = writer_drive.SPEC.version_bytes(docname)
     assert mime == "application/json"

@@ -117,14 +117,15 @@ def refusing(handler: Callable) -> Callable:
 @refusing
 def document_create(parent: str, title: str, markdown: str) -> WrittenDocument:
     """Create a document from Markdown, as an agent does."""
-    return markdown_body.create(parent, title, markdown)
+    node, rev = markdown_body.create(parent, title, markdown)
+    return {"node": node, "rev": rev}
 
 
 @frappe.whitelist(methods=["POST"])
 @refusing
 def document_write(node: str, markdown: str, mode: Literal["replace", "append"]) -> WrittenDocument:
     """Replace a document's body with Markdown, or append it."""
-    return markdown_body.write(node, markdown, mode)
+    return {"node": node, "rev": markdown_body.write(node, markdown, mode)}
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
@@ -138,7 +139,6 @@ MARKDOWN_ERRORS = (
     drive.DriveForbidden,
     drive.DriveLocked,
     drive.DriveLinkExpired,
-    drive.DriveConflict,
     *WRITE_REFUSALS,
 )
 
@@ -169,7 +169,7 @@ ROUTES = (
         "document_create",
         body=CreateFromMarkdown,
         output=WrittenDocument,
-        errors=MARKDOWN_ERRORS,
+        errors=(*MARKDOWN_ERRORS, drive.DriveConflict),
         kind="mutation",
         public_name="documents.create",
     ),

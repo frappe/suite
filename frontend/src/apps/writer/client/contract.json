@@ -244,10 +244,10 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveConflict",
         "MarkdownRefused",
         "WriteRefused",
-        "WriteBusy"
+        "WriteBusy",
+        "DriveConflict"
       ],
       "entity": null,
       "nodeParams": [],
@@ -311,7 +311,6 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveConflict",
         "MarkdownRefused",
         "WriteRefused",
         "WriteBusy"

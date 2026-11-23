@@ -5,7 +5,7 @@ body an agent writes is one the editor could have made. What the converter can't
 """
 
 import uuid
-from typing import Literal
+from typing import Literal, cast
 
 import frappe
 import pycrdt
@@ -42,26 +42,26 @@ class WriteBusy(frappe.ValidationError):
 
     http_status_code = 429
 
-    def __init__(self, *args: object, retry_ms: object = None) -> None:
+    def __init__(self, *args: object, retry_ms: int | None = None) -> None:
         super().__init__(*args)
         self.retry_ms = retry_ms
 
 
-def create(parent: str, title: str, markdown: str) -> dict:
-    """Create a document in the folder `parent` with `markdown` as its body."""
+def create(parent: str, title: str, markdown: str) -> tuple[str, int]:
+    """Create a document in the folder `parent` with `markdown` as its body, and answer its node and rev."""
     # Before the converter runs, so a user who can't add here takes none of its turn
     drive.check(parent, drive.UPLOAD)
     body = body_state(markdown)
     node = drive.create_document(parent, title, content_doctype=EDITOR.doctype)
-    return {"node": node, "rev": write_body(node, body, "replace")}
+    return node, write_body(node, body, "replace")
 
 
-def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> dict:
-    """Replace the document's body with `markdown`, or append it."""
+def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> int:
+    """Replace the document's body with `markdown`, or append it, and answer the rev that makes."""
     if drive.check(node, drive.EDIT) != EDITOR.doctype:
         raise drive.DriveNotFound(_("That document was not found"))
 
-    return {"node": node, "rev": write_body(node, body_state(markdown), mode)}
+    return write_body(node, body_state(markdown), mode)
 
 
 def body_state(markdown: str) -> bytes:
@@ -124,7 +124,7 @@ def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> in
     except content.Refusal as refusal:
         reason = refusal.body["collab"]
         if reason in PASSING:
-            raise WriteBusy(reason, retry_ms=refusal.body.get("retry_ms")) from None
+            raise WriteBusy(reason, retry_ms=cast("int | None", refusal.body.get("retry_ms"))) from None
 
         raise WriteRefused(reason) from None
 
@@ -152,8 +152,7 @@ def append_element(
 ) -> pycrdt.XmlElement:
     """Add an element under `parent` with `source`'s tag and attributes, and answer it."""
     element = parent.children.append(pycrdt.XmlElement(source.tag))
-    # Called by name, as pycrdt types the view as no iterable
-    for name, value in source.attributes.__iter__():
+    for name, value in compaction.attributes_of(source).items():
         element.attributes[name] = value
 
     if source.tag == "heading":
