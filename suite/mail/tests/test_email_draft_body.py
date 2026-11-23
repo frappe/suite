@@ -130,6 +130,15 @@ class ReplyTo(unittest.TestCase):
         self.assertNotIn("replyTo", draft())
 
 
+class Subject(unittest.TestCase):
+    def test_whitespace_around_the_subject_is_not_sent(self):
+        # A trailing space makes Stalwart encode the header, which Rspamd scores as SUBJ_EXCESS_QP.
+        self.assertEqual(draft(subject=" \tHow is  it going? \t")["subject"], "How is  it going?")
+
+    def test_a_blank_subject_sets_no_subject(self):
+        self.assertNotIn("subject", draft(subject="  \t "))
+
+
 class MailerHeaders(unittest.TestCase):
     def test_both_mailer_headers_name_the_client_and_its_version(self):
         # Rspamd scores XM_UA_NO_VERSION when either header holds no digit.
