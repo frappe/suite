@@ -171,8 +171,11 @@ def own_update(log_read: Snapshot, client_id: int, change: Callable[[pycrdt.Doc]
     with state.transaction():
         change(state)
 
-    (update,) = updates
-    return update
+    if len(updates) != 1:
+        # A change that does nothing makes no update
+        raise log.Refusal(400, "malformed")
+
+    return updates[0]
 
 
 def rebuild_copy(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int) -> None:

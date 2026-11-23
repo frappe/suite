@@ -291,6 +291,14 @@ class TestDocumentWrites(DriveCallbackCase):
 
         self.assertEqual(self.blocks_of(node), "<paragraph></paragraph>")
 
+    def test_a_change_that_changes_nothing_is_malformed(self):
+        node = self.create("First.")
+
+        with self.assertRaises(content.Refusal) as refused:
+            content.write(writer_content.APP, node, lambda doc: None)
+
+        self.assertEqual((refused.exception.status, refused.exception.body), (400, {"collab": "malformed"}))
+
     def test_the_readable_copy_follows_a_write(self):
         node = self.create("First.")
 
