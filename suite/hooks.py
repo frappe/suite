@@ -407,8 +407,9 @@ after_job = "suite.mail.framework.close_mail_clients"
 # prefixes. WebDAV's entry predates the framework-adapter rule. Drive's write
 # isolation reads the path the Suite dispatcher rewrote, so it follows it. The
 # old-page redirect table goes last: it answers page paths only, which no
-# entry above claims.
+# entry above claims. The content package loads first, see `suite.content.load`
 before_request = [
+    "suite.content.load",
     "suite.drive.webdav.dispatch.handle_before_request",
     "suite.composition.http.handle_before_request",
     "suite.drive.framework.isolate_drive_writes",

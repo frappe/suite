@@ -108,3 +108,12 @@ __all__ = [
     "with_content",
     "with_tombstones",
 ]
+
+
+def load() -> None:
+    """Load this package before a request imports one of its modules."""
+    # The first `before_request` hook. Frappe imports this package to find it, so
+    # nothing runs here. Python locks a module before its package: a thread that
+    # imports `suite.content.live` on its own holds that lock and waits for this
+    # package, while a thread loading this package waits for that lock, and Python
+    # fails one of the two imports
