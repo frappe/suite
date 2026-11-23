@@ -1,6 +1,6 @@
 # Meet transcription backend
 
-This package connects the existing capture controls to recorder source storage, a durable per-site Frappe queue, and owner-private Drive publication. One shared worker pool consumes these per-site partitions using fair round-robin scheduling; sites never share credentials or database rows. See the [shared worker](../transcription-server/README.md) for runtime, model, deployment, and dashboard configuration.
+This package connects the existing capture controls to recorder source storage, a durable per-site Frappe queue, and publication to the Room Owner's personal Drive with standard Drive permissions. One shared worker pool consumes these per-site partitions using fair round-robin scheduling; sites never share credentials or database rows. See the [shared worker](../transcription-server/README.md) for runtime, model, deployment, and dashboard configuration.
 
 New captures pin the Trelis recognizer and deliver one
 `Original Transcript.txt`, preserving English, Hindi and code-switching without
