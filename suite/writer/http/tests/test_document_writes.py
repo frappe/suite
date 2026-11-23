@@ -160,6 +160,7 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(written["rev"], before + 1)
 
     def test_a_user_who_cannot_add_to_the_folder_creates_nothing(self):
+        ensure_user(OUTSIDER)
         frappe.set_user(OUTSIDER)
 
         with self.assertRaises((drive.DriveNotFound, drive.DriveForbidden)):
@@ -331,6 +332,7 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(refused.exception.http_status_code, 400)
 
     def test_a_reader_cannot_write(self):
+        ensure_user(READER)
         node = self.create("First.")
         share_as_writer(node, READER, drive.READ)
         frappe.db.commit()
