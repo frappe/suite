@@ -16,8 +16,8 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The fourteen calls an app makes are `check`, `throw_again`, `touch`, `take_version`,
-`create_document`, `import_document`, `copy`, `adopt_media`, `read_file`,
+The fifteen calls an app makes are `check`, `throw_again`, `touch`, `take_version`,
+`create_document`, `import_document`, `copy`, `adopt_media`, `get_node`, `read_file`,
 `stream_file`, `push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
 imports its workflow inside the call, so importing `suite.drive` for byte
