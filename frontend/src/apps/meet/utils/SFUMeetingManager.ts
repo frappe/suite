@@ -409,7 +409,14 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
   }
 
   setVisibleRemoteVideoParticipants(participantIds: Iterable<string>): Promise<void> {
-    return this.connectionManager.setVisibleCameraParticipants(participantIds)
+    this.visibleVideoParticipants = new Set(participantIds)
+    return this.updatePictureInPictureSubscriptions()
+  }
+
+  private updatePictureInPictureSubscriptions(): Promise<void> {
+    const participants = new Set(this.visibleVideoParticipants)
+    for (const id of this.pipParticipantIds) participants.add(id)
+    return this.connectionManager.setVisibleCameraParticipants(participants)
   }
 
   reconcileExpectedMedia(): Promise<void> {
@@ -1023,6 +1030,46 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     return () => this.mediaManager.eventTarget.removeEventListener('consumerReady', listener)
   }
 
+  private pipConsumerIds = new Set<string>()
+  private pipParticipantIds = new Set<string>()
+  private visibleVideoParticipants = new Set<string>()
+  private pipBasePreferences = new WeakMap<
+    ConsumerEntry['consumer'],
+    { visible: boolean; width: number; height: number }
+  >()
+
+  getRemoteVideoTrack(participantId: string): MediaStreamTrack | null {
+    return this.consumerManager.getVideoConsumer(participantId)?.track ?? null
+  }
+
+  setPictureInPictureParticipant(participantId: string | null, secondId?: string): void {
+    const ids = [participantId, secondId].filter((id): id is string => !!id)
+    if (
+      ids.length !== this.pipParticipantIds.size ||
+      ids.some((id) => !this.pipParticipantIds.has(id))
+    ) {
+      this.pipParticipantIds = new Set(ids)
+      void this.updatePictureInPictureSubscriptions().catch((error) =>
+        console.warn('Failed to update picture-in-picture subscription', error),
+      )
+    }
+    const next = new Set(
+      ids
+        .values()
+        .map((id) => this.getVideoConsumerId(id))
+        .filter((id): id is string => !!id),
+    )
+    const previous = this.pipConsumerIds
+    this.pipConsumerIds = next
+    for (const id of new Set([...previous, ...next])) {
+      if (previous.has(id) === next.has(id)) continue
+      const consumer = this.consumerManager.getConsumer(id)?.consumer
+      if (!consumer) continue
+      const base = this.pipBasePreferences.get(consumer) ?? { visible: false, width: 0, height: 0 }
+      void this.updateConsumerStreamPreferences(id, base).catch(() => {})
+    }
+  }
+
   getVideoConsumerId(participantId: string): string | null {
     return this.consumerManager.getVideoConsumer(participantId)?.id ?? null
   }
@@ -1201,6 +1248,15 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
       height: number
     },
   ): Promise<unknown | null> {
+    const consumer = this.consumerManager.getConsumer(consumerId)?.consumer
+    if (consumer) this.pipBasePreferences.set(consumer, preferences)
+    if (this.pipConsumerIds.has(consumerId)) {
+      preferences = {
+        visible: true,
+        width: Math.max(preferences.width, 480),
+        height: Math.max(preferences.height, 270),
+      }
+    }
     const generation = (this.consumerPreferenceGenerations.get(consumerId) ?? 0) + 1
     this.consumerPreferenceGenerations.set(consumerId, generation)
     if (!preferences.visible) {
@@ -1243,6 +1299,10 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
   }
 
   async disconnect(): Promise<void> {
+    this.pipParticipantIds.clear()
+    this.pipConsumerIds.clear()
+    this.pipBasePreferences = new WeakMap()
+    this.visibleVideoParticipants.clear()
     this.screenPublicationGeneration += 1
     this.screenPublicationTrack = null
     return this.connectionManager.disconnect()

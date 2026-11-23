@@ -256,6 +256,23 @@
       </template>
     </template>
 
+    <MeetingPictureInPicture
+      :active="
+        sfuConnection.isSetupComplete.value &&
+        !showPreview &&
+        !hasConnectionError &&
+        !connectionState.connectionMoved &&
+        !canLeaveMeeting
+      "
+      :mic-on="mediaState.isMicOn"
+      :camera-on="mediaState.isCameraOn"
+      :is-screen-sharing="mediaState.isScreenSharing"
+      @toggle-screen-share="mediaControls.toggleScreenShare()"
+      @toggle-camera="mediaControls.toggleCamera()"
+      @toggle-microphone="mediaControls.toggleMicrophone()"
+      @leave="confirmAndEndCall"
+    />
+
     <!-- Join request notifications -->
     <JoinRequestNotifications
       :waiting-users="lobbyUsersForNotifications"
@@ -307,6 +324,7 @@ import LobbyOverlay from '../components/LobbyOverlay.vue'
 import MeetAvatar from '../components/MeetAvatar.vue'
 import MeetingHeader from '../components/MeetingHeader.vue'
 import MeetingLayout from '../components/MeetingLayout.vue'
+import MeetingPictureInPicture from '../components/MeetingPictureInPicture.vue'
 import MeetingPreview from '../components/MeetingPreview.vue'
 import MeetingToolbar from '../components/MeetingToolbar.vue'
 import MeetStatusScreen from '../components/MeetStatusScreen.vue'
