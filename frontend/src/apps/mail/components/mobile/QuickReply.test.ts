@@ -12,7 +12,7 @@ import QuickReply from './QuickReply.vue'
 // each call as the test tells it to.
 const server = vi.hoisted<{
   asked: string[]
-  answer: (method: string, body: string) => Response
+  answer: (method: string, body: string) => Response | Promise<Response>
 }>(() => ({ asked: [], answer: () => new Response('{}') }))
 vi.hoisted(() => {
   globalThis.fetch = async (input, init) => {
@@ -218,6 +218,23 @@ describe('the quick reply', () => {
 
     await vi.waitFor(() => expect(handed.reloaded).toBe(1))
     expect(server.asked).toContain('create_mail')
+  })
+
+  it('has the thread reload once a save still under way when its thread is left has landed', async () => {
+    let land = () => {}
+    const landed = new Promise<void>((resolve) => (land = resolve))
+    server.answer = (method) =>
+      method === 'create_mail'
+        ? landed.then(() => reply({ message: savedDraft }))
+        : reply({ message: [] })
+    const handed = await openQuickReply()
+    write('On my way')
+    await vi.waitFor(() => expect(server.asked).toContain('create_mail'), { timeout: 4000 })
+
+    handed.app.unmount()
+    land()
+
+    await vi.waitFor(() => expect(handed.reloaded).toBe(1))
   })
 
   it('keeps no draft of a forward, neither as it is addressed nor when it is left', async () => {

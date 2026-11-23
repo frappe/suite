@@ -1,8 +1,9 @@
 <template>
   <!-- A reply saved in the thread, on a phone: laid out as an open message is, so it reads as one
        more of them. Who it is from, marked Draft in red, with More where an open message keeps its
-       actions; who it goes to; when it was saved; then the first of what it says. A tap anywhere opens it on the compose page; More has Edit there too,
-       and Discard, which takes it away, with Undo. -->
+       actions; who it goes to; when it was saved; then the first of what it says. A tap anywhere
+       opens it on the compose page; More has Edit there too, and Discard, which takes it away, with
+       Undo. -->
   <div
     role="button"
     tabindex="0"

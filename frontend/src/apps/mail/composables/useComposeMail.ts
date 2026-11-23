@@ -422,9 +422,16 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   }
   window.addEventListener('keydown', holdKeys, true)
   onScopeDispose(() => window.removeEventListener('keydown', holdKeys, true))
-  const saveDraft = async () => {
+  // A save asked for while one is out waits for that one, and for the save it makes after it when
+  // the composer has closed meanwhile: a caller on the way out tells the list only once the draft is
+  // there to find (see payListDebt).
+  let saving: Promise<void> | undefined
+  const saveDraft = (): Promise<void> => {
+    if (pendingSave) return saving ?? Promise.resolve()
+    return (saving = saveNow())
+  }
+  const saveNow = async () => {
     if (
-      pendingSave ||
       isSending.value ||
       submitted ||
       discarded ||

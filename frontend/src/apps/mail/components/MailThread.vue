@@ -2124,12 +2124,12 @@ const discardSavedDraft = (mail: Mail) => {
     undoSlot: { set: (action) => setUndoAction(action), retire: retireUndoAction },
   })
 }
-// The sending identity's signature, which a draft's card leaves out of what was written.
 // Who a saved draft goes out as, on its card: a name, as a sent message's card gives it. A reply
 // saved from the quick reply carries none of its own, so it is the identity's; which address it goes
 // from is the compose page's to show.
 const draftSender = (mail: Mail) =>
   mail.from_name || identityOf(mail.from_email)?._name || mail.from_email
+// The sending identity's signature, which a draft's card leaves out of what was written.
 const signatureOf = (email?: string) => identityOf(email)?.html_signature ?? undefined
 const discardLocalDraft = (mail: string) => {
   dropDraftCard(mail)
