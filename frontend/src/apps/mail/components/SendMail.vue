@@ -131,6 +131,7 @@ import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import { claimComposeWindow } from '@/apps/mail/composables/useComposeWindow'
 import type { ComposeMailData } from '@/apps/mail/types'
 import { provideAccountScope } from '@/apps/mail/utils/accountScope'
+import { composeName } from '@/apps/mail/utils/composeName'
 
 const show = defineModel<boolean>()
 
@@ -183,18 +184,8 @@ watch(show, (open) => {
   minimised.value = false
 })
 
-// What the window is for: a reply or a forward popped out of a thread (or reopened from Drafts)
-// says so, rather than calling itself a new message. A popped-out draft arrives without its reply
-// type, so the mail it answers or forwards is what tells.
-const windowName = computed(() => {
-  const kind =
-    mailDetails?.type ??
-    (mailDetails?.forwarded_from_id ? 'forward' : mailDetails?.in_reply_to ? 'reply' : undefined)
-  if (kind === 'forward') return __('Forward')
-  if (kind === 'replyAll') return __('Reply all')
-  if (kind === 'reply') return __('Reply')
-  return __('New message')
-})
+// What the window is for (see composeName).
+const windowName = computed(() => composeName(mailDetails))
 
 // Folded, the bar names the draft by its subject once it has one: it is all there is to tell one
 // draft from another. Open, the Subject field says that, and the window keeps its own name.

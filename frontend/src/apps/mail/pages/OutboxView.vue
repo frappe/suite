@@ -69,7 +69,7 @@
                     <AdaptiveDropdown :options="rowOptions(row)" align="end">
                       <Button variant="ghost" :aria-label="__('More')" @click.stop.prevent>
                         <template #icon>
-                          <EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
+                          <Ellipsis class="text-ink-gray-5 h-4 w-4" />
                         </template>
                       </Button>
                     </AdaptiveDropdown>
@@ -123,7 +123,7 @@ import {
   usePageMeta,
 } from 'frappe-ui'
 import { ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
-import { EllipsisVertical, Mail } from 'lucide-vue-next'
+import { Ellipsis, Mail } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 

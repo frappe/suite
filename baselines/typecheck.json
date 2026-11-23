@@ -42,7 +42,7 @@
   "frontend/src/apps/mail/components/StackListItem.vue": 1,
   "frontend/src/apps/mail/components/TlsBreakdownRows.vue": 1,
   "frontend/src/apps/mail/composables/useMailCommandPaletteSearch.ts": 1,
-  "frontend/src/apps/mail/pages/ComposeView.vue": 5,
+  "frontend/src/apps/mail/pages/ComposeView.vue": 4,
   "frontend/src/apps/mail/pages/MailboxView.vue": 1,
   "frontend/src/apps/mail/pages/UnifiedFolderView.vue": 4,
   "frontend/src/apps/mail/utils/index.ts": 1,

@@ -58,8 +58,19 @@ vi.mock('@/apps/mail/composables/composeHandoff', () => ({
 vi.hoisted(() => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
 })
-const { none } = vi.hoisted(() => ({ none: () => ({ default: { render: () => null } }) }))
-vi.mock('@/apps/mail/components/Modals/ScheduleSendModal.vue', none)
+// The time picker for a scheduled send, open on one choice the test taps for the user.
+vi.mock('@/apps/mail/components/Modals/ScheduleSendModal.vue', async () => {
+  const { defineComponent, h: render } = await import('vue')
+  return {
+    default: defineComponent({
+      props: { modelValue: Boolean, save: Function },
+      setup: (props) => () =>
+        props.modelValue
+          ? render('button', { onClick: () => props.save?.('2026-12-01T09:00:00Z') }, 'Monday 9 AM')
+          : null,
+    }),
+  }
+})
 // Drive's own file picker, which opens over the page in a dialog of its own: the test picks for the
 // user.
 const pickFiles = vi.hoisted(() => vi.fn())
@@ -76,12 +87,19 @@ vi.mock('@/apps/mail/utils/text-editor', async (importOriginal) => ({
 }))
 // The suite router, which the mail composables import; the page gets its own.
 vi.mock('@/apps/mail/router', () => ({ default: {} }))
+// The sending identity's signature: none, unless a test has it arrive, as it does once the
+// identities load after the page has opened.
+const identity = vi.hoisted<{ arrive?: (signature?: string) => void }>(() => ({}))
 vi.mock('@/apps/mail/utils/accountScope', async () => {
-  const { computed } = await import('vue')
+  const { computed, ref } = await import('vue')
+  const signature = ref<string>()
+  identity.arrive = (html) => (signature.value = html)
   const scope = () => ({
     accountId: computed(() => 'acc'),
     account: computed(() => ({ default_outgoing_email: 'maya@example.com' })),
-    identities: computed(() => ({ data: [{ email: 'maya@example.com', _name: 'Maya' }] })),
+    identities: computed(() => ({
+      data: [{ email: 'maya@example.com', _name: 'Maya', html_signature: signature.value }],
+    })),
     mailboxIds: computed(() => ({ sent: 'e' })),
   })
   return { injectAccountScope: scope, provideAccountScope: scope }
@@ -101,6 +119,7 @@ beforeEach(() => {
   toasts.error.mockReset()
   toasts.success.mockReset()
   handoff.draft = undefined
+  identity.arrive?.(undefined)
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
@@ -233,6 +252,94 @@ describe("the compose page's More actions", () => {
 
     expect(sheetRows()).toContain('Schedule send')
     expect(sheetRows()).not.toContain('Attach from Drive')
+  })
+})
+
+describe('leaving the compose page', () => {
+  // A new mail, with the signature arrived in its body.
+  const openSigned = async () => {
+    await openComposePage()
+    identity.arrive!('<p>Maya, Northwind</p>')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.ProseMirror')?.textContent).toContain('Maya, Northwind'),
+    )
+  }
+  const close = async () => {
+    button('Close')!.click()
+    await vi.waitFor(() => expect(button('Close')).toBeNull())
+    await new Promise((resolve) => setTimeout(resolve))
+  }
+
+  it('leaves nothing in Drafts when nothing was written', async () => {
+    await openSigned()
+
+    await close()
+
+    expect(server.asked).not.toContain('create_mail')
+  })
+
+  it('keeps what was written as a draft', async () => {
+    await openSigned()
+    const subject = document.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!
+    subject.value = 'Brief'
+    subject.dispatchEvent(new Event('input'))
+
+    await close()
+
+    await vi.waitFor(() => expect(server.asked).toContain('create_mail'))
+  })
+})
+
+describe("the compose page's island", () => {
+  it('swaps its tools for the formatting, and back', async () => {
+    await openComposePage()
+    const shown = () => ({ attach: !!button('Attach'), bold: !!button('Bold') })
+    expect(shown()).toEqual({ attach: true, bold: false })
+
+    button('Formatting')!.click()
+    await nextTick()
+    expect(shown()).toEqual({ attach: false, bold: true })
+
+    button('Formatting')!.click()
+    await nextTick()
+    expect(shown()).toEqual({ attach: true, bold: false })
+  })
+})
+
+describe('scheduling from the compose page', () => {
+  it('sends at the time picked from Schedule send', async () => {
+    handoff.draft = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Brief',
+      html_body: '<p>Looks good.</p>',
+      attachments: [],
+    }
+    server.answer = (method) =>
+      method === 'update_draft_mail'
+        ? reply({
+            message: {
+              name: 'draft-1',
+              id: 'draft-1',
+              status: 'Submitted',
+              error: null,
+              thread_id: null,
+              submission_id: 'submission-1',
+              send_at: '2026-12-01T09:00:00Z',
+              undo_send_period: null,
+            },
+          })
+        : reply({ message: [] })
+    await openComposePage()
+
+    await openSheet('More actions')
+    sheetRow('Schedule send')!.click()
+    await vi.waitFor(() => expect(button('Monday 9 AM')).not.toBeNull())
+    button('Monday 9 AM')!.click()
+
+    await vi.waitFor(() =>
+      expect(toasts.success.mock.calls.map(([message]) => message)).toContain('Send scheduled'),
+    )
   })
 })
 
