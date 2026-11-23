@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+import os
 import shutil
 import tempfile
 import unittest
@@ -128,6 +129,20 @@ class Enforce(MessageCacheQuotaTestCase):
             self.quota.enforce(quota_mb=1)
 
         info.assert_called_once_with("message-cache-evicted", evicted=1, freed_bytes=size, quota_mb=1)
+
+    def test_the_daily_job_leaves_out_an_account_that_never_opened_mail(self):
+        database = mock.Mock()
+        database.get_all.return_value = (("account", 512), ("never-opened", 512))
+
+        with (
+            mock.patch.object(quota.frappe, "db", database),
+            mock.patch.object(quota, "get_data_base_path", return_value=self.path),
+            mock.patch.object(quota, "enqueue_job") as enqueue,
+        ):
+            quota.enforce_message_cache_quotas()
+
+        self.assertEqual(enqueue.call_args.kwargs["quotas"], {"account": 512})
+        self.assertFalse(os.path.exists(os.path.join(self.path, "mail", "never-opened")))
 
     def test_one_failing_account_does_not_stop_the_rest(self):
         enforced = []
@@ -272,7 +287,16 @@ class RefetchAfterEviction(MessageCacheQuotaTestCase):
 
         self.evict_and_refetch(old)
 
-        self.assertIn("jane@example.com", self.index.documents)
+        self.assertEqual(self.index.name_of("jane@example.com"), "Jane Doe")
+
+    def test_mail_back_after_eviction_fills_in_a_name_the_index_lacks(self):
+        old = self.store_message("old", "Jane Doe")
+        self.index.index_addresses([{"name": None, "email": "carol@example.com"}])
+        old["from_email"] = "carol@example.com"
+
+        self.evict_and_refetch(old)
+
+        self.assertEqual(self.index.name_of("carol@example.com"), "Jane Doe")
 
     def test_the_mark_goes_once_the_message_is_back(self):
         old = self.store_message("old", "Jane Doe")

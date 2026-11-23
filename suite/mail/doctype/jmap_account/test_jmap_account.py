@@ -96,7 +96,11 @@ class IntegrationTestJMAPAccount(IntegrationTestCase):
         self.insert_account("quota-job-limited", 512)
         self.insert_account("quota-job-unlimited", 0)
 
-        with mock.patch.object(quota, "enqueue_job") as enqueue:
+        stores = [("mail", "quota-job-limited"), ("mail", "quota-job-unlimited")]
+        with (
+            mock.patch.object(quota, "list_namespaces", return_value=stores),
+            mock.patch.object(quota, "enqueue_job") as enqueue,
+        ):
             quota.enforce_message_cache_quotas()
 
         queued = {}

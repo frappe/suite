@@ -1628,8 +1628,8 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     Only messages the cache hasn't held before are indexed: caching runs again on every flag change,
     and indexing is safe to repeat but not free. A message is cached only once it is indexed, so a
     failed index write uncaches it and the next fetch tries again. If the store will not give it up
-    either, an index rebuild is queued. A message back after eviction is indexed without names: it
-    may be old, and the index keeps the last name it was given.
+    either, an index rebuild is queued. A message back after eviction may be old, so it only fills
+    in names the index lacks.
     """
 
     store = get_data_store(account)
@@ -1645,9 +1645,9 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
         evicted = {
             id for id, held in store.get_many(Entity.EVICTED_EMAIL, list(new_messages)).items() if held
         }
-        indexable = [_without_names(m) if id in evicted else m for id, m in new_messages.items()]
         own_addresses = set(get_account_emails(account))
-        get_email_address_index(account).index_addresses(_message_addresses(indexable, own_addresses))
+        addresses = _new_message_addresses(new_messages, evicted, own_addresses)
+        get_email_address_index(account).index_addresses(addresses)
         if evicted:
             store.delete_many(Entity.EVICTED_EMAIL, keys=list(evicted))
     except Exception:
@@ -1729,9 +1729,15 @@ def _note_written(account: str, ids: list[str]) -> None:
         pipe.execute()
 
 
-def _without_names(message: dict) -> dict:
-    recipients = [{**recipient, "display_name": None} for recipient in message.get("recipients") or []]
-    return {**message, "from_name": None, "recipients": recipients}
+def _new_message_addresses(
+    messages: dict[str, dict], evicted: set[str], own_addresses: set[str]
+) -> list[dict]:
+    """Addresses of newly cached messages, with those back after eviction marked as refetched."""
+
+    refetched = [message for id, message in messages.items() if id in evicted]
+    fresh = [message for id, message in messages.items() if id not in evicted]
+    marked = [{**address, "is_refetched": True} for address in _message_addresses(refetched, own_addresses)]
+    return marked + _message_addresses(fresh, own_addresses)
 
 
 def _message_addresses(messages: list[dict], own_addresses: set[str]) -> list[dict]:

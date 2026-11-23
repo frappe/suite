@@ -4,8 +4,9 @@ import frappe
 from frappe import _
 from frappe.utils import create_batch
 
-from suite.mail.store import Entity, get_data_store
+from suite.mail.store import Entity, get_account_namespace, get_data_store
 from suite.mail.utils import log_mail_error
+from suite.store import get_data_base_path, list_namespaces
 from suite.utils import enqueue_job
 
 BYTES_PER_MB = 1024 * 1024
@@ -17,9 +18,17 @@ _ACCOUNTS_PER_JOB = 25
 
 
 def enforce_message_cache_quotas() -> None:
-    """Fan every account out into long-queue jobs. Those with no limit still get stale stamps dropped."""
+    """Fan accounts that have a store out into long-queue jobs. Those with no limit only get stale
+    stamps dropped. Opening a store creates it, so accounts without one are left out."""
 
-    accounts = frappe.db.get_all("JMAP Account", fields=["name", "message_cache_quota_mb"], as_list=True)
+    stores = set(list_namespaces(get_data_base_path()))
+    accounts = [
+        (account, quota_mb)
+        for account, quota_mb in frappe.db.get_all(
+            "JMAP Account", fields=["name", "message_cache_quota_mb"], as_list=True
+        )
+        if get_account_namespace(account) in stores
+    ]
     for i, batch in enumerate(create_batch(accounts, _ACCOUNTS_PER_JOB)):
         enqueue_job(
             enforce_quotas,
