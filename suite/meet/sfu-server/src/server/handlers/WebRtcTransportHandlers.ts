@@ -51,9 +51,12 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				);
 				loggers.socketHandler.error(
 					'Error creating WebRTC transport: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -103,9 +106,12 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				);
 				loggers.socketHandler.error(
 					'Error connecting WebRTC transport: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -146,9 +152,12 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 				);
 				loggers.socketHandler.error(
 					'Error restarting WebRTC transport ICE: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 
@@ -174,9 +183,12 @@ export function registerWebRtcTransportHandlers(deps: HandlerDeps) {
 			} catch (error) {
 				loggers.socketHandler.error(
 					'Error creating PlainTransport: %s',
-					(error as Error).message,
+					error instanceof Error ? error.message : String(error),
 				);
-				callback({ success: false, error: (error as Error).message });
+				callback({
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
 			}
 		});
 	};

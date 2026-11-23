@@ -2,7 +2,6 @@ import type { Server, Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
 import type { RateLimiter } from '../../utils/rateLimiter';
 import type { RoomRegistry } from '../RoomRegistry';
-import type { TypedSocket } from './Handler';
 
 export function isRealParticipant(participantId: string): boolean {
 	return !participantId.startsWith('preview-');
@@ -21,10 +20,15 @@ export function getPeerId(socket: Socket): string {
 	return socket.peerId ?? socket.userId;
 }
 
+interface ParticipantOwner {
+	roomId: string;
+	participantId: string;
+}
+
 export function ensureParticipantOwner(
 	socket: Socket,
 	registry: RoomRegistry,
-): { roomId: string; participantId: string } {
+): ParticipantOwner {
 	const roomId = socket.roomId;
 	const participantId = socket.participantId;
 	if (
@@ -83,13 +87,13 @@ export function findSocketsByParticipantId(
 	io: Server,
 	roomId: string,
 	participantId: string,
-): TypedSocket[] {
+): Socket[] {
 	const socketsInRoom = io.sockets.adapter.rooms.get(roomId);
 	if (!socketsInRoom) return [];
 
-	const matches: TypedSocket[] = [];
+	const matches: Socket[] = [];
 	for (const socketId of socketsInRoom) {
-		const socket = io.sockets.sockets.get(socketId) as TypedSocket | undefined;
+		const socket = io.sockets.sockets.get(socketId);
 		if (socket && socket.participantId === participantId) {
 			matches.push(socket);
 		}

@@ -26,17 +26,17 @@ export const navigationOffset = (key: string) => (['arrowup', 'k'].includes(key)
  * is how a caller knows to load the next window instead (see `hasCursor` for telling the two apart).
  */
 export const stepFromKey = <T extends { key: string }>(
-	rows: T[],
-	currentKey: string | undefined,
-	offset: number,
+  rows: T[],
+  currentKey: string | undefined,
+  offset: number,
 ): T | undefined => {
-	const index = rows.findIndex((row) => row.key === currentKey)
-	return index === -1 ? rows[0] : rows[index + offset]
+  const index = rows.findIndex((row) => row.key === currentKey)
+  return index === -1 ? rows[0] : rows[index + offset]
 }
 
 /** Whether the cursor is currently on a known row — the ends need distinguishing from "lost". */
 export const hasCursor = <T extends { key: string }>(rows: T[], currentKey: string | undefined) =>
-	rows.some((row) => row.key === currentKey)
+  rows.some((row) => row.key === currentKey)
 
 /**
  * What to open once the item at `index` leaves the list: the nearest survivor below it, and
@@ -53,13 +53,14 @@ export const hasCursor = <T extends { key: string }>(rows: T[], currentKey: stri
  * is no longer in the list — searches the whole list forwards, as it did before.
  */
 export const neighbourAfterRemoval = <T>(
-	items: T[],
-	index: number,
-	survives: (item: T) => boolean,
+  items: T[],
+  index: number,
+  survives: (item: T) => boolean,
 ): T | undefined => {
-	for (let i = index + 1; i < items.length; i++) if (survives(items[i])) return items[i]
-	for (let i = Math.min(index, items.length) - 1; i >= 0; i--) if (survives(items[i])) return items[i]
-	return undefined
+  for (let i = index + 1; i < items.length; i++) if (survives(items[i])) return items[i]
+  for (let i = Math.min(index, items.length) - 1; i >= 0; i--)
+    if (survives(items[i])) return items[i]
+  return undefined
 }
 
 /**
@@ -73,29 +74,29 @@ const G_PREFIX_WINDOW_MS = 750
  * caller, because "first" means the first row in one list and the first thread in another.
  */
 export const useGPrefix = () => {
-	const armed = ref(false)
-	let timer: ReturnType<typeof setTimeout> | undefined
+  const armed = ref(false)
+  let timer: ReturnType<typeof setTimeout> | undefined
 
-	const disarm = () => {
-		clearTimeout(timer)
-		armed.value = false
-	}
+  const disarm = () => {
+    clearTimeout(timer)
+    armed.value = false
+  }
 
-	const press = (shiftKey: boolean): 'first' | 'last' | 'armed' => {
-		// Shift+G is a jump in its own right, so it also clears any half-typed `g`.
-		if (shiftKey) {
-			disarm()
-			return 'last'
-		}
-		if (armed.value) {
-			disarm()
-			return 'first'
-		}
-		clearTimeout(timer)
-		armed.value = true
-		timer = setTimeout(() => (armed.value = false), G_PREFIX_WINDOW_MS)
-		return 'armed'
-	}
+  const press = (shiftKey: boolean): 'first' | 'last' | 'armed' => {
+    // Shift+G is a jump in its own right, so it also clears any half-typed `g`.
+    if (shiftKey) {
+      disarm()
+      return 'last'
+    }
+    if (armed.value) {
+      disarm()
+      return 'first'
+    }
+    clearTimeout(timer)
+    armed.value = true
+    timer = setTimeout(() => (armed.value = false), G_PREFIX_WINDOW_MS)
+    return 'armed'
+  }
 
-	return { armed, press, disarm }
+  return { armed, press, disarm }
 }

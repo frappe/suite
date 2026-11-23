@@ -20,20 +20,20 @@ let pending: ComposeMailData | undefined
 const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
 
 export const takePendingCompose = () => {
-	const draft = pending
-	pending = undefined
-	return draft
+  const draft = pending
+  pending = undefined
+  return draft
 }
 
 /**
  * Compose, on mobile. There is no composer window there — the page is the whole of it — so every
- * opener navigates: the tab bar's button, a reply popped out of a thread, a `mailto:` link in a
+ * opener navigates: the compose button, a reply popped out of a thread, a `mailto:` link in a
  * message, another app asking mail to write to someone.
  *
  * Passing no draft is a request for an empty one, and clears whatever a navigation that never
  * happened left behind.
  */
 export const openComposePage = (router: Router, accountId: string, draft?: ComposeMailData) => {
-	setPendingCompose(draft)
-	return router.push({ name: 'mail-compose', params: { accountId } })
+  setPendingCompose(draft)
+  return router.push({ name: 'mail-compose', params: { accountId } })
 }

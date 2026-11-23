@@ -1,149 +1,138 @@
 <template>
-	<AppSettingsHeader :title="__('Automation')">
-		<template #actions>
-			<Button
-				icon-left="lucide-refresh-cw"
-				:label="__('Rebuild Automation')"
-				:loading="rebuildAutomation.loading"
-				:tooltip="
-					__('Regenerate the folder automation script from your saved mailbox rules.')
-				"
-				@click="rebuildAutomation.submit()"
-			/>
-			<Button icon-left="lucide-plus" :label="__('New')" @click="addScript" />
-		</template>
-	</AppSettingsHeader>
-	<AppSettingsBody>
-	<div v-if="filteredScripts.length">
-		<div
-			v-for="script in filteredScripts"
-			:key="script.name"
-			class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1"
-			@click="editScript(script)"
-		>
-			<div class="flex items-center gap-2">
-				<span class="text-base">{{ script._name }}</span>
-				<Badge v-if="script.active" :label="__('Active')" theme="blue" size="sm" />
-			</div>
-			<Dropdown :options="scriptOptions(script)">
-				<Button variant="" @click.stop>
-					<template #icon>
-						<Ellipsis class="text-ink-gray-5 h-4 w-4" />
-					</template>
-				</Button>
-			</Dropdown>
-		</div>
-	</div>
+  <div class="flex flex-col gap-3">
+    <SettingsDialogActions>
+      <Button
+        icon-left="lucide-refresh-cw"
+        :label="__('Rebuild folder automation')"
+        :loading="rebuildAutomation.isPending"
+        :tooltip="__('Builds folder automation again from the Automation tab of each folder.')"
+        @click="rebuildAutomationSubmit()"
+      />
+      <Button variant="solid" icon-left="lucide-plus" :label="__('New rule')" @click="addScript" />
+    </SettingsDialogActions>
+    <div v-if="filteredScripts.length">
+      <div
+        v-for="script in filteredScripts"
+        :key="script.name"
+        class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1"
+        @click="editScript(script)"
+      >
+        <div class="flex items-center gap-2">
+          <span class="text-base">{{ script._name }}</span>
+          <Badge v-if="script.active" :label="__('On')" theme="blue" size="sm" />
+        </div>
+        <Dropdown :options="scriptOptions(script)">
+          <Button variant="ghost" :aria-label="__('{0} options', [script._name])" @click.stop>
+            <template #icon>
+              <Ellipsis class="text-ink-gray-5 h-4 w-4" />
+            </template>
+          </Button>
+        </Dropdown>
+      </div>
+    </div>
 
-	<div v-else class="text-ink-gray-6 flex flex-col space-y-2 text-sm">
-		<p class="text-base-medium">{{ __('No sieve scripts found.') }}</p>
-		<div class="space-x-1">
-			<span>
-				{{
-					__('Sieve scripts let you automatically filter and organize incoming emails.')
-				}}
-			</span>
-			<a
-				class="text-ink-blue-5 hover:underline"
-				href="https://stalw.art/docs/category/sieve-scripting/"
-				target="_blank"
-			>
-				{{ __('Learn more.') }}
-			</a>
-		</div>
-	</div>
+    <SettingsEmptyList
+      v-else
+      :title="__('No rules yet')"
+      :description="__('Rules are Sieve scripts that sort and file incoming mail for you.')"
+    >
+      <a
+        class="text-p-base text-ink-blue-link hover:underline"
+        href="https://stalw.art/docs/category/sieve-scripting/"
+        target="_blank"
+      >
+        {{ __('Learn about Sieve scripts') }}
+      </a>
+    </SettingsEmptyList>
 
-	<SieveScriptModal v-model="showSieveScript" :selected-script />
-	<SetSieveScriptStateModal
-		v-if="selectedScript"
-		v-model="showSetScriptAsActive"
-		:script="selectedScript"
-	/>
-	<DeleteSieveScriptModal
-		v-if="selectedScript"
-		v-model="showDeleteScript"
-		:script="selectedScript"
-	/>
-	</AppSettingsBody>
+    <SieveScriptModal v-model="showSieveScript" :selected-script />
+    <SetSieveScriptStateModal
+      v-if="selectedScript"
+      v-model="showSetScriptAsActive"
+      :script="selectedScript"
+    />
+    <DeleteSieveScriptModal
+      v-if="selectedScript"
+      v-model="showDeleteScript"
+      :script="selectedScript"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { Badge, Button, Dropdown } from 'frappe-ui'
 import { Ellipsis } from 'lucide-vue-next'
-import {
-	Badge,
-	Button,
-	Dropdown,
-	createResource,
-} from 'frappe-ui'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import { computed, ref } from 'vue'
 
-import { raiseToast } from '@/apps/mail/utils'
-import { userStore } from '@/apps/mail/stores/user'
+import { api, useMutation, type InputOf } from '@/api'
 import DeleteSieveScriptModal from '@/apps/mail/components/Modals/DeleteSieveScriptModal.vue'
 import SetSieveScriptStateModal from '@/apps/mail/components/Modals/SetSieveScriptStateModal.vue'
 import SieveScriptModal from '@/apps/mail/components/Modals/SieveScriptModal.vue'
-
+import { userStore } from '@/apps/mail/stores/user'
 import type { SieveScript } from '@/apps/mail/types'
+import { raiseToast } from '@/apps/mail/utils'
+import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
+import { translate as __ } from '@/platform/translation'
 
 const store = userStore()
 const { sieveScripts } = store
-
-const rebuildAutomation = createResource({
-	url: 'suite.mail.api.sieve.rebuild_automation_script_for_account',
-	makeParams: () => ({ account: store.accountId }),
-	onSuccess: () => {
-		raiseToast(__('Folder automation rebuilt from your saved rules.'))
-		sieveScripts.reload()
-	},
-	onError: (error) => raiseToast(error.messages?.[0] || error.message, 'error'),
-})
-
+const rebuildAutomation = useMutation(api.mail.sieve.rebuildAutomation)
+async function rebuildAutomationSubmit() {
+  const input: InputOf<typeof api.mail.sieve.rebuildAutomation> = {
+    account: store.accountId,
+  }
+  await rebuildAutomation.run(input)
+  raiseToast(__('Folder automation rebuilt'))
+}
 const showSieveScript = ref(false)
 const selectedScript = ref<SieveScript>()
 const showSetScriptAsActive = ref(false)
 const showDeleteScript = ref(false)
-
 const filteredScripts = computed(
-	() =>
-		sieveScripts.data?.filter((s) => !s.read_only && s._name !== 'frappe_mail_automation') ||
-		[],
+  () =>
+    sieveScripts.data?.filter((s) => !s.read_only && s._name !== 'frappe_mail_automation') || [],
 )
-
 const addScript = () => {
-	selectedScript.value = undefined
-	showSieveScript.value = true
+  selectedScript.value = undefined
+  showSieveScript.value = true
+}
+const editScript = (script: SieveScript) => {
+  selectedScript.value = script
+  showSieveScript.value = true
 }
 
-const editScript = (script: SieveScript) => {
-	selectedScript.value = script
-	showSieveScript.value = true
+function switchLabel(script: SieveScript) {
+  if (script.active) {
+    return __('Turn off')
+  }
+
+  return __('Turn on')
 }
 
 const scriptOptions = (script: SieveScript) => [
-	{
-		label: script.active ? __('Deactivate') : __('Activate'),
-		icon: script.active ? 'eye-off' : 'eye',
-		onClick: () => {
-			selectedScript.value = script
-			showSetScriptAsActive.value = true
-		},
-	},
-	{
-		label: __('Edit'),
-		icon: 'lucide-edit-2',
-		onClick: () => editScript(script),
-	},
-	{
-		label: __('Delete'),
-		icon: 'lucide-trash-2',
-		theme: 'red',
-		onClick: () => {
-			selectedScript.value = script
-			showDeleteScript.value = true
-		},
-		condition: () => !script.active,
-	},
+  {
+    label: switchLabel(script),
+    icon: script.active ? 'eye-off' : 'eye',
+    onClick: () => {
+      selectedScript.value = script
+      showSetScriptAsActive.value = true
+    },
+  },
+  {
+    label: __('Edit'),
+    icon: 'lucide-edit-2',
+    onClick: () => editScript(script),
+  },
+  {
+    label: __('Delete'),
+    icon: 'lucide-trash-2',
+    theme: 'red' as const,
+    onClick: () => {
+      selectedScript.value = script
+      showDeleteScript.value = true
+    },
+    condition: () => !script.active,
+  },
 ]
 </script>

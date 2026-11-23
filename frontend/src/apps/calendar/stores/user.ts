@@ -1,145 +1,199 @@
-import { computed, ref } from 'vue'
+import { until, useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
-import { useStorage } from '@vueuse/core'
-import { createResource } from 'frappe-ui'
+import { computed, reactive, ref, watch } from 'vue'
 
-import type { ParticipantIdentity, UserAccount } from '@/apps/calendar/types/doctypes'
-import { calendarColor } from '@/apps/calendar/utils/calendars'
-import type { CalendarRow } from '@/apps/calendar/utils/calendars'
+import { api, useQuery, type OutputOf } from '@/api'
+import {
+  calendarColor,
+  carriedVisibility,
+  type SharedVisibility,
+} from '@/apps/calendar/utils/calendars'
+import { useSession } from '@/platform/session'
 
+type UserAccount = NonNullable<OutputOf<typeof api.mail.account.get>>['accounts'][number]
+type ParticipantIdentity = OutputOf<typeof api.mail.participantIdentities.list>[number]
 const ACCOUNT_STORAGE_KEY = 'mail-account-id'
-
+// How long a form opened outside Calendar waits for what it reads before it opens on what has come.
+const FORM_LOAD_WAIT_MS = 10_000
 export const userStore = defineStore('calendar-user', () => {
-	const accountId = ref('')
+  const accountId = ref('')
+  const resolveAccount = (accounts?: readonly UserAccount[], routeAccountId?: string) => {
+    if (!accounts?.length) return
 
-	const resolveAccount = (accounts?: UserAccount[], routeAccountId?: string) => {
-		if (!accounts?.length) return
+    // 1. Route param
+    if (routeAccountId && accounts.some((a) => a.id === routeAccountId)) {
+      if (routeAccountId !== accountId.value) setAccount(routeAccountId)
+      return
+    }
 
-		// 1. Route param
-		if (routeAccountId && accounts.some((a) => a.id === routeAccountId)) {
-			if (routeAccountId !== accountId.value) setAccount(routeAccountId)
-			return
-		}
+    // 2. localStorage
+    const localId = localStorage.getItem(ACCOUNT_STORAGE_KEY)
+    if (localId && accounts.some((a) => a.id === localId)) {
+      if (localId !== accountId.value) setAccount(localId)
+      return
+    }
 
-		// 2. localStorage
-		const localId = localStorage.getItem(ACCOUNT_STORAGE_KEY)
-		if (localId && accounts.some((a) => a.id === localId)) {
-			if (localId !== accountId.value) setAccount(localId)
-			return
-		}
+    // 3. Personal account fallback
+    if (accountId.value) return
+    const personalId = accounts.find((a) => a.is_personal)?.id
+    if (personalId) setAccount(personalId)
+  }
+  const setAccount = (id: string) => {
+    accountId.value = id
+    localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
+  }
+  const account = () =>
+    accountId.value
+      ? {
+          account: accountId.value,
+        }
+      : false
+  const userQuery = useQuery(api.mail.account.get, () => (useSession().user.value ? {} : false))
+  const userData = computed(() => {
+    const data = userQuery.data
+    return data
+      ? {
+          ...data,
+          all_accounts: data.accounts,
+          accounts: data.accounts.filter((account) => account.in_calendar),
+        }
+      : data
+  })
+  const userResource = reactive({
+    get data() {
+      return userData.value
+    },
+    refetch: userQuery.refetch,
+  })
+  const loadUser = () => userQuery.refetch()
+  watch(
+    () => userData.value?.accounts,
+    (accounts) => resolveAccount(accounts),
+    {
+      flush: 'sync',
+    },
+  )
+  watch(
+    () => userQuery.error,
+    (error) => {
+      if (error && 'type' in error && error.type === 'AuthenticationError')
+        window.location.replace('/login?redirect-to=/calendar')
+    },
+  )
+  const identities = useQuery(api.mail.identities.list, account)
+  const participantIdentities = useQuery(api.mail.participantIdentities.list, account)
+  const calendarQuery = useQuery(api.calendar.calendars.list, account)
+  const calendarData = computed(() =>
+    calendarQuery.data?.map((cal) =>
+      cal.may_write_all
+        ? cal
+        : {
+            ...cal,
+            // Drawn once the reader ticks it: a shared calendar starts unticked.
+            visible: sharedVisibility.value[cal.name] ?? 0,
+          },
+    ),
+  )
+  const calendars = reactive({
+    get data() {
+      return calendarData.value
+    },
+    refetch: calendarQuery.refetch,
+    get isFetching() {
+      return calendarQuery.isFetching
+    },
+    get error() {
+      return calendarQuery.error
+    },
+  })
 
-		// 3. Personal account fallback
-		if (accountId.value) return
-		const personalId = accounts.find((a) => a.is_personal)?.id
-		if (personalId) setAccount(personalId)
-	}
+  // Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
+  // someone who can write to it change — so a calendar shared read-only is shown or hidden in
+  // this browser instead. Kept only where the reader made a choice; the rest stay unticked.
+  const sharedVisibility = useStorage<SharedVisibility>('calendar-shared-visibility', {})
 
-	const setAccount = (id: string) => {
-		accountId.value = id
-		localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
-		identities.fetch()
-		participantIdentities.fetch()
-		calendars.fetch()
-	}
+  // An earlier build kept the hidden ones as a list. It is folded in with the first calendar
+  // list that arrives, before anything is drawn, so nobody's shared calendars vanish.
+  const LEGACY_HIDDEN_KEY = 'calendar-hidden-shared'
+  watch(
+    () => calendarQuery.data,
+    (rows) => {
+      const legacy = localStorage.getItem(LEGACY_HIDDEN_KEY)
+      if (!rows || legacy === null) return
+      try {
+        sharedVisibility.value = carriedVisibility(rows, JSON.parse(legacy), sharedVisibility.value)
+      } catch {
+        // nothing readable under the old key, so nothing to carry
+      }
+      localStorage.removeItem(LEGACY_HIDDEN_KEY)
+    },
+    { flush: 'sync', immediate: true },
+  )
 
-	const userResource = createResource({
-		url: 'suite.mail.api.account.get_user_info',
-		// Only the accounts with a calendar the user can write to: one that only shares calendars
-		// with them is under Shared Calendars, not an account to switch to. All of them stay in
-		// `all_accounts`, to name where a shared calendar is from. In place, so onSuccess — handed
-		// the response rather than this — reads the same list.
-		transform: (data) => {
-			if (data?.accounts) {
-				data.all_accounts = data.accounts
-				data.accounts = data.accounts.filter((account) => account.in_calendar)
-			}
-			return data
-		},
-		onSuccess: (data) => resolveAccount(data?.accounts),
-		onError: (error) => {
-			if (error && error.exc_type === 'AuthenticationError')
-				window.location.replace('/login?redirect-to=/calendar')
-		},
-		auto: true,
-	})
+  // The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
+  // A calendar shared from another account names that account beneath.
+  const calendarOptions = computed(() => {
+    const accounts: UserAccount[] = userResource.data?.all_accounts ?? []
+    return (calendars.data ?? []).map((cal) => ({
+      label: cal._name,
+      description:
+        cal.account === accountId.value
+          ? undefined
+          : (accounts.find((a) => a.id === cal.account)?._name ?? undefined),
+      value: cal.name,
+      account: cal.account,
+      color: calendarColor(calendars.data, cal.name),
+      writable: !!cal.may_write_all,
+    }))
+  })
 
-	// The account's mail identities: the addresses it can send from.
-	const identities = createResource({
-		url: 'suite.mail.api.account.get_identities',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['identities', accountId.value],
-	})
+  // One account's calendars, keyed by their bare id, for what works on a single account:
+  // import and export.
+  const accountCalendarOptions = (account: string) =>
+    calendarOptions.value
+      .filter((option) => option.account === account)
+      .map((option) => ({
+        ...option,
+        value: option.value.split('|')[1],
+      }))
 
-	const participantIdentities = createResource({
-		url: 'suite.mail.api.account.get_participant_identities',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['participantIdentities', accountId.value],
-	})
+  // The organizer of a new event. Invites go out as mail from the organizer's address,
+  // so only a participant identity that is also a mail identity qualifies. Among those
+  // the one flagged default wins, else the first. Undefined until both lists have
+  // loaded, or when no address is on both.
+  const organizerIdentity = computed<ParticipantIdentity | undefined>(() => {
+    const sendable = new Set<string>((identities.data ?? []).map((i: { email: string }) => i.email))
+    const candidates: ParticipantIdentity[] = (participantIdentities.data ?? []).filter((i) =>
+      sendable.has(i.email),
+    )
+    return candidates.find((i) => i.default) ?? candidates[0]
+  })
 
-	// The account's calendars, and those shared with the user from other accounts. One list
-	// for the grid, the sidebar, the event form and settings, so a calendar added or renamed
-	// in one is there in the others.
-	const calendars = createResource<CalendarRow[]>({
-		url: 'suite.calendar.api.get_calendars_with_shared',
-		makeParams: () => ({ account: accountId.value }),
-		cache: ['calendars', accountId.value],
-		transform: (rows: CalendarRow[]) =>
-			rows.map((cal) =>
-				cal.may_write_all ? cal : { ...cal, visible: hiddenShared.value.includes(cal.name) ? 0 : 1 },
-			),
-	})
-
-	// Showing or hiding a calendar is its own `isVisible`, which the mail server only lets
-	// someone who can write to it change — so a calendar shared read-only is hidden in this
-	// browser instead.
-	const hiddenShared = useStorage<string[]>('calendar-hidden-shared', [])
-
-	// The calendars as select options, keyed by `account|id`, each in the colour it is drawn in.
-	// A calendar shared from another account names that account beneath.
-	const calendarOptions = computed(() => {
-		const accounts: UserAccount[] = userResource.data?.all_accounts ?? []
-		return (calendars.data ?? []).map((cal) => ({
-			label: cal._name,
-			description:
-				cal.account === accountId.value
-					? undefined
-					: accounts.find((a) => a.id === cal.account)?._name,
-			value: cal.name,
-			account: cal.account,
-			color: calendarColor(calendars.data, cal.name),
-			writable: !!cal.may_write_all,
-		}))
-	})
-
-	// One account's calendars, keyed by their bare id, for what works on a single account:
-	// import and export.
-	const accountCalendarOptions = (account: string) =>
-		calendarOptions.value
-			.filter((option) => option.account === account)
-			.map((option) => ({ ...option, value: option.value.split('|')[1] }))
-
-	// The organizer of a new event. Invites go out as mail from the organizer's address,
-	// so only a participant identity that is also a mail identity qualifies. Among those
-	// the one flagged default wins, else the first. Undefined until both lists have
-	// loaded, or when no address is on both.
-	const organizerIdentity = computed<ParticipantIdentity | undefined>(() => {
-		const sendable = new Set<string>((identities.data ?? []).map((i: { email: string }) => i.email))
-		const candidates: ParticipantIdentity[] = (participantIdentities.data ?? []).filter((i) =>
-			sendable.has(i.email),
-		)
-		return candidates.find((i) => i.default) ?? candidates[0]
-	})
-
-	return {
-		accountId,
-		resolveAccount,
-		userResource,
-		identities,
-		participantIdentities,
-		calendars,
-		hiddenShared,
-		calendarOptions,
-		accountCalendarOptions,
-		organizerIdentity,
-	}
+  // What the event form reads, loaded for a form opened outside Calendar, where no route guard has
+  // asked for any of it: the account, then its identities and calendars. Resolves once each has
+  // answered, loaded or not, or has taken too long to wait for.
+  const loadForEventForm = async () => {
+    if (userQuery.data === undefined) await loadUser().catch(() => undefined)
+    resolveAccount(userData.value?.accounts)
+    if (!accountId.value) return
+    await Promise.all(
+      [identities, participantIdentities, calendarQuery].map((query) =>
+        until(() => query.status).not.toBe('pending', { timeout: FORM_LOAD_WAIT_MS }),
+      ),
+    )
+  }
+  return {
+    accountId,
+    resolveAccount,
+    userResource,
+    loadUser,
+    loadForEventForm,
+    identities,
+    participantIdentities,
+    calendars,
+    sharedVisibility,
+    calendarOptions,
+    accountCalendarOptions,
+    organizerIdentity,
+  }
 })

@@ -257,7 +257,7 @@ export class AudioIngester {
 			loggers.stt.error(
 				'Failed to start AudioIngester for %s: %s',
 				this.participantId,
-				(error as Error).message,
+				error instanceof Error ? error.message : String(error),
 			);
 			throw error;
 		}
@@ -513,7 +513,10 @@ export class AudioIngester {
 				})
 				.catch((error) => {
 					if (!this.running || generation !== this.vadGeneration) return;
-					loggers.stt.error('VAD check error: %s', (error as Error).message);
+					loggers.stt.error(
+						'VAD check error: %s',
+						error instanceof Error ? error.message : String(error),
+					);
 					this.notifyFailure();
 				});
 		};

@@ -20,7 +20,7 @@
         </div>
         <div class="text-xs text-ink-gray-6">Edited {{ item.relativeModified }}</div>
       </button>
-      <span v-if="loading" class="text-xs text-ink-gray-5 p-1">Loading...</span>
+      <span v-if="loading" class="text-xs text-ink-gray-5 p-1">Loading…</span>
     </div>
   </div>
 </template>

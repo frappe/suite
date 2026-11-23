@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { TransportManager } from '../TransportManager';
 
@@ -31,16 +32,16 @@ describe('TransportManager', () => {
 			manager.createWebRtcTransport(
 				'room-1',
 				'peer-1',
-				router as never,
-				{} as never,
+				fromPartial(router),
+				fromPartial({}),
 				'recv',
 				options,
 			),
 			manager.createWebRtcTransport(
 				'room-1',
 				'peer-1',
-				router as never,
-				{} as never,
+				fromPartial(router),
+				fromPartial({}),
 				'recv',
 				options,
 			),
@@ -66,16 +67,16 @@ describe('TransportManager', () => {
 		await manager.createWebRtcTransport(
 			'room-1',
 			'peer-1',
-			router as never,
-			{} as never,
+			fromPartial(router),
+			fromPartial({}),
 			'recv',
 			options,
 		);
 		await manager.createWebRtcTransport(
 			'room-1',
 			'peer-1',
-			router as never,
-			{} as never,
+			fromPartial(router),
+			fromPartial({}),
 			'recv',
 			options,
 		);
@@ -103,8 +104,8 @@ describe('TransportManager', () => {
 		const creation = manager.createWebRtcTransport(
 			'room-1',
 			'peer-1',
-			router as never,
-			{} as never,
+			fromPartial(router),
+			fromPartial({}),
 			'recv',
 			options,
 		);

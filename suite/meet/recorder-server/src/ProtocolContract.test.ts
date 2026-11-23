@@ -21,6 +21,7 @@ import {
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type JsonObject = { [key: string]: JsonValue };
 
+// SAFETY: The repository-owned recording/contracts/v1.json defines this test matrix; the tests below check its version, vocabulary, and each parser vector.
 const contract = JSON.parse(
 	readFileSync(
 		resolve(process.cwd(), '../recording/contracts/v1.json'),
@@ -70,6 +71,7 @@ const contract = JSON.parse(
 	};
 };
 
+// SAFETY: recording/contracts/finalization-v1.json is the checked-in finalization matrix exercised by the validators in this test.
 const finalizationContract = JSON.parse(
 	readFileSync(
 		resolve(process.cwd(), '../recording/contracts/finalization-v1.json'),

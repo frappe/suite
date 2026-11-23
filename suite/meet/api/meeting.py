@@ -142,6 +142,7 @@ def _build_sfu_connection_details(meeting: MeetRoom, user: str) -> dict:
         "is_cohost": is_cohost,
         "codec_strategy": settings.codec_strategy or "svc",
         "recording_enabled": bool(settings.enable_recording),
+        "recording": get_active_recording_state(meeting.name),
         "e2ee_required": e2ee_required,
         "user_data": {
             "name": user_fullname,

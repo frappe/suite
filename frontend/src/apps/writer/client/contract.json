@@ -1,0 +1,283 @@
+{
+  "owner": "writer",
+  "prefix": "/api/suite/writer/",
+  "operations": [
+    {
+      "id": "document",
+      "kind": "query",
+      "publicName": "documents.get",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "documents/{name}",
+      "pathParams": [
+        "name"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "ConversionStatus": {
+            "properties": {
+              "state": {
+                "title": "State",
+                "type": "string"
+              },
+              "reason": {
+                "title": "Reason",
+                "type": "string"
+              },
+              "rooms": {
+                "$ref": "#/$defs/Rooms"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "title": "ConversionStatus",
+            "type": "object"
+          },
+          "Rooms": {
+            "properties": {
+              "epoch": {
+                "title": "Epoch",
+                "type": "integer"
+              },
+              "keys": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Keys",
+                "type": "array"
+              },
+              "epoch_seconds": {
+                "title": "Epoch Seconds",
+                "type": "integer"
+              },
+              "server_time": {
+                "title": "Server Time",
+                "type": "number"
+              }
+            },
+            "required": [
+              "epoch",
+              "keys",
+              "epoch_seconds",
+              "server_time"
+            ],
+            "title": "Rooms",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "collab": {
+            "title": "Collab",
+            "type": "integer"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content"
+          },
+          "html": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html"
+          },
+          "ycomments": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ycomments"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
+          "conversion": {
+            "$ref": "#/$defs/ConversionStatus"
+          },
+          "content_modified": {
+            "title": "Content Modified",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "WriterRow",
+        "type": "object"
+      },
+      "errors": [
+        "DoesNotExistError",
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "document_settings",
+      "kind": "mutation",
+      "publicName": "documents.updateSettings",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "documents/{name}/settings",
+      "pathParams": [
+        "name"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "data": {
+            "title": "Data",
+            "type": "string"
+          }
+        },
+        "required": [
+          "data"
+        ],
+        "title": "SaveSettings",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "DoesNotExistError",
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "old_body",
+      "kind": "query",
+      "publicName": "documents.oldBody",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "/api/v2/method/suite.writer.api.docs.old_body",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          }
+        },
+        "required": [
+          "node"
+        ],
+        "title": "OldBodyQuery",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "title": "OldBody",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "convert_version",
+      "kind": "mutation",
+      "publicName": "versions.convert",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "/api/v2/method/suite.writer.api.docs.convert_version",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "node": {
+            "title": "Node",
+            "type": "string"
+          },
+          "seq": {
+            "title": "Seq",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "node",
+          "seq"
+        ],
+        "title": "ConvertVersion",
+        "type": "object"
+      },
+      "output": {
+        "properties": {
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "boolean"
+          }
+        },
+        "title": "VersionConversion",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    }
+  ]
+}

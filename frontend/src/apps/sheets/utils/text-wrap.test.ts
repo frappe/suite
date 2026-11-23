@@ -1,8 +1,9 @@
-import { describe, it, expect } from 'vitest'
-import { getTextWrap, isWrapText, WRAP_MODES, lineHeightFor, wrapLines } from './text-wrap.js'
+import { describe, expect, it } from 'vitest'
+
+import { getTextWrap, isWrapText, lineHeightFor, WRAP_MODES, wrapLines } from './text-wrap.js'
 
 // Monospace stand-in: every char is 10px wide, matching the canvas mock style.
-const mono = t => t.length * 10
+const mono = (t) => t.length * 10
 
 describe('getTextWrap', () => {
   it('returns "overflow" for missing format / missing field', () => {
@@ -90,5 +91,21 @@ describe('wrapLines', () => {
   it('combines hard newlines with soft-wrapping', () => {
     // "aa bb" wraps to 2 at maxW=20; plus the "cc" paragraph = 3 visual lines.
     expect(wrapLines('aa bb\ncc', 20, mono)).toEqual(['aa', 'bb', 'cc'])
+  })
+
+  it('moves a whole word to the next line instead of splitting it', () => {
+    // 150px fits 15 chars. "Strike me through" is 17, so "through" starts
+    // the next line rather than leaving "throu" behind.
+    expect(wrapLines('Strike me through on every wrapped line please', 150, mono)).toEqual([
+      'Strike me',
+      'through on',
+      'every wrapped',
+      'line please',
+    ])
+  })
+
+  it('splits by letters only a word wider than the cell, starting on its own line', () => {
+    expect(wrapLines('ab abcdefgh', 40, mono)).toEqual(['ab', 'abcd', 'efgh'])
+    expect(wrapLines('abcdefgh ab', 40, mono)).toEqual(['abcd', 'efgh', 'ab'])
   })
 })

@@ -116,8 +116,8 @@ are real and are not mocked when the scenario completes successfully.
 ```bash
 yarn --cwd e2e test:meet-load
 yarn --cwd e2e typecheck
-yarn knip:e2e
-yarn check:meet-types
-yarn test:meet-type-policy
+pnpm knip:e2e
+pnpm check:meet-types
+pnpm test:meet-type-policy
 git diff --check
 ```

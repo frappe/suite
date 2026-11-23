@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { ConsumerManager } from '../ConsumerManager';
 
@@ -21,12 +22,12 @@ describe('ConsumerManager', () => {
 			consume: vi.fn().mockResolvedValue(consumer),
 		};
 		await manager.createConsumer(
-			transport as never,
-			{ closed: false } as never,
+			fromPartial(transport),
+			fromPartial({ closed: false }),
 			'producer-1',
 			'room-1',
 			'peer-1',
-			{} as never,
+			fromPartial({}),
 		);
 		consumer.emit('transportclose');
 
@@ -53,12 +54,12 @@ describe('ConsumerManager', () => {
 
 		await expect(
 			manager.createConsumer(
-				transport as never,
-				{ closed: false } as never,
+				fromPartial(transport),
+				fromPartial({ closed: false }),
 				'producer-1',
 				'room-1',
 				'peer-1',
-				{} as never,
+				fromPartial({}),
 			),
 		).rejects.toThrow('resume failed');
 
@@ -83,17 +84,17 @@ describe('motion-preserving layer preferences', () => {
 			close: vi.fn(),
 		});
 		await manager.createConsumer(
-			{
+			fromPartial({
 				id: 't',
 				closed: false,
 				dtlsState: 'connected',
 				consume: vi.fn().mockResolvedValue(consumer),
-			} as never,
-			{ closed: false } as never,
+			}),
+			fromPartial({ closed: false }),
 			'p',
 			'r',
 			'receiver',
-			{} as never,
+			fromPartial({}),
 		);
 		await manager.setConsumerPreferredLayers('moving-video', 0);
 		expect(consumer.setPreferredLayers).toHaveBeenCalledWith({
@@ -116,16 +117,36 @@ describe('receiver-ready startup', () => {
 	] as const)('starts %s with readiness requested=%s (running=%s)', async (kind, startPaused, running) => {
 		const manager = new ConsumerManager();
 		const consumer = Object.assign(new EventEmitter(), {
-			id: 'fresh', kind, paused: true, rtpParameters: {}, close: vi.fn(),
-			resume: vi.fn(async () => { consumer.paused = false; }),
+			id: 'fresh',
+			kind,
+			paused: true,
+			rtpParameters: {},
+			close: vi.fn(),
+			resume: vi.fn(async () => {
+				consumer.paused = false;
+			}),
 			requestKeyFrame: vi.fn().mockResolvedValue(undefined),
 		});
-		const response = await manager.createConsumer({ id: 'recv', closed: false, dtlsState: 'connected', consume: vi.fn().mockResolvedValue(consumer) } as never,
-			{ closed: false } as never, 'producer', 'room', 'peer', {}, startPaused);
+		const response = await manager.createConsumer(
+			fromPartial({
+				id: 'recv',
+				closed: false,
+				dtlsState: 'connected',
+				consume: vi.fn().mockResolvedValue(consumer),
+			}),
+			fromPartial({ closed: false }),
+			'producer',
+			'room',
+			'peer',
+			{},
+			startPaused,
+		);
 		expect(response.paused).toBe(!running);
 		expect(consumer.paused).toBe(!running);
 		expect(consumer.resume).toHaveBeenCalledTimes(running ? 1 : 0);
-		expect(consumer.requestKeyFrame).toHaveBeenCalledTimes(running && kind === 'video' ? 1 : 0);
+		expect(consumer.requestKeyFrame).toHaveBeenCalledTimes(
+			running && kind === 'video' ? 1 : 0,
+		);
 		if (!running) {
 			expect(await manager.resumeConsumer('fresh')).toBe(true);
 			expect(consumer.paused).toBe(false);
@@ -140,12 +161,31 @@ describe('idempotent resume', () => {
 	async function setup() {
 		const manager = new ConsumerManager();
 		const consumer = Object.assign(new EventEmitter(), {
-			id: 'retry', kind: 'video', paused: true, closed: false, rtpParameters: {},
-			close: vi.fn(), requestKeyFrame: vi.fn(),
-			resume: vi.fn(async () => { consumer.paused = false; }),
+			id: 'retry',
+			kind: 'video',
+			paused: true,
+			closed: false,
+			rtpParameters: {},
+			close: vi.fn(),
+			requestKeyFrame: vi.fn(),
+			resume: vi.fn(async () => {
+				consumer.paused = false;
+			}),
 		});
-		await manager.createConsumer({ id: 'recv', closed: false, dtlsState: 'connected', consume: vi.fn().mockResolvedValue(consumer) } as never,
-			{ closed: false } as never, 'producer', 'room', 'peer', {}, true);
+		await manager.createConsumer(
+			fromPartial({
+				id: 'recv',
+				closed: false,
+				dtlsState: 'connected',
+				consume: vi.fn().mockResolvedValue(consumer),
+			}),
+			fromPartial({ closed: false }),
+			'producer',
+			'room',
+			'peer',
+			{},
+			true,
+		);
 		return { manager, consumer };
 	}
 
@@ -160,8 +200,13 @@ describe('idempotent resume', () => {
 	it('accepts concurrent readiness retries', async () => {
 		const { manager, consumer } = await setup();
 		let finish!: () => void;
-		const pending = new Promise<void>((resolve) => { finish = resolve; });
-		consumer.resume.mockImplementation(async () => { await pending; consumer.paused = false; });
+		const pending = new Promise<void>((resolve) => {
+			finish = resolve;
+		});
+		consumer.resume.mockImplementation(async () => {
+			await pending;
+			consumer.paused = false;
+		});
 		const first = manager.resumeConsumer('retry');
 		const second = manager.resumeConsumer('retry');
 		finish();
@@ -175,14 +220,22 @@ describe('idempotent resume', () => {
 		consumer.closed = true;
 		expect(await manager.resumeConsumer('retry')).toBe(false);
 		consumer.closed = false;
-		consumer.resume.mockImplementation(async () => { manager.closeConsumer('retry'); consumer.paused = false; });
+		consumer.resume.mockImplementation(async () => {
+			manager.closeConsumer('retry');
+			consumer.paused = false;
+		});
 		expect(await manager.resumeConsumer('retry')).toBe(false);
 	});
 
 	it('rejects a consumer closed while resume is pending', async () => {
 		const { manager, consumer } = await setup();
 		let finish!: () => void;
-		consumer.resume.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+		consumer.resume.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					finish = resolve;
+				}),
+		);
 		const result = manager.resumeConsumer('retry');
 		consumer.closed = true;
 		consumer.paused = false;
@@ -196,5 +249,4 @@ describe('idempotent resume', () => {
 		expect(await manager.resumeConsumer('retry')).toBe(false);
 		expect(consumer.paused).toBe(true);
 	});
-
 });

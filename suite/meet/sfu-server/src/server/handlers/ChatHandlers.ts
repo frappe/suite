@@ -92,11 +92,11 @@ export function registerChatHandlers(deps: HandlerDeps) {
 			} catch (e) {
 				callback?.({
 					success: false,
-					error: (e as Error).message || String(e),
+					error: (e instanceof Error ? e.message : String(e)) || String(e),
 				});
 				loggers.socketHandler.warn(
 					'chat:send handling failed: %s',
-					(e as Error).message || e,
+					(e instanceof Error ? e.message : String(e)) || e,
 				);
 			}
 		});
@@ -169,11 +169,11 @@ export function registerChatHandlers(deps: HandlerDeps) {
 			} catch (e) {
 				callback?.({
 					success: false,
-					error: (e as Error).message || String(e),
+					error: (e instanceof Error ? e.message : String(e)) || String(e),
 				});
 				loggers.socketHandler.warn(
 					'chat:pin handling failed: %s',
-					(e as Error).message || e,
+					(e instanceof Error ? e.message : String(e)) || e,
 				);
 			}
 		});

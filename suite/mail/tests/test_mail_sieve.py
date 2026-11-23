@@ -126,7 +126,7 @@ class TestMailSieve(StalwartIntegrationTestCase):
 
         def filed():
             with self.set_user(self.member.email):
-                threads, _ = get_threads(self.account, mailbox_id, limit=20)
+                threads = get_threads(self.account, mailbox_id, limit=20)["rows"]
                 return next((t for t in threads if t["subject"] == subject), None)
 
         thread = self.wait_until(

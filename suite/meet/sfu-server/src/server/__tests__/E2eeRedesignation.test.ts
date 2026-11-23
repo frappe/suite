@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 // Smoke tests for the committer redesignation timer. Run via:
 //   yarn test
 //
@@ -12,7 +13,7 @@
 //   3. After MAX_REDESIGNATIONS attempts, the SFU gives up and stops
 //      emitting commit-requests.
 
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
 import {
 	InMemoryRosterPersistence,
@@ -20,7 +21,10 @@ import {
 } from '../E2eeRosterPersistence';
 import { E2eeRosterStore } from '../E2eeRosterStore';
 
-function assert(condition: unknown, message: string): asserts condition {
+function assert<Condition>(
+	condition: Condition,
+	message: string,
+): asserts condition {
 	if (!condition) throw new Error(`assertion failed: ${message}`);
 }
 
@@ -45,61 +49,6 @@ type CommitRequestEnvelope = {
 	membershipDeltaHash?: string;
 	rosterHash?: string;
 	joiningSenderIds?: number[];
-};
-
-type CommitEnvelope = {
-	type: string;
-	fromParticipantId: string;
-	fromSenderId: number;
-	previousEpochNumber: number;
-	epochNumber: number;
-	membershipDeltaId: string;
-	membershipDeltaHash: string;
-	rosterHash: string;
-	mlsCommit: string;
-};
-
-type TestRelay = {
-	requestCommitFromHost: (
-		roomId: string,
-		joiningSenderIds: number[],
-		epochNumber: number,
-	) => Promise<void>;
-	redesignate: (roomId: string, epochNumber: number) => Promise<void>;
-	relayCommit: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: CommitEnvelope,
-	) => Promise<void>;
-	relayWelcome: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: {
-			type: string;
-			toSenderId: number;
-			epochNumber: number;
-			mlsWelcome: string;
-		},
-	) => Promise<void>;
-	relayKeyPackage: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: {
-			type: string;
-			epochNumber: number;
-			keyPackage: string;
-		},
-	) => Promise<void>;
-	recordAck: (
-		roomId: string,
-		fromParticipantId: string,
-		fromSenderId: number,
-		payload: { type: string; epochNumber: number },
-		isHost?: boolean,
-	) => Promise<void>;
 };
 
 async function main(): Promise<void> {
@@ -143,7 +92,7 @@ async function main(): Promise<void> {
 			}
 		},
 	});
-	const fakeIo = {
+	const fakeIo = fromPartial<ConstructorParameters<typeof E2EEEpochRelay>[0]>({
 		sockets: {
 			adapter: {
 				rooms: new Map<string, Set<string>>([
@@ -167,7 +116,7 @@ async function main(): Promise<void> {
 				],
 			]),
 		},
-	} as never;
+	});
 
 	const relay = new E2EEEpochRelay(
 		fakeIo,
@@ -201,25 +150,25 @@ async function main(): Promise<void> {
 		makeEntry(11, { participantId: 'bob-1', joinedAt: 3 }),
 	);
 	relay.setRoster(roster);
-	const testRelay = relay as unknown as TestRelay;
+	const testRelay = relay;
 
 	// -------- Test 0: host genesis ack admits the host and retries pending joins --------
-	await testRelay.requestCommitFromHost('meeting-empty', [13], 1);
-	assert(
-		(sent as { length: number }).length === 0,
-		`expected pending request to wait before host ack, got ${(sent as { length: number }).length}`,
-	);
-	await testRelay.recordAck(
+	await testRelay['requestCommitFromHost']('meeting-empty', [13], 1);
+	expect(
+		sent,
+		`expected pending request to wait before host ack, got ${sent.length}`,
+	).toHaveLength(0);
+	await testRelay['recordAck'](
 		'meeting-empty',
 		'host-empty',
 		7,
 		{ type: 'ack', epochNumber: 1 },
 		true,
 	);
-	assert(
-		(sent as { length: number }).length === 1,
-		`expected admitted host to receive pending commit-request, got ${(sent as { length: number }).length}`,
-	);
+	expect(
+		sent,
+		`expected admitted host to receive pending commit-request, got ${sent.length}`,
+	).toHaveLength(1);
 	assert(
 		sent[0].target === 'host-empty',
 		`expected admitted host-empty to receive commit-request, got ${sent[0].target}`,
@@ -236,26 +185,26 @@ async function main(): Promise<void> {
 	sent.splice(0, sent.length);
 
 	// -------- Test 1: admitted member key-package is not treated as a joiner --------
-	await testRelay.relayKeyPackage('meeting-1', 'host-1', 7, {
+	await testRelay['relayKeyPackage']('meeting-1', 'host-1', 7, {
 		type: 'key-package',
 		epochNumber: 1,
 		keyPackage: Buffer.from([1, 2, 3]).toString('base64'),
 	});
 	await new Promise((resolve) => setTimeout(resolve, 400));
-	assert(
-		(sent as { length: number }).length === 0,
-		`expected admitted host key-package to be ignored, got ${(sent as { length: number }).length}`,
-	);
-	await testRelay.relayKeyPackage('meeting-1', 'joiner-13', 13, {
+	expect(
+		sent,
+		`expected admitted host key-package to be ignored, got ${sent.length}`,
+	).toHaveLength(0);
+	await testRelay['relayKeyPackage']('meeting-1', 'joiner-13', 13, {
 		type: 'key-package',
 		epochNumber: 1,
 		keyPackage: Buffer.from([4, 5, 6]).toString('base64'),
 	});
 	await new Promise((resolve) => setTimeout(resolve, 400));
-	assert(
-		(sent as { length: number }).length === 1,
-		`expected real joiner key-package to dispatch one commit-request, got ${(sent as { length: number }).length}`,
-	);
+	expect(
+		sent,
+		`expected real joiner key-package to dispatch one commit-request, got ${sent.length}`,
+	).toHaveLength(1);
 	assert(
 		sent[0].joiningSenderIds.length === 1 && sent[0].joiningSenderIds[0] === 13,
 		`expected real joiner request to include only [13], got ${JSON.stringify(sent[0].joiningSenderIds)}`,
@@ -276,11 +225,11 @@ async function main(): Promise<void> {
 	sent.splice(0, sent.length);
 
 	// -------- Test 2: redesignation after timeout --------
-	await testRelay.requestCommitFromHost('meeting-1', [13], 1);
-	assert(
-		(sent as { length: number }).length === 1,
-		`expected first commit-request immediately, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['requestCommitFromHost']('meeting-1', [13], 1);
+	expect(
+		sent,
+		`expected first commit-request immediately, got ${sent.length}`,
+	).toHaveLength(1);
 	assert(
 		sent[0].committerSenderId === 7,
 		`first attempt should target host (7), got ${sent[0].committerSenderId}`,
@@ -291,11 +240,11 @@ async function main(): Promise<void> {
 	);
 
 	// Trigger redesignation directly (avoid waiting COMMITTER_TIMEOUT_MS).
-	await testRelay.redesignate('meeting-1', 1);
-	assert(
-		(sent as { length: number }).length === 2,
-		`expected second commit-request after redesignate, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['redesignate']('meeting-1', 1);
+	expect(
+		sent,
+		`expected second commit-request after redesignate, got ${sent.length}`,
+	).toHaveLength(2);
 	const second = sent[1] ?? {};
 	assert(
 		second.committerSenderId !== sent[0].committerSenderId,
@@ -306,33 +255,33 @@ async function main(): Promise<void> {
 		`second attempt should target oldest non-host (alice, 9), got ${second.committerSenderId}`,
 	);
 
-	await testRelay.redesignate('meeting-1', 1);
-	assert(
-		(sent as { length: number }).length === 3,
-		`expected third commit-request after second redesignate, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['redesignate']('meeting-1', 1);
+	expect(
+		sent,
+		`expected third commit-request after second redesignate, got ${sent.length}`,
+	).toHaveLength(3);
 	const third = sent[2] ?? {};
 	assert(
 		third.committerSenderId === 11,
 		`third attempt should target bob (11), got ${third.committerSenderId}`,
 	);
 
-	await testRelay.redesignate('meeting-1', 1);
-	assert(
-		(sent as { length: number }).length === 3,
-		`expected no further commit-requests after MAX_REDESIGNATIONS, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['redesignate']('meeting-1', 1);
+	expect(
+		sent,
+		`expected no further commit-requests after MAX_REDESIGNATIONS, got ${sent.length}`,
+	).toHaveLength(3);
 
-	await testRelay.relayKeyPackage('meeting-1', 'joiner-13', 13, {
+	await testRelay['relayKeyPackage']('meeting-1', 'joiner-13', 13, {
 		type: 'key-package',
 		epochNumber: 1,
 		keyPackage: Buffer.from([4, 5, 6]).toString('base64'),
 	});
 	await new Promise((resolve) => setTimeout(resolve, 400));
-	assert(
-		(sent as { length: number }).length === 4,
-		`expected fresh key-package to restart admission after exhausted retries, got ${(sent as { length: number }).length}`,
-	);
+	expect(
+		sent,
+		`expected fresh key-package to restart admission after exhausted retries, got ${sent.length}`,
+	).toHaveLength(4);
 	assert(
 		sent[3].committerSenderId === 7,
 		`fresh key-package should make host eligible again, got ${sent[3].committerSenderId}`,
@@ -346,11 +295,11 @@ async function main(): Promise<void> {
 			joinedAt: 0,
 		}),
 	);
-	await testRelay.requestCommitFromHost('meeting-1', [19], 1);
-	assert(
-		(sent as { length: number }).length === 1,
-		`expected stale roster host to be pruned and live host to receive commit-request, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['requestCommitFromHost']('meeting-1', [19], 1);
+	expect(
+		sent,
+		`expected stale roster host to be pruned and live host to receive commit-request, got ${sent.length}`,
+	).toHaveLength(1);
 	assert(
 		sent[0].target === 'host-1',
 		`expected commit-request to target live host-1 after pruning stale-host, got ${sent[0].target}`,
@@ -359,7 +308,7 @@ async function main(): Promise<void> {
 		(await roster.get('meeting-1', 19)) === undefined,
 		'pending joiner should not be in roster before ack',
 	);
-	await testRelay.recordAck('meeting-1', 'joiner-21', 21, {
+	await testRelay['recordAck']('meeting-1', 'joiner-21', 21, {
 		type: 'ack',
 		epochNumber: 2,
 	});
@@ -367,13 +316,13 @@ async function main(): Promise<void> {
 		(await roster.get('meeting-1', 21)) === undefined,
 		'joiner ack without retained welcome should not be promoted into roster',
 	);
-	await testRelay.relayWelcome('meeting-1', 'host-1', 7, {
+	await testRelay['relayWelcome']('meeting-1', 'host-1', 7, {
 		type: 'welcome',
 		toSenderId: 19,
 		epochNumber: 2,
 		mlsWelcome: Buffer.from([9, 9, 9]).toString('base64'),
 	});
-	await testRelay.recordAck('meeting-1', 'joiner-19', 19, {
+	await testRelay['recordAck']('meeting-1', 'joiner-19', 19, {
 		type: 'ack',
 		epochNumber: 2,
 	});
@@ -385,16 +334,16 @@ async function main(): Promise<void> {
 
 	// -------- Test 2: relay commit clears pending --------
 	sent.splice(0, sent.length);
-	await testRelay.requestCommitFromHost('meeting-1', [15], 2);
-	assert(
-		(sent as { length: number }).length === 1,
-		`expected one commit-request after fresh request, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['requestCommitFromHost']('meeting-1', [15], 2);
+	expect(
+		sent,
+		`expected one commit-request after fresh request, got ${sent.length}`,
+	).toHaveLength(1);
 	const first = sent[0];
 	const commitCountBefore = sentBySocket.filter(
 		(entry) => entry.envelope.type === 'commit',
 	).length;
-	await testRelay.relayCommit('meeting-1', 'alice-1', 9, {
+	await testRelay['relayCommit']('meeting-1', 'alice-1', 9, {
 		type: 'commit',
 		fromParticipantId: 'alice-1',
 		fromSenderId: 9,
@@ -411,7 +360,7 @@ async function main(): Promise<void> {
 		'non-designated committer should not have its commit broadcast',
 	);
 
-	await testRelay.relayCommit('meeting-1', 'host-1', 7, {
+	await testRelay['relayCommit']('meeting-1', 'host-1', 7, {
 		type: 'commit',
 		fromParticipantId: 'host-1',
 		fromSenderId: 7,
@@ -423,11 +372,11 @@ async function main(): Promise<void> {
 		mlsCommit: Buffer.from([1, 2, 3]).toString('base64'),
 	});
 
-	await testRelay.redesignate('meeting-1', first.epochNumber);
-	assert(
-		(sent as { length: number }).length === 1,
-		`expected no further commit-requests after commit cleared pending, got ${(sent as { length: number }).length}`,
-	);
+	await testRelay['redesignate']('meeting-1', first.epochNumber);
+	expect(
+		sent,
+		`expected no further commit-requests after commit cleared pending, got ${sent.length}`,
+	).toHaveLength(1);
 
 	console.log('Committer redesignation tests passed');
 }

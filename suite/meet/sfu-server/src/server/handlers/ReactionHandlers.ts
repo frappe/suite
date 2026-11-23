@@ -32,7 +32,7 @@ export function registerReactionHandlers(deps: HandlerDeps) {
 			} catch (e) {
 				loggers.socketHandler.warn(
 					'reaction:send handling failed: %s',
-					(e as Error).message || e,
+					(e instanceof Error ? e.message : String(e)) || e,
 				);
 			}
 		});

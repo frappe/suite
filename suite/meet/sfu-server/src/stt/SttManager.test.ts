@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Producer, Router } from 'mediasoup/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioIngester } from './AudioIngester';
@@ -41,12 +42,17 @@ describe('SttManager', () => {
 		vi.spyOn(AudioIngester.prototype, 'start').mockResolvedValue();
 		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
 		const manager = new SttManager({ sttClient: createSttClient().client });
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
 		manager.beginSession('room-1', 'socket-2');
-		await manager.startTranscription('room-1', 'peer-1', 'Alice', {
-			id: 'producer-1',
-		} as Producer);
+		await manager.startTranscription(
+			'room-1',
+			'peer-1',
+			'Alice',
+			fromPartial<Producer>({
+				id: 'producer-1',
+			}),
+		);
 		expect(manager.getResourceCounts()).toEqual({
 			stt_subscribed_rooms: 1,
 			stt_subscribers: 2,
@@ -65,9 +71,9 @@ describe('SttManager', () => {
 			.mockResolvedValue();
 		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
 		const manager = new SttManager({ sttClient: createSttClient().client });
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
-		const producer = { id: 'producer-1', closed: false } as Producer;
+		const producer = fromPartial<Producer>({ id: 'producer-1', closed: false });
 
 		await expect(
 			manager.startTranscription('room-1', 'peer-1', 'Alice', producer),
@@ -98,17 +104,8 @@ describe('SttManager', () => {
 		manager.beginSession('room-1', 'socket-1');
 		manager.setEmitToSubscribers(emit);
 
-		const internals = manager as unknown as {
-			handleTranscript: (
-				roomId: string,
-				participantId: string,
-				participantName: string,
-				text: string,
-				isFinal: boolean,
-				durationMs: number,
-			) => void;
-		};
-		internals.handleTranscript(
+		const internals = manager;
+		internals['handleTranscript'](
 			'room-1',
 			'participant-1',
 			'Alice',
@@ -130,38 +127,24 @@ describe('SttManager', () => {
 		const sttClient = createSttClient(true);
 		const manager = new SttManager({ sttClient: sttClient.client });
 		const emit = vi.fn();
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
 		manager.setEmitToSubscribers(emit);
-		const start = manager.startTranscription as unknown as (
-			roomId: string,
-			peerId: string,
-			participantName: string,
-			producer: Producer,
-			participantId: string,
-		) => Promise<void>;
+		const start = manager.startTranscription;
 
 		await start.call(
 			manager,
 			'room-1',
 			'peer-connection-id',
 			'Alice',
-			{ id: 'producer-1', closed: false } as Producer,
+			fromPartial<Producer>({ id: 'producer-1', closed: false }),
 			'user@example.com',
 		);
-		const internals = manager as unknown as {
-			activeSessions: Map<string, AudioIngester>;
-		};
-		const ingester = internals.activeSessions.get(
+		const internals = manager;
+		const ingester = internals['activeSessions'].get(
 			'room-1:peer-connection-id:producer-1',
-		)! as unknown as {
-			onTranscript: (
-				text: string,
-				isFinal: boolean,
-				durationMs: number,
-			) => void;
-		};
-		ingester.onTranscript('Hello', true, 100);
+		)!;
+		ingester['onTranscript']('Hello', true, 100);
 
 		expect(emit).toHaveBeenCalledWith(
 			'room-1',
@@ -181,10 +164,16 @@ describe('SttManager', () => {
 		const stop = vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
 		const sttClient = createSttClient(true);
 		const manager = new SttManager({ sttClient: sttClient.client });
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
-		const producerA = { id: 'producer-a', closed: false } as Producer;
-		const producerB = { id: 'producer-b', closed: false } as Producer;
+		const producerA = fromPartial<Producer>({
+			id: 'producer-a',
+			closed: false,
+		});
+		const producerB = fromPartial<Producer>({
+			id: 'producer-b',
+			closed: false,
+		});
 
 		await manager.startTranscription(
 			'room-1',
@@ -198,32 +187,28 @@ describe('SttManager', () => {
 			'Bob',
 			producerB,
 		);
-		const internals = manager as unknown as {
-			activeSessions: Map<string, AudioIngester>;
-		};
-		const failed = internals.activeSessions.get(
+		const internals = manager;
+		const failed = internals['activeSessions'].get(
 			'room-1:participant-a:producer-a',
 		)!;
-		const healthy = internals.activeSessions.get(
+		const healthy = internals['activeSessions'].get(
 			'room-1:participant-b:producer-b',
 		)!;
-		const failedInternals = failed as unknown as {
-			onUnexpectedStreamClose: () => void;
-		};
+		const failedInternals = failed;
 
-		failedInternals.onUnexpectedStreamClose();
+		failedInternals['onUnexpectedStreamClose']();
 
 		await vi.waitFor(() => {
 			expect(
-				internals.activeSessions.get('room-1:participant-a:producer-a'),
+				internals['activeSessions'].get('room-1:participant-a:producer-a'),
 			).not.toBe(failed);
 		});
 		expect(stop).toHaveBeenCalledOnce();
 		expect(stop.mock.contexts[0]).toBe(failed);
 		expect(
-			internals.activeSessions.get('room-1:participant-b:producer-b'),
+			internals['activeSessions'].get('room-1:participant-b:producer-b'),
 		).toBe(healthy);
-		expect(internals.activeSessions).toHaveLength(2);
+		expect(internals['activeSessions']).toHaveLength(2);
 		expect(AudioIngester.prototype.start).toHaveBeenCalledTimes(3);
 	});
 
@@ -237,34 +222,30 @@ describe('SttManager', () => {
 		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
 		const sttClient = createSttClient(true);
 		const manager = new SttManager({ sttClient: sttClient.client });
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
-		const producer = { id: 'producer-a', closed: false } as Producer;
+		const producer = fromPartial<Producer>({ id: 'producer-a', closed: false });
 		await manager.startTranscription(
 			'room-1',
 			'participant-a',
 			'Alice',
 			producer,
 		);
-		const internals = manager as unknown as {
-			activeSessions: Map<string, AudioIngester>;
-		};
+		const internals = manager;
 		const sessionKey = 'room-1:participant-a:producer-a';
-		const failed = internals.activeSessions.get(sessionKey)!;
+		const failed = internals['activeSessions'].get(sessionKey)!;
 
-		(
-			failed as unknown as { onUnexpectedStreamClose: () => void }
-		).onUnexpectedStreamClose();
+		failed['onUnexpectedStreamClose']();
 		await vi.advanceTimersByTimeAsync(0);
 
 		expect(start).toHaveBeenCalledTimes(2);
-		expect(internals.activeSessions.get(sessionKey)).toBeUndefined();
+		expect(internals['activeSessions'].get(sessionKey)).toBeUndefined();
 
 		await vi.advanceTimersByTimeAsync(1000);
 
 		expect(start).toHaveBeenCalledTimes(3);
-		expect(internals.activeSessions.get(sessionKey)).toBeDefined();
-		expect(internals.activeSessions.get(sessionKey)).not.toBe(failed);
+		expect(internals['activeSessions'].get(sessionKey)).toBeDefined();
+		expect(internals['activeSessions'].get(sessionKey)).not.toBe(failed);
 	});
 
 	it('blocks new sessions until overlapping room stops finish', async () => {
@@ -278,12 +259,17 @@ describe('SttManager', () => {
 		);
 		const sttClient = createSttClient(true);
 		const manager = new SttManager({ sttClient: sttClient.client });
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
-		await manager.startTranscription('room-1', 'participant-a', 'Alice', {
-			id: 'producer-a',
-			closed: false,
-		} as Producer);
+		await manager.startTranscription(
+			'room-1',
+			'participant-a',
+			'Alice',
+			fromPartial<Producer>({
+				id: 'producer-a',
+				closed: false,
+			}),
+		);
 
 		const firstStop = manager.stopRoom('room-1');
 		const secondStop = manager.stopRoom('room-1');
@@ -300,24 +286,20 @@ describe('SttManager', () => {
 			.mockResolvedValue();
 		vi.spyOn(AudioIngester.prototype, 'stop').mockResolvedValue();
 		const manager = new SttManager({ sttClient: createSttClient().client });
-		manager.setGetRouter(() => ({}) as Router);
+		manager.setGetRouter(() => fromPartial<Router>({}));
 		manager.beginSession('room-1', 'socket-1');
-		const producer = { id: 'producer-a', closed: false } as Producer;
+		const producer = fromPartial<Producer>({ id: 'producer-a', closed: false });
 		await manager.startTranscription(
 			'room-1',
 			'participant-a',
 			'Alice',
 			producer,
 		);
-		const sessions = (
-			manager as unknown as { activeSessions: Map<string, AudioIngester> }
-		).activeSessions;
+		const sessions = manager['activeSessions'];
 		const key = 'room-1:participant-a:producer-a';
 		const fail = async () => {
 			const current = sessions.get(key)!;
-			(
-				current as unknown as { onUnexpectedStreamClose(): void }
-			).onUnexpectedStreamClose();
+			current['onUnexpectedStreamClose']();
 			await vi.advanceTimersByTimeAsync(0);
 		};
 		return { manager, producer, start, fail };
@@ -366,7 +348,7 @@ describe('SttManager', () => {
 		await fail();
 		await fail();
 		expect(start).toHaveBeenCalledTimes(2);
-		(producer as unknown as { closed: boolean }).closed = true;
+		producer['closed'] = true;
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(start).toHaveBeenCalledTimes(2);
 		await manager.stopRoom('room-1');

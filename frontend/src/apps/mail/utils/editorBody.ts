@@ -1,6 +1,8 @@
+import { withBlankLines } from './text-editor'
+
 /**
- * The mail body as the composer's editor receives it, and the inverse on the way back out. An empty
- * paragraph leaves as `<div><br></div>`, a blank line every mail client keeps.
+ * The mail body as the composer's editor receives it, and the inverse on the way back out. A blank
+ * line leaves as one every mail client draws (see withBlankLines).
  *
  * What the editor last said goes back to it as it said it. The editor resets itself to any content
  * that differs from its own, and a reset throws the caret to the end of the body. Turning its blank
@@ -9,12 +11,12 @@
  * below the quote.
  */
 export const createEditorBody = () => {
-	let last = { value: '', body: '' }
-	return {
-		toEditor: (body: string) => (body === last.body ? last.value : body),
-		fromEditor: (value: string) => {
-			last = { value, body: value.replaceAll('<div></div>', '<div><br></div>') }
-			return last.body
-		},
-	}
+  let last = { value: '', body: '' }
+  return {
+    toEditor: (body: string) => (body === last.body ? last.value : body),
+    fromEditor: (value: string) => {
+      last = { value, body: withBlankLines(value) }
+      return last.body
+    },
+  }
 }

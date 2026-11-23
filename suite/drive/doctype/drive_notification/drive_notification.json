@@ -5,21 +5,25 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "from_user",
+  "activity",
+  "download",
   "to_user",
   "read",
-  "type",
-  "message",
-  "notif_doctype",
-  "notif_doctype_name",
-  "entity_type"
+  "title_without_access"
  ],
  "fields": [
   {
-   "fieldname": "from_user",
+   "fieldname": "activity",
    "fieldtype": "Link",
-   "label": "From User",
-   "options": "User"
+   "label": "Activity",
+   "options": "Drive Activity"
+  },
+  {
+   "fieldname": "download",
+   "fieldtype": "Link",
+   "label": "Download",
+   "options": "Drive Download",
+   "search_index": 1
   },
   {
    "fieldname": "to_user",
@@ -36,36 +40,16 @@
    "label": "Read"
   },
   {
-   "fieldname": "type",
-   "fieldtype": "Select",
-   "label": "Type",
-   "options": "Share\nMention\nSite\nComment"
-  },
-  {
-   "fieldname": "message",
-   "fieldtype": "Text",
-   "label": "Message"
-  },
-  {
-   "fieldname": "notif_doctype",
-   "fieldtype": "Link",
-   "label": "Document Type",
-   "options": "DocType"
-  },
-  {
-   "fieldname": "notif_doctype_name",
-   "fieldtype": "Dynamic Link",
-   "label": "DocType Name",
-   "options": "notif_doctype"
-  },
-  {
-   "fieldname": "entity_type",
+   "description": "The node's title when this person was mentioned without access. Empty on any other notification.",
+   "fieldname": "title_without_access",
    "fieldtype": "Data",
-   "label": "Entity Type"
+   "ignore_xss_filter": 1,
+   "label": "Title Without Access",
+   "read_only": 1
   }
  ],
  "links": [],
- "modified": "2025-08-04 14:21:07.222622",
+ "modified": "2026-11-06 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Drive",
  "name": "Drive Notification",
@@ -81,18 +65,6 @@
    "read": 1,
    "report": 1,
    "role": "System Manager",
-   "share": 1,
-   "write": 1
-  },
-  {
-   "create": 1,
-   "delete": 1,
-   "email": 1,
-   "export": 1,
-   "print": 1,
-   "read": 1,
-   "report": 1,
-   "role": "Suite User",
    "share": 1,
    "write": 1
   }

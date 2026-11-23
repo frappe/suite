@@ -9,6 +9,8 @@ or a request that got no answer, recorded that way, is a mail sent twice.
 """
 
 import json
+import shutil
+import tempfile
 import unittest
 from unittest import mock
 
@@ -18,8 +20,11 @@ from jmap.auth import BasicAuth
 from jmap.core.retry import RetryPolicy
 from jmap.testing.fake import FakeJMAPServer
 
+from suite.mail.doctype.mail_message import mail_message
 from suite.mail.doctype.mail_queue import mail_queue
 from suite.mail.jmap import SuiteHTTPClient, SuiteJMAPClient
+from suite.mail.store import Entity
+from suite.store.data_store import DataStore
 
 CORE = "urn:ietf:params:jmap:core"
 MAIL = "urn:ietf:params:jmap:mail"
@@ -57,12 +62,17 @@ class _Processing(unittest.TestCase):
     def setUp(self) -> None:
         self.server = _server()
         mailboxes = {"drafts": "mb-drafts", "sent": "mb-sent"}
+        # The message cache, in a folder of its own rather than the site's.
+        path = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, path, ignore_errors=True)
+        self.store = DataStore(base_path=path, namespace=ACCOUNT)
         for patcher in (
             mock.patch.object(mail_queue, "get_account_client", return_value=_client(self.server)),
             mock.patch.object(
                 mail_queue, "get_mailbox_id_by_role", side_effect=lambda a, role, **kw: mailboxes[role]
             ),
             mock.patch.object(mail_queue, "get_identity_id_by_email", return_value="i1"),
+            mock.patch.object(mail_message, "get_data_store", return_value=self.store),
         ):
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -152,6 +162,57 @@ class RefusedMail(_Processing):
 
         self.assertEqual((doc.status, doc.submission_id, doc.id), ("Submitted", "s1", "e1"))
         self.assertFalse(doc.retries)
+
+
+class ReplacedDraft(_Processing):
+    """Saving a draft again replaces it: the new version is created, then the old one destroyed."""
+
+    def destroyed(self) -> list[str]:
+        return [
+            email_id
+            for request in self.server.requests
+            for name, arguments, _call_id in request["methodCalls"]
+            if name == "Email/set"
+            for email_id in arguments.get("destroy") or []
+        ]
+
+    def test_a_refused_replacement_leaves_the_draft_it_was_replacing(self):
+        refusal = {"type": "blobNotFound", "description": "blobId B0 does not exist on this server."}
+        self.server.respond("Email/set", {"notCreated": {f"draft-{QUEUE}": refusal}})
+
+        doc = self.process(id="e0", save_as_draft=1)
+
+        self.assert_retried(doc, "Failed to Draft")
+        self.assertEqual(self.destroyed(), [])
+
+    def test_a_saved_replacement_destroys_the_draft_it_replaces(self):
+        self.server.respond("Email/set", DRAFTED)
+
+        doc = self.process(id="e0", save_as_draft=1)
+
+        self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
+        self.assertEqual(self.destroyed(), ["e0"])
+
+    def process_with_destroy_refused(self, refusal: dict) -> tuple[mail_queue.MailQueue, mock.Mock]:
+        self.server.handlers["Email/set"] = lambda arguments, _server: (
+            {"notDestroyed": {"e0": refusal}} if arguments.get("destroy") else DRAFTED
+        )
+        with mock.patch.object(mail_queue, "log_mail_error") as logged:
+            doc = self.process(id="e0", save_as_draft=1)
+        return doc, logged
+
+    def test_a_replaced_draft_already_gone_is_not_an_error(self):
+        doc, logged = self.process_with_destroy_refused({"type": "notFound"})
+
+        self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
+        logged.assert_not_called()
+
+    def test_a_replaced_draft_the_server_keeps_is_logged(self):
+        doc, logged = self.process_with_destroy_refused({"type": "forbidden"})
+
+        self.assertEqual((doc.status, doc.id), ("Drafted", "e1"))
+        logged.assert_called_once()
+        self.assertIn("could not destroy replaced draft e0", logged.call_args.args[0])
 
 
 class MaybeAppliedMail(_Processing):
@@ -382,3 +443,60 @@ class SentMail(_Processing):
         self.assertEqual((doc.status, doc.submission_id), ("Submitted", "s1"))
         self.assertFalse(doc.retries)
         logged.assert_called_once()
+
+
+class CachedCopies(_Processing):
+    """A mail being sent is a draft on the server until its submission is taken, and only then
+    is it moved to Sent. A read of its thread in between holds it as a draft, and the cache kept
+    that copy: the thread went on showing a composer over a mail that had gone out."""
+
+    def cache_as_draft(self, id: str) -> None:
+        """What a read that fetched the message as a draft does with it."""
+
+        self.store.set_many(Entity.EMAIL, items={id: {"id": id, "draft": 1}})
+
+    def cached(self, id: str) -> dict | None:
+        return mail_message._get_cached_messages(ACCOUNT, [id])[id]
+
+    def take_the_submission(self, during) -> None:
+        self.server.respond("Email/set", DRAFTED)
+
+        def submit(_arguments, _server):
+            during()
+            return SUBMITTED
+
+        self.server.handle("EmailSubmission/set", submit)
+
+    def test_a_copy_cached_as_a_draft_while_the_mail_was_being_sent_is_dropped(self):
+        self.take_the_submission(during=lambda: self.cache_as_draft("e1"))
+
+        doc = self.process()
+
+        self.assertEqual(doc.status, "Submitted")
+        self.assertIsNone(self.cached("e1"))
+
+    def test_a_read_from_while_the_mail_was_being_sent_does_not_cache_its_draft(self):
+        began = []
+        self.take_the_submission(during=lambda: began.append(mail_message._now()))
+
+        self.process()
+
+        # The read fetched the draft and has yet to cache it: get_messages asks this first.
+        self.assertEqual(mail_message._written_since(ACCOUNT, ["e1"], began[0]), {"e1"})
+
+    def test_a_draft_that_was_replaced_leaves_the_cache_with_it(self):
+        self.server.respond("Email/set", DRAFTED)
+        self.cache_as_draft("e0")
+
+        self.process(id="e0", save_as_draft=1)
+
+        self.assertIsNone(self.cached("e0"))
+
+    def test_a_saved_draft_stays_cached_as_one(self):
+        # Still a draft on the server, so a copy a read cached is right and is kept.
+        self.server.respond("Email/set", DRAFTED)
+        self.cache_as_draft("e1")
+
+        self.process(save_as_draft=1)
+
+        self.assertEqual(self.cached("e1"), {"id": "e1", "draft": 1})

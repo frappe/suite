@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import type { Consumer, Producer } from 'mediasoup/types';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer } from 'ws';
@@ -211,7 +212,7 @@ describe('private STT diagnostic captures', () => {
 	it('records RTP counters and pause state without endpoint addresses or unrelated metadata', async () => {
 		const root = directory();
 		const capture = SttDiagnostics.create(identity)!;
-		const producer = {
+		const producer = fromPartial<Producer>({
 			paused: false,
 			closed: false,
 			getStats: async () => [
@@ -224,8 +225,8 @@ describe('private STT diagnostic captures', () => {
 					token: 'private-token',
 				},
 			],
-		} as unknown as Producer;
-		const consumer = {
+		});
+		const consumer = fromPartial<Consumer>({
 			paused: false,
 			producerPaused: false,
 			closed: false,
@@ -237,7 +238,7 @@ describe('private STT diagnostic captures', () => {
 					remoteIp: '127.0.0.2',
 				},
 			],
-		} as unknown as Consumer;
+		});
 		await capture.rtpStats(producer, consumer);
 		await capture.close();
 		expect(events(root)).toContainEqual(

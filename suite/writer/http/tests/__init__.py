@@ -1,0 +1,1 @@
+"""Writer HTTP adapter tests."""

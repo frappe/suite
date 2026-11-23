@@ -1,10 +1,6 @@
-import type { Locator, Page } from "@playwright/test";
-import { expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
-export async function expectRemoteVideoReceiving(
-	page: Page,
-	participantName: string,
-): Promise<void> {
+export async function expectRemoteVideoReceiving(page: Page, participantName: string): Promise<void> {
 	const tile = page.locator("[data-testid^='participant-tile-']", {
 		hasText: participantName,
 	});
@@ -16,7 +12,8 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 	await expect(video).toBeVisible({ timeout: 45_000 });
 
 	await video.evaluate((element) => {
-		const videoEl = element as HTMLVideoElement;
+		if (!(element instanceof HTMLVideoElement)) throw new Error("Expected a video element");
+		const videoEl = element;
 		videoEl.muted = true;
 		if (videoEl.paused) {
 			void videoEl.play().catch(() => {
@@ -27,9 +24,11 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 
 	const getPlaybackState = async () =>
 		video.evaluate((element) => {
-			const videoEl = element as HTMLVideoElement;
+			if (!(element instanceof HTMLVideoElement)) throw new Error("Expected a video element");
+			const videoEl = element;
 			const quality = videoEl.getVideoPlaybackQuality?.();
-			const stream = videoEl.srcObject as MediaStream | null;
+			const stream = videoEl.srcObject;
+			if (stream !== null && !(stream instanceof MediaStream)) throw new Error("Expected a media stream");
 			const videoTrack = stream?.getVideoTracks()[0] ?? null;
 			const decodedFrames = quality?.totalVideoFrames ?? 0;
 			const hasDecodedPlayback =
@@ -45,26 +44,18 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 
 	// A live track with dimensions can still be a frozen frame, so first wait
 	// for playback and then require it to progress from a fresh baseline.
-	await expect
-		.poll(
-			getPlaybackState,
-			{ timeout: 45_000 },
-		)
-		.toMatchObject({
-			hasDecodedPlayback: true,
-			isLive: true,
-			isReady: true,
-		});
+	await expect.poll(getPlaybackState, { timeout: 45_000 }).toMatchObject({
+		hasDecodedPlayback: true,
+		isLive: true,
+		isReady: true,
+	});
 
 	const baseline = await getPlaybackState();
 	await expect
 		.poll(
 			async () => {
 				const current = await getPlaybackState();
-				return (
-					current.currentTime > baseline.currentTime ||
-					current.decodedFrames > baseline.decodedFrames
-				);
+				return current.currentTime > baseline.currentTime || current.decodedFrames > baseline.decodedFrames;
 			},
 			{ timeout: 10_000 },
 		)

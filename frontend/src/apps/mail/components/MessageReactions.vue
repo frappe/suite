@@ -1,0 +1,62 @@
+<!--
+  The foot of a message: its reactions, one chip per emoji, and the button to add one. Pressing a chip
+  adds the reader to it. Pressing your own says you already reacted. In a read-only view with nothing
+  to show, it isn't there at all.
+-->
+<template>
+  <div v-if="groups.length || !readonly" class="flex flex-wrap items-center gap-1.5">
+    <!-- The tooltip is on a wrapper so that it still says who reacted when the chip is disabled,
+         and a disabled button takes no pointer events of its own. -->
+    <Tooltip v-for="group in groups" :key="group.emoji" :text="group.who">
+      <span class="inline-flex">
+        <Button
+          variant="subtle"
+          class="rounded-full"
+          :class="{
+            '!bg-surface-gray-4 hover:!bg-surface-gray-5': group.mine,
+            'pointer-events-none': unavailable,
+          }"
+          :aria-pressed="group.mine"
+          :disabled="unavailable"
+          @click="emit('react', group.emoji)"
+        >
+          <span class="flex items-center gap-1.5">
+            <span>{{ group.emoji }}</span>
+            <span class="tabular-nums" :class="group.mine ? 'text-ink-gray-8' : 'text-ink-gray-6'">
+              {{ group.count }}
+            </span>
+          </span>
+        </Button>
+      </span>
+    </Tooltip>
+
+    <ReactionPicker
+      v-if="!readonly"
+      variant="subtle"
+      class="rounded-full"
+      :refusal
+      @pick="(emoji: string) => emit('react', emoji)"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { Button, Tooltip } from 'frappe-ui'
+import { computed } from 'vue'
+
+import ReactionPicker from '@/apps/mail/components/ReactionPicker.vue'
+import type { MailReaction } from '@/apps/mail/types'
+import { groupReactions } from '@/apps/mail/utils/reactions'
+
+const { reactions, ownEmails, readonly, refusal } = defineProps<{
+  reactions: MailReaction[]
+  ownEmails: Set<string>
+  readonly?: boolean
+  refusal?: string | null
+}>()
+
+const emit = defineEmits<{ react: [emoji: string] }>()
+
+const groups = computed(() => groupReactions(reactions, ownEmails, __))
+const unavailable = computed(() => readonly || !!refusal)
+</script>

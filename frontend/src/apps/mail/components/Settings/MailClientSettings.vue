@@ -1,0 +1,133 @@
+<template>
+  <SettingsDialogRow
+    v-if="configRows.length"
+    :title="__('Mail client setup')"
+    section="mail.advanced.client-setup"
+    :description="__('Server details for apps such as Thunderbird or the Gmail app.')"
+    :action="__('Show')"
+    size="2xl"
+  >
+    <div class="flex flex-col gap-4">
+      <p class="text-ink-gray-6 text-base">
+        {{
+          __(
+            'Use these details to connect a third-party mail client such as Thunderbird or the Gmail app.',
+          )
+        }}
+      </p>
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div v-for="row in configRows" :key="row.key" class="space-y-3 rounded-6 border p-4">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-ink-gray-8 font-medium">{{ row.protocol }}</span>
+            <Badge :label="row.connection_security" theme="gray" variant="subtle" />
+          </div>
+          <div class="space-y-2 text-base">
+            <div
+              v-for="field in row.fields"
+              :key="field.label"
+              class="flex items-center justify-between gap-3"
+            >
+              <span class="text-ink-gray-5">{{ field.label }}</span>
+              <Tooltip :text="__('Copy')">
+                <span
+                  class="text-ink-gray-8 cursor-copy truncate"
+                  @click="copyToClipBoard(field.value)"
+                >
+                  {{ field.value }}
+                </span>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <CopyControl :label="__('Username')" :value="user.data?.email ?? ''" />
+      <p class="text-ink-gray-5 text-sm">
+        {{ __('Sign in using your existing mail account password.') }}
+      </p>
+    </div>
+  </SettingsDialogRow>
+
+  <SettingsDialogRow
+    :title="__('API access')"
+    section="mail.advanced.api-access"
+    :description="apiAccess"
+    :action="__('Manage')"
+  >
+    <div class="flex flex-col gap-5">
+      <CopyControl
+        v-if="user.data?.api_key"
+        :label="__('API key')"
+        :value="user.data?.api_key ?? ''"
+      />
+      <p v-else class="text-base">
+        {{ __(`You do not have an API key yet. Generate one to access the API.`) }}
+      </p>
+      <Button
+        class="min-h-7 self-start"
+        :label="user.data?.api_key ? __('Regenerate secret') : __('Generate keys')"
+        @click="generateKeysSubmit()"
+      />
+
+      <Dialog v-model:open="showSecret" v-bind="{ title: __('API access') }">
+        <template #default>
+          <p class="text-base">
+            {{ __(`Copy the API secret now. You cannot see it again.`) }}
+          </p>
+          <CopyControl :label="__('API key')" :value="user.data?.api_key ?? ''" />
+          <CopyControl :label="__('API secret')" :value="apiSecret" />
+        </template>
+      </Dialog>
+    </div>
+  </SettingsDialogRow>
+</template>
+
+<script setup lang="ts">
+import { Badge, Button, Dialog, Tooltip } from 'frappe-ui'
+import { computed, ref } from 'vue'
+
+import { api, useMutation, useQuery } from '@/api'
+import { userStore } from '@/apps/mail/stores/user'
+import { copyToClipBoard } from '@/apps/mail/utils'
+import CopyControl from '@/components/CopyControl.vue'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
+
+const user = userStore().userResource
+const apiAccess = computed(() => {
+  if (user.data?.api_key) {
+    return __('You have an API key.')
+  }
+
+  return __('You have no API key yet.')
+})
+const showSecret = ref(false)
+const apiSecret = ref('')
+const generateKeys = useMutation(api.suite.account.generateKeys)
+async function generateKeysSubmit() {
+  if (!user.data) return
+  const data = await generateKeys.run({
+    user: user.data.name,
+  })
+  apiSecret.value = data.api_secret
+  showSecret.value = true
+}
+const clientConfig = useQuery(api.mail.settings.clientConfig, () => ({}))
+const configRows = computed(() =>
+  (clientConfig.data ?? []).map((row, index: number) => ({
+    key: `${row.protocol}-${row.port}-${index}`,
+    protocol: row.protocol,
+    connection_security: row.connection_security,
+    fields: [
+      {
+        label: __('Hostname'),
+        value: String(row.hostname),
+      },
+      {
+        label: __('Port'),
+        value: String(row.port),
+      },
+    ],
+  })),
+)
+</script>

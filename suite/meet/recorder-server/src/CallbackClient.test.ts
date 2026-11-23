@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fromPartial } from '@total-typescript/shoehorn';
 import jwt from 'jsonwebtoken';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallbackClient } from './CallbackClient.js';
@@ -50,7 +51,7 @@ describe('CallbackClient', () => {
 		});
 		await expect(
 			client.segmentProgress(
-				{ job: 'job', recording: 'recording' } as JobRecord,
+				fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 				1_234_567,
 			),
 		).resolves.toBe(2_000_000);
@@ -102,7 +103,7 @@ describe('CallbackClient', () => {
 			});
 			await expect(
 				client.segmentProgress(
-					{ job: 'job', recording: 'recording' } as JobRecord,
+					fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 					1,
 				),
 			).resolves.toBe(2_000_000);
@@ -126,7 +127,7 @@ describe('CallbackClient', () => {
 			});
 			await expect(
 				client.segmentProgress(
-					{ job: 'job', recording: 'recording' } as JobRecord,
+					fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 					1,
 				),
 			).rejects.toThrow(`Frappe callback failed with HTTP ${status}`);
@@ -160,7 +161,7 @@ describe('CallbackClient', () => {
 			});
 			await expect(
 				client.segmentProgress(
-					{ job: 'job', recording: 'recording' } as JobRecord,
+					fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 					1,
 				),
 			).rejects.toThrow(`Frappe callback failed with HTTP ${status}`);
@@ -206,7 +207,7 @@ describe('CallbackClient', () => {
 			});
 			await expect(
 				client.segmentProgress(
-					{ job: 'job', recording: 'recording' } as JobRecord,
+					fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 					1,
 				),
 			).rejects.toThrow('Frappe callback transport failed: timeout');
@@ -239,7 +240,7 @@ describe('CallbackClient', () => {
 		});
 		await expect(
 			client.segmentProgress(
-				{ job: 'job', recording: 'recording' } as JobRecord,
+				fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 				1,
 			),
 		).rejects.toThrow('Frappe callback transport failed: ECONNRESET');
@@ -265,7 +266,7 @@ describe('CallbackClient', () => {
 		});
 		await expect(
 			client.segmentProgress(
-				{ job: 'job', recording: 'recording' } as JobRecord,
+				fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 				1,
 			),
 		).rejects.toThrow('invalid Frappe callback response');
@@ -289,13 +290,13 @@ describe('CallbackClient', () => {
 		);
 		vi.stubGlobal('fetch', fetch);
 		const secret = 's'.repeat(32);
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
 			room: 'room',
 			recording: 'recording',
-		} as JobRecord;
+		});
 
 		await expect(
 			new CallbackClient({
@@ -353,10 +354,10 @@ describe('CallbackClient', () => {
 				secret: 's'.repeat(32),
 				dataRoot: '/tmp',
 			}).segmentProgress(
-				{
+				fromPartial<JobRecord>({
 					job: 'job',
 					recording: 'recording',
-				} as JobRecord,
+				}),
 				1,
 			),
 		).rejects.toThrow('invalid Frappe callback response');
@@ -382,7 +383,7 @@ describe('CallbackClient', () => {
 				secret: 's'.repeat(32),
 				dataRoot: '/tmp',
 			}).segmentProgress(
-				{ job: 'job', recording: 'recording' } as JobRecord,
+				fromPartial<JobRecord>({ job: 'job', recording: 'recording' }),
 				1,
 			),
 		).rejects.toThrow('invalid Frappe callback response');
@@ -402,7 +403,7 @@ describe('CallbackClient', () => {
 				),
 		);
 		vi.stubGlobal('fetch', fetch);
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
@@ -412,7 +413,7 @@ describe('CallbackClient', () => {
 			event_sequence: 3,
 			configured_at: '2026-08-30T11:59:59.000Z',
 			proof_completed_at: '2026-08-30T12:00:00.000Z',
-		} as JobRecord;
+		});
 
 		await new CallbackClient({
 			origin: 'https://site.test',
@@ -460,7 +461,7 @@ describe('CallbackClient', () => {
 				),
 			);
 		vi.stubGlobal('fetch', fetch);
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
@@ -469,7 +470,7 @@ describe('CallbackClient', () => {
 			state: 'configured',
 			event_sequence: 2,
 			configured_at: '2026-08-30T12:00:00.000Z',
-		} as JobRecord;
+		});
 
 		await new CallbackClient({
 			origin: 'https://site.test',
@@ -496,7 +497,7 @@ describe('CallbackClient', () => {
 				),
 		);
 		vi.stubGlobal('fetch', fetch);
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
@@ -508,7 +509,7 @@ describe('CallbackClient', () => {
 			interrupted_at: '2026-08-30T12:00:00.000Z',
 			interruption_deadline: '2026-08-30T12:01:00.000Z',
 			omission_started_at: '2026-08-30T11:59:30.000Z',
-		} as JobRecord;
+		});
 
 		await new CallbackClient({
 			origin: 'https://site.test',
@@ -555,7 +556,7 @@ describe('CallbackClient', () => {
 				),
 		);
 		vi.stubGlobal('fetch', fetch);
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
@@ -565,7 +566,7 @@ describe('CallbackClient', () => {
 			interruption_id: '11111111-1111-4111-8111-111111111111',
 			resumed_capture_started_at: '2026-08-30T12:00:10.000Z',
 			recovered_at: '2026-08-30T12:00:40.000Z',
-		} as JobRecord;
+		});
 
 		await new CallbackClient({
 			origin: 'https://site.test',
@@ -607,7 +608,7 @@ describe('CallbackClient', () => {
 			x: 'axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY',
 			y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU',
 		};
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
@@ -619,7 +620,7 @@ describe('CallbackClient', () => {
 			endpoint_generation: 2,
 			public_jwk: publicJwk,
 			replacement_ready_at: '2026-08-30T12:00:10.000Z',
-		} as JobRecord;
+		});
 
 		await new CallbackClient({
 			origin: 'https://site.test',
@@ -647,10 +648,9 @@ describe('CallbackClient', () => {
 		const authorization = new Headers(fetch.mock.calls[1]?.[1]?.headers).get(
 			'X-Meet-Recorder-Authorization',
 		);
-		const claims = jwt.verify(
-			String(authorization).replace('Bearer ', ''),
-			's'.repeat(32),
-		) as jwt.JwtPayload;
+		const claims = fromPartial<jwt.JwtPayload>(
+			jwt.verify(String(authorization).replace('Bearer ', ''), 's'.repeat(32)),
+		);
 		expect(claims).toMatchObject({
 			protocol_version: 1,
 			operation: 'replacement_ready',
@@ -671,24 +671,26 @@ describe('CallbackClient', () => {
 				secret: 's'.repeat(32),
 				dataRoot: '/tmp',
 				sleep: async () => undefined,
-			}).replacementReady({
-				job: 'job',
-				site: 'site.test',
-				origin: 'https://site.test',
-				room: 'room',
-				recording: 'recording',
-				state: 'interrupted',
-				event_sequence: 7,
-				interruption_id: '11111111-1111-4111-8111-111111111111',
-				endpoint_generation: 2,
-				public_jwk: {
-					kty: 'EC',
-					crv: 'P-256',
-					x: 'axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY',
-					y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU',
-				},
-				replacement_ready_at: '2026-08-30T12:00:10.000Z',
-			} as JobRecord),
+			}).replacementReady(
+				fromPartial<JobRecord>({
+					job: 'job',
+					site: 'site.test',
+					origin: 'https://site.test',
+					room: 'room',
+					recording: 'recording',
+					state: 'interrupted',
+					event_sequence: 7,
+					interruption_id: '11111111-1111-4111-8111-111111111111',
+					endpoint_generation: 2,
+					public_jwk: {
+						kty: 'EC',
+						crv: 'P-256',
+						x: 'axfR8uEsQkf4vOblY6RA8ncDfYEt6zOg9KE5RdiYwpY',
+						y: 'T-NC4v4af5uO5-tKfA-eFivOM1drMV7Oy7ZAaDe_UfU',
+					},
+					replacement_ready_at: '2026-08-30T12:00:10.000Z',
+				}),
+			),
 		).rejects.toThrow('HTTP 503');
 		expect(fetch).toHaveBeenCalledTimes(5);
 	});
@@ -707,7 +709,7 @@ describe('CallbackClient', () => {
 				),
 		);
 		vi.stubGlobal('fetch', fetch);
-		const job = {
+		const job = fromPartial<JobRecord>({
 			job: 'job',
 			site: 'site.test',
 			origin: 'https://site.test',
@@ -719,7 +721,7 @@ describe('CallbackClient', () => {
 			interrupted_at: '2026-08-30T12:02:00.000Z',
 			interruption_deadline: '2026-08-30T12:03:00.000Z',
 			omission_started_at: '2026-08-30T12:01:30.000Z',
-		} as JobRecord;
+		});
 
 		await new CallbackClient({
 			origin: 'https://site.test',
@@ -832,7 +834,10 @@ describe('CallbackClient', () => {
 				},
 			],
 		});
-		expect(Buffer.from(requests[2]?.init.body as Uint8Array)).toEqual(content);
+		const uploadedBody = requests[2]?.init.body;
+		if (!(uploadedBody instanceof Uint8Array))
+			throw new Error('expected a binary artifact upload');
+		expect(Buffer.from(uploadedBody)).toEqual(content);
 		expect(requests[3]?.url).toContain('recorder_complete_upload');
 		expect(requests[4]?.url).toContain('recorder_finalization_status');
 		expect(requests[5]?.url).toContain('recorder_finalization_status');
@@ -891,7 +896,7 @@ it('resumes from Frappe verified bytes after metadata acknowledgement', async ()
 	const directory = safeJobDirectory(root, 'job');
 	await mkdir(directory, { recursive: true });
 	await writeFile(join(directory, 'recording.mp4'), content);
-	const job = {
+	const job = fromPartial<JobRecord>({
 		job: 'job',
 		site: 'site.test',
 		origin: 'https://site.test',
@@ -906,7 +911,7 @@ it('resumes from Frappe verified bytes after metadata acknowledgement', async ()
 			sha256: createHash('sha256').update(content).digest('hex'),
 			duration_ms: 1000,
 		},
-	} as JobRecord;
+	});
 	const requests: Array<{ url: string; init: RequestInit }> = [];
 	const fetch = vi.fn(async (url: URL, init: RequestInit) => {
 		requests.push({ url: String(url), init });
@@ -938,9 +943,10 @@ it('resumes from Frappe verified bytes after metadata acknowledgement', async ()
 	expect(
 		requests.every((request) => !request.url.includes('recorder_stopped')),
 	).toBe(true);
-	expect(Buffer.from(requests[1]?.init.body as Uint8Array)).toEqual(
-		content.subarray(5),
-	);
+	const uploadedBody = requests[1]?.init.body;
+	if (!(uploadedBody instanceof Uint8Array))
+		throw new Error('expected a binary resumed upload');
+	expect(Buffer.from(uploadedBody)).toEqual(content.subarray(5));
 	expect(requests[2]?.url).toContain('recorder_complete_upload');
 	expect(progress.mock.calls).toEqual([
 		['cleanup_authorized', 'Ready'],
@@ -964,11 +970,11 @@ it('finishes authorized cleanup after restart without contacting Frappe', async 
 		secret: 's'.repeat(32),
 		dataRoot: root,
 	}).upload(
-		{
+		fromPartial<JobRecord>({
 			job: 'job',
 			cleanup_authorized_at: '2026-01-01T00:02:00.000Z',
 			cleanup_result: 'Partial',
-		} as JobRecord,
+		}),
 		progress,
 	);
 

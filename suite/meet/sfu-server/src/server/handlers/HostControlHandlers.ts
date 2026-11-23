@@ -205,7 +205,7 @@ export function registerHostControlHandlers(deps: HandlerDeps) {
 				}
 				acknowledge({ success: true });
 			} catch (error) {
-				const message = (error as Error).message;
+				const message = error instanceof Error ? error.message : String(error);
 				loggers.socketHandler.warn('host_control handling failed: %s', message);
 				fail(message);
 			}
@@ -217,6 +217,6 @@ function logE2EERemovalFailure(participantId: string, error: unknown): void {
 	loggers.socketHandler.warn(
 		'E2EE removal signaling failed for participant %s: %s',
 		participantId,
-		(error as Error).message,
+		error instanceof Error ? error.message : String(error),
 	);
 }

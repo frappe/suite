@@ -1,33 +1,46 @@
 <template>
-	<AppSettingsHeader :title="__('Export')" />
-	<AppSettingsBody>
-		<div class="flex flex-col gap-5">
-			<TabButtons v-model="activeType" :options="typeButtons" />
-			<component :is="activeComponent" :key="activeType" />
-		</div>
-	</AppSettingsBody>
+  <div class="flex flex-col gap-5">
+    <TabButtons v-model="activeType" :options="typeButtons" />
+    <!-- Both forms sit in one cell with the other hidden, so the dialog is as tall as the taller
+         one and holds still when the tab changes. -->
+    <div class="grid">
+      <div
+        v-for="{ type, form, isHidden, isActive } in forms"
+        :key="type"
+        class="col-start-1 row-start-1 flex min-w-0 flex-col gap-5"
+        :class="{ invisible: isHidden }"
+      >
+        <component :is="form" :is-active />
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { type Component, computed, markRaw, ref } from 'vue'
 import { TabButtons } from 'frappe-ui'
-import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
+import { computed, markRaw, ref, type Component } from 'vue'
 
 import ContactsExportSettings from '@/apps/mail/components/Settings/ContactsExportSettings.vue'
 import MailExportSettings from '@/apps/mail/components/Settings/MailExportSettings.vue'
 
-const activeType = ref('mail')
+const activeType = ref<'mail' | 'contacts'>('mail')
 
 const typeButtons = [
-	{ label: __('Mail'), value: 'mail' },
-	{ label: __('Contacts'), value: 'contacts' },
+  { label: __('Mail'), value: 'mail' },
+  { label: __('Contacts'), value: 'contacts' },
 ]
 
-const components: Record<string, Component> = {
-	mail: markRaw(MailExportSettings),
-	contacts: markRaw(ContactsExportSettings),
-}
+const components = {
+  mail: markRaw(MailExportSettings),
+  contacts: markRaw(ContactsExportSettings),
+} satisfies Record<string, Component>
 
-const activeComponent = computed(() => components[activeType.value])
+const forms = computed(() =>
+  Object.entries(components).map(([type, form]) => ({
+    type,
+    form,
+    isHidden: type !== activeType.value,
+    isActive: type === activeType.value,
+  })),
+)
 </script>

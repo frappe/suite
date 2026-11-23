@@ -108,7 +108,17 @@ def parse_if_header(value: str | None) -> IfHeader:
     position = 0
 
     def flush_group():
+        """Close the group a Resource-Tag opened, or refuse a tag with no list.
+
+        `Tagged-list = Resource-Tag 1*List` (§10.4.2), so a tag standing alone
+        is not the grammar. Dropping it silently is how a header cut off after
+        a complete list still evaluated: `(<token> [etag]) </dav/other>` read
+        as the first list on its own, and the write it guards happened on the
+        half that arrived.
+        """
         nonlocal current_lists
+        if current_href is not None and not current_lists:
+            raise BadIfHeader("Resource-Tag with no state list in If header.")
         if current_lists:
             groups.append(TaggedList(current_href, tuple(current_lists)))
             current_lists = []
@@ -135,6 +145,12 @@ def parse_if_header(value: str | None) -> IfHeader:
         elif match.group("not"):
             if conditions is None:
                 raise BadIfHeader("Not outside a list.")
+            if negate:
+                # `Condition = ["Not"] (State-token | "[" entity-tag "]")`:
+                # one at most. A second was absorbed by the first, so
+                # `Not Not <t>` read as `Not <t>` — the opposite of what it
+                # says, decided in the gate that admits a write.
+                raise BadIfHeader("Repeated Not in If header condition.")
             negate = True
         elif match.group("token") is not None:
             content = match.group("token")

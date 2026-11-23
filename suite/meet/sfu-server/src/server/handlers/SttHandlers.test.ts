@@ -1,3 +1,4 @@
+import { fromPartial } from '@total-typescript/shoehorn';
 import { describe, expect, it, vi } from 'vitest';
 import { SttManager } from '../../stt/SttManager';
 import { registerSttHandlers } from './SttHandlers';
@@ -19,13 +20,15 @@ describe('registerSttHandlers', () => {
 		const startSttForExistingProducers = vi.fn(async () => {
 			events.push('producer startup');
 		});
-		registerSttHandlers({
-			authManager: { ensureFullAccess: vi.fn() },
-			sttManager: {
-				beginSession: vi.fn(() => true),
-			},
-			mediasoup: { startSttForExistingProducers },
-		} as never)(socket as never);
+		registerSttHandlers(
+			fromPartial({
+				authManager: { ensureFullAccess: vi.fn() },
+				sttManager: {
+					beginSession: vi.fn(() => true),
+				},
+				mediasoup: { startSttForExistingProducers },
+			}),
+		)(fromPartial(socket));
 		const callback = vi.fn((result: unknown) => {
 			events.push('acknowledgement');
 			return result;
@@ -50,12 +53,14 @@ describe('registerSttHandlers', () => {
 			},
 		};
 		const beginSession = vi.fn();
-		registerSttHandlers({
-			authManager: { ensureFullAccess: vi.fn() },
-			sttManager: {
-				beginSession,
-			},
-		} as never)(socket as never);
+		registerSttHandlers(
+			fromPartial({
+				authManager: { ensureFullAccess: vi.fn() },
+				sttManager: {
+					beginSession,
+				},
+			}),
+		)(fromPartial(socket));
 		const callback = vi.fn();
 
 		toggle?.({ enabled: true }, callback);
@@ -74,11 +79,13 @@ describe('registerSttHandlers', () => {
 		const ensureFullAccess = vi.fn(() => {
 			throw new Error('should not authenticate malformed event');
 		});
-		registerSttHandlers({ authManager: { ensureFullAccess } } as never)({
-			on: (event: string, handler: typeof toggle) => {
-				if (event === 'stt:toggle') toggle = handler;
-			},
-		} as never);
+		registerSttHandlers(fromPartial({ authManager: { ensureFullAccess } }))(
+			fromPartial({
+				on: (event: string, handler: typeof toggle) => {
+					if (event === 'stt:toggle') toggle = handler;
+				},
+			}),
+		);
 
 		await expect(toggle?.({ enabled: true })).resolves.toBeUndefined();
 		expect(ensureFullAccess).not.toHaveBeenCalled();
@@ -89,17 +96,21 @@ describe('registerSttHandlers', () => {
 			| ((data: unknown, callback: (result: unknown) => void) => void)
 			| undefined;
 		const beginSession = vi.fn();
-		registerSttHandlers({
-			authManager: { ensureFullAccess: vi.fn() },
-			sttManager: { beginSession },
-		} as never)({
-			id: 'socket-1',
-			roomId: 'room-1',
-			e2eeRequired: false,
-			on: (event: string, handler: typeof toggle) => {
-				if (event === 'stt:toggle') toggle = handler;
-			},
-		} as never);
+		registerSttHandlers(
+			fromPartial({
+				authManager: { ensureFullAccess: vi.fn() },
+				sttManager: { beginSession },
+			}),
+		)(
+			fromPartial({
+				id: 'socket-1',
+				roomId: 'room-1',
+				e2eeRequired: false,
+				on: (event: string, handler: typeof toggle) => {
+					if (event === 'stt:toggle') toggle = handler;
+				},
+			}),
+		);
 		const callback = vi.fn();
 
 		toggle?.({ enabled: 'yes' }, callback);
@@ -115,17 +126,21 @@ describe('registerSttHandlers', () => {
 		let toggle:
 			| ((data: unknown, callback: (result: unknown) => void) => void)
 			| undefined;
-		registerSttHandlers({
-			authManager: { ensureFullAccess: vi.fn() },
-			sttManager: new SttManager({}),
-		} as never)({
-			id: 'socket-1',
-			roomId: 'room-1',
-			e2eeRequired: false,
-			on: (event: string, handler: typeof toggle) => {
-				if (event === 'stt:toggle') toggle = handler;
-			},
-		} as never);
+		registerSttHandlers(
+			fromPartial({
+				authManager: { ensureFullAccess: vi.fn() },
+				sttManager: new SttManager({}),
+			}),
+		)(
+			fromPartial({
+				id: 'socket-1',
+				roomId: 'room-1',
+				e2eeRequired: false,
+				on: (event: string, handler: typeof toggle) => {
+					if (event === 'stt:toggle') toggle = handler;
+				},
+			}),
+		);
 		const callback = vi.fn();
 
 		toggle?.({ enabled: true }, callback);

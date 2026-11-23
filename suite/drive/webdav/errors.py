@@ -4,11 +4,15 @@ This module must not import other webdav modules (everything imports it).
 The tiny <D:error> bodies are built by hand so no XML library is needed here.
 """
 
-from contextlib import contextmanager
 from xml.sax.saxutils import escape
 
 import frappe
+from werkzeug.exceptions import HTTPException
 from werkzeug.wrappers import Response
+
+# The realm `auth.REALM` names. Repeated rather than imported: every WebDAV
+# module imports this one, so it may import none of them.
+BASIC_CHALLENGE = 'Basic realm="Frappe Drive", charset="UTF-8"'
 
 
 class DAVError(Exception):
@@ -37,6 +41,13 @@ class BadRequest(DAVError):
 class AuthRequired(DAVError):
     status = 401
 
+    def __init__(self, message: str = "", **kwargs):
+        super().__init__(message, **kwargs)
+        # RFC 7235: a 401 with no challenge gives a client nothing to retry
+        # with, and DAV clients only speak Basic. `auth._challenge` builds the
+        # same string; this covers the 401s that arrive from anywhere else.
+        self.headers.setdefault("WWW-Authenticate", BASIC_CHALLENGE)
+
 
 class Forbidden(DAVError):
     status = 403
@@ -62,6 +73,10 @@ class UnsupportedMediaType(DAVError):
     status = 415
 
 
+class RangeNotSatisfiable(DAVError):
+    status = 416
+
+
 class Locked(DAVError):
     status = 423
 
@@ -77,6 +92,12 @@ class Locked(DAVError):
 
 class BadGateway(DAVError):
     status = 502
+
+
+class PayloadTooLarge(DAVError):
+    # RFC 7231 §6.5.11. A server-side body limit, not an exhausted quota:
+    # rclone stops a whole sync on 507 and skips one file on 413.
+    status = 413
 
 
 class InsufficientStorage(DAVError):
@@ -101,10 +122,37 @@ def to_response(error: DAVError) -> Response:
     return response
 
 
+# A framework HTTPException already carries a status this hierarchy models.
+# `Locked` is absent on purpose: it takes a lock root, and no framework
+# exception has one to give.
+_HTTP_STATUS_ERRORS: dict[int, type[DAVError]] = {
+    400: BadRequest,
+    401: AuthRequired,
+    403: Forbidden,
+    404: NotFoundError,
+    405: MethodNotAllowed,
+    409: Conflict,
+    412: PreconditionFailed,
+    415: UnsupportedMediaType,
+    416: RangeNotSatisfiable,
+    502: BadGateway,
+    507: InsufficientStorage,
+}
+
+# Headers a framework exception carries that the DAV answer must keep. A 416
+# without `Content-Range` tells the client nothing about the real length, and
+# `bytes */<size>` is the whole point of RFC 7233's refusal.
+_CARRIED_HEADERS = frozenset({"content-range", "allow", "retry-after", "www-authenticate"})
+
+
 def map_exception(exception: Exception) -> DAVError:
     """Fallback mapping for Drive/frappe exceptions a handler let escape."""
     if isinstance(exception, DAVError):
         return exception
+    if mapped := _drive_refusal(exception):
+        return mapped
+    if isinstance(exception, HTTPException):
+        return _framework_status(exception)
     if isinstance(exception, frappe.AuthenticationError):
         return AuthRequired(str(exception))
     if isinstance(exception, frappe.PermissionError):
@@ -116,13 +164,62 @@ def map_exception(exception: Exception) -> DAVError:
     return DAVError("Internal server error.")
 
 
-@contextmanager
-def quota_guard():
-    """validate_quota raises a bare ValueError; convert it to 507 Insufficient Storage."""
-    try:
-        yield
-    except ValueError as e:
-        raise InsufficientStorage(str(e)) from e
+def _framework_status(exception: HTTPException) -> DAVError:
+    """Map a framework HTTPException onto the DAV status it already names.
+
+    The byte path leaves through `frappe.storage.serve.stream_blob`, and that
+    is werkzeug's ground: `send_file` raises `RequestedRangeNotSatisfiable`
+    for a Range it will not serve, and `NotFound` when the blob's bytes are
+    gone from the driver. Both are answers, not faults. Without this branch
+    they fell to the generic 500 below, which also had the dispatcher write
+    and commit an Error Log row on every client retry.
+    """
+    factory = _HTTP_STATUS_ERRORS.get(exception.code or 500)
+    if factory is None:
+        return DAVError("Internal server error.")
+    headers = {name: value for name, value in exception.get_headers() if name.lower() in _CARRIED_HEADERS}
+    # werkzeug's description is an HTML-ish sentence about the framework; the
+    # DAV answer is the status, and 404 keeps this module's one wording
+    message = "Resource not found." if factory is NotFoundError else ""
+    return factory(message, headers=headers)
+
+
+def _drive_refusal(exception: Exception) -> DAVError | None:
+    """Map a Drive workflow refusal onto its DAV status.
+
+    Every one of these subclasses `frappe.ValidationError`, so without this the
+    generic branch below would answer 409 to all of them - including the one
+    refusal WebDAV is strictest about. §12.1: unreadable is always 404, never
+    403, so `DriveNotFound` has to be recognised before the family it belongs
+    to. The import is function-local because this module is the one every other
+    WebDAV module imports and it must stay cheap.
+    """
+    from suite.drive._core.errors import (
+        DriveConflict,
+        DriveError,
+        DriveForbidden,
+        DriveLinkExpired,
+        DriveLocked,
+        DriveNotFound,
+        DriveOverQuota,
+    )
+
+    if isinstance(exception, DriveNotFound):
+        return NotFoundError("Resource not found.")
+    if isinstance(exception, DriveForbidden):
+        return Forbidden("You do not have permission for this resource.")
+    if isinstance(exception, DriveOverQuota):
+        return InsufficientStorage(str(exception))
+    if isinstance(exception, DriveConflict):
+        return Conflict(str(exception))
+    if isinstance(exception, DriveLocked | DriveLinkExpired):
+        # §6.9 gives a DAV session no link principals, so neither refusal can
+        # be reached from here. If one ever is, it is a credential the client
+        # cannot supply over this protocol, which is a refusal, not a retry.
+        return Forbidden("You do not have permission for this resource.")
+    if isinstance(exception, DriveError):
+        return BadRequest(str(exception))
+    return None
 
 
 def _condition_body(condition: str, href: str | None) -> str:

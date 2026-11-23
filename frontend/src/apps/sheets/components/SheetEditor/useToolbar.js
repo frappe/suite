@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+
 import { formatScope } from '../../engine/format-scope.js'
 
 // getGrid is a getter fn () => grid so the toolbar always has the live reference.
@@ -6,7 +7,21 @@ import { formatScope } from '../../engine/format-scope.js'
 // trigger autosave — without it, format changes never persist.
 // getScope (optional) returns { rect, totalRows, totalCols } so full-column /
 // full-row selections format at the column/row level instead of per-cell.
-export function useToolbar({ sheet, formats, getGrid, history, selectionIds, getScope, syncFlags, markDirty }) {
+// readEngineFormats (optional) resolves {cellId: num_fmt} for the cells
+// IronCalc formatted itself (a typed 50% or $1.50); clearEngineFormats
+// (optional, async) drops that format and stores the plain value as the input.
+export function useToolbar({
+  currentSheet,
+  formats,
+  getGrid,
+  history,
+  selectionIds,
+  getScope,
+  syncFlags,
+  markDirty,
+  readEngineFormats,
+  clearEngineFormats,
+}) {
   const activeFormat = ref({})
 
   // Last-action ledger — what F4 replays. Captured by every toolbar mutator
@@ -14,10 +29,7 @@ export function useToolbar({ sheet, formats, getGrid, history, selectionIds, get
   let lastAction = null
 
   function refreshActiveFormat() {
-    activeFormat.value = formats.get(
-      getGrid()?.getActiveCell() ?? 'A1',
-      sheet.getCurrentSheet(),
-    )
+    activeFormat.value = formats.get(getGrid()?.getActiveCell() ?? 'A1', currentSheet.value)
   }
 
   function _captureCells(ids, sn) {
@@ -53,7 +65,7 @@ export function useToolbar({ sheet, formats, getGrid, history, selectionIds, get
   // Post-mutate ordering is preserved (push AFTER mutating) so one undo reverts
   // one action — reversing it was the old format+type double-undo bug.
   function _formatOp(kind, args, ops) {
-    const sn = sheet.getCurrentSheet()
+    const sn = currentSheet.value
     const scope = _scope()
     const op = { opType: 'format', subSheet: sn }
     if (scope.kind === 'cols') {
@@ -80,9 +92,9 @@ export function useToolbar({ sheet, formats, getGrid, history, selectionIds, get
 
   function toggleFmt(key) {
     _formatOp('toggleFmt', [key], {
-      cols:  (cols, sn) => formats.toggleColumns(cols, key, sn),
-      rows:  (rows, sn) => formats.toggleRows(rows, key, sn),
-      cells: (ids, sn)  => formats.toggleRange(ids, key, sn),
+      cols: (cols, sn) => formats.toggleColumns(cols, key, sn),
+      rows: (rows, sn) => formats.toggleRows(rows, key, sn),
+      cells: (ids, sn) => formats.toggleRange(ids, key, sn),
     })
   }
 
@@ -98,29 +110,53 @@ export function useToolbar({ sheet, formats, getGrid, history, selectionIds, get
     _formatOp('setColor', [key, value], _patchOps({ [key]: value }))
   }
 
-  function clearFormatting() {
+  // A typed 50%, $1.50 or date is formatted by IronCalc itself, not the side
+  // store. Clear formatting clears that too (so 50% shows 0.5, as in Google
+  // Sheets, and a later typed 20% shows 20%) by storing the plain value as the
+  // input. That happens before the op is pushed, which commits the action, so
+  // one undo puts the typed input and the side store back. Read for
+  // selections up to 10,000 cells.
+  async function clearFormatting() {
+    const sn = currentSheet.value
+    const sel = getGrid()?.getSelection()
+    const small = sel && (sel.r1 - sel.r0 + 1) * (sel.c1 - sel.c0 + 1) <= 10000
+    const engineFmts = small && readEngineFormats ? await readEngineFormats(sel, sn) : {}
+    const engineIds = Object.keys(engineFmts)
+    if (engineIds.length) await clearEngineFormats?.(engineIds, sn)
     _formatOp('clearFormatting', [], {
-      cols:  (cols, sn) => formats.clearColumns(cols, sn),
-      rows:  (rows, sn) => formats.clearRows(rows, sn),
-      cells: (ids, sn)  => { for (const id of ids) formats.clear(id, sn) },
+      cols: (cols, sn) => formats.clearColumns(cols, sn),
+      rows: (rows, sn) => formats.clearRows(rows, sn),
+      cells: (ids, sn) => {
+        for (const id of ids) formats.clear(id, sn)
+      },
     })
   }
 
   // Shared mutation triple for "apply this format patch" handlers.
   function _patchOps(patch) {
     return {
-      cols:  (cols, sn) => formats.applyToColumns(cols, patch, sn),
-      rows:  (rows, sn) => formats.applyToRows(rows, patch, sn),
-      cells: (ids, sn)  => formats.applyToRange(ids, patch, sn),
+      cols: (cols, sn) => formats.applyToColumns(cols, patch, sn),
+      rows: (rows, sn) => formats.applyToRows(rows, patch, sn),
+      cells: (ids, sn) => formats.applyToRange(ids, patch, sn),
     }
   }
 
-  function getLastAction() { return lastAction }
-  function recordAction(kind, args) { lastAction = { kind, args } }
+  function getLastAction() {
+    return lastAction
+  }
+  function recordAction(kind, args) {
+    lastAction = { kind, args }
+  }
 
   return {
-    activeFormat, refreshActiveFormat,
-    toggleFmt, setAlign, setValign, setColor, clearFormatting,
-    getLastAction, recordAction,
+    activeFormat,
+    refreshActiveFormat,
+    toggleFmt,
+    setAlign,
+    setValign,
+    setColor,
+    clearFormatting,
+    getLastAction,
+    recordAction,
   }
 }

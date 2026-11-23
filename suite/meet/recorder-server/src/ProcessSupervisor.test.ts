@@ -3,6 +3,7 @@ import { readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
+import { fromPartial } from '@total-typescript/shoehorn';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ProcessSpawner, ProcessSupervisor } from './ProcessSupervisor.js';
 
@@ -15,14 +16,11 @@ afterEach(async () => {
 
 describe('ProcessSupervisor', () => {
 	it('shares stop, signals the process group, and escalates after timeout', async () => {
-		const child = new EventEmitter() as EventEmitter & {
-			pid: number;
-			stdout: PassThrough;
-			stderr: PassThrough;
-		};
-		child.pid = 42;
-		child.stdout = new PassThrough();
-		child.stderr = new PassThrough();
+		const child = Object.assign(new EventEmitter(), {
+			pid: 42,
+			stdout: new PassThrough(),
+			stderr: new PassThrough(),
+		});
 		const kill = vi.fn((_pid: number, signal?: NodeJS.Signals | number) => {
 			if (signal === 'SIGKILL') child.emit('exit', null, 'SIGKILL');
 			return true;
@@ -30,8 +28,8 @@ describe('ProcessSupervisor', () => {
 		const logPath = join(tmpdir(), `supervisor-${crypto.randomUUID()}.log`);
 		paths.push(logPath);
 		const supervisor = new ProcessSupervisor(
-			vi.fn(() => child) as unknown as ProcessSpawner,
-			{ kill: kill as typeof process.kill, maxLogBytes: 4 },
+			fromPartial<ProcessSpawner>(vi.fn(() => child)),
+			{ kill: fromPartial<typeof process.kill>(kill), maxLogBytes: 4 },
 		);
 		const managed = await supervisor.start('command', [], { logPath });
 		child.stdout.write('123456789');
@@ -48,15 +46,14 @@ describe('ProcessSupervisor', () => {
 	});
 
 	it('propagates signal errors other than ESRCH', async () => {
-		const child = new EventEmitter() as EventEmitter & { pid: number };
-		child.pid = 7;
+		const child = Object.assign(new EventEmitter(), { pid: 7 });
 		const error = Object.assign(new Error('denied'), { code: 'EPERM' });
 		const supervisor = new ProcessSupervisor(
-			vi.fn(() => child) as unknown as ProcessSpawner,
+			fromPartial<ProcessSpawner>(vi.fn(() => child)),
 			{
-				kill: (() => {
+				kill: () => {
 					throw error;
-				}) as typeof process.kill,
+				},
 			},
 		);
 		const logPath = join(tmpdir(), `supervisor-${crypto.randomUUID()}.log`);
@@ -66,19 +63,16 @@ describe('ProcessSupervisor', () => {
 	});
 
 	it('handles an asynchronous child error as one unexpected termination', async () => {
-		const child = new EventEmitter() as EventEmitter & {
-			pid: number;
-			stdout: PassThrough;
-			stderr: PassThrough;
-		};
-		child.pid = 42;
-		child.stdout = new PassThrough();
-		child.stderr = new PassThrough();
+		const child = Object.assign(new EventEmitter(), {
+			pid: 42,
+			stdout: new PassThrough(),
+			stderr: new PassThrough(),
+		});
 		const logPath = join(tmpdir(), `supervisor-${crypto.randomUUID()}.log`);
 		paths.push(logPath);
 		const unexpected = vi.fn();
 		const supervisor = new ProcessSupervisor(
-			vi.fn(() => child) as unknown as ProcessSpawner,
+			fromPartial<ProcessSpawner>(vi.fn(() => child)),
 		);
 		const managed = await supervisor.start('command', [], {
 			logPath,

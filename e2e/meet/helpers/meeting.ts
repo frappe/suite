@@ -19,11 +19,10 @@ export async function createMeetingViaApi(
 
 	if (!response.ok()) {
 		const responseBody = await response.text();
-		throw new Error(
-			`Meeting creation failed with status ${response.status()}: ${responseBody}`,
-		);
+		throw new Error(`Meeting creation failed with status ${response.status()}: ${responseBody}`);
 	}
 
+	// SAFETY: this successful Frappe method creates a meeting and returns its identifier in the method envelope.
 	const data = (await response.json()) as FrappeMethodResponse<string>;
 	const meetingId = data.data;
 
@@ -34,13 +33,8 @@ export async function createMeetingViaApi(
 	return meetingId;
 }
 
-export async function clearMeetingRateLimits(
-	request: APIRequestContext,
-): Promise<void> {
-	const response = await request.post(
-		"/api/v2/method/suite.meet.api.test_helpers.clear_rate_limits",
-		{ data: {} },
-	);
+export async function clearMeetingRateLimits(request: APIRequestContext): Promise<void> {
+	const response = await request.post("/api/v2/method/suite.meet.api.test_helpers.clear_rate_limits", { data: {} });
 	if (!response.ok()) {
 		throw new Error(`Meeting rate-limit reset failed with status ${response.status()}`);
 	}

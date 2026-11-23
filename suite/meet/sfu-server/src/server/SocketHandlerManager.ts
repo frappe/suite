@@ -134,9 +134,15 @@ export class SocketHandlerManager {
 
 		this.mediasoup.onCameraLayerDemand((roomId, peerId, demand) => {
 			const socket = Array.from(this.io.sockets.sockets.values()).find(
-				(candidate) => candidate.scope === 'full' && candidate.peerId === peerId && candidate.roomId === roomId,
+				(candidate) =>
+					candidate.scope === 'full' &&
+					candidate.peerId === peerId &&
+					candidate.roomId === roomId,
 			);
-			if (socket?.participantId && this.registry.isParticipantOwner(socket, roomId, socket.participantId))
+			if (
+				socket?.participantId &&
+				this.registry.isParticipantOwner(socket, roomId, socket.participantId)
+			)
 				socket.emit('producer:camera_layers', demand);
 		});
 
@@ -293,7 +299,10 @@ export class SocketHandlerManager {
 							protocol_version: 1,
 							success: false,
 							reason_code: 'invalid_proof',
-							diagnostic: (error as Error).message.slice(0, 256),
+							diagnostic: (error instanceof Error
+								? error.message
+								: String(error)
+							).slice(0, 256),
 						});
 						socket.disconnect(true);
 					}
@@ -315,7 +324,7 @@ export class SocketHandlerManager {
 
 	private sweepExpiredSockets(): void {
 		for (const [, socket] of this.io.sockets.sockets) {
-			if (this.authManager.isTokenExpired(socket as never)) {
+			if (this.authManager.isTokenExpired(socket)) {
 				this.telemetry.authEvents.inc({
 					stage: 'expiry',
 					reason: 'idle_sweep',
@@ -324,9 +333,9 @@ export class SocketHandlerManager {
 				loggers.authManager.debug(
 					'Idle sweep: disconnecting expired socket %s (user %s)',
 					socket.id,
-					(socket as { userId?: string }).userId,
+					socket.userId,
 				);
-				this.authManager.triggerTokenExpiry(socket as never, 'idle_sweep');
+				this.authManager.triggerTokenExpiry(socket, 'idle_sweep');
 			}
 		}
 	}

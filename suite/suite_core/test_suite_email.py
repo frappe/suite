@@ -1,12 +1,11 @@
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from suite.mail.tests.fake_suite_cloud import fake_suite_cloud
 from suite.suite_core import suite_email
 from suite.suite_core.patches import drop_notification_email_account
-from suite.suite_core.suite_email import EmailNotSentError
+from suite.suite_core.suite_email import EmailDeliveryUnavailableError, EmailNotSentError
 
 RECIPIENT = "someone@example.test"
 PARAMS = {"link": "https://acme.example.test/mail/reset-password/abc"}
@@ -22,61 +21,85 @@ class TestSuiteEmail(IntegrationTestCase):
         self.enterContext(self.change_settings("Suite Settings", **settings))
         frappe.local.request_cache.clear()
 
-    def test_suite_cloud_sends_the_email_by_its_type_and_parameters(self) -> None:
-        self.connect()
-        with fake_suite_cloud() as cloud, patch("frappe.sendmail") as sendmail:
+    def use_provider(self, provider: Mock) -> None:
+        self.enterContext(patch("frappe.get_hooks", return_value=["test.email_provider"]))
+        self.enterContext(patch("suite.suite_core.suite_email.import_module", return_value=provider))
+
+    def test_configured_provider_receives_the_email_type_and_parameters(self) -> None:
+        provider = Mock()
+        provider.is_configured.return_value = True
+        self.use_provider(provider)
+        with patch("frappe.sendmail") as sendmail:
             suite_email.send("password-reset", RECIPIENT, PARAMS, LOCAL)
 
-        (sent,) = cloud.emails
-        self.assertEqual(
-            (sent["email_type"], sent["recipient"], sent["params"]), ("password-reset", RECIPIENT, PARAMS)
+        email_type, recipient, params, request_key = provider.send_email.call_args.args
+        self.assertEqual((email_type, recipient, params), ("password-reset", RECIPIENT, PARAMS))
+        self.assertTrue(request_key)
+        sendmail.assert_not_called()
+
+    def test_a_provider_refusal_is_raised_to_the_waiting_caller(self) -> None:
+        provider = Mock()
+        provider.is_configured.return_value = True
+        provider.send_email.side_effect = EmailNotSentError("550 No such user")
+        self.use_provider(provider)
+
+        self.assertRaisesRegex(
+            EmailNotSentError,
+            "550 No such user",
+            suite_email.send,
+            "password-reset",
+            RECIPIENT,
+            PARAMS,
+            LOCAL,
         )
-        self.assertTrue(sent["request_key"])
-        sendmail.assert_not_called()  # the site renders nothing itself
 
-    def test_an_email_suite_cloud_did_not_send_raises_to_the_caller(self) -> None:
-        self.connect()
-        with fake_suite_cloud() as cloud:
-            refused = {"status": "Failed", "error": "550 No such user"}
-            with patch.object(cloud, "send_email", return_value=refused):
-                self.assertRaisesRegex(
-                    EmailNotSentError,
-                    "550 No such user",
-                    suite_email.send,
-                    "password-reset",
-                    RECIPIENT,
-                    PARAMS,
-                    LOCAL,
-                )
-
-    def test_a_site_without_suite_cloud_sends_it_through_its_own_email_account(self) -> None:
-        self.connect(connected=False)
+    def test_an_unconfigured_provider_uses_the_sites_email_account(self) -> None:
+        provider = Mock()
+        provider.is_configured.return_value = False
+        self.use_provider(provider)
         with patch("frappe.sendmail") as sendmail:
             suite_email.send("password-reset", RECIPIENT, PARAMS, LOCAL)
             suite_email.enqueue("password-reset", RECIPIENT, PARAMS, LOCAL)
 
         now, queued = sendmail.call_args_list
         self.assertEqual(now.kwargs, {"recipients": [RECIPIENT], "now": True, **LOCAL})
-        self.assertEqual(queued.kwargs, {"recipients": [RECIPIENT], **LOCAL})  # Email Queue retries it
+        self.assertEqual(queued.kwargs, {"recipients": [RECIPIENT], **LOCAL})
+        provider.send_email.assert_not_called()
 
-    def test_a_notice_is_sent_after_the_request_and_tried_again_with_one_key(self) -> None:
-        self.connect()
+    def test_no_provider_uses_the_sites_email_account(self) -> None:
+        self.enterContext(patch("frappe.get_hooks", return_value=[]))
+        with patch("frappe.sendmail") as sendmail:
+            suite_email.send("password-reset", RECIPIENT, PARAMS, LOCAL)
+
+        sendmail.assert_called_once_with(recipients=[RECIPIENT], now=True, **LOCAL)
+
+    def test_multiple_provider_hooks_are_rejected(self) -> None:
+        self.enterContext(patch("frappe.get_hooks", return_value=["one", "two"]))
+
+        with self.assertRaisesRegex(RuntimeError, "at most one"):
+            suite_email.send("password-reset", RECIPIENT, PARAMS, LOCAL)
+
+    def test_a_notice_is_sent_after_commit_and_retries_with_one_key(self) -> None:
+        provider = Mock()
+        provider.is_configured.return_value = True
+        self.use_provider(provider)
         with patch("frappe.enqueue") as enqueue:
             suite_email.enqueue("drive-share", RECIPIENT, PARAMS, LOCAL)
 
         method, kwargs = enqueue.call_args.args[0], enqueue.call_args.kwargs
         self.assertEqual(method, "suite.suite_core.suite_email.send_in_background")
         self.assertTrue(kwargs.pop("enqueue_after_commit"))
-        with fake_suite_cloud() as cloud:
-            refused = {"status": "Failed", "error": "421 Try later"}
-            with patch.object(cloud, "send_email", return_value=refused):
-                self.assertRaises(frappe.RetryBackgroundJobError, suite_email.send_in_background, **kwargs)
-            throttled = frappe.TooManyRequestsError("Too many requests")
-            with patch.object(cloud, "send_email", side_effect=throttled):
-                self.assertRaises(frappe.RetryBackgroundJobError, suite_email.send_in_background, **kwargs)
-            suite_email.send_in_background(**kwargs)
+        provider.send_email.side_effect = [
+            EmailNotSentError("421 Try later"),
+            EmailDeliveryUnavailableError("Temporarily unavailable"),
+            frappe.TooManyRequestsError("Too many requests"),
+            None,
+        ]
+        for _ in range(3):
+            self.assertRaises(frappe.RetryBackgroundJobError, suite_email.send_in_background, **kwargs)
+        suite_email.send_in_background(**kwargs)
 
-        self.assertEqual(cloud.emails[-1]["request_key"], kwargs["request_key"])
+        self.assertEqual(provider.send_email.call_args_list[-1].args[3], kwargs["request_key"])
 
     def test_the_patch_drops_only_the_old_notification_account(self) -> None:
         for connected, email_id, kept in (
