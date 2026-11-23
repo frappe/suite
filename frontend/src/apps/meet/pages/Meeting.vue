@@ -393,6 +393,8 @@ onScopeDispose(unregisterPaletteGroups)
 
 // --- Stores (singletons) ---
 const connectionState = useConnectionState()
+// Read before the first render and before resetting the shared connection store.
+const isPreparingAutoJoin = ref(session.isLoggedIn && connectionState.justCreated)
 const currentUser = useCurrentUser()
 const mediaState = useMediaState()
 const participantStore = useParticipantStore()
@@ -750,6 +752,7 @@ const isInLobby = computed(() => lobbyStore.isInLobby || false)
 const isWaitingForApproval = computed(() => lobbyStore.isWaitingForApproval || false)
 const isRejected = computed(() => lobbyStore.isJoinRequestRejected || false)
 const showPreview = computed(() => {
+  if (isPreparingAutoJoin.value) return false
   const isUnauthenticatedGuest = !session.isLoggedIn && !isGuestSession.value
   if (isUnauthenticatedGuest) {
     return true
@@ -1066,9 +1069,6 @@ const handleE2EENeedsMediaRepublish = async (event: Event) => {
 
 // --- Lifecycle ---
 onMounted(async () => {
-  // get wasJustCreated before resetting stores else it'll be reset to false
-  const wasJustCreated = connectionState.justCreated
-
   // Reset all stores
   connectionState.$reset()
   mediaState.$reset()
@@ -1139,13 +1139,14 @@ onMounted(async () => {
   }
   isInitializingPreview.value = false
 
-  // Auto-join if just created
-  if (wasJustCreated) {
-    connectionState.justCreated = false
-    await joinMeetingFromPreview()
+  if (isPreparingAutoJoin.value) {
+    const joining = joinMeetingFromPreview()
+    isPreparingAutoJoin.value = false
+    await joining
   }
 })
 onUnmounted(() => {
+  isPreparingAutoJoin.value = false
   clearConnectingToast()
   clearMeetingNotifications()
   document.removeEventListener('fullscreenchange', syncFullscreenState)

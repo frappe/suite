@@ -866,11 +866,26 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     }
   }
 
+  const hasMediaPermission = async (name: 'camera' | 'microphone') => {
+    try {
+      return (await navigator.permissions?.query({ name }))?.state === 'granted'
+    } catch {
+      return false
+    }
+  }
+
   const initializeCameraImplementation = async () => {
     const operation = createCameraOperation()
     try {
       assertCurrentCameraOperation(operation)
-      mediaState.setMedia(prefMicEnabled.value, prefCameraEnabled.value)
+      // An unanswered permission prompt can hold getUserMedia open indefinitely.
+      // Request new permissions only from the explicit camera and microphone controls.
+      const [micOn, cameraOn] = await Promise.all([
+        prefMicEnabled.value && hasMediaPermission('microphone'),
+        prefCameraEnabled.value && hasMediaPermission('camera'),
+      ])
+      assertCurrentCameraOperation(operation)
+      mediaState.setMedia(micOn, cameraOn)
 
       if (mediaState.isCameraOn || mediaState.isMicOn) {
         const { stream } = await acquireUserMedia(
