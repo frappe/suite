@@ -19,7 +19,8 @@ from suite.writer.content import APP, EDITOR, converter
 from suite.writer.content.files import BODY_FRAGMENT
 
 MARKDOWN_MAX = 128 * 1024
-ID_ATTRIBUTES = ("id", "data-toc-id")
+# Where a heading keeps its id
+HEADING_IDS = ("id", "data-toc-id")
 # The layer's refusals that pass by themselves: another push holds the document, or a compaction makes room
 PASSING = ("busy", "compacting")
 
@@ -150,9 +151,10 @@ def append_element(
 ) -> pycrdt.XmlElement:
     """Add an element under `parent` with `source`'s tag and attributes, and answer it."""
     element = parent.children.append(pycrdt.XmlElement(source.tag))
-    # The converter numbers its ids within one conversion, so an element gets its own, as a typed heading does
+    # The converter numbers heading ids within one conversion, so a heading gets its own, as a typed one does
     own_id = str(uuid.uuid4())
     for name, value in source.attributes.__iter__():
-        element.attributes[name] = own_id if name in ID_ATTRIBUTES else value
+        is_heading_id = source.tag == "heading" and name in HEADING_IDS
+        element.attributes[name] = own_id if is_heading_id else value
 
     return element

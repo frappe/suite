@@ -170,6 +170,15 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual([len(own) for own in ids], [1, 1])
         self.assertFalse(ids[0] & ids[1])
 
+    def test_a_mention_keeps_the_user_it_names(self):
+        mention = (
+            '<span data-type="mention" class="mention" data-id="someone@example.com" data-label="W">@W</span>'
+        )
+
+        node = self.create(f"Hi {mention}, there.")
+
+        self.assertRegex(self.body_of(node), r'<mention [^>]*id="someone@example\.com"')
+
     def test_replace_leaves_only_the_markdown(self):
         node = self.create("First.\n\nSecond.")
 
