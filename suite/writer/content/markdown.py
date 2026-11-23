@@ -69,7 +69,24 @@ def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> int:
     if drive.check(node, drive.EDIT) != EDITOR.doctype:
         raise drive.DriveNotFound(_("That document was not found"))
 
-    return write_body(node, body_state(markdown), mode)
+    body = body_state(markdown)
+    # A document with no log refuses the write below, so it keeps no version
+    if mode == "replace" and content.find(APP, node):
+        keep_version(node)
+
+    return write_body(node, body, mode)
+
+
+def keep_version(node: str) -> None:
+    """Nothing is replaced without a version of the head first, as nothing is restored without one."""
+    try:
+        # A milestone, as a restore's: an automatic version thins with age, and a named one is a person's
+        drive.take_version(node, kind="milestone", label=_("Before a replace from Markdown"))
+    except drive.DriveError as error:
+        raise WriteRefused(_("No version could be kept before the replace: {0}").format(error)) from None
+
+    # The write reads in a transaction of its own, so the version is saved before the body goes
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def body_state(markdown: str) -> bytes:

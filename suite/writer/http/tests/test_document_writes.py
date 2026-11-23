@@ -1,3 +1,5 @@
+import base64
+import gzip
 import json
 import os
 import re
@@ -111,6 +113,16 @@ class TestDocumentWrites(DriveCallbackCase):
         thread.join()
         return errors
 
+    def kept_versions(self, node: str) -> list[dict]:
+        return [row for row in drive.list_versions(node)["rows"] if row["kind"] == "milestone"]
+
+    def version_blocks(self, node: str, seq: int) -> str:
+        # The body a version holds, as its stored bytes give it
+        with drive.read_version(node, seq) as stream:
+            state = gzip.decompress(base64.b64decode(json.loads(stream.read())["state"]))
+
+        return self.text_of(state)
+
     def failing_converter(self, script: str):
         # A bundle whose child fails as a real one does
         bundle = Path(self.enterContext(tempfile.TemporaryDirectory())) / "converter.cjs"
@@ -220,6 +232,39 @@ class TestDocumentWrites(DriveCallbackCase):
         writer_routes.document_write(node, "Only this.", "replace")
 
         self.assertEqual(self.blocks_of(node), "<paragraph>Only this.</paragraph>")
+
+    def test_a_replace_keeps_a_version_of_what_a_person_typed(self):
+        node = self.create("First.")
+        self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed by hand."))
+
+        writer_routes.document_write(node, "Only this.", "replace")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>Only this.</paragraph>")
+        (kept,) = self.kept_versions(node)
+        self.assertEqual(kept["label"], "Before a replace from Markdown")
+        self.assertEqual(
+            self.version_blocks(node, kept["seq"]), "<paragraph>First. Typed by hand.</paragraph>"
+        )
+
+    def test_a_replace_that_can_keep_no_version_writes_nothing(self):
+        node = self.create("First.")
+        root = drive.ensure_personal_root(WRITER)
+        quota = frappe.db.get_value("Drive Root", root, "quota_bytes")
+        self.addCleanup(frappe.db.set_value, "Drive Root", root, "quota_bytes", quota)
+        # A Drive with no room for one more byte
+        frappe.db.set_value("Drive Root", root, "quota_bytes", 1)
+
+        with self.assertRaisesRegex(WriteRefused, "No version could be kept"):
+            writer_routes.document_write(node, "Only this.", "replace")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
+    def test_an_append_keeps_no_version_of_its_own(self):
+        node = self.create("First.")
+
+        writer_routes.document_write(node, "Second.", "append")
+
+        self.assertEqual(self.kept_versions(node), [])
 
     def test_an_append_that_shows_nothing_is_refused(self):
         node = self.create("First.")
@@ -333,6 +378,7 @@ class TestDocumentWrites(DriveCallbackCase):
             writer_routes.document_write(node, "Only this.", "replace")
 
         self.assertEqual([queued.kwargs["node"] for queued in enqueue.call_args_list], [node])
+        self.assertEqual(self.kept_versions(node), [])
 
     def test_the_automatic_version_credits_who_wrote(self):
         ensure_user(OUTSIDER)
