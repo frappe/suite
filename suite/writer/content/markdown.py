@@ -24,7 +24,9 @@ HEADING_IDS = ("id", "data-toc-id")
 # The layer's refusals that pass by themselves: another push holds the document, or a compaction makes room
 PASSING = ("busy", "compacting")
 # The converter's check names no tag; in Markdown it fails on HTML the editor has no place for
-PLAIN_REASONS = {"check": "raw HTML the editor can't hold"}
+PLAIN_REASONS = {"check": "a link or HTML the editor can't hold"}
+# The converter's own failures, which say nothing about the Markdown
+CONVERTER_FAILURES = ("child_timeout", "child_crash", "bad_answer")
 
 
 class MarkdownRefused(frappe.ValidationError):
@@ -104,14 +106,18 @@ def converted(html: str) -> convert.Converted:
     legacy = {"content": None, "html": html, "collab": 0, "ycomments": None}
     try:
         answer = converter.run(legacy)
-    except checker.CheckerBusy:
-        raise WriteBusy(_("The converter is busy. Try again in a moment.")) from None
+    except (checker.CheckerBusy, convert.ConverterChanged):
+        # Another child held the site's one turn, or a deploy changed the bundle under the request
+        answer = None
 
-    if isinstance(answer, convert.Refused):
-        refusal = PLAIN_REASONS.get(answer.reason, answer.reason)
-        raise MarkdownRefused(_("A document can't keep this Markdown: {0}").format(refusal))
+    if isinstance(answer, convert.Converted):
+        return answer
 
-    return answer
+    if answer is None or answer.reason in CONVERTER_FAILURES:
+        raise WriteBusy(_("The converter gave no answer. Try again in a moment."))
+
+    refusal = PLAIN_REASONS.get(answer.reason, answer.reason)
+    raise MarkdownRefused(_("A document can't keep this Markdown: {0}").format(refusal))
 
 
 def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> int:
@@ -129,6 +135,10 @@ def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> in
         return content.write(APP, node, change)
     except content.Refusal as refusal:
         reason = refusal.body["collab"]
+        if reason == "not_found":
+            # The document went away after the access check
+            raise drive.DriveNotFound(_("That document was not found")) from None
+
         if reason in PASSING:
             raise WriteBusy(reason, retry_ms=cast("int | None", refusal.body.get("retry_ms"))) from None
 

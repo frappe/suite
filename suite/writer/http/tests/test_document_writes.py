@@ -1,7 +1,9 @@
 import os
 import re
+import tempfile
 import uuid
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -11,14 +13,16 @@ from frappe.utils import now_datetime
 from frappe.utils.synchronization import filelock
 
 from suite import drive
-from suite.content import capacity, checker, convert
+from suite.content import capacity, checker, convert, steps
 from suite.content.http import routes
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
+from suite.writer.content import converter
 from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused
 from suite.writer.content.tests.drive_callback_case import (
     DriveCallbackCase,
+    embed,
     share_as_writer,
 )
 from suite.writer.content.tests.support import OUTSIDER, READER, WRITER, call_route, read_open
@@ -72,6 +76,12 @@ class TestDocumentWrites(DriveCallbackCase):
         stream, _mime = writer_drive.SPEC.export(docname, "markdown")
         return stream.read().decode()
 
+    def failing_converter(self, script: str):
+        # A bundle whose child fails as a real one does
+        bundle = Path(self.enterContext(tempfile.TemporaryDirectory())) / "converter.cjs"
+        bundle.write_text(script)
+        return patch.object(converter, "CONVERTER_BUILD", bundle)
+
     def test_a_new_document_holds_the_markdown(self):
         node = self.create("# Plan\n\nShip **today**, café ✓.")
 
@@ -91,10 +101,12 @@ class TestDocumentWrites(DriveCallbackCase):
         )
 
     def test_markdown_a_document_cannot_keep_creates_nothing(self):
-        with self.assertRaisesRegex(MarkdownRefused, "raw HTML the editor can't hold"):
-            writer_routes.document_create(
-                self.folder, "Agent refused", 'Kept\n\n<div class="callout">Lost</div>'
-            )
+        for markdown in ('Kept\n\n<div class="callout">Lost</div>', "[Run](javascript:alert(1))"):
+            with (
+                self.subTest(markdown),
+                self.assertRaisesRegex(MarkdownRefused, "a link or HTML the editor can't hold"),
+            ):
+                writer_routes.document_create(self.folder, "Agent refused", markdown)
 
         self.assertFalse(
             frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
@@ -346,3 +358,72 @@ class TestDocumentWrites(DriveCallbackCase):
         )
         self.assertIn("<table>", before)
         self.assertIn('<codeBlock language="python">', before)
+
+    def test_a_read_after_typing_in_a_tab_gives_the_new_text(self):
+        node = self.create("First.")
+        self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed."))
+
+        self.assertEqual(self.markdown_of(node), "First. Typed.")
+
+        # A read's request ends in a rollback, which the copy the read made outlives
+        frappe.db.rollback()
+        self.assertIn("<p>First. Typed.</p>", writer_routes.document(self.docname_of(node))["html"])
+
+    def test_a_guests_read_after_typing_in_a_tab_starts_no_render(self):
+        node = self.create("First.")
+        self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed."))
+        frappe.set_user("Guest")
+
+        with self.assertRaises(drive.DriveConflict):
+            writer_drive.SPEC.export(self.docname_of(node), "html")
+
+    def test_a_guest_cannot_read_markdown(self):
+        node = self.create("Hello")
+        frappe.set_user("Guest")
+
+        with self.assertRaises(drive.DriveForbidden):
+            self.markdown_of(node)
+
+    def test_a_converter_that_fails_answers_busy_and_creates_nothing(self):
+        failures = {
+            "a crash": "process.exit(1)",
+            "another version": """process.stdout.write('{"version": "0"}')""",
+        }
+        for failure, script in failures.items():
+            with self.subTest(failure), self.failing_converter(script), self.assertRaises(WriteBusy):
+                writer_routes.document_create(self.folder, "Agent refused", "Hello")
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_a_converter_that_fails_answers_busy_to_a_markdown_read(self):
+        node = self.create("Hello")
+
+        with self.failing_converter("process.exit(1)"), self.assertRaises(frappe.RateLimitExceededError):
+            self.markdown_of(node)
+
+    def test_a_document_purged_under_a_write_answers_not_found(self):
+        node = self.create("First.")
+        self.addCleanup(self.set_doc, node, mode="active")
+        read = steps.read
+
+        def read_then_purge(app: str, doc_id: str):
+            snapshot = read(app, doc_id)
+            # The purge lands after the write read the document and before it pushes
+            self.set_doc(node, mode="purged")
+            return snapshot
+
+        with patch.object(steps, "read", read_then_purge), self.assertRaises(drive.DriveNotFound):
+            writer_routes.document_write(node, "Second.", "append")
+
+    def test_a_drive_picture_survives_a_read_and_a_replace(self):
+        node = self.create("First.")
+        picture = self.old_media(node, "chart.png")
+        src = embed(picture)
+        self.push_edit(node, lambda body: body.children.append(pycrdt.XmlElement("image", {"src": src})))
+
+        writer_routes.document_write(node, self.markdown_of(node), "replace")
+
+        self.assertIn(f'src="{src}"', self.body_of(node))
+        self.assertEqual(writer_drive.SPEC.used_nodes(self.docname_of(node)), {picture})

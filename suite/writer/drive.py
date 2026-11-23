@@ -175,12 +175,17 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
 
 
 def markdown_export(docname: str) -> tuple[io.BytesIO, str]:
-    """Stream one document as Markdown, made from the HTML its Download gives."""
+    """Stream one document as Markdown, made from the HTML its Download gives, to a signed-in reader."""
+    if frappe.session.user == "Guest":
+        # The site runs one converter at a time, and a public link's reader never takes its turn
+        raise drive.DriveForbidden(_("Sign in to read a document as Markdown"))
+
     html, _mime = SPEC.export(docname, HTML_FORMAT)
     try:
         markdown = converter.markdown_of(html.read().decode("utf-8"))
-    except checker.CheckerBusy:
-        frappe.throw(_("The converter is busy. Try again in a moment."), frappe.RateLimitExceededError)
+    except checker.CheckerFailed:
+        # Busy, out of time or crashed: the document is not at fault, so the same read works later
+        frappe.throw(_("The converter gave no answer. Try again in a moment."), frappe.RateLimitExceededError)
 
     return io.BytesIO(markdown.encode("utf-8")), MARKDOWN_MIME
 
