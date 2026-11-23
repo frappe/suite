@@ -86,7 +86,20 @@ Given = str | int | float | bool | list | dict | None
 
 
 def _route(handler):
-    """Give every Drive refusal the v2 body §11.6 specifies.
+    """Give every Drive refusal the v2 body §11.6 specifies, as `throw_again` maps it."""
+
+    @functools.wraps(handler)
+    def answered(*args: object, **kwargs: object) -> object:
+        try:
+            return handler(*args, **kwargs)
+        except frappe.ValidationError as refusal:
+            throw_again(refusal)
+
+    return answered
+
+
+def throw_again(refusal: Exception) -> NoReturn:
+    """Throw `refusal` as the v2 body §11.6 specifies, here and for a route of another product that calls Drive.
 
     `report_error` names the exception class, and copies a message only when
     `msgprint` stamped one onto it - which `frappe.throw` does and a bare
@@ -98,31 +111,29 @@ def _route(handler):
     scores it 417; §11.6 has one code for a bad request, and it is `DriveError`
     at 400.
     """
+    if isinstance(refusal, DriveError):
+        _refuse(type(refusal), str(refusal), free_title=getattr(refusal, "free_title", None))
 
-    @functools.wraps(handler)
-    def answered(*args, **kwargs):
-        try:
-            return handler(*args, **kwargs)
-        except DriveError as refusal:
-            _refuse(type(refusal), str(refusal), free_title=getattr(refusal, "free_title", None))
-        except frappe.RateLimitExceededError as limited:
-            # 429, and already carrying its message: §6.3 locks a link out for
-            # fifteen minutes after five wrong passwords, and the caller has to
-            # be able to tell that apart from a wrong password. The clause
-            # below would flatten it to 400 with every other bad argument.
-            # `Retry-After` carries the seconds left, so the unlock screen can
-            # count down to the next attempt.
-            if retry_after := getattr(limited, "retry_after", None):
-                frappe.local.response_headers["Retry-After"] = str(retry_after)
-            raise
-        except frappe.DoesNotExistError as missing:
-            # A row a workflow reached for is gone. The framework already
-            # scores this 404; §11.6 spells that `DriveNotFound`.
-            _refuse(DriveNotFound, str(missing))
-        except frappe.ValidationError as invalid:
-            _refuse(DriveError, str(invalid))
+    if isinstance(refusal, frappe.RateLimitExceededError):
+        # 429, and already carrying its message: §6.3 locks a link out for
+        # fifteen minutes after five wrong passwords, and the caller has to
+        # be able to tell that apart from a wrong password. The last clause
+        # would flatten it to 400 with every other bad argument.
+        # `Retry-After` carries the seconds left, so the unlock screen can
+        # count down to the next attempt.
+        if retry_after := getattr(refusal, "retry_after", None):
+            frappe.local.response_headers["Retry-After"] = str(retry_after)
+        raise refusal
 
-    return answered
+    if isinstance(refusal, frappe.DoesNotExistError):
+        # A row a workflow reached for is gone. The framework already
+        # scores this 404; §11.6 spells that `DriveNotFound`.
+        _refuse(DriveNotFound, str(refusal))
+
+    if isinstance(refusal, frappe.ValidationError):
+        _refuse(DriveError, str(refusal))
+
+    raise refusal
 
 
 def _refuse(kind: type, message: str, **fields) -> None:
@@ -134,14 +145,6 @@ def _refuse(kind: type, message: str, **fields) -> None:
         # logging in, so name that instead of inviting a browser login prompt.
         frappe.local.response_headers["WWW-Authenticate"] = 'DriveLink realm="drive"'
     refuse(kind, message, **fields)
-
-
-def _raise(refusal: Exception) -> NoReturn:
-    raise refusal
-
-
-# Answers a refusal as every route here does, for a route of another product that calls Drive
-throw_again: Callable[[Exception], NoReturn] = _route(_raise)
 
 
 def _principals():
