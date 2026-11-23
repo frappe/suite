@@ -179,24 +179,24 @@ class DataStore(BaseStore):
             entry.env.set_mapsize(self.map_size)
 
     @contextmanager
-    def _txn(self, write: bool) -> Any:
+    def _txn(self, write: bool, buffers: bool = False) -> Any:
         """Yield an LMDB transaction on this store's environment."""
 
         entry = self._acquire_env()
         try:
-            with self._begin(entry.env, write) as txn:
+            with self._begin(entry.env, write, buffers) as txn:
                 yield txn
         finally:
             self._release_env()
 
-    def _begin(self, env: lmdb.Environment, write: bool) -> Any:
+    def _begin(self, env: lmdb.Environment, write: bool, buffers: bool = False) -> Any:
         """Begin a transaction, reclaiming stale reader slots and retrying once on MDB_READERS_FULL."""
 
         try:
-            return env.begin(write=write, buffers=False)
+            return env.begin(write=write, buffers=buffers)
         except lmdb.ReadersFullError:
             self._reader_check(env)
-            return env.begin(write=write, buffers=False)
+            return env.begin(write=write, buffers=buffers)
 
     def _write(self, fn: Any) -> None:
         """Run a write callback in a transaction, growing the map and retrying on MapFullError."""
@@ -384,6 +384,24 @@ class DataStore(BaseStore):
                     count += 1
 
         return count
+
+    def get_value_sizes(self, entity: Enum) -> dict[str, int]:
+        """Return each key's stored size in bytes, without copying or deserializing values."""
+
+        entity_prefix = self._entity_prefix(entity).encode()
+        sizes = {}
+
+        with self._txn(write=False, buffers=True) as txn:
+            cursor = txn.cursor()
+            if cursor.set_range(entity_prefix):
+                for db_key, value in cursor:
+                    key = bytes(db_key)
+                    if not key.startswith(entity_prefix):
+                        break
+
+                    sizes[key.removeprefix(entity_prefix).decode()] = len(value)
+
+        return sizes
 
     def delete_all(self, entity: Enum) -> None:
         """Delete all keys for a given entity type."""

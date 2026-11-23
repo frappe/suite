@@ -23,6 +23,7 @@
   "block_remote_images",
   "on_block_old_mail",
   "cache_section",
+  "message_cache_quota_mb",
   "column_break_brmt",
   "total_cached_blobs",
   "total_cached_mail_messages",
@@ -136,6 +137,15 @@
    "label": "Has Cached JMAP Mailboxes",
    "no_copy": 1,
    "read_only": 1
+  },
+  {
+   "default": "512",
+   "description": "Maximum size of this account's cached mail messages. A daily job evicts the least recently accessed messages above it. Set to 0 for no limit.",
+   "fieldname": "message_cache_quota_mb",
+   "fieldtype": "Int",
+   "label": "Message Cache Quota (MB)",
+   "non_negative": 1,
+   "permlevel": 1
   },
   {
    "fieldname": "column_break_brmt",
@@ -337,7 +347,7 @@
    "link_fieldname": "account"
   }
  ],
- "modified": "2026-10-14 17:00:00.000000",
+ "modified": "2026-11-23 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Mail",
  "name": "JMAP Account",
@@ -363,6 +373,18 @@
   {
    "read": 1,
    "role": "Suite User",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "System Manager",
+   "write": 1
+  },
+  {
+   "permlevel": 1,
+   "read": 1,
+   "role": "Suite Admin",
    "write": 1
   }
  ],

@@ -50,6 +50,7 @@ from suite.mail.store import (
     get_email_address_index,
     rebuild_email_address_index,
 )
+from suite.mail.store.quota import record_message_access
 from suite.mail.utils import (
     get_config,
     log_mail_error,
@@ -966,6 +967,7 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
             if changed := _written_since(account, list(messages_to_cache), fetched_at):
                 get_data_store(account).delete_many(Entity.EMAIL, keys=list(changed))
 
+    record_message_access(account, list(messages))
     return [messages[id] for id in ids if id in messages]
 
 

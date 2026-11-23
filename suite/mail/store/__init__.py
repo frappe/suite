@@ -34,6 +34,7 @@ class Entity(Enum):
     IDENTITY = "identity"
     MAILBOX = "mailbox"
     EMAIL = "email"
+    EMAIL_ACCESS = "email_access"
 
     PARTICIPANT_IDENTITY = "participant_identity"
     CALENDAR = "calendar"
