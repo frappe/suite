@@ -93,7 +93,8 @@ A read writes Markdown as Writer's Download as Markdown does, with a picture as 
 
 - Markdown has no place for colour, underline, highlight, alignment, a mention or a picture's size. A read leaves them out, so a `replace` of a document people have styled loses them. Use `append` there.
 - A table's first row reads as its heading row.
-- A read gives the document as it stands, typing in a tab included. If typing lands in the same moment, it answers `DriveConflict`. Read again.
+- A read gives the document as it stands when the read arrives, typing in a tab included. It saves nothing and holds up no one's typing.
+- A new document with nothing in it reads as an empty answer.
 
 ## Refusals
 
@@ -112,7 +113,7 @@ A refusal answers its class and a message:
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the document, the document is in the trash, or a guest asks for Markdown |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
-| `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: typing landed in the same moment, or the item is a folder |
+| `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: the document is not converted yet, or the item is a folder |
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, or the Markdown is over 128 KB. Nothing was written |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted` or `doc_full`. The same call gets the same answer until that changes |
 | `WriteBusy` | 429 | The document is busy, or the converter gave no answer: it was busy, ran out of time, failed, or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
