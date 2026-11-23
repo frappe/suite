@@ -243,6 +243,7 @@
         "DriveNotFound",
         "DriveForbidden",
         "DriveLocked",
+        "DriveConflict",
         "MarkdownRefused",
         "WriteRefused",
         "WriteBusy"
@@ -308,6 +309,7 @@
         "DriveNotFound",
         "DriveForbidden",
         "DriveLocked",
+        "DriveConflict",
         "MarkdownRefused",
         "WriteRefused",
         "WriteBusy"

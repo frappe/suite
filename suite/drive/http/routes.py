@@ -53,6 +53,7 @@ from frappe.utils import escape_html
 from frappe.utils.response import as_page, respond_as_web_page
 from werkzeug.wrappers import Response
 
+from suite.composition.http import refuse
 from suite.drive import framework
 from suite.drive._core import access, comments, content, downloads, previews, roots, versions
 from suite.drive._core import activity as activity_core
@@ -123,30 +124,14 @@ def _route(handler):
 
 
 def _refuse(kind: type, message: str, **fields) -> None:
-    """Throw `kind` so the envelope carries its message and any extra `fields`.
-
-    `report_error` merges the `msgprint` entry stamped with the exception's id
-    into the envelope, so an extra field (§11.6's `free_title`) is written onto
-    that entry. A field whose value is None is left out.
-    """
+    """Throw `kind` so the envelope carries its message and any extra `fields`, as §11.6's `free_title`."""
     if kind is DriveLocked:
         # `process_response` puts an OAuth Bearer challenge on any 401 when
         # resource metadata is enabled, and merges `response_headers` after it.
         # A password link is opened at POST /links/<token>/unlock, not by
         # logging in, so name that instead of inviting a browser login prompt.
         frappe.local.response_headers["WWW-Authenticate"] = 'DriveLink realm="drive"'
-    # A refusal is an answer, not a crash, so it carries no server traceback
-    frappe.local.flags.disable_traceback = True
-    extra = {name: value for name, value in fields.items() if value is not None}
-    try:
-        frappe.throw(message, kind)
-    except kind as thrown:
-        if extra:
-            stamp = getattr(thrown, "__frappe_exc_id", None)
-            for entry in frappe.local.message_log:
-                if stamp and entry.get("__frappe_exc_id") == stamp:
-                    entry.update(extra)
-        raise
+    refuse(kind, message, **fields)
 
 
 def _principals():

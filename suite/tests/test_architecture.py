@@ -139,7 +139,6 @@ BASELINE_DEBT = {
             # The lock-order case trashes a document and races its purge; neither is a public call yet
             "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.nodes",
             "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.principals",
-            "suite/writer/content/tests/test_touches.py|import|suite.drive._core",
             "suite/writer/content/tests/test_touches.py|import|suite.drive._core.principals",
             "suite/writer/content/tests/test_touches.py|import|suite.drive._core.versions",
             "suite/writer/content/tests/test_restores.py|import|suite.drive._core.principals",

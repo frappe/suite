@@ -11,7 +11,7 @@ from frappe import _
 from frappe.utils import get_datetime, get_system_timezone
 
 from suite import drive
-from suite.composition.http import Route
+from suite.composition.http import Route, refuse
 from suite.content import log
 from suite.content.conversions import ConversionStatus, conversion_status
 from suite.writer import content as writer_content
@@ -103,9 +103,8 @@ def refusing(handler: Callable) -> Callable:
         try:
             return handler(*args, **kwargs)
         except frappe.ValidationError as refusal:
-            # A refusal is an answer, not a crash, so it carries no server traceback
-            frappe.local.flags.disable_traceback = True
-            frappe.throw(str(refusal), type(refusal))
+            extra = {field: getattr(refusal, field, None) for field in ("free_title", "retry_ms")}
+            refuse(type(refusal), str(refusal), **extra)
 
     return answered
 
@@ -134,6 +133,7 @@ MARKDOWN_ERRORS = (
     drive.DriveNotFound,
     drive.DriveForbidden,
     drive.DriveLocked,
+    drive.DriveConflict,
     markdown_body.MarkdownRefused,
     markdown_body.WriteRefused,
     markdown_body.WriteBusy,

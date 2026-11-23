@@ -3,8 +3,9 @@
 import io
 import json
 import uuid
+from contextlib import contextmanager
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import frappe
@@ -13,6 +14,7 @@ from frappe.utils import now_datetime
 
 import suite.drive._core as drive_core
 from suite import drive
+from suite.content import touches
 from suite.content.http import routes
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
@@ -36,6 +38,11 @@ def move_as_writer(node: str, folder: str) -> None:
     drive_core.nodes.update(owner, node, parent_node=folder)
 
 
+def trash_as_writer(node: str) -> None:
+    owner = drive_core.principals.Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",))
+    drive_core.nodes.update(owner, node, state="Trashed")
+
+
 def version_of(docname: str) -> dict:
     stream, mime = writer_drive.SPEC.version_bytes(docname)
     assert mime == "application/json"
@@ -55,6 +62,14 @@ def embed(media: str) -> str:
 
 
 class DriveCallbackCase(CheckpointCase):
+    @contextmanager
+    def frozen_clock(self, at: datetime):
+        with (
+            patch.object(touches, "now_datetime", return_value=at),
+            patch.object(drive_core.content, "now_datetime", return_value=at),
+        ):
+            yield
+
     def push_edit(self, node: str, change, schema: int = 1) -> None:
         sid = uuid.uuid4().hex
         session_body = json.dumps({"sid": sid}).encode()

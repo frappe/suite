@@ -10,15 +10,16 @@ from frappe.utils import now_datetime
 from frappe.utils.synchronization import filelock
 
 from suite import drive
-from suite.content import capacity, checker, convert, touches
+from suite.content import capacity, checker, convert
 from suite.content.http import routes
-from suite.drive._core import content as drive_content
-from suite.drive._core.nodes import update
-from suite.drive._core.principals import Principals
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
 from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused
-from suite.writer.content.tests.drive_callback_case import DriveCallbackCase, share_as_writer
+from suite.writer.content.tests.drive_callback_case import (
+    DriveCallbackCase,
+    share_as_writer,
+    trash_as_writer,
+)
 from suite.writer.content.tests.support import OUTSIDER, READER, WRITER, call_route, read_open
 from suite.writer.http import routes as writer_routes
 
@@ -43,16 +44,26 @@ class TestDocumentWrites(DriveCallbackCase):
         self.addCleanup(self.delete_log, written["node"])
         return written["node"]
 
-    def blocks_of(self, node: str) -> str:
-        # The body as a tab opening the document gets it, without the ids the editor gives headings
+    def body_of(self, node: str) -> str:
+        # The body as a tab opening the document gets it
         frame = read_open(call_route(routes.document_get, node).get_data())
         doc: pycrdt.Doc = pycrdt.Doc()
         for payload in [frame.checkpoint, *(payload for _rev, payload in frame.rows)]:
             if payload:
                 doc.apply_update(payload)
 
-        body = str(doc.get("default", type=pycrdt.XmlFragment))
-        return re.sub(r' (id|data-toc-id)="[^"]*"', "", body)
+        return str(doc.get("default", type=pycrdt.XmlFragment))
+
+    def answer_of(self, refusal: Exception) -> dict:
+        # What the answer publishes of a refusal: the one message stamped with the error's id
+        stamp = getattr(refusal, "__frappe_exc_id", None)
+        self.assertTrue(stamp)
+        (answer,) = (entry for entry in frappe.local.message_log if entry.get("__frappe_exc_id") == stamp)
+        return answer
+
+    def blocks_of(self, node: str) -> str:
+        # The body without the ids the editor gives headings
+        return re.sub(r' (id|data-toc-id)="[^"]*"', "", self.body_of(node))
 
     def test_a_new_document_holds_the_markdown(self):
         node = self.create("# Plan\n\nShip **today**, café ✓.")
@@ -89,6 +100,27 @@ class TestDocumentWrites(DriveCallbackCase):
             frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
         )
 
+    def test_markdown_over_the_size_limit_creates_nothing(self):
+        with self.assertRaisesRegex(MarkdownRefused, "over 128 KB"):
+            writer_routes.document_create(self.folder, "Agent refused", "a" * (128 * 1024 + 1))
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": "Agent refused"})
+        )
+
+    def test_a_title_taken_in_the_folder_creates_nothing_and_names_a_free_one(self):
+        title = frappe.db.get_value("Drive Node", self.create("First."), "title")
+
+        with self.assertRaises(drive.DriveConflict) as refused:
+            writer_routes.document_create(self.folder, title, "Second.")
+
+        self.assertEqual(self.answer_of(refused.exception)["free_title"], f"{title} (2)")
+        self.assertEqual(frappe.db.count("Drive Node", {"parent_node": self.folder, "title": title}), 1)
+
+    def test_a_node_that_is_not_a_document_answers_not_found(self):
+        with self.assertRaises(drive.DriveNotFound):
+            writer_routes.document_write(self.folder, "Second.", "append")
+
     def test_append_adds_the_markdown_after_the_body(self):
         node = self.create("First.")
 
@@ -98,6 +130,19 @@ class TestDocumentWrites(DriveCallbackCase):
             self.blocks_of(node),
             "<paragraph>First.</paragraph><paragraph>Second, <italic>later</italic>.</paragraph>",
         )
+
+    def test_an_appended_heading_shares_no_id_with_the_one_it_repeats(self):
+        node = self.create("## Update\n\nFirst.")
+
+        writer_routes.document_write(node, "## Update\n\nSecond.", "append")
+
+        ids: list[set[str]] = []
+        for heading in re.findall(r"<heading [^>]*>", self.body_of(node)):
+            ids.append(set(re.findall(r'(?:id|data-toc-id)="([^"]+)"', heading)))
+
+        # Each heading has one id, in both places the editor keeps it, as a typed heading does
+        self.assertEqual([len(own) for own in ids], [1, 1])
+        self.assertFalse(ids[0] & ids[1])
 
     def test_replace_leaves_only_the_markdown(self):
         node = self.create("First.\n\nSecond.")
@@ -150,18 +195,31 @@ class TestDocumentWrites(DriveCallbackCase):
 
     def test_a_trashed_document_refuses_the_write(self):
         node = self.create("First.")
-        update(Principals(WRITER, (WRITER, "$GENERAL"), ("$PUBLIC",)), node, state="Trashed")
+        trash_as_writer(node)
         frappe.db.commit()
 
         with self.assertRaisesRegex(drive.DriveForbidden, "Trashed"):
             writer_routes.document_write(node, "Second.", "append")
 
-    def test_a_full_document_answers_busy_with_the_reason_a_tab_gets(self):
+    def test_a_full_document_refuses_the_write_and_names_no_retry(self):
         node = self.create("First.")
         self.set_doc(node, state_bytes=capacity.STATE_MAX)
 
-        with self.assertRaisesRegex(WriteBusy, "doc_full"):
+        with self.assertRaisesRegex(WriteRefused, "doc_full") as refused:
             writer_routes.document_write(node, "Second.", "append")
+
+        self.assertNotIn("retry_ms", self.answer_of(refused.exception))
+
+    def test_a_document_waiting_for_room_answers_busy_and_when_to_retry(self):
+        node = self.create("First.")
+        # No room until a compaction folds the tail in, with none planned and none timed yet
+        room = {"state_bytes": capacity.STATE_MAX - 1, "tail_rows": 1}
+        self.set_doc(node, **room, next_compaction_at=None, last_compaction_ms=None)
+
+        with self.assertRaisesRegex(WriteBusy, "compacting") as refused:
+            writer_routes.document_write(node, "Second.", "append")
+
+        self.assertEqual(self.answer_of(refused.exception)["retry_ms"], 2000)
 
     def test_a_document_not_yet_collaborative_refuses_the_write(self):
         node = self.create("First.")
@@ -178,10 +236,7 @@ class TestDocumentWrites(DriveCallbackCase):
         later = now_datetime().replace(microsecond=0) + timedelta(hours=1)
 
         frappe.set_user(OUTSIDER)
-        with (
-            patch.object(touches, "now_datetime", return_value=later),
-            patch.object(drive_content, "now_datetime", return_value=later),
-        ):
+        with self.frozen_clock(later):
             writer_routes.document_write(node, "Second.", "append")
 
         actors = frappe.get_all(
@@ -264,16 +319,9 @@ class TestDocumentWrites(DriveCallbackCase):
         )
 
     def test_a_refusal_answers_with_its_reason(self):
-        frappe.clear_messages()
-
         with self.assertRaises(MarkdownRefused) as refused:
             writer_routes.document_create(self.folder, "Agent refused", "See [the page]().")
 
-        # The answer publishes the message stamped with the error's id, and only that
-        stamp = getattr(refused.exception, "__frappe_exc_id", None)
-        published: list[str] = []
-        for entry in frappe.local.message_log:
-            if entry.get("__frappe_exc_id") == stamp:
-                published.append(entry["message"])
-
-        self.assertEqual(published, ["A document can't keep this Markdown: empty-link"])
+        self.assertEqual(
+            self.answer_of(refused.exception)["message"], "A document can't keep this Markdown: empty-link"
+        )

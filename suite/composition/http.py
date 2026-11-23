@@ -43,6 +43,24 @@ def refusals_as_bad_request[F: Callable[..., Any]](handler: F) -> F:
     return wrapper  # type: ignore[return-value]
 
 
+def refuse(kind: type[Exception], message: str, **fields: object) -> None:
+    """Throw `kind` so the v2 envelope carries its message, and each of `fields` that has a value."""
+    # A refusal is an answer, not a crash, so it carries no server traceback
+    frappe.local.flags.disable_traceback = True
+    extra = {name: value for name, value in fields.items() if value is not None}
+    try:
+        frappe.throw(message, kind)
+    except kind as thrown:
+        # The envelope merges the message stamped with the error's id, so the fields go on that one;
+        # a muted throw stamps nothing, and matches no message
+        stamp = getattr(thrown, "__frappe_exc_id", object())
+        stamped = [entry for entry in frappe.local.message_log if entry.get("__frappe_exc_id") == stamp]
+        for entry in stamped:
+            entry.update(extra)
+
+        raise
+
+
 @dataclass(frozen=True)
 class Route:
     """One row of an owner's table: the address, the handler, and what travels.

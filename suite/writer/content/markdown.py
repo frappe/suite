@@ -5,7 +5,7 @@ body an agent writes is one the editor could have made. What the converter can't
 """
 
 import base64
-from http import HTTPStatus
+import uuid
 from typing import Literal
 
 import frappe
@@ -18,6 +18,11 @@ from suite import content, drive
 from suite.content import checker, compaction, convert
 from suite.writer.content import APP, CONVERTER_BUILD, CONVERTER_VERSION, EDITOR
 from suite.writer.content.files import BODY_FRAGMENT
+
+MARKDOWN_MAX = 128 * 1024
+ID_ATTRIBUTES = ("id", "data-toc-id")
+# The layer's refusals that pass by themselves: another push holds the document, or a compaction makes room
+PASSING = ("busy", "compacting")
 
 
 class MarkdownRefused(frappe.ValidationError):
@@ -37,6 +42,10 @@ class WriteBusy(frappe.ValidationError):
 
     http_status_code = 429
 
+    def __init__(self, *args: object, retry_ms: object = None) -> None:
+        super().__init__(*args)
+        self.retry_ms = retry_ms
+
 
 def create(parent: str, title: str, markdown: str) -> dict:
     """Create a document in the folder `parent` with `markdown` as its body."""
@@ -48,12 +57,18 @@ def create(parent: str, title: str, markdown: str) -> dict:
 
 def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> dict:
     """Replace the document's body with `markdown`, or append it."""
-    drive.check(node, drive.EDIT)
+    if drive.check(node, drive.EDIT) != EDITOR.doctype:
+        raise drive.DriveNotFound(_("That document was not found"))
+
     return {"node": node, "rev": write_body(node, body_state(markdown), mode)}
 
 
 def body_state(markdown: str) -> bytes:
     """Convert `markdown` to the state of a document that holds all of it."""
+    if len(markdown.encode()) > MARKDOWN_MAX:
+        # More than this takes the Markdown reader many seconds, and the converter its memory
+        raise MarkdownRefused(_("The Markdown is over 128 KB. Write it in parts."))
+
     soup = BeautifulSoup(md_to_html(markdown), "html.parser")
     # frappe decorates three tags in ways the converter refuses
     for table in soup.select('table[class="table table-bordered"]'):
@@ -110,8 +125,8 @@ def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> in
         return content.write(APP, node, change, html_of)
     except content.Refusal as refusal:
         reason = refusal.body["collab"]
-        if refusal.status == HTTPStatus.LOCKED:
-            raise WriteBusy(reason) from None
+        if reason in PASSING:
+            raise WriteBusy(reason, retry_ms=refusal.body.get("retry_ms")) from None
 
         raise WriteRefused(reason) from None
 
@@ -139,8 +154,10 @@ def append_element(
 ) -> pycrdt.XmlElement:
     """Add an element under `parent` with `source`'s tag and attributes, and answer it."""
     element = parent.children.append(pycrdt.XmlElement(source.tag))
+    # The converter numbers its ids within one conversion, so an element gets its own, as a typed heading does
+    own_id = str(uuid.uuid4())
     for name, value in source.attributes.__iter__():
-        element.attributes[name] = value
+        element.attributes[name] = own_id if name in ID_ATTRIBUTES else value
 
     return element
 
