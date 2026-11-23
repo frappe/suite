@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { effectScope, nextTick, ref } from 'vue'
 
 import { useMobileSelection } from '@/apps/mail/utils/composables'
@@ -94,5 +94,45 @@ describe('toasts on a phone', () => {
     await nextTick()
     expect(lift()).toBe('0px')
     barScope.stop()
+  })
+})
+
+// A ResizeObserver as browsers have it: padding alone resizes the border box, not the content box.
+class PaddingAwareObserver {
+  static watching: { el: Element; box?: string; call: () => void }[] = []
+  constructor(private call: () => void) {}
+  observe(el: Element, options?: { box?: string }) {
+    PaddingAwareObserver.watching.push({ el, box: options?.box, call: this.call })
+  }
+  unobserve() {}
+  disconnect() {}
+  static padded(el: Element) {
+    for (const w of this.watching) if (w.el === el && w.box === 'border-box') w.call()
+  }
+}
+
+describe('toasts over a bar whose safe area changes', () => {
+  it('rise with it', async () => {
+    vi.stubGlobal('ResizeObserver', PaddingAwareObserver)
+    const bar = ref<HTMLElement | null>(null)
+    const scope = effectScope()
+    scope.run(() => liftToastsOver(bar))
+    const el = document.createElement('div')
+    const island = document.createElement('nav')
+    el.append(island)
+    let height = 68
+    Object.defineProperty(el, 'offsetHeight', { get: () => height })
+    Object.defineProperty(island, 'offsetTop', { value: 0 })
+    bar.value = el
+    await nextTick()
+
+    // Android's inset under the bar grows as the keyboard goes.
+    height = 90
+    PaddingAwareObserver.padded(el)
+    await nextTick()
+
+    expect(document.documentElement.style.getPropertyValue('--mail-phone-bar')).toBe('90px')
+    scope.stop()
+    vi.unstubAllGlobals()
   })
 })

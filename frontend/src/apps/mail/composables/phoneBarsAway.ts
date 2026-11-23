@@ -77,7 +77,9 @@ export const liftToastsOver = (bar: Ref<HTMLElement | null>) => {
     const island = el.lastElementChild
     barHeights.set(key, el.offsetHeight - (island instanceof HTMLElement ? island.offsetTop : 0))
   }
-  useResizeObserver(bar, () => bar.value && measure(bar.value))
+  // Its border box: the safe area below the island is padding, which the content box leaves out, and
+  // it changes under a bar already in place (Android's, as the keyboard goes).
+  useResizeObserver(bar, () => bar.value && measure(bar.value), { box: 'border-box' })
   // Measured on showing too, so the first toast need not wait for the observer.
   watch(bar, (el) => (el ? measure(el) : barHeights.delete(key)))
   onScopeDispose(() => barHeights.delete(key))
