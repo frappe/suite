@@ -41,7 +41,7 @@ curl -X POST $SITE/api/suite/writer/documents -H "$AUTH" -H 'Content-Type: appli
   -d '{"parent": "<folder node>", "title": "Plan", "markdown": "# Plan\n\nShip **today**."}'
 ```
 
-**4. Read it as Markdown.** The answer is the Markdown itself, as `text/markdown`, not JSON.
+**4. Read it as Markdown.** The answer is the Markdown itself, as `text/markdown`, not JSON. Only a signed-in user reads Markdown. A guest on a public link is refused.
 
 ```sh
 curl -H "$AUTH" "$SITE/api/suite/drive/nodes/<node>/content?format=markdown"
@@ -85,7 +85,7 @@ curl -X PUT $SITE/api/suite/drive/nodes/<node>/grants/<user's email> -H "$AUTH" 
 - Headings, paragraphs, bold, italic, links, lists, quotes, rules, tables, pictures by address, code and fenced code with a language.
 - Name a fenced block's language in full, as `javascript`. A short name such as `js` still colours the code, but the editor's language picker shows it as auto.
 - A write keeps all of the Markdown or refuses all of it. Only what shows nothing is left out: an HTML comment, and a link with no text.
-- Raw HTML the editor can't hold is refused, such as a `<div>`. A `<script>` is never kept: beside other text it is refused, and as the whole Markdown it leaves an empty paragraph.
+- A link or raw HTML the editor can't hold is refused, such as a `javascript:` link or a `<div>`. A `<script>` is never kept: beside other text it is refused, and as the whole Markdown it leaves an empty paragraph.
 - Task lists and strikethrough are not read: `- [ ]` and `~~` stay as typed.
 - One call takes up to 128 KB of Markdown, which is 131072 UTF-8 bytes. Write a longer document in parts: create it, then append.
 
@@ -93,27 +93,27 @@ A read writes Markdown as Writer's Download as Markdown does, with a picture as 
 
 - Markdown has no place for colour, underline, highlight, alignment, a mention or a picture's size. A read leaves them out, so a `replace` of a document people have styled loses them. Use `append` there.
 - A table's first row reads as its heading row.
-- A read gives the readable copy. A write from these calls renews it at once. After typing in a tab, the tab renews it, and until then a read answers `DriveConflict`.
+- A read gives the document as it stands, typing in a tab included. If typing lands in the same moment, it answers `DriveConflict`. Read again.
 
 ## Refusals
 
 A refusal answers its class and a message:
 
 ```json
-{ "errors": [{ "type": "MarkdownRefused", "message": "A document can't keep this Markdown: raw HTML the editor can't hold" }] }
+{ "errors": [{ "type": "MarkdownRefused", "message": "A document can't keep this Markdown: a link or HTML the editor can't hold" }] }
 ```
 
 | Class | Status | Meaning |
 | --- | --- | --- |
 | `AuthenticationError` | 401 | The API key or secret is wrong |
 | `PermissionError` | 403 | A write has no `Authorization` header |
-| `DriveError` | 400 | A field is missing or wrong, such as an empty title, a `mode` other than `replace` or `append`, or a `role` that is not one of the numbers. The message names it. Nothing was written |
-| `DriveNotFound` | 404 | The folder or document does not exist for this user, or the item is not a Writer document |
-| `DriveForbidden` | 403 | The user may not add to the folder or edit the document, or the document is in the trash |
+| `DriveError` | 400 | A field is missing or wrong, such as an empty title, a `mode` other than `replace` or `append`, a `role` that is not one of the numbers, or a `format` Writer does not export, such as `pdf`. The message names it. Nothing was written |
+| `DriveNotFound` | 404 | The folder or document does not exist for this user, the item is not a Writer document, or the document was deleted during the write |
+| `DriveForbidden` | 403 | The user may not add to the folder or edit the document, the document is in the trash, or a guest asks for Markdown |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
-| `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: the readable copy is behind, or the item is a folder |
+| `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: typing landed in the same moment, or the item is a folder |
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, or the Markdown is over 128 KB. Nothing was written |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted` or `doc_full`. The same call gets the same answer until that changes |
-| `WriteBusy` | 429 | The converter or the document is busy. Send the same call again, after `retry_ms` milliseconds when the answer has it |
-| `RateLimitExceededError` | 429 | The converter is busy on a read. Read again in a moment |
+| `WriteBusy` | 429 | The document is busy, or the converter gave no answer: it was busy, ran out of time, failed, or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
+| `RateLimitExceededError` | 429 | The converter gave no answer on a read, as for `WriteBusy`. Read again in a moment |
