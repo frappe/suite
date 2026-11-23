@@ -33,7 +33,6 @@ from suite.drive._core.access import (
     describe_page,
     effective_role,
     effective_roles,
-    grant,
     holds_without_grant,
     require,
     require_from_rows,
@@ -51,7 +50,7 @@ from suite.drive._core.errors import (
 )
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, consume_storage_reservation, release, root_for_node
-from suite.drive._core.roles import EDIT, MANAGE, NONE, READ, UPLOAD
+from suite.drive._core.roles import EDIT, MANAGE, READ, UPLOAD
 from suite.drive._core.roots import (
     lock_trees,
     personal_root_for,
@@ -849,7 +848,7 @@ def create_folder(principals: Principals, parent: str, title: str) -> str:
     return _create_empty_node(principals, parent, title, kind="folder")
 
 
-def ensure_folder(principals: Principals, parent: str, title: str, *, owner_private: bool = False) -> str:
+def ensure_folder(principals: Principals, parent: str, title: str) -> str:
     """Answer the caller's Active folder titled `title` below `parent`, creating it if absent.
 
     The find-or-create a server-side producer needs for its destination
@@ -866,7 +865,7 @@ def ensure_folder(principals: Principals, parent: str, title: str, *, owner_priv
     finds the winner.
     """
     _validate_title(title)
-    parent_row = _lock_create_parent(parent) if owner_private else _node(parent)
+    parent_row = _node(parent)
     require(parent_row, UPLOAD, principals)
     _validate_parent(parent_row, allow_document=False)
     suffixed = re.compile(rf"^{re.escape(title)}( \(\d+\))?$")
@@ -883,32 +882,9 @@ def ensure_folder(principals: Principals, parent: str, title: str, *, owner_priv
         order_by="creation asc",
     )
     for candidate in candidates:
-        if suffixed.match(candidate.title) and (
-            not owner_private or _has_owner_boundary(candidate.name, principals.user)
-        ):
+        if suffixed.match(candidate.title):
             return candidate.name
-    folder = create_folder(principals, parent, _free_title(parent_row.name, title, for_update=False))
-    if owner_private:
-        _set_owner_boundary(folder, principals)
-    return folder
-
-
-def _owner_boundary(owner: str) -> dict[str, int]:
-    return {owner: MANAGE, "$GENERAL": NONE, "$PUBLIC": NONE}
-
-
-def _has_owner_boundary(node: str, owner: str) -> bool:
-    grants = frappe.get_all(
-        "Drive Grant", filters={"node": node}, fields=["principal", "role", "expires_on", "password_hash"]
-    )
-    return all(not row.expires_on and not row.password_hash for row in grants) and {
-        row.principal: row.role for row in grants
-    } == _owner_boundary(owner)
-
-
-def _set_owner_boundary(node: str, principals: Principals) -> None:
-    for principal, role in _owner_boundary(principals.user).items():
-        grant(node, principal, role, principals, tell_target=False)
+    return create_folder(principals, parent, _free_title(parent_row.name, title, for_update=False))
 
 
 def create_link(principals: Principals, parent: str, title: str, *, url: str) -> str:
@@ -1361,7 +1337,6 @@ def store_file(
     *,
     content_modified: datetime | int | float | str | None = None,
     reservation: str | None = None,
-    owner_private: bool = False,
     read_only: bool = False,
 ) -> str:
     """Store bytes this process holds as a private blob and create their file node.
@@ -1405,8 +1380,6 @@ def store_file(
             _reservation=reservation,
             _read_only=read_only,
         )
-        if owner_private:
-            _set_owner_boundary(node, principals)
     except Exception as exc:
         _rollback_savepoint(savepoint, exc)
         raise

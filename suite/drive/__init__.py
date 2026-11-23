@@ -592,17 +592,16 @@ def push_preview(node: str, image_bytes: bytes, mime: str) -> None:
     _push_preview(_principals(), node, image_bytes, mime)
 
 
-def ensure_folder(parent: str, title: str, *, owner_private: bool = False) -> str:
+def ensure_folder(parent: str, title: str) -> str:
     """Answer the caller's Active folder titled `title` below `parent`, creating it if absent.
 
     Only a folder the caller created is reused; one somebody else created with
     that title is theirs to share, so the new folder takes the free title
-    (`Meet Recordings (2)`). Needs UPLOAD on `parent`. An owner-private
-    folder carries explicit grants that fence access inherited from its parent.
+    (`Meet Recordings (2)`). Needs UPLOAD on `parent`.
     """
     from suite.drive._core.nodes import ensure_folder as _ensure_folder
 
-    return _ensure_folder(_principals(), parent, title, owner_private=owner_private)
+    return _ensure_folder(_principals(), parent, title)
 
 
 def record_visit(node: str) -> None:
@@ -619,7 +618,6 @@ def store_file(
     *,
     content_modified: datetime | int | float | str | None = None,
     reservation: str | None = None,
-    owner_private: bool = False,
     read_only: bool = False,
 ) -> str:
     """Store bytes this process holds as a private file node below `parent`.
@@ -630,7 +628,7 @@ def store_file(
     title is deduplicated the way §8.6 says. `reservation` names a storage
     reservation the caller charged these bytes to in advance; it is consumed
     in the same step, so the bytes never count twice against the root.
-    Needs UPLOAD on `parent`. An owner-private file fences inherited access.
+    Needs UPLOAD on `parent`.
     A read-only file keeps its original bytes while remaining movable and shareable.
     """
     from suite.drive._core.nodes import store_file as _store_file
@@ -642,7 +640,6 @@ def store_file(
         stream,
         content_modified=content_modified,
         reservation=reservation,
-        owner_private=owner_private,
         read_only=read_only,
     )
 
