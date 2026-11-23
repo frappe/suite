@@ -78,6 +78,8 @@ vi.mock('@/apps/mail/utils/composables', () => ({
   useComposeMail: () => ({ requestCompose: () => {} }),
   useSettings: () => ({}),
   useTheme: () => ({ dataTheme: theme }),
+  useListReload: () => ({ requestListReload: () => {} }),
+  useUndo: () => ({ setUndoAction: () => {}, retireUndoAction: () => {} }),
   useDiscardingDrafts: () => ({
     isHeld: () => false,
     heldDrafts: ref(new Set()),

@@ -201,9 +201,9 @@ const restore = (e: KeyboardEvent) => {
   minimised.value = false
 }
 
-// Close keeps a draft to come back to — but one with nothing written is not a draft. It had already
-// saved itself (a body that is only the signature saves), so closing it left a "[No subject]" in
-// Drafts for every window opened and shut. Nothing written, it is discarded, quietly.
+// Close keeps a draft to come back to — but one with nothing written is not a draft. One written,
+// saved and then cleared is on the server all the same, and closing it left a "[No subject]" in
+// Drafts. Nothing written, it is discarded, quietly.
 const closeWindow = () => {
   if (editor.value?.isUntouched) void editor.value.discardMail()
   else show.value = false

@@ -385,12 +385,13 @@ import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { useListReload } from '@/apps/mail/utils/composables'
 import { composeName } from '@/apps/mail/utils/composeName'
 import { describeReminderTime, useMinuteClock } from '@/apps/mail/utils/datetime'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
-import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
+import { useKeyboardInsets, useStillDocument } from '@/platform/keyboard-insets'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
@@ -419,8 +420,9 @@ const toSuggestions = useTemplateRef<HTMLElement>('toSuggestions')
 const ccSuggestions = useTemplateRef<HTMLElement>('ccSuggestions')
 const bccSuggestions = useTemplateRef<HTMLElement>('bccSuggestions')
 
-const mailDetails = takePendingCompose()
+const { draft: mailDetails, startAt } = takePendingCompose()
 const { requestThreadReload } = useThreadReload()
+const { requestListReload } = useListReload()
 
 // The thread the page goes back to, when it was opened from one: what the reader sees once the mail
 // is sent. Read from the history entry, as the page leaves by going back to it.
@@ -469,9 +471,12 @@ const {
   onOpened,
 } = useComposeMail({
   mailDetails,
-  // What changed reaches the thread the page goes back to: the sent reply in place of its draft, a
-  // draft saved, a send undone. The thread is off screen meanwhile, so it takes this when it is back.
+  // What changed reaches the page it goes back to: the sent reply in place of its draft, a draft
+  // saved, a send undone. A thread is off screen meanwhile, so it takes this when it is back; a list
+  // (Drafts, Sent) is back by the time a save on the way out lands, and reloads as it is told to, as
+  // it does for the desktop's window (see ComposeHost).
   reloadMails: () => {
+    requestListReload()
     if (typeof returnsToThread === 'string') requestThreadReload(returnsToThread)
   },
   shownThread: () => (typeof returnsToThread === 'string' ? returnsToThread : undefined),
@@ -496,22 +501,10 @@ const { height: viewportHeight, top: keyboardTop, bottom: keyboardBottom } = use
 // under it already shows.
 const title = composeName(mailDetails)
 
-// Hold the document still for as long as this page is open.
-//
-// This is what the bouncing was. iOS implements its keyboard "pan" as an ordinary document scroll —
-// `window.scrollY` goes non-zero — and `visualViewport.offsetTop` reports the same number. So two
-// things moved at once on every focus change: the document scrolled up, and this page, chasing
-// `offsetTop`, was pushed down by exactly as much. A document that cannot scroll has neither.
-//
-// `position: fixed` as well as `overflow: hidden`, because overflow alone still leaves iOS a document
-// to scroll for a focused field.
-onMounted(() => {
-  const { style } = document.body
-  style.overflow = 'hidden'
-  style.position = 'fixed'
-  style.width = '100%'
-  document.documentElement.style.overflow = 'hidden'
-})
+// Hold the document still for as long as this page is open. This is what the bouncing was: the
+// document scrolled up on every focus change and this page, chasing `offsetTop`, was pushed down by
+// as much (see useStillDocument).
+useStillDocument()
 
 // The document scrolls all the same while the keyboard is up: iOS lengthens it by the keyboard's
 // height, fixed body or not. A drag that nothing under the finger can take (on the header, on the
@@ -552,14 +545,6 @@ const scrollsUnder = (target: EventTarget | null, across: boolean) => {
   }
   return false
 }
-
-onUnmounted(() => {
-  const { style } = document.body
-  style.overflow = ''
-  style.position = ''
-  style.width = ''
-  document.documentElement.style.overflow = ''
-})
 
 // Where a tap at (x, y) puts the caret: caretPositionFromPoint where there is one, Safari's older
 // caretRangeFromPoint otherwise.
@@ -778,19 +763,21 @@ const onSendClick = () => {
 
 // Start where there is still something to write: the body on a reply (recipients and subject came
 // with the thread), the subject when the draft arrived addressed but unnamed (a `mailto:` link, or a
-// calendar invite's participants), and To otherwise.
+// calendar invite's participants), and To otherwise. To as well when it is where the opener sent
+// the page: a reply's recipients, tapped in the thread to change them.
 onMounted(() => {
   onOpened()
 
-  if (mailDetails?.in_reply_to) textEditor.value?.editor?.commands.focus()
+  if (startAt === 'to') toInput.value?.setFocus()
+  else if (mailDetails?.in_reply_to) textEditor.value?.editor?.commands.focus()
   else if (!isRecipientsEmpty.value && !mail.subject) subjectInput.value?.focus()
   else toInput.value?.setFocus()
 })
 
 // Navigating away is the only way off this page, so this is where an unsent message gets kept. One
-// with nothing written is not a draft: it had already saved itself (a body that is only the
-// signature saves), so leaving it left a "[No subject]" in Drafts for every compose opened and
-// closed. It goes, quietly, as the desktop window's does on Close (see SendMail).
+// with nothing written is not a draft, though one written, saved and then cleared is on the server:
+// leaving it left a "[No subject]" in Drafts. It goes, quietly, as the desktop window's does on
+// Close (see SendMail).
 onBeforeRouteLeave(() => {
   leaving = true
   if (!closedByComposer && isUntouched.value) void discardMail()

@@ -118,7 +118,9 @@ const participants = computed(() => threadParticipants(latest.value.messages, ow
 // stack is named exactly the way each of its members is — collapsed or expanded, the name holds.
 const sender = computed(() => threadDisplayName(participants.value, latest.value))
 
-const avatarLabel = computed(() => threadAvatarLabel(participants.value, latest.value))
+const avatarLabel = computed(() =>
+  threadAvatarLabel(participants.value, latest.value, ownEmails.value),
+)
 
 // What the checkbox ticks: the whole run, by its count and whose it is.
 const selectLabel = computed(() =>

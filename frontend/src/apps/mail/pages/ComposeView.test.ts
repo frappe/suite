@@ -4,6 +4,7 @@ import { createApp, h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
+import { useListReload } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
 import ComposeView from './ComposeView.vue'
@@ -49,9 +50,9 @@ vi.mock('frappe-ui', async () => {
   }
 })
 // The draft the navigation to the page carries (see composeHandoff): none, unless a test says.
-const handoff = vi.hoisted<{ draft?: object }>(() => ({}))
+const handoff = vi.hoisted<{ draft?: object; startAt?: 'to' }>(() => ({}))
 vi.mock('@/apps/mail/composables/composeHandoff', () => ({
-  takePendingCompose: () => handoff.draft,
+  takePendingCompose: () => ({ draft: handoff.draft, startAt: handoff.startAt }),
 }))
 // A phone: the page is only ever reached at that width, and its menus open as bottom sheets there.
 // Set before anything loads, since the app reads the width once, at load.
@@ -119,6 +120,7 @@ beforeEach(() => {
   toasts.error.mockReset()
   toasts.success.mockReset()
   handoff.draft = undefined
+  handoff.startAt = undefined
   identity.arrive?.(undefined)
 })
 afterEach(() => {
@@ -285,6 +287,15 @@ describe('leaving the compose page', () => {
     expect(server.asked).not.toContain('create_mail')
   })
 
+  it('saves nothing while it stays open with nothing written, so a reload leaves no blank draft', async () => {
+    await openSigned()
+
+    // Past the two seconds an edit waits before it saves: the signature arriving was one.
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+
+    expect(server.asked).not.toContain('create_mail')
+  })
+
   it('keeps what was written as a draft', async () => {
     await openSigned()
     const subject = document.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!
@@ -294,6 +305,34 @@ describe('leaving the compose page', () => {
     await close()
 
     await vi.waitFor(() => expect(server.asked).toContain('create_mail'))
+  })
+
+  it('has the list it goes back to show the draft it kept, once it is saved', async () => {
+    const { listReloadRequest } = useListReload()
+    const before = listReloadRequest.value
+    server.answer = (method) =>
+      method === 'create_mail'
+        ? reply({
+            message: {
+              name: 'draft-1',
+              id: 'draft-1',
+              status: 'Drafted',
+              error: null,
+              thread_id: null,
+              submission_id: null,
+              send_at: null,
+              undo_send_period: null,
+            },
+          })
+        : reply({ message: [] })
+    await openSigned()
+    const subject = document.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!
+    subject.value = 'Brief'
+    subject.dispatchEvent(new Event('input'))
+
+    await close()
+
+    await vi.waitFor(() => expect(listReloadRequest.value).toBeGreaterThan(before))
   })
 })
 
@@ -521,5 +560,25 @@ describe('sending from the compose page', () => {
       'Message unsent. It is back in your drafts.',
       undefined,
     )
+  })
+})
+
+describe('where the compose page starts', () => {
+  it('puts the caret in To for a reply whose recipients were tapped in the thread', async () => {
+    handoff.draft = {
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Re: Brief',
+      in_reply_to: '<brief@brightwave.example>',
+      attachments: [],
+    }
+    handoff.startAt = 'to'
+
+    await openComposePage()
+
+    // With Cc and Bcc folded away, the page's only typing fields are To and Subject.
+    const to = [...document.querySelectorAll('input')].find(
+      (input) => input.type !== 'file' && input.getAttribute('aria-label') !== 'Subject',
+    )
+    await vi.waitFor(() => expect(document.activeElement).toBe(to))
   })
 })

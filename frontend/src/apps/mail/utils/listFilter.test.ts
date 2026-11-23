@@ -2,12 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { useListFilter } from './listFilter'
 
-const filterFor = (offer: { starrable?: boolean; screenable?: boolean } = {}) => {
+const filterFor = (offer: { starrable?: boolean; screenable?: boolean; drafts?: boolean } = {}) => {
   const onChange = vi.fn()
   const filter = useListFilter({
     onChange,
     starrable: () => offer.starrable ?? true,
     screenable: () => offer.screenable ?? false,
+    drafts: () => offer.drafts ?? false,
   })
   const tick = (label: string) => {
     const option = filter.FILTER_OPTIONS.value.find((o) => o.label === label)!
@@ -51,6 +52,13 @@ describe('useListFilter', () => {
   it('keeps the menu open while ticking', () => {
     const { tick } = filterFor()
     expect(tick('Unread').defaultPrevented).toBe(true)
+  })
+
+  it('offers Drafts only Has attachments, as a draft is never unread nor starred', () => {
+    const { FILTER_OPTIONS } = filterFor({ drafts: true })
+    expect(FILTER_OPTIONS.value.filter((o) => o.condition?.() ?? true).map((o) => o.label)).toEqual(
+      ['Has attachments'],
+    )
   })
 
   it('leaves out a filter this list does not offer', () => {

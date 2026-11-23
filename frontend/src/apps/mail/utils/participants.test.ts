@@ -3,7 +3,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 
 import type { Mail, ThreadParticipant } from '@/apps/mail/types'
 
-import { formatThreadParticipants, threadParticipants } from './participants'
+import { formatThreadParticipants, threadAvatarLabel, threadParticipants } from './participants'
 
 // `__` is installed on window by the translation plugin at app boot; the util calls it at format time,
 // so standing it up before the first test is enough.
@@ -198,5 +198,27 @@ describe('formatThreadParticipants', () => {
 
   it('has nothing to say about a thread with no senders', () => {
     expect(formatThreadParticipants([])).toBe('')
+  })
+})
+
+describe('threadAvatarLabel', () => {
+  // A mail Vibhav sent: to Sarfaraz, with Anand on Cc.
+  const sent = fromPartial<Mail>({
+    from_name: 'Vibhav Katre',
+    from_email: 'vibhav@frappe.io',
+    recipients: [
+      { type: 'Cc', email: 'anand@frappe.io', display_name: 'Anand' },
+      { type: 'To', email: 'sarfaraz@frappe.io', display_name: 'Sarfaraz Shaikh' },
+    ],
+  })
+  const label = (row: Mail) => threadAvatarLabel(threadParticipants([row], own), row, own)
+
+  it('is of who a mail nobody has answered went to, as its picture is, not of the one who sent it', () => {
+    expect(label(sent)).toBe('S')
+  })
+
+  it('is of who sent a mail received, whoever else it went to', () => {
+    const received = { ...sent, from_name: 'Anand', from_email: 'anand@frappe.io' }
+    expect(threadAvatarLabel([], received, own)).toBe('A')
   })
 })

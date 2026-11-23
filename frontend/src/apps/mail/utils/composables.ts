@@ -356,6 +356,9 @@ export const useComposeMail = () => ({
 // whichever list is on screen answers in its own terms — the mailbox resets Drafts and Sent, All
 // Inboxes refreshes in place, the screener reloads its senders.
 const listReloadRequest = ref(0)
+// A reply saved in a conversation the reader has since left, back on a list: the row there has to
+// count it, and name you among the people in it. Asked of whichever list holds that row.
+const rowReloadRequest = ref<{ threadId: string }>()
 
 // Drafts discarded from a composer and still inside their Undo window: deleted only once the toast
 // has passed, so the server still lists them. A list leaves out a row made of nothing else, so a
@@ -417,6 +420,8 @@ export const useDiscardingDrafts = () => ({
 export const useListReload = () => ({
   listReloadRequest,
   requestListReload: () => listReloadRequest.value++,
+  rowReloadRequest,
+  requestRowReload: (threadId: string) => (rowReloadRequest.value = { threadId }),
 })
 
 // The account's own addresses, lowercased — what a thread's senders are matched against to decide

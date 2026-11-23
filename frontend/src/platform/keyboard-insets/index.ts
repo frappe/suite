@@ -48,3 +48,34 @@ export const useKeyboardInsets = () => {
 
   return { top, height, bottom }
 }
+
+// How many mounted components are holding the document still. The quick reply hands over to the
+// compose page on Expand, and the page mounts before the reply unmounts: the hold is let go only
+// once neither has it.
+let holds = 0
+
+/**
+ * Holds the document still for as long as the calling component is mounted, so the keyboard does
+ * not scroll the page up underneath what is on screen.
+ *
+ * iOS opens the keyboard over a focused field by scrolling the document itself: `window.scrollY`
+ * goes non-zero, and `visualViewport.offsetTop` (the `top` above) reports the same number. A pane
+ * that rides `top` is pushed down by as much as the page went up, and whatever does not ride it,
+ * such as a thread behind a reply field, goes up off the top of the screen. A document that cannot
+ * scroll has neither.
+ *
+ * `position: fixed` as well as `overflow: hidden`, because overflow alone still leaves iOS a
+ * document to scroll for a focused field.
+ */
+export const useStillDocument = () => {
+  onMounted(() => {
+    if (holds++) return
+    Object.assign(document.body.style, { overflow: 'hidden', position: 'fixed', width: '100%' })
+    document.documentElement.style.overflow = 'hidden'
+  })
+  onUnmounted(() => {
+    if (--holds) return
+    Object.assign(document.body.style, { overflow: '', position: '', width: '' })
+    document.documentElement.style.overflow = ''
+  })
+}

@@ -70,6 +70,12 @@ interface ComposeMailOptions {
   mailDetails?: ComposeMailData
   /** Inline in a thread (desktop), rather than a composer of its own. */
   isInThread?: boolean
+  /**
+   * Whether an edit saves the draft as it goes. Off for the phone's quick forward, which holds
+   * only who it goes to: a draft for that would be one more to clear out of Drafts, for two taps
+   * saved. Defaults to on.
+   */
+  autosave?: boolean
   reloadMails: () => void
   /**
    * A thread's reply: the host shows the mail as sent, in place, and resolves once it has. The
@@ -455,7 +461,10 @@ export const useComposeMail = (options: ComposeMailOptions) => {
   watchDebounced(
     mail,
     () => {
-      if (disposed) return
+      // Nothing written is nothing to keep. Saved anyway (the signature arriving is an edit), it
+      // was a blank "[No subject]" in Drafts whenever the page went without closing the composer:
+      // reloaded, or the app put away.
+      if (disposed || options.autosave === false || isUntouched.value) return
       saveDraft()
     },
     {
@@ -566,8 +575,8 @@ export const useComposeMail = (options: ComposeMailOptions) => {
     options.onDiscardStarted?.()
     close()
     isDiscarding.value = false
-    // Nothing written: no toast and nothing to undo. One already autosaved (a body that is only the
-    // signature still saves) goes quietly.
+    // Nothing written: no toast and nothing to undo. One written, saved and then cleared goes
+    // quietly.
     if (isUntouched.value) {
       if (draft.id)
         void client

@@ -28,6 +28,11 @@ interface ListFilterOptions {
    * waits marked until someone decides on them.
    */
   screenable?: () => boolean
+  /**
+   * The list is Drafts, where only Has attachments is offered: a draft is one's own, never unread,
+   * and isn't starred (see selectActions, whose Drafts bar offers only Discard).
+   */
+  drafts?: () => boolean
 }
 
 /**
@@ -40,6 +45,7 @@ export const useListFilter = ({
   onChange,
   starrable = () => true,
   screenable = () => false,
+  drafts = () => false,
 }: ListFilterOptions) => {
   const stored = ref<string[]>([])
   // A filter changed on a list already showing, so the list stays up while the filtered one loads
@@ -48,8 +54,8 @@ export const useListFilter = ({
 
   // Each filter in the order the menu lists it, with whether this list offers it.
   const FILTERS = [
-    { key: 'unread', label: () => __('Unread'), offered: () => true },
-    { key: 'starred', label: () => __('Starred'), offered: starrable },
+    { key: 'unread', label: () => __('Unread'), offered: () => !drafts() },
+    { key: 'starred', label: () => __('Starred'), offered: () => !drafts() && starrable() },
     { key: 'has_attachments', label: () => __('Has attachments'), offered: () => true },
     { key: 'unscreened', label: () => __('Unknown sender'), offered: screenable },
   ]

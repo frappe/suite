@@ -525,7 +525,7 @@ const {
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { listReloadRequest } = useListReload()
+const { listReloadRequest, rowReloadRequest } = useListReload()
 const { dropViewUndo } = useUndo()
 const socket = useMailSocket()
 // MailLayout's overlay layer; see the selection bar's Teleport.
@@ -991,6 +991,7 @@ const {
   onChange: () => resetThreads(false),
   starrable: () => ![store.mailboxIds.trash, 'starred'].includes(mailbox),
   screenable: () => mailbox === store.mailboxIds.inbox && screener.active.value,
+  drafts: () => mailbox === store.mailboxIds.drafts,
 })
 
 // The Inbox's category tabs; `inboxTab` is the open one, and undefined in any other list or when the
@@ -1098,8 +1099,17 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
 
 // The composer lives in the layout now, above every route, so it has no view to hand an event to —
 // it announces a send or a draft saved instead (see useListReload). Drafts and Sent are the two lists
-// that answer: everywhere else the mail it wrote does not belong.
-watch(listReloadRequest, () => resetThreads(true, ['drafts', 'sent']))
+// that answer: everywhere else the mail it wrote does not belong. A refresh, which waits for a read
+// already under way: the phone's compose page saves on its way back to Drafts, as the list reads
+// itself again, and a reset joined that read, from before the draft was there.
+watch(listReloadRequest, () => {
+  const answering = [store.mailboxIds.drafts, store.mailboxIds.sent]
+  if (answering.includes(mailbox)) refreshThreads()
+})
+// A reply saved in a conversation the reader has left, when its row is here (see useListReload).
+watch(rowReloadRequest, (request) => {
+  if (threadRows.value.some((row) => row.thread_id === request?.threadId)) refreshThreads()
+})
 // A Screener verdict moves mail in or out of this list.
 watch(screener.version, () => refreshThreads(false))
 
