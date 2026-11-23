@@ -35,8 +35,7 @@ Use the definitions in [Meet context](../../suite/meet/CONTEXT.md). Processing f
 ## Ownership and access
 
 - The Room Owner owns every selected output even if a co-host initiated capture. Attendees, room members and other site users receive no automatic artifact grant.
-- Use normal Drive sharing, revocation and administrative access semantics. Destination selection must preserve owner-only access; a shared destination must not silently expose new content through inheritance.
-- Private blob storage is not proof of owner-only access; enforce effective Drive permissions independently for the video and Original Transcript.
+- Save both outputs in the Room Owner's personal Drive, where they are private by default. Use standard Drive permissions, including link sharing, revocation, administrative access, and inheritance from shared folders.
 
 ## Deletion
 
@@ -53,8 +52,8 @@ Use the definitions in [Meet context](../../suite/meet/CONTEXT.md). Processing f
 3. Video succeeds but no transcript is usable. Video remains, an explicit transcription-failure email goes to the owner and no transcript placeholder appears.
 4. All outputs fail. No empty capture folder or placeholders are created.
 5. A co-host starts capture. Outputs and emails belong to the Room Owner; starting capture creates no automatic co-host artifact grant.
-6. An attendee without a Drive grant cannot read the Original Transcript. Explicit sharing grants access under normal Drive rules.
-7. A shared Meet destination would expose new content through inheritance. Creation preserves owner-only effective access.
+6. An attendee cannot read a private Original Transcript until the owner shares it. A signed-in recipient with a Drive share link can then read it.
+7. A capture published under an already shared Meet folder inherits its Drive permissions.
 8. Audio or recognition has missing sections. A usable partial Original Transcript identifies omissions and preserves attribution/timing for successful sections.
 9. Recognition succeeds on Hindi-English speech. The original-language file publishes without any English-rendering stage, translated sibling or rendering-failure notification.
 10. Trashing/restoring the Original Transcript uses normal Drive behavior. Permanently deleting it fences its recreation without removing video.

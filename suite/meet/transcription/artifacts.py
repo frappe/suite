@@ -1,4 +1,4 @@
-"""Owner-private publication and capture grouping shared by video and transcript."""
+"""Drive publication and capture grouping shared by video and transcript."""
 
 from io import BytesIO
 
@@ -14,10 +14,10 @@ def capture_folder(capture, drive_root, room_title, started_at, existing=None):
         # If it was trashed or moved to a different root, Drive still checks
         # whether publication there is permitted and the reservation matches.
         return existing
-    parent = drive.ensure_folder(drive_root, "Meet", owner_private=True)
+    parent = drive.ensure_folder(drive_root, "Meet")
     title = "".join(c for c in room_title if c not in "/\\\x00").strip()[:120] or "Meet"
     display = f"{title} - {get_datetime(started_at).strftime('%Y-%m-%d %H-%M')} - {capture[:10]}"
-    return drive.ensure_folder(parent, display, owner_private=True)
+    return drive.ensure_folder(parent, display)
 
 
 def publish(job, text):
@@ -48,7 +48,6 @@ def publish(job, text):
             parent,
             "Original Transcript.txt",
             BytesIO(text.encode("utf-8")),
-            owner_private=True,
             read_only=True,
         )
     finally:

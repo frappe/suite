@@ -362,13 +362,12 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
         with path.open("rb") as stream:
             artifact = drive.store_file(
                 parent,
-                "Recording.mp4" if recording.capture_contract else _artifact_name(recording),
+                _artifact_name(recording),
                 stream,
                 # `ended_at` is naive UTC; an aware instant says so, and Drive
                 # converts it to the site zone it stores.
                 content_modified=get_datetime(recording.ended_at).replace(tzinfo=UTC),
                 reservation=recording_storage_reservation_key(recording.name),
-                owner_private=bool(recording.capture_contract),
             )
     finally:
         frappe.set_user(callback_user)

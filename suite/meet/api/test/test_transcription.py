@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import now_datetime
+from werkzeug.wrappers import Request
 
 from suite import drive
 from suite.meet.api import transcription
@@ -272,8 +273,9 @@ class IntegrationTestTranscription(IntegrationTestCase):
             transcription._lease(job, "old-token", "worker")
 
     def test_transcript_only_capture_publishes_once_for_owner_and_purges_source(self):
-        from suite.drive._core import access, nodes
+        from suite.drive._core import nodes
         from suite.drive.framework import principals_for
+        from suite.drive.http.routes import node_put_grant
         from suite.meet.api.recording import get_state, stop
         from suite.meet.transcription.capture import reconcile_capture
 
@@ -358,8 +360,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 )
             self.assertEqual(artifact.owner, self.owner)
             principals = principals_for()
-            root = drive.personal_root_for(self.owner)
-            access.grant(root, self.attendee, drive.READ, principals, tell_target=False)
             frappe.set_user(self.attendee)
             try:
                 with self.assertRaises(drive.DriveNotFound):
@@ -368,10 +368,15 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     drive.check(artifact.parent_node, drive.READ)
             finally:
                 frappe.set_user(self.owner)
-            access.grant(artifact.name, self.attendee, drive.READ, principals, tell_target=False)
+            link = node_put_grant(artifact.name, "$LINK", drive.READ)
+            token = link["url"].removeprefix("/l/")
             frappe.set_user(self.attendee)
             try:
-                stream, _mime = drive.read_file(artifact.name)
+                with self.assertRaises(drive.DriveNotFound):
+                    drive.read_file(artifact.name)
+                request = Request.from_values(headers={"X-Drive-Links": token})
+                with patch.object(frappe.local, "request", request, create=True):
+                    stream, _mime = drive.read_file(artifact.name)
                 with stream:
                     self.assertIn(b"Transcript", stream.read())
             finally:
@@ -410,7 +415,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertEqual(recorder.call_args.args[2], "delete")
             nodes.update(principals, artifact.name, state="Trashed")
             nodes.purge(principals, artifact.name)
-            access.revoke(root, self.attendee, principals)
             transcription.maintenance()
             self.assertFalse(frappe.db.exists("Meet Transcription Job", job.name))
             with patch.object(transcription, "_authenticate"), self.assertRaises(frappe.DoesNotExistError):
