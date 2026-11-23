@@ -21,7 +21,6 @@
         <span class="flex-1 truncate text-left">{{ choice.label }}</span>
         <span class="text-ink-gray-5 shrink-0 text-sm">{{ choice.display }}</span>
       </button>
-      <div class="mx-3 my-2 border-t" />
       <button
         class="hover:bg-surface-gray-2 text-ink-gray-8 flex w-full items-center rounded-6 px-3 py-2 text-base"
         @click="picking = true"
@@ -79,6 +78,7 @@ const {
   initialValue,
   menu = true,
   footer,
+  choicesHeading,
 } = defineProps<{
   // Read as the menu opens, so "Later today" counts from then.
   choices: () => TimeChoice[]
@@ -91,6 +91,9 @@ const {
   menu?: boolean
   // Under the times, in the menu or sheet that has a trigger or v-model:open to hang off.
   footer?: TimeMenuFooter
+  // Over the choices on a phone's sheet, under its title: where the title says what is set, this
+  // says the choices change it. A desktop menu heads the choices with the title itself.
+  choicesHeading?: string
 }>()
 
 const emit = defineEmits<{
@@ -118,7 +121,7 @@ const options = computed(() =>
     (value) => emit('pick', value),
     () => (picking.value = true),
     // A desktop menu says what the time is for; a phone's sheet already has it as its title.
-    isMobile.value ? undefined : title,
+    isMobile.value ? choicesHeading : title,
     footer,
   ),
 )

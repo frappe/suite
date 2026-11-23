@@ -441,9 +441,9 @@ import {
   VISIBILITY_OPTIONS,
 } from '@/apps/calendar/utils/eventOptions'
 import { formatAlertPhrase, getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
-import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import { meetLogo } from '@/platform/brand'
 import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
+import { useKeyboardInsets } from '@/platform/keyboard-insets'
 
 const {
   event,

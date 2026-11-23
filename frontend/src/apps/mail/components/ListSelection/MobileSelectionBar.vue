@@ -42,10 +42,21 @@
             {{ count }}
           </span>
         </button>
+        <!-- One action and no More (Drafts' Discard): the bar has room to say what it does, which a
+             bin alone leaves to guess, so it says it in a word. At the far end, where the buttons
+             stand. -->
+        <button
+          v-if="buttons.length === 1"
+          type="button"
+          class="text-ink-gray-8 active:bg-surface-gray-2 ml-auto flex h-11 shrink-0 items-center rounded-full px-4 text-base !font-medium transition active:scale-95"
+          @click="buttons[0].onClick"
+        >
+          {{ buttons[0].label }}
+        </button>
         <!-- Six columns at most, More among them (see phoneBar), sharing the room after the count:
              one width however many there are, so the spacing holds, the buttons in the last ones.
              The line setting them apart from the count goes with the first. -->
-        <div class="ml-3 grid min-w-0 flex-1 grid-cols-6 gap-0.5">
+        <div v-else class="ml-3 grid min-w-0 flex-1 grid-cols-6 gap-0.5">
           <button
             v-for="(button, i) in buttons"
             :key="button.key"

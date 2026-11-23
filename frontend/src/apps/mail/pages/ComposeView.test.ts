@@ -4,6 +4,7 @@ import { createApp, h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
+import { useListReload } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
 import ComposeView from './ComposeView.vue'
@@ -49,17 +50,28 @@ vi.mock('frappe-ui', async () => {
   }
 })
 // The draft the navigation to the page carries (see composeHandoff): none, unless a test says.
-const handoff = vi.hoisted<{ draft?: object }>(() => ({}))
+const handoff = vi.hoisted<{ draft?: object; startAt?: 'to' }>(() => ({}))
 vi.mock('@/apps/mail/composables/composeHandoff', () => ({
-  takePendingCompose: () => handoff.draft,
+  takePendingCompose: () => ({ draft: handoff.draft, startAt: handoff.startAt }),
 }))
 // A phone: the page is only ever reached at that width, and its menus open as bottom sheets there.
 // Set before anything loads, since the app reads the width once, at load.
 vi.hoisted(() => {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: 390 })
 })
-const { none } = vi.hoisted(() => ({ none: () => ({ default: { render: () => null } }) }))
-vi.mock('@/apps/mail/components/Modals/ScheduleSendModal.vue', none)
+// The time picker for a scheduled send, open on one choice the test taps for the user.
+vi.mock('@/apps/mail/components/Modals/ScheduleSendModal.vue', async () => {
+  const { defineComponent, h: render } = await import('vue')
+  return {
+    default: defineComponent({
+      props: { modelValue: Boolean, save: Function },
+      setup: (props) => () =>
+        props.modelValue
+          ? render('button', { onClick: () => props.save?.('2026-12-01T09:00:00Z') }, 'Monday 9 AM')
+          : null,
+    }),
+  }
+})
 // Drive's own file picker, which opens over the page in a dialog of its own: the test picks for the
 // user.
 const pickFiles = vi.hoisted(() => vi.fn())
@@ -76,12 +88,19 @@ vi.mock('@/apps/mail/utils/text-editor', async (importOriginal) => ({
 }))
 // The suite router, which the mail composables import; the page gets its own.
 vi.mock('@/apps/mail/router', () => ({ default: {} }))
+// The sending identity's signature: none, unless a test has it arrive, as it does once the
+// identities load after the page has opened.
+const identity = vi.hoisted<{ arrive?: (signature?: string) => void }>(() => ({}))
 vi.mock('@/apps/mail/utils/accountScope', async () => {
-  const { computed } = await import('vue')
+  const { computed, ref } = await import('vue')
+  const signature = ref<string>()
+  identity.arrive = (html) => (signature.value = html)
   const scope = () => ({
     accountId: computed(() => 'acc'),
     account: computed(() => ({ default_outgoing_email: 'maya@example.com' })),
-    identities: computed(() => ({ data: [{ email: 'maya@example.com', _name: 'Maya' }] })),
+    identities: computed(() => ({
+      data: [{ email: 'maya@example.com', _name: 'Maya', html_signature: signature.value }],
+    })),
     mailboxIds: computed(() => ({ sent: 'e' })),
   })
   return { injectAccountScope: scope, provideAccountScope: scope }
@@ -101,14 +120,19 @@ beforeEach(() => {
   toasts.error.mockReset()
   toasts.success.mockReset()
   handoff.draft = undefined
+  handoff.startAt = undefined
+  identity.arrive?.(undefined)
 })
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
 })
 
-/** The compose page, open on a new mail, reached from `from` (the folder, unless a test says). */
-async function openComposePage(from = '/mail') {
+/**
+ * The compose page, open on a new mail, reached from `from` (the folder, unless a test says), or
+ * opened at its own address with no page behind it (`from` null). Its router, for where it went.
+ */
+async function openComposePage(from: string | null = '/mail') {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -120,9 +144,12 @@ async function openComposePage(from = '/mail') {
       { path: '/mail/compose', component: ComposeView },
     ],
   })
-  await router.push(from)
-  // The page it came from, as a browser's history records it (memory history records nothing).
-  await router.push({ path: '/mail/compose', state: { back: from } })
+  if (from === null) await router.push('/mail/compose')
+  else {
+    await router.push(from)
+    // The page it came from, as a browser's history records it (memory history records nothing).
+    await router.push({ path: '/mail/compose', state: { back: from } })
+  }
   const app = createApp({ render: () => h(RouterView) })
   app.config.globalProperties.__ = translate
   app.provide('$user', { data: { name: 'maya@example.com', undo_send_period: 10 } })
@@ -130,6 +157,7 @@ async function openComposePage(from = '/mail') {
   app.mount(document.body.appendChild(document.createElement('div')))
   apps.push(app)
   await vi.waitFor(() => expect(button('Attach')).not.toBeNull())
+  return router
 }
 
 const button = (name: string) =>
@@ -233,6 +261,194 @@ describe("the compose page's More actions", () => {
 
     expect(sheetRows()).toContain('Schedule send')
     expect(sheetRows()).not.toContain('Attach from Drive')
+  })
+})
+
+describe('leaving the compose page', () => {
+  // A new mail, with the signature arrived in its body.
+  const openSigned = async () => {
+    await openComposePage()
+    identity.arrive!('<p>Maya, Northwind</p>')
+    await vi.waitFor(() =>
+      expect(document.querySelector('.ProseMirror')?.textContent).toContain('Maya, Northwind'),
+    )
+  }
+  const close = async () => {
+    button('Close')!.click()
+    await vi.waitFor(() => expect(button('Close')).toBeNull())
+    await new Promise((resolve) => setTimeout(resolve))
+  }
+
+  it('leaves nothing in Drafts when nothing was written', async () => {
+    await openSigned()
+
+    await close()
+
+    expect(server.asked).not.toContain('create_mail')
+  })
+
+  it('saves nothing while it stays open with nothing written, so a reload leaves no blank draft', async () => {
+    await openSigned()
+
+    // Past the two seconds an edit waits before it saves: the signature arriving was one.
+    await new Promise((resolve) => setTimeout(resolve, 2500))
+
+    expect(server.asked).not.toContain('create_mail')
+  })
+
+  it('keeps what was written as a draft', async () => {
+    await openSigned()
+    const subject = document.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!
+    subject.value = 'Brief'
+    subject.dispatchEvent(new Event('input'))
+
+    await close()
+
+    await vi.waitFor(() => expect(server.asked).toContain('create_mail'))
+  })
+
+  it('has the list it goes back to show the draft it kept, once it is saved', async () => {
+    const { listReloadRequest } = useListReload()
+    const before = listReloadRequest.value
+    server.answer = (method) =>
+      method === 'create_mail'
+        ? reply({
+            message: {
+              name: 'draft-1',
+              id: 'draft-1',
+              status: 'Drafted',
+              error: null,
+              thread_id: null,
+              submission_id: null,
+              send_at: null,
+              undo_send_period: null,
+            },
+          })
+        : reply({ message: [] })
+    await openSigned()
+    const subject = document.querySelector<HTMLInputElement>('input[aria-label="Subject"]')!
+    subject.value = 'Brief'
+    subject.dispatchEvent(new Event('input'))
+
+    await close()
+
+    await vi.waitFor(() => expect(listReloadRequest.value).toBeGreaterThan(before))
+  })
+})
+
+describe("the compose page's island", () => {
+  it('swaps its tools for the formatting, and back', async () => {
+    await openComposePage()
+    const shown = () => ({ attach: !!button('Attach'), bold: !!button('Bold') })
+    expect(shown()).toEqual({ attach: true, bold: false })
+
+    button('Formatting')!.click()
+    await nextTick()
+    expect(shown()).toEqual({ attach: false, bold: true })
+
+    button('Formatting')!.click()
+    await nextTick()
+    expect(shown()).toEqual({ attach: true, bold: false })
+  })
+})
+
+describe('scheduling from the compose page', () => {
+  it('sends at the time picked from Schedule send', async () => {
+    handoff.draft = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Brief',
+      html_body: '<p>Looks good.</p>',
+      attachments: [],
+    }
+    server.answer = (method) =>
+      method === 'update_draft_mail'
+        ? reply({
+            message: {
+              name: 'draft-1',
+              id: 'draft-1',
+              status: 'Submitted',
+              error: null,
+              thread_id: null,
+              submission_id: 'submission-1',
+              send_at: '2026-12-01T09:00:00Z',
+              undo_send_period: null,
+            },
+          })
+        : reply({ message: [] })
+    await openComposePage()
+
+    await openSheet('More actions')
+    sheetRow('Schedule send')!.click()
+    await vi.waitFor(() => expect(button('Monday 9 AM')).not.toBeNull())
+    button('Monday 9 AM')!.click()
+
+    await vi.waitFor(() =>
+      expect(toasts.success.mock.calls.map(([message]) => message)).toContain('Send scheduled'),
+    )
+  })
+})
+
+describe("the compose page's Send, held", () => {
+  it('opens the time to send at, and sends nothing', async () => {
+    handoff.draft = {
+      id: 'draft-1',
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Brief',
+      html_body: '<p>Looks good.</p>',
+      attachments: [],
+    }
+    await openComposePage()
+    const send = button('Send')!
+
+    // A finger held on Send, then lifted: the lift ends in a click, as it does on a phone.
+    send.dispatchEvent(new Event('pointerdown'))
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    send.dispatchEvent(new Event('pointerup'))
+    send.click()
+
+    await vi.waitFor(() => expect(button('Monday 9 AM')).not.toBeNull())
+    // A send would be asked for by now (see the locking test below).
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(server.asked).not.toContain('update_draft_mail')
+  })
+})
+
+describe('closing the compose page', () => {
+  it('lands in Mail when it was opened at its own address, with no page behind it', async () => {
+    const router = await openComposePage(null)
+
+    button('Close')!.click()
+
+    await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/mail'))
+  })
+})
+
+describe("the compose page's reminder", () => {
+  it('asks when to be reminded', async () => {
+    await openComposePage()
+
+    await openSheet('Remind me if no reply')
+
+    expect(sheetRows()).toContain('Pick a date and time…')
+  })
+
+  it('says when it is set for, opened again, and offers to change or remove it', async () => {
+    await openComposePage()
+    await openSheet('Remind me if no reply')
+    document.querySelector<HTMLElement>('[role="dialog"] button')!.click()
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull())
+
+    const bell = [...document.querySelectorAll('button')].find((b) =>
+      b.getAttribute('aria-label')?.startsWith('Reminder '),
+    )!
+    bell.click()
+
+    await vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull())
+    const sheet = document.querySelector('[role="dialog"]')!.textContent
+    expect(sheet).toMatch(/Reminder set for /)
+    expect(sheet).toContain('Change to')
+    expect(sheetRows()).toContain('Remove reminder')
   })
 })
 
@@ -344,5 +560,25 @@ describe('sending from the compose page', () => {
       'Message unsent. It is back in your drafts.',
       undefined,
     )
+  })
+})
+
+describe('where the compose page starts', () => {
+  it('puts the caret in To for a reply whose recipients were tapped in the thread', async () => {
+    handoff.draft = {
+      to: [{ email: 'dana@brightwave.example' }],
+      subject: 'Re: Brief',
+      in_reply_to: '<brief@brightwave.example>',
+      attachments: [],
+    }
+    handoff.startAt = 'to'
+
+    await openComposePage()
+
+    // With Cc and Bcc folded away, the page's only typing fields are To and Subject.
+    const to = [...document.querySelectorAll('input')].find(
+      (input) => input.type !== 'file' && input.getAttribute('aria-label') !== 'Subject',
+    )
+    await vi.waitFor(() => expect(document.activeElement).toBe(to))
   })
 })

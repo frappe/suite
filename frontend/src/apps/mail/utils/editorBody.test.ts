@@ -37,7 +37,7 @@ const QUOTE =
 
 describe('the composer body', () => {
   it('keeps a reply where it is typed, above an unfolded quote', () => {
-    // Unfolded the way the composer's "···" does it: a blank line, then the quote.
+    // Unfolded the way the composer's Show trimmed content does it: a blank line, then the quote.
     const { editor, state } = composer(`<div>Yes</div><div><br></div>${QUOTE}`)
     editor.commands.setTextSelection(4) // after "Yes"
     editor.commands.insertContent(',')

@@ -60,14 +60,15 @@
               v-else
               class="space-y-2 sm:px-5 sm:pt-5"
               :class="{
-                /* Clear of the reply bar over the foot (57px, and the phone's own inset under
-                   it), with a gutter's gap to spare. */
+                /* Clear of the reply island over the foot (48px over a 12px gap, and the
+                   phone's own inset under it), with a gutter's gap to spare. */
                 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]': isMobile && !thread?.at(-1)?.draft,
                 'pb-3': isMobile && thread?.at(-1)?.draft,
                 'sm:pb-24': isComposeWindowOpen(),
                 'sm:pb-6': !isComposeWindowOpen(),
                 'sm:flex sm:h-full sm:flex-col': isDraftAlone,
               }"
+              :style="quickDraft ? { paddingBottom: `${quickCover + 12}px` } : undefined"
             >
               <!-- The subject heads the thread and scrolls with it, wrapping rather than cut short in
 				     the toolbar, on a phone as on a desktop. A phone's padding puts it on the axis of
@@ -75,11 +76,12 @@
 				     too, on its card. -->
               <!-- Not over a draft that is the whole thread: its own Subject field says it, a line
 				     below, and a heading there repeated it or read "[No subject]" mid-sentence. -->
-              <!-- On a phone the subject heads the cards on the grey they sit on, under the top
-                   bar's line, with any other folders the conversation is filed in under it. -->
+              <!-- On a phone the subject heads the cards on the grey they sit on, with any other
+                   folders the conversation is filed in under it. The top bar has no line, so the
+                   space under its buttons is the gap: a small top keeps it to the list title's. -->
               <div
                 v-if="thread?.length && !isDraftAlone"
-                class="max-sm:px-4 max-sm:pb-2 max-sm:pt-4"
+                class="max-sm:px-4 max-sm:pb-2 max-sm:pt-1"
               >
                 <h1
                   class="text-ink-gray-8 text-xl-semibold group/subject flex items-start gap-1 !leading-7"
@@ -211,6 +213,8 @@
                         isMobile && (thread.length > 1 || mail.draft) && !isCollapsed(mail),
                       'pb-4': isMobile && thread.length === 1 && !mail.draft,
                       'py-2.5': isMobile && isCollapsed(mail),
+                      // A phone's draft card opens at a tap anywhere, and answers it as a list row does.
+                      'active:bg-surface-gray-2': isMobile && mail.draft,
                       'sm:rounded-7': thread.length > 1 || mail.draft,
                       // A collapsed row only holds one line — reading-card padding
                       // around it is what made the thread feel loose. A draft's card
@@ -240,6 +244,17 @@
                       @reply-all="replyAll(getSourceMail(mail.name))"
                       @forward="forward(getSourceMail(mail.name))"
                       @pop-out="(mailDetails: ComposeMailData) => popOutDraft(mailDetails)"
+                    />
+
+                    <DraftCard
+                      v-else-if="mail.draft && isMobile"
+                      :mail
+                      :body="draftMails[mail.name]?.html_body"
+                      :to="recipientsSummary(mail)"
+                      :sender="draftSender(mail)"
+                      :signature="signatureOf(mail.from_email)"
+                      @open="popOutDraft(draftMails[mail.name])"
+                      @discard="discardSavedDraft(mail)"
                     />
 
                     <template v-else-if="!mail.name.startsWith('draft')">
@@ -400,9 +415,10 @@
 											     mails keep just sender + preview — recipients belong to
 											     the expanded reading view. A compact summary, not the
 											     roster: two names carry the line, the rest fold into
-											     "and x others" behind the chevron beside it. -->
+											     "and x others" behind the chevron beside it. A draft not yet
+											     addressed has no line: an empty one only left a gap. -->
                             <div
-                              v-if="!isCollapsed(mail)"
+                              v-if="!isCollapsed(mail) && recipientsSummary(mail)"
                               class="flex h-4 items-center space-x-1.5 truncate leading-4"
                             >
                               <span class="truncate">
@@ -426,7 +442,7 @@
                             <!-- An open message dates itself on a line of its own, under who it is to,
                                  leaving the sender's line to who sent it; a draft says so there too. -->
                             <div v-if="!isCollapsed(mail)" class="mt-1 flex h-5 items-center gap-2">
-                              <Badge v-if="mail.draft" :label="__('Draft')" theme="gray" />
+                              <DraftBadge v-if="mail.draft" />
                               <MailDate :datetime="mail.received_at" />
                             </div>
                             <!-- A phone's folded row reads its first words under the sender's name. -->
@@ -785,36 +801,44 @@
                 </template>
               </template>
 
-              <!-- A phone answers from a bar along the screen's foot: a field that starts a reply to
-                   the newest message, then Reply All and Forward. -->
+              <!-- A phone answers from an island floating over the screen's foot, as compose's tools
+                   do, so a reply opens on the same shape: a field that starts a reply to the newest
+                   message, then Reply All and Forward. The wrapper lets taps through to the mail
+                   beside the island. -->
               <div
                 v-if="!readonly && thread.length && !thread?.at(-1)?.draft && isMobile"
-                class="bg-surface-base absolute bottom-0 left-0 right-0 z-20 flex items-center gap-1 border-t px-3 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]"
+                v-show="!quickDraft"
+                ref="replyIsland"
+                class="pointer-events-none absolute inset-x-0 bottom-0 z-20 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
               >
-                <Button
-                  variant="subtle"
-                  size="lg"
-                  class="text-ink-gray-5 min-w-0 flex-1 !justify-start rounded-full"
-                  :label="replyLabel"
-                  @click="replyToNewest"
+                <div
+                  class="bg-surface-elevation-2 pointer-events-auto flex h-12 items-center gap-1 rounded-full border p-1 shadow-xl"
                 >
-                  <template #prefix>
-                    <Reply class="icon shrink-0" />
-                  </template>
-                </Button>
-                <Button
-                  v-for="action in replyForwardActions.filter((action) => action.icon !== Reply)"
-                  :key="action.label"
-                  variant="ghost"
-                  size="lg"
-                  class="touch-target"
-                  :aria-label="action.label"
-                  @click="action.onClick"
-                >
-                  <template #icon>
-                    <component :is="action.icon" class="icon" />
-                  </template>
-                </Button>
+                  <Button
+                    variant="ghost"
+                    size="lg"
+                    class="text-ink-gray-5 min-w-0 flex-1 !justify-start !rounded-full"
+                    :label="replyLabel"
+                    @click="replyToNewest"
+                  >
+                    <template #prefix>
+                      <Reply class="size-5 shrink-0" />
+                    </template>
+                  </Button>
+                  <Button
+                    v-for="action in replyForwardActions.filter((action) => action.icon !== Reply)"
+                    :key="action.label"
+                    variant="ghost"
+                    size="lg"
+                    class="shrink-0 !rounded-full"
+                    :aria-label="action.label"
+                    @click="action.onClick"
+                  >
+                    <template #icon>
+                      <component :is="action.icon" class="size-5" />
+                    </template>
+                  </Button>
+                </div>
               </div>
               <div
                 v-else-if="!readonly && thread.length && !thread?.at(-1)?.draft"
@@ -835,6 +859,16 @@
         </div>
       </Transition>
     </div>
+    <QuickReply
+      v-if="isMobile && quickDraft && draftMails[quickDraft]"
+      :key="quickKey"
+      :mail-details="draftMails[quickDraft]"
+      :reload-mails="reloadAfterQuickReply(threadID)"
+      :show-sent="() => showSent()"
+      @close="closeQuickReply"
+      @expand="expandQuickReply"
+      @cover="(px: number) => (quickCover = px)"
+    />
     <SendMail
       v-if="focusedDraft"
       ref="composeWindow"
@@ -900,6 +934,7 @@ import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
 import CalendarInviteBanner from '@/apps/mail/components/CalendarInviteBanner.vue'
 import ComposeMailEditor from '@/apps/mail/components/ComposeMailEditor.vue'
 import DeliveryStatusBanner from '@/apps/mail/components/DeliveryStatusBanner.vue'
+import DraftBadge from '@/apps/mail/components/DraftBadge.vue'
 import EmailContent from '@/apps/mail/components/EmailContent.vue'
 import HiddenImagesBanner from '@/apps/mail/components/HiddenImagesBanner.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
@@ -910,6 +945,8 @@ import MailDetails from '@/apps/mail/components/MailDetails.vue'
 import MailDetailsPopover from '@/apps/mail/components/MailDetailsPopover.vue'
 import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import MessageReactions from '@/apps/mail/components/MessageReactions.vue'
+import DraftCard from '@/apps/mail/components/mobile/DraftCard.vue'
+import QuickReply from '@/apps/mail/components/mobile/QuickReply.vue'
 import PlainTextBody from '@/apps/mail/components/PlainTextBody.vue'
 import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
 import ScreenerThreadBanner from '@/apps/mail/components/Screener/ScreenerThreadBanner.vue'
@@ -919,7 +956,8 @@ import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import ThreadStrip from '@/apps/mail/components/ThreadStrip.vue'
 import UndeliveredBanner from '@/apps/mail/components/UndeliveredBanner.vue'
-import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { openComposePage, type PendingCompose } from '@/apps/mail/composables/composeHandoff'
+import { liftToastsOver } from '@/apps/mail/composables/phoneBarsAway'
 import {
   closeComposeWindow,
   composeWindowDraft,
@@ -948,10 +986,11 @@ import type {
 } from '@/apps/mail/types'
 import {
   analyzeRemoteAssets,
+  commitAfterUndo,
+  composeOfDraft,
   copyToClipBoard,
   decodeHtmlEntities,
   downloadUrlAsFile,
-  extractQuotedContent,
   getFormattedDate,
   getGroupedRecipients,
   hasHtmlContent,
@@ -968,9 +1007,11 @@ import {
   mailSearchRoute,
   useComposeMail,
   useDiscardingDrafts,
+  useListReload,
   useScreenSize,
   useSettings,
   useTheme,
+  useUndo,
 } from '@/apps/mail/utils/composables'
 import { containEmailHtml } from '@/apps/mail/utils/containEmailHtml'
 import { useMinuteClock } from '@/apps/mail/utils/datetime'
@@ -1292,15 +1333,28 @@ const threadFolders = computed(() => {
 // flight. The server still returns them for a moment, so any re-derive — our own reload, the 30s poll,
 // or the new-mail socket — would otherwise re-add them here. Cleared when the open thread changes.
 const removedMailIds = new Set<string>()
-const { isHeld: isHeldDraft, heldDrafts, takeRestoredDraft } = useDiscardingDrafts()
+const {
+  isHeld: isHeldDraft,
+  heldDrafts,
+  takeRestoredDraft,
+  holdDraft,
+  releaseDraft,
+} = useDiscardingDrafts()
 // A discard undone from this thread puts the draft back here as soon as it is let back — the list it
 // reads from has not changed, only what it leaves out. Only that draft is added: rebuilding the whole
 // thread would take away a reply being written in it, and a draft let back elsewhere is none of
 // this thread's business.
 watch(heldDrafts, (now, before) => {
   const released = [...before].filter((id) => !now.has(id))
+  const source = sourceMessages() ?? []
+  // A quick reply's draft is saved while it is written, and the list never reads it: it is let back
+  // before the rows have it. They are read again and bring it, as a phone's drafts follow the rows
+  // (see syncWithSource). Without, it waited for the next sync, the list's own reload being Drafts'
+  // and Sent's.
+  if (isMobile.value && threadID && released.some((id) => !source.some((mail) => mail.id === id)))
+    emit('reloadMails')
   const shown = new Set(thread.value.map((mail: Mail) => mail.id))
-  const back = transformThreadMails(sourceMessages() ?? []).filter(
+  const back = transformThreadMails(source).filter(
     (mail) => released.includes(mail.id) && !shown.has(mail.id),
   )
   if (!back.length) return
@@ -1506,6 +1560,19 @@ const syncWithSource = (source = sourceMessages()) => {
     mail.duplicates = copiesBeside(fresh, mail.id)
   })
 
+  // On a phone a thread's drafts are cards, not editors: the reply being written is the quick reply,
+  // which is not in the thread. So while none is open they follow the rows, as a reload would show
+  // them. A reply saved on the compose page, or by a quick reply left behind, reaches the server's
+  // list only after the rows the reader came back to, and was missing until a reload.
+  if (isMobile.value && !quickDraft.value) {
+    const draftIds = (mails: Mail[]) =>
+      mails
+        .flatMap((mail) => (mail.draft ? [mail.id] : []))
+        .sort()
+        .join()
+    if (draftIds(transformThreadMails(source)) !== draftIds(thread.value)) return loadThread()
+  }
+
   // Append any newly-arrived messages, before the drafts at the bottom. Drafts are excluded: the only draft
   // that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
   // saved id isn't known here), so a draft returning from a background reload would otherwise be
@@ -1536,7 +1603,9 @@ const refreshInPlace = () => {
 // useComposeMail): the thread is asked for on its own, which is one short call where the list's
 // reload is the whole folder, and the reply takes the composer's place the moment the send is done.
 // In place, as an arrival is: a rebuild folded the message being answered away under the reply.
-const showSent = async (draft: string) => {
+// `draft` is the reply's card; a phone's quick reply has none, and is done with once the thread
+// it was written in has the sent mail.
+const showSent = async (draft?: string) => {
   const opened = threadID
   const rows = opened
     ? await client
@@ -1547,8 +1616,8 @@ const showSent = async (draft: string) => {
   refreshInPlace()
   // The reader has moved on, while the send was out or since: the pane is another thread's now,
   // and the reply's card went with the thread it was written in.
-  if (!thread.value.some((mail: Mail) => mail.name === draft)) return
-  dropDraftCard(draft)
+  if (draft ? !thread.value.some((mail: Mail) => mail.name === draft) : threadID !== opened) return
+  if (draft) dropDraftCard(draft)
   if (rows?.length) syncWithSource(rows.map(mailRow))
   // A forward leaves for a thread of its own: sent from a draft that was the whole pane, it leaves
   // nothing here to show.
@@ -1766,7 +1835,7 @@ const reload = () => {
 }
 // Asked for by a hand other than this pane's (see useThreadReload), and taken once: held while the
 // pane was away, it is taken as the pane comes back to the thread.
-const { threadReloadRequest } = useThreadReload()
+const { threadReloadRequest, requestThreadReload } = useThreadReload()
 watch(
   [threadReloadRequest, () => threadID],
   ([request]) => {
@@ -1973,19 +2042,7 @@ const populateDraftMails = (mail: Mail) => {
   // Back from an undone discard: as it was in the editor, which the server may be a save behind.
   const restored = takeRestoredDraft(mail.id)
   if (restored) return (draftMails[mail.name] = { ...restored, name: mail.name })
-  draftMails[mail.name] = {
-    name: mail.name,
-    id: mail.id,
-    from_email: mail.from_email,
-    to: mail.groupedRecipients?.to,
-    cc: mail.groupedRecipients?.cc,
-    bcc: mail.groupedRecipients?.bcc,
-    subject: mail.subject || '',
-    in_reply_to: mail.message_id,
-    in_reply_to_id: mail.id,
-    attachments: mail.attachments || [],
-    ...extractQuotedContent(mail.html_body),
-  }
+  draftMails[mail.name] = composeOfDraft(mail)
 }
 
 const reply = (mail: Mail) => {
@@ -2028,11 +2085,9 @@ const createLocalDraft = (mail: Mail, draftDetails: ComposeMailData) => {
       name,
       ...draftDetails,
     }
-    // The thread entry only hosts the inline desktop editor. On mobile the draft
-    // lives in the slide-up sheet instead — splicing it in anyway would hide the
-    // reply bar (it's suppressed while the thread ends in a draft) until a reload
-    // cleans the entry up, well after the sheet has slid out.
-    if (isMobile.value) return popOutDraft(draftMails[name])
+    // The thread entry only hosts the inline desktop editor. A phone writes it in the quick reply
+    // over the thread's foot instead, which can hand it on to the compose page.
+    if (isMobile.value) return openQuickReply(name)
     const index = thread.value.indexOf(mail)
     const draft = thread.value.find((m: Mail) => m.name === name)
     if (index !== -1 && !draft)
@@ -2054,6 +2109,28 @@ const dropDraftCard = (name: string) => {
   delete draftMails[name]
   thread.value = thread.value.filter((mail: Mail) => mail.name !== name)
 }
+// A saved reply discarded from its card on a phone: off the thread and the lists at once, and
+// deleted once the toast's Undo has passed. Undo lets it back, where it was (see heldDrafts).
+const { requestListReload, requestRowReload } = useListReload()
+const { setUndoAction, retireUndoAction } = useUndo()
+const discardSavedDraft = (mail: Mail) => {
+  holdDraft(mail.id)
+  discardLocalDraft(mail.name)
+  commitAfterUndo({
+    message: __('Draft discarded'),
+    removal: { kind: 'draft', account: scopeAccountId.value, id: mail.id },
+    onSent: requestListReload,
+    restore: () => releaseDraft(mail.id),
+    undoSlot: { set: (action) => setUndoAction(action), retire: retireUndoAction },
+  })
+}
+// Who a saved draft goes out as, on its card: a name, as a sent message's card gives it. A reply
+// saved from the quick reply carries none of its own, so it is the identity's; which address it goes
+// from is the compose page's to show.
+const draftSender = (mail: Mail) =>
+  mail.from_name || identityOf(mail.from_email)?._name || mail.from_email
+// The sending identity's signature, which a draft's card leaves out of what was written.
+const signatureOf = (email?: string) => identityOf(email)?.html_signature ?? undefined
 const discardLocalDraft = (mail: string) => {
   dropDraftCard(mail)
   // Opened from Drafts, the thread was there for its draft: with the last one gone it has left the
@@ -2257,7 +2334,7 @@ const dropPoppedOutDraft = () => {
   delete draftMails[focusedDraft.value]
   thread.value = thread.value.filter((m: Mail) => !isDraftInWindow(m))
 }
-const popOutDraft = (mail: ComposeMailData) => {
+const popOutDraft = (mail: ComposeMailData, startAt?: PendingCompose['startAt']) => {
   if (!mail.name) return
   draftMails[mail.name] = mail
 
@@ -2266,7 +2343,7 @@ const popOutDraft = (mail: ComposeMailData) => {
   // that was just sent is there in the refetch, and a local draft that was discarded is gone with
   // the component that was holding it.
   if (isMobile.value) {
-    openComposePage(router, scopeAccountId.value, mail)
+    openComposePage(router, scopeAccountId.value, mail, startAt)
     return
   }
 
@@ -2276,6 +2353,45 @@ const popOutDraft = (mail: ComposeMailData) => {
   focusedDraft.value = mail.name
   showSendModal.value = true
 }
+// Toasts rise above the reply island, as they do above the list's bars (see phoneBarsAway).
+const replyIsland = useTemplateRef<HTMLElement>('replyIsland')
+liftToastsOver(replyIsland)
+// The reply a phone is writing in the thread's quick reply, by its draft name. One at a time: a reply
+// started from another message takes its place, and the one it replaces keeps as a draft.
+const quickDraft = ref<string>()
+const quickKey = ref(0)
+// How much of the screen's foot the quick reply covers, so the thread scrolls clear of it.
+const quickCover = ref(0)
+const openQuickReply = (name: string) => {
+  quickKey.value++
+  quickDraft.value = name
+}
+const closeQuickReply = () => {
+  if (quickDraft.value) delete draftMails[quickDraft.value]
+  quickDraft.value = undefined
+}
+const expandQuickReply = (mail: ComposeMailData, startAt?: PendingCompose['startAt']) => {
+  const name = quickDraft.value
+  closeQuickReply()
+  popOutDraft({ ...mail, name: mail.name ?? name }, startAt)
+}
+// A reply in the quick reply saves on its way out, by when the reader may have gone back to the list
+// or on to another thread. The thread it was written in then reloads when it is open again (see
+// useThreadReload), or it comes back from the list without the draft; and its row reads again, or
+// it goes on counting the conversation without the reply until the list is next read.
+let paneGone = false
+onUnmounted(() => (paneGone = true))
+const reloadAfterQuickReply = (writtenIn: string) => () => {
+  if (!paneGone && writtenIn === threadID) return reload()
+  requestThreadReload(writtenIn)
+  requestRowReload(writtenIn)
+}
+// It belongs to the thread it was started in; moving to another keeps it as a draft (see QuickReply).
+watch(
+  () => threadID,
+  () => closeQuickReply(),
+)
+
 const getSourceMail = (mail: string) =>
   thread.value.find((m: Mail) => m.name === mail.split(':')[1])
 const getReplyDetails = (mail: Mail) => ({
@@ -2294,6 +2410,7 @@ const getReplyRecipients = (mail: Mail) => ({
       : [
           {
             email: mail.from_email,
+            display_name: mail.from_name || undefined,
           },
         ],
 })
@@ -2310,6 +2427,7 @@ const getReplyAllRecipients = (mail: Mail) => {
         : [
             {
               email: mail.from_email,
+              display_name: mail.from_name || undefined,
             },
           ],
       cc: [...(mail.groupedRecipients?.to ?? []), ...(mail.groupedRecipients?.cc ?? [])].filter(
@@ -2318,11 +2436,11 @@ const getReplyAllRecipients = (mail: Mail) => {
     }
 }
 
-// Addresses arrive in whatever casing the other side used: match case-insensitively, and hand
-// back the identity's own spelling, since the composer looks the address up by that.
-const getIdentityEmail = (email?: string) =>
+// Addresses arrive in whatever casing the other side used: match case-insensitively.
+const identityOf = (email?: string) =>
   identities.value.data?.find((i: Identity) => i.email.toLowerCase() === email?.toLowerCase())
-    ?.email
+// The identity's own spelling, since the composer looks the address up by that.
+const getIdentityEmail = (email?: string) => identityOf(email)?.email
 const isUserEmail = (email: string) => !!getIdentityEmail(email)
 
 // The identity a reply should go out as: the one the message was addressed to (the sender,

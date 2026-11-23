@@ -25,15 +25,22 @@
     :inert="isSending || undefined"
   >
     <header
-      class="bg-surface-base z-20 flex shrink-0 items-center gap-1 border-b pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
+      class="bg-surface-base z-20 flex shrink-0 items-center gap-2 pb-2.5 pl-2 pr-4 pt-[calc(env(safe-area-inset-top)+0.875rem)]"
     >
-      <Button variant="ghost" class="touch-target" :label="__('Close')" @click="closeCompose">
+      <Button
+        variant="ghost"
+        class="touch-target !h-8 !w-8"
+        :label="__('Close')"
+        @click="closeCompose"
+      >
         <template #icon>
           <X class="text-ink-gray-5 size-5" />
         </template>
       </Button>
-      <h2 class="text-ink-gray-8 flex-1 text-base font-medium">{{ __('Compose Mail') }}</h2>
-      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. -->
+      <!-- What the page is for: New message, Reply, Forward. -->
+      <h2 class="text-ink-gray-8 min-w-0 flex-1 truncate text-base font-medium">{{ title }}</h2>
+      <!-- Each of the header's controls takes the touch target, or a neighbour's covers it. Sized
+           and spaced as the thread page's header buttons are. -->
       <Button
         v-if="isSaveFailed"
         variant="ghost"
@@ -42,42 +49,35 @@
         :label="__('Not saved · Retry')"
         @click="saveDraft()"
       />
-      <!-- In the header, where it can always be reached: in the formatting row it only appeared once
-           the body had the caret, so a mail that was nothing but an attachment had no way to it. -->
-      <ComposeAttachMenu @select-files="onFilesSelected" @attach-from-drive="attachFromDrive">
-        <Button variant="ghost" class="touch-target" :label="__('Attach')">
+      <ReminderMenu
+        :current="remindAt"
+        :removable="!!remindAt"
+        @pick="setRemindAt"
+        @remove="setRemindAt()"
+      >
+        <Button
+          variant="ghost"
+          class="touch-target !h-8 !w-8"
+          :class="{ '!bg-surface-gray-3': remindAt }"
+          :label="remindLabel"
+        >
           <template #icon>
-            <Paperclip class="text-ink-gray-5 size-5" />
+            <span
+              :class="remindAt ? 'lucide-bell' : 'lucide-bell-plus'"
+              class="text-ink-gray-5 size-5"
+              aria-hidden="true"
+            />
           </template>
         </Button>
-      </ComposeAttachMenu>
+      </ReminderMenu>
       <AdaptiveDropdown :options="ACTIONS">
-        <Button variant="ghost" class="touch-target" :label="__('More actions')">
+        <Button variant="ghost" class="touch-target !h-8 !w-8" :label="__('More actions')">
           <template #icon>
-            <EllipsisVertical class="text-ink-gray-5 size-5" />
+            <span class="lucide-ellipsis text-ink-gray-5 size-5" aria-hidden="true" />
           </template>
         </Button>
       </AdaptiveDropdown>
-      <Button
-        variant="ghost"
-        class="touch-target ml-2"
-        :label="__('Send')"
-        :disabled="isRecipientsEmpty || isUploading"
-        :loading="isSending"
-        @click="sendMail()"
-      >
-        <template #icon>
-          <SendHorizontal class="text-ink-gray-5 size-5" />
-        </template>
-      </Button>
     </header>
-    <ReplyReminderStrip
-      v-if="remindAt"
-      class="mt-2 shrink-0"
-      :remind-at="remindAt"
-      @change="setRemindAt"
-      @cancel="setRemindAt()"
-    />
 
     <!-- flex-1 so the body claims the rest of the page: a tap anywhere in the empty space below
 		     the last line lands in the message, which is where someone tapping there meant to type. -->
@@ -98,17 +98,23 @@
           <div
             ref="scroller"
             class="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
-            @pointerdown="focusWithoutReveal"
+            @touchstart.passive="startTap"
+            @touchend="endTap"
+            @scroll.passive="noteScroll"
             @focusin="onFocusIn"
           >
             <!-- Each row is a label + control on one line, tap target spanning the full width —
 					     on a phone the label is a hit area, not decoration. Stopped, so tapping a field
-					     doesn't also run the body's focus-at-end below. -->
+					     doesn't also run the body's focus-at-end below. The labels stand in a column of one
+					     width, as the desktop composer's do, so the values line up; From's pill is pulled
+					     back by its own padding, as there, so its text starts on the same line. -->
             <!-- `border-b` as well as `divide-y`: divide-y only draws between the rows, leaving
 					     the subject running straight into the message with no line between them. -->
             <div class="flex flex-col divide-y border-b" @click.stop>
               <div class="flex min-h-13 items-center gap-2 px-4 py-2">
-                <span class="text-ink-gray-4 shrink-0 text-sm">{{ __('From') }}</span>
+                <span class="text-ink-gray-5 flex h-7 w-10 shrink-0 items-center text-base">{{
+                  __('From')
+                }}</span>
                 <!-- Button trigger, not the default input one: you pick an identity here, you don't
 							     type one. It also makes the control content-sized — a text input carries a
 							     fixed intrinsic width of its own, so sizing to content around one cut the
@@ -121,10 +127,9 @@
                   v-model="mail.from_email"
                   :options="identityOptions"
                   trigger="button"
-                  class="min-w-0 !text-ink-gray-8"
+                  class="-ml-[9px] min-w-0 !text-ink-gray-8"
                 />
               </div>
-
               <!-- Each recipient row is a column: the field on top, and under it the target the
 						     input teleports its suggestions into. That target spans the row rather than
 						     the field, which is what lets the list reach both edges of the page. -->
@@ -134,7 +139,7 @@
 							     single-line height at min-h-13 without centring doing it. The label centres
 							     itself against a chip's height, not its own line box. -->
                 <div class="flex min-h-13 items-start gap-2 px-4 py-3">
-                  <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
+                  <span class="text-ink-gray-5 flex min-h-7 w-10 shrink-0 items-center text-base">{{
                     __('To')
                   }}</span>
                   <RecipientInput
@@ -146,7 +151,12 @@
                     @move="moveRecipient"
                     @show-cc-bcc="showCcBcc = true"
                   />
-                  <Button variant="ghost" :label="__('Cc and Bcc')" @click="showCcBcc = !showCcBcc">
+                  <Button
+                    variant="ghost"
+                    class="touch-target"
+                    :label="__('Cc and Bcc')"
+                    @click="showCcBcc = !showCcBcc"
+                  >
                     <template #icon>
                       <component
                         :is="showCcBcc ? ChevronUp : ChevronDown"
@@ -161,9 +171,10 @@
               <template v-if="showCcBcc">
                 <div class="flex flex-col">
                   <div class="flex min-h-13 items-start gap-2 px-4 py-3">
-                    <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
-                      __('Cc')
-                    }}</span>
+                    <span
+                      class="text-ink-gray-5 flex min-h-7 w-10 shrink-0 items-center text-base"
+                      >{{ __('Cc') }}</span
+                    >
                     <RecipientInput
                       ref="ccInput"
                       v-model="mail.cc"
@@ -178,9 +189,10 @@
                 </div>
                 <div class="flex flex-col">
                   <div class="flex min-h-13 items-start gap-2 px-4 py-3">
-                    <span class="text-ink-gray-4 flex min-h-7 shrink-0 items-center text-sm">{{
-                      __('Bcc')
-                    }}</span>
+                    <span
+                      class="text-ink-gray-5 flex min-h-7 w-10 shrink-0 items-center text-base"
+                      >{{ __('Bcc') }}</span
+                    >
                     <RecipientInput
                       v-model="mail.bcc"
                       field="bcc"
@@ -223,10 +235,16 @@
               />
 
               <div class="mt-auto cursor-default space-y-2.5 pt-2.5" @click.stop>
+                <!-- The quote this reply carries, folded away. Labelled, as the reader's toggle is: a
+                     bare '···' chip was easy to miss, and read as dots. A size up from desktop's,
+                     with the touch target, so a finger finds it; lg would also enlarge its text. -->
                 <Button
                   v-if="mail.quoted_content"
-                  label="&middot;&middot;&middot;"
-                  class="max-h-4 w-fit"
+                  variant="subtle"
+                  size="md"
+                  class="touch-target"
+                  icon-left="lucide-align-left"
+                  :label="__('Show trimmed content')"
                   @click="openQuotedContent"
                 />
 
@@ -254,58 +272,107 @@
             </div>
           </div>
           <!--
-			  The formatting toolbar, last in the column and `shrink-0`, so it sits on the page's bottom
-			  edge — and that edge is the top of the keyboard, since the page is sized to the visible
-			  area. No sticky, no fixed, no measuring: it is simply the last thing in the box.
+			  The desktop toolbar as the list's floating bar: its tools in an island, and Send a round
+			  button beside it, in the thumb zone. Last in the column and `shrink-0`, so it sits on the
+			  page's bottom edge — and that edge is the top of the keyboard, since the page is sized to
+			  the visible area. No sticky, no fixed, no measuring: it is simply the last thing in the box.
 
 			  It sits outside the scroller above so the scrollbar stops at it rather than running on
-			  underneath.
+			  underneath, and the caret is never behind it.
 
 			  The safe-area padding is for the home indicator, at the screen's bottom edge. The
 			  installed app keeps reporting that inset with the keyboard up, when the bar is nowhere
 			  near the edge, so what the keyboard covers comes off it.
+
+			  A tap on it leaves the focus where it was, so the body keeps its caret and the keyboard stays
+			  up while a format is picked. Taking the focus closed the keyboard on every tap.
 			-->
           <div
-            v-if="isBodyFocused"
-            class="bg-surface-base z-20 shrink-0 border-t"
+            class="z-20 flex shrink-0 items-center gap-2 px-3.5 pt-2"
             :style="{
-              paddingBottom: `max(0px, calc(env(safe-area-inset-bottom) - ${keyboardBottom}px))`,
+              paddingBottom: `calc(0.75rem + max(0px, env(safe-area-inset-bottom) - ${keyboardBottom}px))`,
             }"
+            @mousedown.prevent
           >
-            <!-- The formatting buttons come from frappe-ui's menu at desktop scale, a 24px target for
-					     a thumb. Sized up from here with arbitrary variants, the markup being the menu's
-					     rather than ours — and on this row only, so the same menu keeps its desktop size
-					     in the composer window. -->
+            <!-- One row of tools, or behind Formatting the formatting, never both: the two together are
+					     wider than a phone. The editor's buttons come from frappe-ui's menu at desktop scale,
+					     a 24px target for a thumb, so the row sizes every button up with arbitrary variants,
+					     the markup being the menu's rather than ours. -->
             <div
-              class="flex items-center gap-1 overflow-x-auto px-2 py-1 [&_button]:min-h-9 [&_button]:min-w-9 [&_button]:items-center [&_button]:justify-center [&_svg]:size-4"
+              class="bg-surface-elevation-2 flex h-12 min-w-0 flex-1 items-center gap-1 rounded-full border p-1 shadow-xl [&_button]:min-h-10 [&_button]:min-w-10 [&_button]:items-center [&_button]:justify-center [&_button]:rounded-full [&_span[class*=lucide-]]:size-5"
             >
-              <EditorFixedMenu :items="menu" class="shrink-0" />
+              <Button
+                variant="ghost"
+                class="shrink-0"
+                :class="{ '!bg-surface-gray-3': formatting }"
+                :label="__('Formatting')"
+                :aria-pressed="formatting"
+                @click="formatting = !formatting"
+              >
+                <template #icon>
+                  <span class="lucide-a-large-small" aria-hidden="true" />
+                </template>
+              </Button>
+              <div
+                class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none]"
+              >
+                <EditorFixedMenu v-if="formatting" :items="formatMenu" class="shrink-0" />
+                <template v-else>
+                  <ComposeAttachMenu
+                    @select-files="onFilesSelected"
+                    @attach-from-drive="attachFromDrive"
+                  >
+                    <Button variant="ghost" class="shrink-0" :label="__('Attach')">
+                      <template #icon>
+                        <span class="lucide-paperclip" aria-hidden="true" />
+                      </template>
+                    </Button>
+                  </ComposeAttachMenu>
+                  <EditorFixedMenu :items="INSERTS" class="shrink-0" />
+                </template>
+              </div>
             </div>
+            <!-- A tap sends. Held, it sends later: the time picker opens, as desktop's Send splits
+                 off Schedule send. More actions has it too. -->
+            <Button
+              variant="solid"
+              class="!h-12 !w-12 shrink-0 select-none !rounded-full shadow-xl [-webkit-touch-callout:none]"
+              :label="__('Send')"
+              :disabled="isRecipientsEmpty || isUploading"
+              :loading="isSending"
+              @pointerdown="holdSend"
+              @pointerup="letGoOfSend"
+              @pointercancel="letGoOfSend"
+              @pointerleave="letGoOfSend"
+              @contextmenu.prevent
+              @click="onSendClick"
+            >
+              <template #icon>
+                <span class="lucide-send-horizontal size-6" aria-hidden="true" />
+              </template>
+            </Button>
           </div>
         </template>
       </Editor>
     </div>
 
-    <ScheduleSendModal v-model="showScheduleModal" @confirm="scheduleSend" />
-    <!-- Opened from More actions: a phone's sheet, with no button of its own. -->
-    <ReminderMenu v-model:open="remindOpen" :current="remindAt" @pick="setRemindAt" />
+    <ScheduleSendModal v-model="showScheduleModal" :save="scheduleSend" />
   </div>
 </template>
 
 <script setup lang="ts">
+import { useEventListener } from '@vueuse/core'
 import { Button, Combobox } from 'frappe-ui'
-import { Editor, EditorContent, EditorFixedMenu } from 'frappe-ui/editor'
 import {
-  BellPlus,
-  CalendarClock,
-  ChevronDown,
-  ChevronUp,
-  EllipsisVertical,
-  Paperclip,
-  SendHorizontal,
-  Trash2,
-  X,
-} from 'lucide-vue-next'
+  Editor,
+  EditorContent,
+  EditorFixedMenu,
+  InsertImage,
+  InsertLink,
+  Separator,
+  type MenuItem,
+} from 'frappe-ui/editor'
+import { CalendarClock, ChevronDown, ChevronUp, Trash2, X } from 'lucide-vue-next'
 import { computed, nextTick, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 
@@ -313,16 +380,18 @@ import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import RecipientInput from '@/apps/mail/components/Controls/RecipientInput.vue'
 import ScheduleSendModal from '@/apps/mail/components/Modals/ScheduleSendModal.vue'
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'
-import ReplyReminderStrip from '@/apps/mail/components/ReplyReminderStrip.vue'
 import { takePendingCompose } from '@/apps/mail/composables/composeHandoff'
 import { useComposeMail } from '@/apps/mail/composables/useComposeMail'
 import { useThreadReload } from '@/apps/mail/composables/useThreadReload'
 import type { Attachment, Identity } from '@/apps/mail/types'
 import { formatBytes, raiseToast } from '@/apps/mail/utils'
+import { useListReload } from '@/apps/mail/utils/composables'
+import { composeName } from '@/apps/mail/utils/composeName'
+import { describeReminderTime, useMinuteClock } from '@/apps/mail/utils/datetime'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import { uploadFunction } from '@/apps/mail/utils/text-editor'
-import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
 import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
+import { useKeyboardInsets, useStillDocument } from '@/platform/keyboard-insets'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
@@ -351,8 +420,9 @@ const toSuggestions = useTemplateRef<HTMLElement>('toSuggestions')
 const ccSuggestions = useTemplateRef<HTMLElement>('ccSuggestions')
 const bccSuggestions = useTemplateRef<HTMLElement>('bccSuggestions')
 
-const mailDetails = takePendingCompose()
+const { draft: mailDetails, startAt } = takePendingCompose()
 const { requestThreadReload } = useThreadReload()
+const { requestListReload } = useListReload()
 
 // The thread the page goes back to, when it was opened from one: what the reader sees once the mail
 // is sent. Read from the history entry, as the page leaves by going back to it.
@@ -365,8 +435,14 @@ let leaving = false
 const closeCompose = () => {
   if (leaving) return
   leaving = true
-  router.back()
+  // Opened straight at its address (from outside the app, or the app launched on it) there is no
+  // page behind it to go back to, and going back left the reader stuck on it: Mail takes its place.
+  if (back) router.back()
+  else void router.replace('/mail')
 }
+// The composer closes the page itself once the mail is sent or discarded. Any other way off it is
+// the reader leaving.
+let closedByComposer = false
 
 const {
   mail,
@@ -378,6 +454,7 @@ const {
   sendMail,
   isSending,
   discardMail,
+  isUntouched,
   showScheduleModal,
   openScheduleModal,
   scheduleSend,
@@ -394,13 +471,19 @@ const {
   onOpened,
 } = useComposeMail({
   mailDetails,
-  // What changed reaches the thread the page goes back to: the sent reply in place of its draft, a
-  // draft saved, a send undone. The thread is off screen meanwhile, so it takes this when it is back.
+  // What changed reaches the page it goes back to: the sent reply in place of its draft, a draft
+  // saved, a send undone. A thread is off screen meanwhile, so it takes this when it is back; a list
+  // (Drafts, Sent) is back by the time a save on the way out lands, and reloads as it is told to, as
+  // it does for the desktop's window (see ComposeHost).
   reloadMails: () => {
+    requestListReload()
     if (typeof returnsToThread === 'string') requestThreadReload(returnsToThread)
   },
   shownThread: () => (typeof returnsToThread === 'string' ? returnsToThread : undefined),
-  close: closeCompose,
+  close: () => {
+    closedByComposer = true
+    closeCompose()
+  },
   // The page is the composer, so it is open right up until the route leaves.
   isOpen: () => !leaving,
   host: () => textEditor.value,
@@ -411,30 +494,57 @@ const {
 
 const { height: viewportHeight, top: keyboardTop, bottom: keyboardBottom } = useKeyboardInsets()
 
-// Hold the document still for as long as this page is open.
-//
-// This is what the bouncing was. iOS implements its keyboard "pan" as an ordinary document scroll —
-// `window.scrollY` goes non-zero — and `visualViewport.offsetTop` reports the same number. So two
-// things moved at once on every focus change: the document scrolled up, and this page, chasing
-// `offsetTop`, was pushed down by exactly as much. A document that cannot scroll has neither.
-//
-// `position: fixed` as well as `overflow: hidden`, because overflow alone still leaves iOS a document
-// to scroll for a focused field.
-onMounted(() => {
-  const { style } = document.body
-  style.overflow = 'hidden'
-  style.position = 'fixed'
-  style.width = '100%'
-  document.documentElement.style.overflow = 'hidden'
-})
+// The subject once there is one, as iOS Mail's header and desktop's folded window do: the fields
+// scroll away while the body is written, and this is what still says which mail it is. Until then,
+// what the page is for.
+// What the page is for: New message, Reply, Reply all or Forward. Not the subject, which the field
+// under it already shows.
+const title = composeName(mailDetails)
 
-onUnmounted(() => {
-  const { style } = document.body
-  style.overflow = ''
-  style.position = ''
-  style.width = ''
-  document.documentElement.style.overflow = ''
-})
+// Hold the document still for as long as this page is open. This is what the bouncing was: the
+// document scrolled up on every focus change and this page, chasing `offsetTop`, was pushed down by
+// as much (see useStillDocument).
+useStillDocument()
+
+// The document scrolls all the same while the keyboard is up: iOS lengthens it by the keyboard's
+// height, fixed body or not. A drag that nothing under the finger can take (on the header, on the
+// island, or on a body too short to scroll) went on to the document. The page chased it, Safari's
+// own bar changed height as it went, and the island was left standing well above the keyboard. So a
+// drag goes through only where something can scroll the way it is heading: the body once it is
+// longer than the screen, the island's formatting sideways.
+let dragFrom = { x: 0, y: 0 }
+let dragScrolls: boolean | undefined
+useEventListener(
+  composerRoot,
+  'touchstart',
+  (event: TouchEvent) => {
+    dragFrom = { x: event.touches[0].clientX, y: event.touches[0].clientY }
+    dragScrolls = undefined
+  },
+  { passive: true },
+)
+useEventListener(
+  composerRoot,
+  'touchmove',
+  (event: TouchEvent) => {
+    if (dragScrolls === undefined) {
+      const { clientX, clientY } = event.touches[0]
+      const across = Math.abs(clientX - dragFrom.x) > Math.abs(clientY - dragFrom.y)
+      dragScrolls = scrollsUnder(event.target, across)
+    }
+    if (!dragScrolls) event.preventDefault()
+  },
+  { passive: false },
+)
+const scrollsUnder = (target: EventTarget | null, across: boolean) => {
+  for (let el = target instanceof Element ? target : null; el && el !== composerRoot.value;) {
+    const overflow = across ? getComputedStyle(el).overflowX : getComputedStyle(el).overflowY
+    const room = across ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight
+    if ((overflow === 'auto' || overflow === 'scroll') && room > 0) return true
+    el = el.parentElement
+  }
+  return false
+}
 
 // Where a tap at (x, y) puts the caret: caretPositionFromPoint where there is one, Safari's older
 // caretRangeFromPoint otherwise.
@@ -458,7 +568,7 @@ const caretFromPoint = (x: number, y: number) => {
  * the reveal turned off. `revealFocused` still runs afterwards and does the scrolling itself, in the
  * scroller, where it costs nothing.
  */
-const focusWithoutReveal = (event: PointerEvent) => {
+const focusWithoutReveal = (event: TouchEvent, x: number, y: number) => {
   const target = event.target instanceof Element ? event.target : null
   const editor = textEditor.value?.editor
   const body = editor?.view?.dom
@@ -470,16 +580,18 @@ const focusWithoutReveal = (event: PointerEvent) => {
   if (body && quote instanceof HTMLElement && quote !== body && body.contains(quote)) {
     event.preventDefault()
     quote.focus({ preventScroll: true })
-    const caret = caretFromPoint(event.clientX, event.clientY)
+    const caret = caretFromPoint(x, y)
     if (caret && quote.contains(caret.node))
       document.getSelection()?.collapse(caret.node, caret.offset)
     return
   }
 
   // The body: place the caret from the tap's own coordinates, since preventing the default is what
-  // would otherwise have done it.
+  // would otherwise have done it. Once it has the focus there is no reveal to stop, and the tap is
+  // the browser's: its caret placement, its edit menu on the caret, its word on a double tap.
   if (body && target && body.contains(target)) {
-    const pos = editor!.view.posAtCoords({ left: event.clientX, top: event.clientY })
+    if (body.contains(document.activeElement)) return
+    const pos = editor!.view.posAtCoords({ left: x, top: y })
     if (!pos) return
 
     event.preventDefault()
@@ -497,25 +609,36 @@ const focusWithoutReveal = (event: PointerEvent) => {
   field.focus({ preventScroll: true })
 }
 
-/**
- * The formatting toolbar belongs to the message, so it only appears while the message has focus —
- * it is noise (and lost height) while someone is filling in recipients.
- *
- * Deliberately not "focus left the body": tapping a toolbar button takes focus out of the editor for
- * an instant, and hiding the bar out from under the finger would make it unusable. Only moving to one
- * of the *fields* puts it away.
- */
-const isBodyFocused = ref(false)
-
-const onFocusIn = (event: FocusEvent) => {
-  const node = event.target instanceof Element ? event.target : null
-  const body = textEditor.value?.editor?.view?.dom
-
-  if (body && node && body.contains(node)) isBodyFocused.value = true
-  else if (node?.closest?.('input, textarea')) isBodyFocused.value = false
-
-  reveal(node)
+// Only a tap focuses: taken at the touch's start, every scroll focused the body, bringing the
+// keyboard up and moving the caret to where the finger landed. A drag, or a hold (iOS's own
+// selection and Paste), is left alone. Cancelling the touch's end is what keeps the browser's own
+// focus, with its reveal, from following. A touch while the body is still gliding from a flick only
+// stops it, as it does anywhere on iOS.
+const TAP_SLOP = 10
+const TAP_MS = 400
+const GLIDING_MS = 100
+let scrolledAt = -Infinity
+const noteScroll = (event: Event) => (scrolledAt = event.timeStamp)
+let tapFrom: { x: number; y: number; at: number } | undefined
+const startTap = (event: TouchEvent) => {
+  const { clientX, clientY } = event.touches[0]
+  const gliding = event.timeStamp - scrolledAt < GLIDING_MS
+  tapFrom =
+    event.touches.length === 1 && !gliding
+      ? { x: clientX, y: clientY, at: event.timeStamp }
+      : undefined
 }
+const endTap = (event: TouchEvent) => {
+  const from = tapFrom
+  tapFrom = undefined
+  const { clientX: x, clientY: y } = event.changedTouches[0]
+  if (!from || event.timeStamp - from.at > TAP_MS) return
+  if (Math.hypot(x - from.x, y - from.y) > TAP_SLOP) return
+  focusWithoutReveal(event, x, y)
+}
+
+const onFocusIn = (event: FocusEvent) =>
+  reveal(event.target instanceof Element ? event.target : null)
 
 // Pre-empt iOS's focus reveal.
 //
@@ -550,6 +673,16 @@ const reveal = (node: Element | null) => {
 // what is left and the caret is behind the toolbar. Reveal again once the page has its new height.
 watch(viewportHeight, () => reveal(document.activeElement), { flush: 'post' })
 const menu = useEditorMenu()
+
+// The island's tools: the inserts stand with Attach, and the rest of desktop's editor menu is the
+// formatting, shown in their place.
+const INSERTS: MenuItem[] = [InsertImage, InsertLink]
+const formatting = ref(false)
+const formatMenu = computed(() => {
+  const items = menu.value.filter((item) => !INSERTS.includes(item))
+  while (items.at(-1) === Separator) items.pop()
+  return items
+})
 
 const identityOptions = computed(
   () =>
@@ -592,32 +725,63 @@ const onFilesSelected = async (files: File[]) => {
   }
 }
 
-const remindOpen = ref(false)
-const ACTIONS = computed(() => [
-  { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
+const ACTIONS = [
   {
-    label: remindAt.value ? __('Change reminder') : __('Remind me if no reply'),
-    onClick: () => (remindOpen.value = true),
-    icon: BellPlus,
+    group: '',
+    options: [
+      { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
+    ],
   },
-  { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
-])
+  {
+    group: '',
+    options: [
+      { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
+    ],
+  },
+]
+
+const now = useMinuteClock()
+const remindLabel = computed(() =>
+  remindAt.value ? describeReminderTime(remindAt.value, now.value) : __('Remind me if no reply'),
+)
+
+// A hold as long as a row's long-press schedules instead; the click that ends it sends nothing.
+let holdTimer: ReturnType<typeof setTimeout> | undefined
+let held = false
+const holdSend = () => {
+  held = false
+  holdTimer = setTimeout(() => {
+    held = true
+    openScheduleModal()
+  }, 450)
+}
+const letGoOfSend = () => clearTimeout(holdTimer)
+const onSendClick = () => {
+  if (held) held = false
+  else void sendMail()
+}
 
 // Start where there is still something to write: the body on a reply (recipients and subject came
 // with the thread), the subject when the draft arrived addressed but unnamed (a `mailto:` link, or a
-// calendar invite's participants), and To otherwise.
+// calendar invite's participants), and To otherwise. To as well when it is where the opener sent
+// the page: a reply's recipients, tapped in the thread to change them.
 onMounted(() => {
   onOpened()
 
-  if (mailDetails?.in_reply_to) textEditor.value?.editor?.commands.focus()
+  if (startAt === 'to') toInput.value?.setFocus()
+  else if (mailDetails?.in_reply_to) textEditor.value?.editor?.commands.focus()
   else if (!isRecipientsEmpty.value && !mail.subject) subjectInput.value?.focus()
   else toInput.value?.setFocus()
 })
 
-// Navigating away is the only way off this page, so this is where an unsent message gets kept.
+// Navigating away is the only way off this page, so this is where an unsent message gets kept. One
+// with nothing written is not a draft, though one written, saved and then cleared is on the server:
+// leaving it left a "[No subject]" in Drafts. It goes, quietly, as the desktop window's does on
+// Close (see SendMail).
 onBeforeRouteLeave(() => {
   leaving = true
-  saveDraft()
+  if (!closedByComposer && isUntouched.value) void discardMail()
+  else saveDraft()
 })
 
 onUnmounted(() => saveDraft())

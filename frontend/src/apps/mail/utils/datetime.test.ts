@@ -130,18 +130,22 @@ describe('describeReminderTime', () => {
 
   it('says the clock for later today, in the user zone', async () => {
     const { describeReminderTime } = await load()
-    expect(describeReminderTime('2026-11-09T09:30:00Z', now)).toBe('Reminder at 3:00 PM')
+    expect(describeReminderTime('2026-11-09T09:30:00Z', now)).toBe('Reminder set for 3:00 PM')
   })
 
   it('says the date and clock for any other day', async () => {
     const { describeReminderTime } = await load()
-    expect(describeReminderTime('2026-11-16T03:30:00Z', now)).toBe('Reminder on Nov 16, 9:00 AM')
+    expect(describeReminderTime('2026-11-16T03:30:00Z', now)).toBe(
+      'Reminder set for Nov 16, 9:00 AM',
+    )
   })
 
   it('goes by the user zone where the day differs from UTC', async () => {
     const { describeReminderTime } = await load()
     // Still the 9th in UTC, past midnight in Kolkata.
-    expect(describeReminderTime('2026-11-09T19:00:00Z', now)).toBe('Reminder on Nov 10, 12:30 AM')
+    expect(describeReminderTime('2026-11-09T19:00:00Z', now)).toBe(
+      'Reminder set for Nov 10, 12:30 AM',
+    )
   })
 })
 

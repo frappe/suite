@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, type App } from 'vue'
 
-import { useKeyboardInsets } from './useKeyboardInsets'
+import { useKeyboardInsets } from '.'
 
 // iPhone 17 Pro in Safari: the layout viewport stays 714 tall whatever the keyboard does.
 const LAYOUT_HEIGHT = 714

@@ -4,6 +4,7 @@ import { createApp, h } from 'vue'
 import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 
 import { userStore } from '@/apps/mail/stores/user'
+import { useListReload } from '@/apps/mail/utils/composables'
 import { translate } from '@/platform/translation'
 
 import MailboxView from './MailboxView.vue'
@@ -11,7 +12,7 @@ import MailboxView from './MailboxView.vue'
 // A small Frappe with one mail in Spam, or none when `empty`. While `holding`, it keeps a list's reader waiting.
 const server = vi.hoisted(() => {
   const waiting: (() => void)[] = []
-  return { holding: false, waiting, answered: 0, empty: false }
+  return { holding: false, waiting, answered: 0, empty: false, saved: false, readsAfterSave: 0 }
 })
 vi.hoisted(() => {
   const message = {
@@ -52,6 +53,7 @@ vi.hoisted(() => {
     const reply = (message: unknown) =>
       new Response(JSON.stringify({ message }), { headers: { 'Content-Type': 'application/json' } })
     if (!url.pathname.endsWith('get_threads')) return reply(null)
+    if (server.saved) server.readsAfterSave += 1
     if (server.holding) await new Promise<void>((resolve) => server.waiting.push(resolve))
     server.answered += 1
     return reply({ rows: server.empty ? [] : [row], mailbox: 'j', has_more: false })
@@ -127,6 +129,7 @@ vi.mock('@/apps/mail/stores/user', async (importOriginal) => {
       data: [
         { id: 'a', _name: 'Inbox', role: 'inbox', slug: 'inbox' },
         { id: 'j', _name: 'Spam', role: 'junk', slug: 'spam', total_emails: 1 },
+        { id: 'd', _name: 'Drafts', role: 'drafts', slug: 'drafts', total_emails: 1 },
       ],
       refetch: () => Promise.resolve(),
     },
@@ -153,6 +156,8 @@ afterEach(() => {
   spam().total_emails = 1
   server.answered = 0
   server.empty = false
+  server.saved = false
+  server.readsAfterSave = 0
 })
 
 // Spam's record in the store, which says how much mail the folder holds.
@@ -217,4 +222,35 @@ it('shows no banner in an empty Spam', async () => {
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(banner(element)).toBe(false)
+})
+
+// The phone's compose page saves its draft on its way back to Drafts, while the list it lands on is
+// already being read: that read went out before the draft was there, so the list reads again after.
+it('reads Drafts again for a draft saved while its list was being read', async () => {
+  server.holding = true
+  await open('/mail/account/acc/mailbox/d')
+  await vi.waitFor(() => expect(server.waiting).toHaveLength(1))
+
+  server.saved = true
+  useListReload().requestListReload()
+  server.holding = false
+  for (const answer of server.waiting.splice(0)) answer()
+
+  await vi.waitFor(() => expect(server.readsAfterSave).toBe(1))
+})
+
+// A reply saved in a conversation the reader has left (see MailThread's quick reply): the list that
+// holds its row reads again, and one that does not leaves itself be.
+it('reads the list again for a reply saved in a conversation whose row it holds', async () => {
+  await open('/mail/account/acc/mailbox/j')
+  await vi.waitFor(() => expect(server.answered).toBe(1))
+
+  useListReload().requestRowReload('elsewhere')
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(server.answered).toBe(1)
+  useListReload().requestRowReload('t1')
+
+  await vi.waitFor(() => expect(server.answered).toBe(2))
+  await new Promise((resolve) => setTimeout(resolve, 50))
+  expect(server.answered).toBe(2)
 })

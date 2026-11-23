@@ -87,7 +87,7 @@ describe('QuotedContentExtension', () => {
     })
   })
 
-  // The writer edits the quote where it stands, as the mail it is: the composer's "···" unfolds it,
+  // The writer edits the quote where it stands, as the mail it is: the composer's Show trimmed content unfolds it,
   // and what they change is what leaves.
   describe('edited in the composer', () => {
     const QUOTE =

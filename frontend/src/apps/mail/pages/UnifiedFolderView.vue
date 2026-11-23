@@ -450,7 +450,7 @@ import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 
 const { isMobile } = useScreenSize()
-const { listReloadRequest } = useListReload()
+const { listReloadRequest, rowReloadRequest } = useListReload()
 const showReadingPane = useReadingPane()
 
 // Mail from a sender nobody has decided on yet is marked in the list, as in a single account's.
@@ -551,6 +551,7 @@ const {
   // The merged Inbox, when any of the accounts screens new senders.
   screenable: () =>
     folder === INBOX_FOLDER && !!store.userResource.data?.accounts?.some((a) => a.enable_screening),
+  drafts: () => folder === 'drafts',
 })
 
 // The Inbox's category tabs, across every account; `inboxTab` is the open one, and undefined in any
@@ -647,6 +648,10 @@ watch(useScreener().version, () => refreshThreads(false))
 // The layout's composer, announcing that it sent something (see useListReload). A refresh rather
 // than a reset, so the reader keeps their place in a list that spans every account.
 watch(listReloadRequest, () => refreshThreads())
+// A reply saved in a conversation the reader has left, when its row is here.
+watch(rowReloadRequest, (request) => {
+  if (threadRows.value.some((row) => row.thread_id === request?.threadId)) refreshThreads()
+})
 
 // The pane asked for a reload (a reply was sent, a message deleted, …). The list refresh keeps
 // already-loaded rows to hold the reader's place (see usePaginatedThreads), so it never updates the

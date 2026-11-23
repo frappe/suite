@@ -1,6 +1,6 @@
 <template>
   <MailRow
-    :to
+    :to="opensAsDraft ? undefined : to"
     :is-selected
     :selectable
     :selection-mode
@@ -19,6 +19,7 @@
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
     @drag-start="(e: DragEvent) => emit('dragStart', e)"
     @drag-end="emit('dragEnd')"
+    @click="openDraft"
   >
     <template #sender><HighlightedText :text="header" :term="searchTerm" /></template>
 
@@ -39,14 +40,8 @@
           <UserRoundSearch class="text-ink-gray-5 size-3.5" :aria-label="unknownSendersLabel" />
         </span>
       </Tooltip>
-      <!-- In Drafts every row is one, so it goes without saying. Gray, not red: a draft is not an
-           error. -->
-      <Badge
-        v-if="(mail.draft || liveDraft) && !drafts"
-        size="sm"
-        :label="__('Draft')"
-        theme="gray"
-      />
+      <!-- In Drafts every row is one, so it goes without saying. -->
+      <DraftBadge v-if="(mail.draft || liveDraft) && !drafts" size="sm" />
       <Badge
         v-if="mail.snoozed_until"
         size="sm"
@@ -243,19 +238,26 @@
 import { Badge, Popover, Tooltip } from 'frappe-ui'
 import { BellRing, Download, Loader, UserRoundSearch, X } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import AttachmentCapsule from '@/apps/mail/components/AttachmentCapsule.vue'
 import AttachmentViewer from '@/apps/mail/components/AttachmentViewer.vue'
+import DraftBadge from '@/apps/mail/components/DraftBadge.vue'
 import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
+import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Attachment, Thread } from '@/apps/mail/types'
-import { downloadUrlAsFile, getFileIcon, getFormattedRecipients } from '@/apps/mail/utils'
-import { useOwnEmails } from '@/apps/mail/utils/composables'
+import {
+  composeOfDraft,
+  downloadUrlAsFile,
+  getFileIcon,
+  getFormattedRecipients,
+} from '@/apps/mail/utils'
+import { useOwnEmails, useScreenSize } from '@/apps/mail/utils/composables'
 import { formatDateTime } from '@/apps/mail/utils/datetime'
 import { draftInList } from '@/apps/mail/utils/draftsInList'
 import { mailCopies } from '@/apps/mail/utils/mailCopies'
@@ -367,6 +369,22 @@ const to = computed(() =>
   }),
 )
 
+// On a phone, a draft alone in its thread opens to be written, as it would from the thread's own card:
+// the thread would show only that card. Not by a tap on one of the row's buttons, nor one that
+// selects, which the row stops on its way down (see MailRow).
+const { isMobile } = useScreenSize()
+const opensAsDraft = computed(
+  () => drafts && isMobile.value && mail.messages?.length === 1 && !!mail.messages[0].draft,
+)
+const router = useRouter()
+const openDraft = (event: MouseEvent) => {
+  if (!opensAsDraft.value) return
+  if (event.target instanceof Element && event.target.closest('button')) return
+  // Alone in its thread, it answers nothing: a new message, not the reply a thread's draft is.
+  const draft = { ...composeOfDraft(mail.messages[0]), in_reply_to: '', in_reply_to_id: '' }
+  void openComposePage(router, String(accountId || route.params.accountId), draft)
+}
+
 // Where else the conversation is filed. A row stands for one of its messages, which in Sent is your
 // reply — never archived or filed away — so there and in Starred it says where the mail you received
 // is instead, apart from the Inbox, the usual place.
@@ -446,7 +464,7 @@ const selectLabel = computed(() => {
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.
 const messageCount = computed(() => mail.messages?.length ?? 0)
 
-const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail))
+const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail, ownEmails.value))
 
 // In search results, the words the row was found by are marked.
 const searchTerm = computed(() =>

@@ -4,11 +4,15 @@
   <component
     :is="to ? RouterLink : 'div'"
     :to="to"
-    class="sm:hover:bg-surface-gray-1 max-sm:active:bg-surface-gray-2 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
+    class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
     :class="[
       ROW_BOX_CLASS,
       {
         '!bg-surface-gray-1': isSelected || isTouching,
+        // A press while selecting toggles the row, and the row's own grey says which way it went; the
+        // press grey on top of that flashed a deselected row darker than it ends up. Taken from when
+        // the press began: deselecting the last row ends selecting while the finger is still down.
+        'max-sm:active:bg-surface-gray-2': !pressBeganSelecting,
         '!py-1': isFullWidth,
         // Under the pills, the room the eye sees above the first line's letters: the row's pt-1, half
         // of what its 19px line (text-base, 14px at 1.35) leaves of the h-8 it is centred in, and the
@@ -323,9 +327,11 @@ let touchMoved = false
 let touchTimer: ReturnType<typeof setTimeout> | null = null
 
 const isTouching = ref(false)
+const pressBeganSelecting = ref(false)
 
 const onTouchStart = (e: TouchEvent) => {
   touchMoved = false
+  pressBeganSelecting.value = selectionMode
   touchStartX = e.touches[0].clientX
   touchStartY = e.touches[0].clientY
   isTouching.value = true

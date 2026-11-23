@@ -187,12 +187,13 @@ const primaryActions = (mail: Mail): MailAction[] => [
     icon: SquarePen,
     condition: !!mail.draft && isMobile.value,
   },
-  // A phone's card answers its sender: Reply All waits in the reply bar below.
+  // A phone's card answers its sender: Reply All waits in the reply bar below. Alone in its thread,
+  // the reply bar answers it already, and Reply is left to More.
   {
     label: showReplyAll && !isMobile.value ? __('Reply All') : __('Reply'),
     onClick: () => (showReplyAll && !isMobile.value ? replyAll(mail) : reply(mail)),
     icon: showReplyAll && !isMobile.value ? ReplyAll : Reply,
-    condition: !mail.draft,
+    condition: !mail.draft && !(isMobile.value && thread.filter((m) => !m.draft).length === 1),
   },
 ]
 interface MailAction {

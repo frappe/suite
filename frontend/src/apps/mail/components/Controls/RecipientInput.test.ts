@@ -62,7 +62,11 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
 const amy: DraftRecipient = { email: 'amy@example.com', display_name: 'Amy Diaz' }
 const bo: DraftRecipient = { email: 'bo@example.com', display_name: 'Bo Chen' }
 
-function mount(recipients: DraftRecipient[], field: RecipientField = 'to') {
+function mount(
+  recipients: DraftRecipient[],
+  field: RecipientField = 'to',
+  { movable = true } = {},
+) {
   const model = ref<DraftRecipient[]>([...recipients])
   const moves: [string, RecipientField, RecipientField][] = []
   const revealedCcBcc = vi.fn()
@@ -74,6 +78,7 @@ function mount(recipients: DraftRecipient[], field: RecipientField = 'to') {
       render: () =>
         h(RecipientInput, {
           field,
+          movable,
           modelValue: model.value,
           'onUpdate:modelValue': (value: DraftRecipient[]) => (model.value = value),
           onMove: (recipient: DraftRecipient, from: RecipientField, to: RecipientField) =>
@@ -92,6 +97,10 @@ const chips = (root: HTMLElement) =>
   [...root.querySelectorAll('button')].filter((b) => b.querySelector('[data-avatar]'))
 
 const menu = (root: HTMLElement) => root.querySelector('[data-menu]')
+
+/** Whether a press on it would take focus: a press the page cancels leaves it where it was. */
+const pressTakesFocus = (element: Element) =>
+  element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }))
 
 const menuItem = (root: HTMLElement, label: string) =>
   [...(menu(root)?.querySelectorAll('button') ?? [])].find(
@@ -162,6 +171,23 @@ describe('RecipientInput chip menu', () => {
     expect(menu(root)).toBeNull()
   })
 
+  it('offers only Remove where its field is the only one on screen', async () => {
+    const { root } = mount([amy], 'to', { movable: false })
+    await tapChip(root, 0)
+
+    expect([...menu(root)!.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual([
+      'Remove',
+    ])
+  })
+
+  it('leaves the caret in the field when a chip or its menu is pressed, so the keyboard stays', async () => {
+    const { root } = mount([amy, bo])
+    await tapChip(root, 1)
+
+    expect(pressTakesFocus(chips(root)[0])).toBe(false)
+    expect(pressTakesFocus(menuItem(root, 'Remove')!)).toBe(false)
+  })
+
   it('carries no ✕ on a chip: Remove is in the menu the chip opens', async () => {
     const { root } = mount([amy])
     await nextTick()
@@ -193,5 +219,12 @@ describe('RecipientInput chips on desktop', () => {
 
     expect(menu(root)?.textContent).toContain('bo@example.com')
     expect(menuItem(root, 'Move to Cc')).not.toBeNull()
+  })
+
+  it('lets a click focus the chip, which is how Delete takes it off', async () => {
+    const { root } = mount([amy])
+    await nextTick()
+
+    expect(pressTakesFocus(chips(root)[0])).toBe(true)
   })
 })

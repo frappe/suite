@@ -2,7 +2,8 @@
   <TimeMenu
     v-model:open="open"
     :choices="reminderChoices"
-    :title="current ? __('Change reminder') : __('Remind me if no reply')"
+    :title
+    :choices-heading="current ? __('Change to') : undefined"
     :action="__('Remind me')"
     :past-message="__('Choose a time after the mail goes out.')"
     :initial-value="current"
@@ -18,9 +19,10 @@
 import { computed } from 'vue'
 
 import TimeMenu from '@/apps/mail/components/TimeMenu.vue'
+import { describeReminderTime, useMinuteClock } from '@/apps/mail/utils/datetime'
 import { reminderChoices } from '@/apps/mail/utils/snoozeTimes'
 
-const { removable } = defineProps<{
+const { current, removable } = defineProps<{
   // The time it is set for now, when it is being changed.
   current?: string
   // The menu is also the way to take the reminder off.
@@ -30,7 +32,18 @@ const { removable } = defineProps<{
 const emit = defineEmits<{ pick: [at: string]; remove: [] }>()
 const open = defineModel<boolean>('open', { default: false })
 
+// A reminder already set heads the menu with its time, so opening it again says when it is.
+const now = useMinuteClock()
+const title = computed(() =>
+  current ? describeReminderTime(current, now.value) : __('Remind me if no reply'),
+)
 const footer = computed(() =>
-  removable ? { label: __('Remove reminder'), onClick: () => emit('remove') } : undefined,
+  removable
+    ? {
+        label: __('Remove reminder'),
+        onClick: () => emit('remove'),
+        theme: 'red' as const,
+      }
+    : undefined,
 )
 </script>
