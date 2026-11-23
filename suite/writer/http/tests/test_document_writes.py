@@ -268,6 +268,15 @@ class TestDocumentWrites(DriveCallbackCase):
 
         self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
 
+    def test_a_replace_whose_versions_are_away_answers_busy_and_writes_nothing(self):
+        node = self.create("First.")
+        away = drive.DriveConflict("Version history is not available for this document right now")
+
+        with patch.object(drive, "take_version", side_effect=away), self.assertRaises(WriteBusy):
+            writer_routes.document_write(node, "Only this.", "replace")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph>")
+
     def test_an_append_keeps_no_version_of_its_own(self):
         node = self.create("First.")
 

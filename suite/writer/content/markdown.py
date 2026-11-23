@@ -82,6 +82,9 @@ def keep_version(node: str) -> None:
     try:
         # A milestone, as a restore's: an automatic version thins with age, and a named one is a person's
         drive.take_version(node, kind="milestone", label=_("Before a replace from Markdown"))
+    except drive.DriveConflict as away:
+        # The versions are away while the log changes or waits to be compacted, so the same call works later
+        raise WriteBusy(_("No version could be kept before the replace: {0}").format(away)) from None
     except drive.DriveError as error:
         raise WriteRefused(_("No version could be kept before the replace: {0}").format(error)) from None
 

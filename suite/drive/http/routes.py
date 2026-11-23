@@ -43,7 +43,6 @@ import base64
 import binascii
 import functools
 import unicodedata
-from collections.abc import Callable
 from datetime import datetime
 from typing import NoReturn
 from urllib.parse import quote

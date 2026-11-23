@@ -77,7 +77,7 @@ curl -X PUT $SITE/api/suite/drive/nodes/<node>/grants/<user's email> -H "$AUTH" 
 - The automatic version and the readable copy follow it.
 - `append` adds the Markdown after the body. Text someone is typing at that moment stays.
 - `replace` removes every block the body had and writes the Markdown. Text typed at that moment into a removed block goes with it. A block added at that moment stays.
-- `replace` first keeps a version of the document as it stood, named "Before a replace from Markdown". It stays in the document's versions until someone deletes it. When no version can be kept, as when the Drive is full, the replace is refused.
+- `replace` first keeps a version of the document as it stood, named "Before a replace from Markdown". It stays in the document's versions until someone deletes it. When no version can be kept, as when the Drive is full, the replace is refused. When the versions are only away for a moment, it answers `WriteBusy`.
 - `replace` detaches comments: a comment on a removed block is left with no text to point at.
 - A heading gets an id of its own, as a typed heading does, so a repeated heading never shares one.
 - In a document with tabs, `append` lands at the end of the first tab, and `replace` removes every tab.
@@ -123,5 +123,5 @@ A refusal answers its class and a message:
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: the document is not converted yet, the document changed during the read, or the item is a folder. A read of a document not converted yet asks for its conversion, so read again in a minute. After a change during the read, read again |
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, the Markdown is over 128 KB, an `append` shows nothing, or the converter ran out of time or failed on the Markdown. Nothing was written. The same Markdown gets the same answer, so change it or write it in smaller parts |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`, or no version could be kept before a replace. The same call gets the same answer until that changes. A write to a document not converted yet asks for its conversion, so write again in a minute |
-| `WriteBusy` | 429 | The document is busy, a version is being restored into it or was just restored, or the converter gave no answer: it was busy or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
+| `WriteBusy` | 429 | The document is busy, a version is being restored into it or was just restored, the document's versions are away for a moment before a replace, or the converter gave no answer: it was busy or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end. Or, on a read, the converter gave no answer: it was busy, ran out of time or failed. Read again in a moment |
