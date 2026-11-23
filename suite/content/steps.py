@@ -178,6 +178,7 @@ def own_update(log_read: Snapshot, client_id: int, change: Callable[[pycrdt.Doc]
 def rebuild_copy(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int) -> None:
     """Make the app's render of the document at `rev` the readable copy, as no tab is here to render it."""
     html_copy = spec_of(app).readable_copy
+    # A copy of another kind, or one only a tab can render, waits for the next tab to open the document
     if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
         return
 
