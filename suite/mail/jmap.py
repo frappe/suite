@@ -1129,6 +1129,7 @@ def build_email_draft(
     draft.update(
         {
             "header:User-Agent": f"Frappe Mail v{__version__} (Frappe v{frappe.__version__})",
+            "header:X-Mailer": f"Frappe Mail v{__version__}",
             "header:X-Mail-Queue": queue_name,
         }
     )

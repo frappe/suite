@@ -131,14 +131,12 @@ class ReplyTo(unittest.TestCase):
 
 
 class MailerHeaders(unittest.TestCase):
-    def test_every_mailer_header_names_a_version(self):
-        # Rspamd scores XM_UA_NO_VERSION when X-Mailer or User-Agent holds no digit.
+    def test_both_mailer_headers_name_the_client_and_its_version(self):
+        # Rspamd scores XM_UA_NO_VERSION when either header holds no digit.
         payload = draft()
-        mailer_headers = [payload[h] for h in ("header:User-Agent", "header:X-Mailer") if h in payload]
 
-        self.assertTrue(mailer_headers)
-        for value in mailer_headers:
-            self.assertRegex(value, r"\d")
+        for header in ("header:User-Agent", "header:X-Mailer"):
+            self.assertRegex(payload[header], r"^Frappe Mail v\d")
 
 
 if __name__ == "__main__":
