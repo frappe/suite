@@ -78,6 +78,7 @@ from contextlib import contextmanager
 import frappe
 import pycrdt
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from suite import drive
 from suite.content import ChainBroken, checker, find, jobs, read, with_content
@@ -103,6 +104,7 @@ HTML_FORMAT = "html"
 HTML_MIME = "text/html"
 MARKDOWN_FORMAT = "markdown"
 MARKDOWN_MIME = "text/markdown"
+MARKDOWN_READS_A_MINUTE = 60
 
 VERSION_SCHEMA = "writer-document/1"
 # The bytes every envelope `version_bytes` writes starts with
@@ -174,10 +176,12 @@ def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
     return io.BytesIO(html_bytes), HTML_MIME
 
 
+# The site runs one converter at a time, so one user's reads take at most a turn a second
+@rate_limit(limit=MARKDOWN_READS_A_MINUTE, seconds=60, ip_based=False, user_based=True)
 def markdown_export(docname: str) -> tuple[io.BytesIO, str]:
     """Stream one document as Markdown, made from its log as it stands, to a signed-in reader."""
     if frappe.session.user == "Guest":
-        # The site runs one converter at a time, and a public link's reader never takes its turn
+        # A public link's reader never takes the converter's turn
         raise drive.DriveForbidden(_("Sign in to read a document as Markdown"))
 
     node = frappe.db.get_value(DOCTYPE, docname, NODE_FIELD)

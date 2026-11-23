@@ -131,6 +131,7 @@ export type DocumentCreateOutput = {
 
 export type DocumentCreateError =
   | 'DriveError'
+  | 'RateLimitExceededError'
   | 'DriveNotFound'
   | 'DriveForbidden'
   | 'DriveLocked'
@@ -157,6 +158,7 @@ const operationDocumentCreate: MutationRef<
   entity: null,
   errors: [
     'DriveError',
+    'RateLimitExceededError',
     'DriveNotFound',
     'DriveForbidden',
     'DriveLocked',
@@ -225,6 +227,7 @@ export type DocumentWriteOutput = {
 
 export type DocumentWriteError =
   | 'DriveError'
+  | 'RateLimitExceededError'
   | 'DriveNotFound'
   | 'DriveForbidden'
   | 'DriveLocked'
@@ -250,6 +253,7 @@ const operationDocumentWrite: MutationRef<
   entity: null,
   errors: [
     'DriveError',
+    'RateLimitExceededError',
     'DriveNotFound',
     'DriveForbidden',
     'DriveLocked',

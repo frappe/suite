@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
+from frappe.rate_limiter import rate_limit
 from frappe.utils import get_datetime, get_system_timezone, get_url
 from werkzeug.wrappers import Response
 
@@ -104,6 +105,9 @@ WRITE_REFUSALS = (markdown_body.MarkdownRefused, markdown_body.WriteRefused, mar
 # annotation refuses a wrong type before the handler runs, with no message
 Given = str | int | float | bool | list | dict | None
 MODES: tuple[Literal["replace", "append"], ...] = ("replace", "append")
+# Each write takes the site's one converter, and a replace keeps a version, so a loop gone wrong stops here
+WRITES_A_MINUTE = 30
+write_limit = rate_limit(limit=WRITES_A_MINUTE, seconds=60, ip_based=False, user_based=True)
 
 
 def refusing(handler: Callable) -> Callable:
@@ -130,6 +134,7 @@ def text(value: Given, name: str) -> str:
 
 
 @frappe.whitelist(methods=["POST"])
+@write_limit
 @refusing
 def document_create(parent: Given = None, title: Given = None, markdown: Given = None) -> WrittenDocument:
     """Create a document from Markdown, as an agent does."""
@@ -139,6 +144,7 @@ def document_create(parent: Given = None, title: Given = None, markdown: Given =
 
 
 @frappe.whitelist(methods=["POST"])
+@write_limit
 @refusing
 def document_write(node: str, markdown: Given = None, mode: Given = None) -> WrittenDocument:
     """Replace a document's body with Markdown, or append it."""
@@ -170,6 +176,7 @@ def unknown() -> None:
 MARKDOWN_ERRORS = (
     # A field that is missing or wrong, which `refusing` answers as Drive does
     drive.DriveError,
+    frappe.RateLimitExceededError,
     drive.DriveNotFound,
     drive.DriveForbidden,
     drive.DriveLocked,

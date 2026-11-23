@@ -99,6 +99,10 @@ A read writes Markdown as Writer's Download as Markdown does, with a picture as 
 - A read gives the document as it stands when the read arrives, typing in a tab included. It saves nothing and holds up no one's typing.
 - A new document with nothing in it reads as an empty answer.
 
+## Limits
+
+One user makes up to 30 creates, 30 writes and 60 Markdown reads a minute. A call past that answers `RateLimitExceededError` until the minute ends.
+
 ## Refusals
 
 A refusal answers its class and a message:
@@ -120,4 +124,4 @@ A refusal answers its class and a message:
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, the Markdown is over 128 KB, an `append` shows nothing, or the converter ran out of time or failed on the Markdown. Nothing was written. The same Markdown gets the same answer, so change it or write it in smaller parts |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`, or no version could be kept before a replace. The same call gets the same answer until that changes. A write to a document not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The document is busy, a version is being restored into it or was just restored, or the converter gave no answer: it was busy or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
-| `RateLimitExceededError` | 429 | On a read, the converter gave no answer: it was busy, ran out of time or failed. Read again in a moment |
+| `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end. Or, on a read, the converter gave no answer: it was busy, ran out of time or failed. Read again in a moment |

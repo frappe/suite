@@ -576,6 +576,7 @@
       },
       "errors": [
         "DriveError",
+        "RateLimitExceededError",
         "DriveNotFound",
         "DriveForbidden",
         "DriveLocked",
@@ -979,6 +980,7 @@
       },
       "errors": [
         "DriveError",
+        "RateLimitExceededError",
         "DriveNotFound",
         "DriveForbidden",
         "DriveLocked",

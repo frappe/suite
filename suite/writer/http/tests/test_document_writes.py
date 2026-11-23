@@ -123,6 +123,15 @@ class TestDocumentWrites(DriveCallbackCase):
 
         return self.text_of(state)
 
+    def as_request(self, work) -> None:
+        # Run `work` inside a request, where a limit counts
+        call_route(lambda _node: work(), "")
+
+    def forget_limits(self) -> None:
+        # A minute's count outlives the test, and one an earlier run left would cut this one short
+        frappe.cache.delete_keys("rl:suite.writer")
+        self.addCleanup(frappe.cache.delete_keys, "rl:suite.writer")
+
     def failing_converter(self, script: str):
         # A bundle whose child fails as a real one does
         bundle = Path(self.enterContext(tempfile.TemporaryDirectory())) / "converter.cjs"
@@ -380,6 +389,38 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual([queued.kwargs["node"] for queued in enqueue.call_args_list], [node])
         self.assertEqual(self.kept_versions(node), [])
 
+    def test_a_user_past_the_write_limit_waits_and_another_user_does_not(self):
+        ensure_user(OUTSIDER)
+        self.forget_limits()
+
+        def write():
+            # Refused for its mode, so the count is all it costs
+            writer_routes.document_write("no node", "Second.", "prepend")
+
+        for _write in range(30):
+            with self.assertRaises(drive.DriveError):
+                self.as_request(write)
+
+        with self.assertRaises(frappe.RateLimitExceededError):
+            self.as_request(write)
+
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(drive.DriveError):
+            self.as_request(write)
+
+    def test_a_user_past_the_create_limit_waits(self):
+        self.forget_limits()
+
+        def create():
+            writer_routes.document_create(parent=self.folder, title="Agent refused")
+
+        for _create in range(30):
+            with self.assertRaises(drive.DriveError):
+                self.as_request(create)
+
+        with self.assertRaises(frappe.RateLimitExceededError):
+            self.as_request(create)
+
     def test_the_automatic_version_credits_who_wrote(self):
         ensure_user(OUTSIDER)
         node = self.create("First.")
@@ -561,6 +602,21 @@ class TestDocumentWrites(DriveCallbackCase):
             self.assertRaisesRegex(drive.DriveConflict, "Try again"),
         ):
             self.markdown_of(node)
+
+    def test_a_user_past_the_read_limit_waits(self):
+        self.forget_limits()
+        node = self.create("Hello")
+        # A read of a document with no log is refused before the converter, so the count is all it costs
+        self.delete_log(node)
+
+        self.enterContext(patch.object(scheduling, "enqueue"))
+
+        for _read in range(60):
+            with self.assertRaises(drive.DriveConflict):
+                self.as_request(lambda: self.markdown_of(node))
+
+        with self.assertRaises(frappe.RateLimitExceededError):
+            self.as_request(lambda: self.markdown_of(node))
 
     def test_a_guest_on_a_public_link_cannot_read_markdown(self):
         node = self.create("Hello")
