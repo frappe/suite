@@ -8,7 +8,7 @@ from html.parser import HTMLParser
 import pycrdt
 
 from suite.content import convert
-from suite.writer import content as writer_content
+from suite.writer.content import converter
 
 
 class LinkTargets(HTMLParser):
@@ -53,9 +53,9 @@ def is_html_complete(state: bytes, html: str, text: str) -> bool:
 def render(state: bytes) -> str:
     """Render `state` as its readable copy with the converter, as no browser is there to."""
     legacy = {"content": base64.b64encode(state).decode(), "html": None, "collab": 1, "ycomments": None}
-    answer = convert.convert(writer_content.CONVERTER_BUILD, writer_content.CONVERTER_VERSION, legacy)
-    if not isinstance(answer, convert.Converted):
-        raise RuntimeError(f"the converter rendered no copy: {answer}")
+    answer = converter.run(legacy)
+    if isinstance(answer, convert.Refused):
+        raise RuntimeError(f"the converter rendered no copy: {answer.reason}")
 
     return answer.html
 

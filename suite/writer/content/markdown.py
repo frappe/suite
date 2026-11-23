@@ -15,7 +15,7 @@ from frappe.utils import md_to_html
 
 from suite import content, drive
 from suite.content import checker, compaction, convert
-from suite.writer.content import APP, CONVERTER_BUILD, CONVERTER_VERSION, EDITOR
+from suite.writer.content import APP, EDITOR, converter
 from suite.writer.content.files import BODY_FRAGMENT
 
 MARKDOWN_MAX = 128 * 1024
@@ -95,12 +95,9 @@ def converted(html: str) -> convert.Converted:
     """Run the converter on `html` as an old body, refusing what it refuses."""
     legacy = {"content": None, "html": html, "collab": 0, "ycomments": None}
     try:
-        answer = convert.convert(CONVERTER_BUILD, CONVERTER_VERSION, legacy)
+        answer = converter.run(legacy)
     except checker.CheckerBusy:
         raise WriteBusy(_("The converter is busy. Try again in a moment.")) from None
-
-    if answer is None:
-        raise RuntimeError("the Writer converter needs Node and its built bundle")
 
     if isinstance(answer, convert.Refused):
         refusal = " ".join(filter(None, [answer.reason, answer.detail]))
