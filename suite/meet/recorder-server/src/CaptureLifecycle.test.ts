@@ -6,8 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CallbackClient } from './CallbackClient.js';
 import { CaptureWorker, type CaptureWorkerOptions } from './CaptureWorker.js';
 import { CaptureWorkerManager } from './CaptureWorkerManager.js';
-import { logger } from './logger.js';
 import type { CaptureSegment } from './captureTypes.js';
+import { logger } from './logger.js';
 import type { ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
@@ -65,18 +65,15 @@ afterEach(async () => {
 });
 
 describe('capture lifecycle', () => {
-	it('reports the next durable segment after a progress connection reset recovers', async () => {
+	it('keeps capturing after all progress callback retries time out', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
+		const timeout = new DOMException('request timed out', 'TimeoutError');
 		const fetch = vi
 			.fn()
-			.mockRejectedValueOnce(
-				new TypeError('fetch failed', {
-					cause: Object.assign(new Error('connection reset'), {
-						code: 'ECONNRESET',
-					}),
-				}),
-			)
+			.mockRejectedValueOnce(timeout)
+			.mockRejectedValueOnce(timeout)
+			.mockRejectedValueOnce(timeout)
 			.mockImplementation(
 				async () =>
 					new Response(
@@ -165,7 +162,7 @@ describe('capture lifecycle', () => {
 				fetch.mock.calls.map(
 					(call) => JSON.parse(String(call[1].body)).captured_bytes,
 				),
-			).toEqual([5, 5, 11]);
+			).toEqual([5, 5, 5, 11]);
 			expect(onStopRequested).not.toHaveBeenCalled();
 		} finally {
 			await worker.stop();

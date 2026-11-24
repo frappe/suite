@@ -164,7 +164,7 @@ def reconcile_capture(job):
             )
             result = client.recorder(job.capture, job.meet_room, "manifest")
     if result.get("state") not in ("complete", "partial", "failed"):
-        if job.stop_requested or (recording and recording.status in ("Stopping", "Cancelled")):
+        if job.stop_requested:
             client.sfu(job.capture, job.meet_room, "stop")
         return
     manifest = validate_manifest(
