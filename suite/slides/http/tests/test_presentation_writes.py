@@ -421,6 +421,29 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assertIn("Changed", changed["content"])
         self.assertEqual(self.kept_versions(node), [])
 
+    def test_a_tab_edit_to_another_slide_made_while_a_slide_write_converts_stays(self):
+        node = self.create([title_slide("First"), title_slide("Second")])
+        first, second = slides_routes.presentation_read(node)["slides"]
+        (typed_in,) = first["elements"]
+        read_ids = agent.current_doc
+
+        def type_into(doc: pycrdt.Doc) -> None:
+            text = doc.get("elements", type=pycrdt.Map)[typed_in["id"]]["text"]
+            text.children[0].children[0].insert(5, " typed")
+
+        def read_then_type(at: str) -> pycrdt.Doc:
+            doc = read_ids(at)
+            status, _body = self.push(node, type_into)
+            self.assertEqual(status, 200)
+            return doc
+
+        with patch.object(agent, "current_doc", read_then_type):
+            slides_routes.presentation_slide_write(node, second["id"], title_slide("Changed"))
+
+        self.assertEqual(
+            self.texts_of(node), [["<paragraph>First typed</paragraph>"], ["<paragraph>Changed</paragraph>"]]
+        )
+
     def test_a_slide_write_gives_an_id_another_slide_holds_a_new_one(self):
         node = self.create([shape_slide(), title_slide("Second")])
         shapes, second = slides_routes.presentation_read(node)["slides"]
