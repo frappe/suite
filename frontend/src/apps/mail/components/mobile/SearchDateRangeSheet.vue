@@ -176,8 +176,8 @@ const pick = (key: string) => {
 // as the days do.
 const cells = computed(() => {
   const first = viewed.value
-  const blanks = Array.from({ length: first.day() }, (_, index) => ({
-    key: `blank-${index}`,
+  const blank = (key: string) => ({
+    key,
     date: undefined,
     end: false,
     band: undefined,
@@ -185,7 +185,8 @@ const cells = computed(() => {
     weekEnd: false,
     today: false,
     later: false,
-  }))
+  })
+  const before = Array.from({ length: first.day() }, (_, index) => blank(`before-${index}`))
   const days = Array.from({ length: first.daysInMonth() }, (_, index) => {
     const date = first.date(index + 1)
     const key = date.format(DAY)
@@ -216,7 +217,11 @@ const cells = computed(() => {
       later: date.isAfter(today, 'day') || (mode.value === 'after' && date.isSame(today, 'day')),
     }
   })
-  return [...blanks, ...days]
+  // Always six weeks, the most a month spans, so the sheet keeps its height from month to month.
+  const after = Array.from({ length: 42 - before.length - days.length }, (_, index) =>
+    blank(`after-${index}`),
+  )
+  return [...before, ...days, ...after]
 })
 
 const apply = () => {
