@@ -117,6 +117,7 @@ def ensure_doc_table(app: str) -> None:
     frappe.db.sql_ddl(
         f"ALTER TABLE `{doc_table}` ADD INDEX IF NOT EXISTS `next_compaction_at` (`next_compaction_at`)"
     )
+    frappe.db.sql_ddl(f"ALTER TABLE `{doc_table}` ADD INDEX IF NOT EXISTS `copy_owed` (`copy_owed`)")
     # A bound is never below its row's bytes, so this only meets tails stored before bounds were kept
     doc = Table(doc_table)
     frappe.qb.update(doc).set(doc.tail_bound, doc.tail_bytes).where(doc.tail_bound < doc.tail_bytes).run()
