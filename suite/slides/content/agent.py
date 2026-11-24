@@ -10,6 +10,7 @@ import html
 import json
 import re
 from collections.abc import Callable, Iterator
+from html.parser import HTMLParser
 from typing import Literal, NamedTuple, cast
 
 import frappe
@@ -29,6 +30,37 @@ SLIDE_KEYS = {"id", "elements"} | set(SLIDE_COLUMNS.values())
 ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 # A hex colour alone, since an export binds a background as the CSS shorthand, which can load a URL
 COLOUR = re.compile(r"#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})")
+# Tiptap's isAllowedUri: the editor drops a link whose href it doesn't match, leaving its words
+LINK_SCHEMES = ("http", "https", "ftp", "ftps", "mailto", "tel", "callto", "sms", "cid", "xmpp")
+SCHEMES = "|".join(LINK_SCHEMES)
+KEPT_HREF = re.compile(rf"(?:(?:{SCHEMES}):|[^a-z]|[a-z0-9+.\-]+(?:[^a-z+.\-:]|$))", re.I)
+HREF_SPACE = re.compile(r"[\x00-\x20\xa0\u1680\u180e\u2000-\u2029\u205f\u3000]")
+# The tags the guide's HTML lists, so a refused text can name the first other one
+GUIDE_TAGS = {
+    "p",
+    "strong",
+    "em",
+    "u",
+    "s",
+    "ul",
+    "ol",
+    "li",
+    "br",
+    "a",
+    "span",
+    "table",
+    "colgroup",
+    "col",
+    "tbody",
+}
+GUIDE_TAGS |= {"tr", "th", "td"}
+# A table's rows and cells, which hold no table of their own in a form the editor keeps
+ROW = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.S | re.I)
+CELL = re.compile(r"<(td|th)\b([^>]*)>(.*?)</\1>", re.S | re.I)
+SPAN = re.compile(r"\b(colspan|rowspan)\s*=\s*[\"']?(\d+)", re.I)
+BLOCK = re.compile(r"\s*<(p|ul|ol)\b", re.I)
+# A Drive title is a Data field, which holds this many characters
+TITLE_MAX = 140
 PICTURE_KEYS = ("src", "poster")
 MEDIA_TYPES = ("image", "video")
 # A layout slide names its layout by place, and takes the words and picture to fill it with
@@ -102,6 +134,9 @@ Theme = Callable[[], dict | None]
 
 def create(parent: str, title: str, slides: object, template: str | None = None) -> tuple[str, int]:
     """Create a presentation in the folder `parent` on `template`, holding `slides`, and answer its node and rev."""
+    if len(title) > TITLE_MAX:
+        raise frappe.ValidationError(_("title must be {0} characters or fewer").format(TITLE_MAX))
+
     # Before the converter runs, so a user who can't add here takes none of its turn
     drive.check(parent, drive.UPLOAD)
     theme = template_named(template)
@@ -296,6 +331,9 @@ def slide_row(
     if not isinstance(slide, dict):
         raise SlidesRefused(_("{0} is not an object").format(label))
 
+    if not slide:
+        raise SlidesRefused(_('{0} is empty: send "elements": [] for a blank slide').format(label))
+
     if "layout" in slide:
         slide = laid_out(label, slide, layouts())
 
@@ -308,6 +346,11 @@ def slide_row(
         raise SlidesRefused(_("{0}'s elements must be a list of objects").format(label))
 
     check_ids(label, slide, elements)
+    checked: list[dict] = []
+    for at, element in enumerate(elements, start=1):
+        checked.append(checked_element(element_place(label, at, element), element))
+
+    elements = checked
     row = frappe._dict(
         client_id=slide.get("id"),
         elements=json.dumps(elements),
@@ -476,6 +519,124 @@ def check_ids(label: str, slide: dict, elements: list[dict]) -> None:
                     "{0} holds an id that isn't 1 to 128 letters, digits, - or _. Leave it out to get a new one."
                 ).format(label)
             )
+
+
+class Tags(HTMLParser):
+    """Each start tag in some HTML, and each attribute with its tag."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.tags: list[str] = []
+        self.attributes: list[tuple[str, str, str | None]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        """Keep the tag, and each of its attributes under it."""
+        self.tags.append(tag)
+        self.attributes.extend((tag, name, value) for name, value in attrs)
+
+
+def parsed(markup: str) -> Tags:
+    """Answer `markup`'s start tags and attributes, in order."""
+    parser = Tags()
+    parser.feed(markup)
+    parser.close()
+    return parser
+
+
+def check_markup(place: str, markup: object) -> None:
+    """Refuse a text's HTML that holds what the editor drops without the converter seeing: a link or a handler."""
+    if not isinstance(markup, str):
+        return
+
+    for tag, name, value in parsed(markup).attributes:
+        if name.startswith("on"):
+            raise SlidesRefused(
+                _("{0}'s HTML holds {1}, an attribute the editor leaves out").format(place, name)
+            )
+
+        if tag == "a" and name == "href" and not is_kept_href(value or ""):
+            schemes = ", ".join(f"{scheme}:" for scheme in LINK_SCHEMES)
+            raise SlidesRefused(
+                _("{0} holds a link the editor drops: start its href with {1}, or give a path").format(
+                    place, schemes
+                )
+            )
+
+
+def checked_element(place: str, element: dict) -> dict:
+    """Refuse what the element's HTML holds that the editor drops unseen, and answer a table in the editor's form."""
+    check_markup(place, element.get("content"))
+    return in_table_form(place, element)
+
+
+def in_table_form(place: str, element: dict) -> dict:
+    """Answer a table in the editor's form, its columns sharing the element's width, and refuse uneven rows."""
+    markup = element.get("content")
+    if element.get("type") != "table" or not isinstance(markup, str):
+        return element
+
+    rows = [CELL.findall(row) for row in ROW.findall(markup)]
+    widths: set[int] = set()
+    merged = False
+    spanned = False
+    for row in rows:
+        spans = [spans_of(attrs) for _tag, attrs, _inner in row]
+        widths.add(sum(across for across, _down in spans))
+        merged = merged or any(down > 1 for _across, down in spans)
+        spanned = spanned or any(across > 1 for across, _down in spans)
+
+    # A cell that spans rows leaves the rows under it short, as the editor's merged cells do
+    if merged:
+        return element
+
+    if len(widths) > 1:
+        raise SlidesRefused(
+            _("{0}: its rows hold different numbers of cells. Give every row the same number").format(place)
+        )
+
+    # Only a plain table is rewritten, and a plain cell that spans columns has no one width to take
+    width = element.get("width")
+    if "<colgroup" in markup or not rows or type(width) is not int:
+        return element
+
+    if spanned:
+        return element
+
+    return {**element, "content": editor_table(rows, width)}
+
+
+def editor_table(rows: list[list[tuple[str, str, str]]], width: int) -> str:
+    """Answer a plain table's `rows` in the editor's form, its columns sharing `width`."""
+    columns = len(rows[0])
+    each = width // columns
+    total = each * columns
+    cols = f'<col style="width: {each}px">' * columns
+    body = ""
+    for row in rows:
+        cells = "".join(table_cell(cell, each) for cell in row)
+        body += f"<tr>{cells}</tr>"
+
+    return f'<table style="width: {total}px"><colgroup>{cols}</colgroup><tbody>{body}</tbody></table>'
+
+
+def spans_of(attrs: str) -> tuple[int, int]:
+    """Answer how many columns and rows a cell with `attrs` spans."""
+    spans = dict(SPAN.findall(attrs.lower()))
+    return int(spans.get("colspan", 1)), int(spans.get("rowspan", 1))
+
+
+def table_cell(cell: tuple[str, str, str], width: int) -> str:
+    """Answer a plain table's cell in the editor's form: its column's width, holding paragraphs."""
+    tag, attrs, inner = cell
+    if not BLOCK.match(inner):
+        inner = f"<p>{inner}</p>"
+
+    return f'<{tag}{attrs} colwidth="{width}">{inner}</{tag}>'
+
+
+def is_kept_href(href: str) -> bool:
+    """Answer whether the editor keeps a link to `href`, as Tiptap's isAllowedUri answers."""
+    return not href or KEPT_HREF.match(HREF_SPACE.sub("", href)) is not None
 
 
 def check_pictures(label: str, slide: dict, elements: list[dict]) -> dict[str, str]:
@@ -648,14 +809,59 @@ def located(rows: list[frappe._dict], labels: list[str], detail: str) -> str | N
         return None
 
     element = elements[at - 1]
-    if not refuses([frappe._dict(row, elements=json.dumps([element]))]):
+
+    def refused(own: dict) -> bool:
+        return refuses([frappe._dict(row, elements=json.dumps([own]))])
+
+    if not refused(element):
         return None
 
-    refusal = _("{0}: {1}").format(element_place(labels[slide], at, element), _(ELEMENT_REFUSALS[detail]))
+    return element_refusal(element_place(labels[slide], at, element), element, detail, refused)
+
+
+def element_refusal(place: str, element: dict, detail: str, refused: Callable[[dict], bool]) -> str:
+    """Phrase the refusal of `element` at `place` for `detail`, naming the field or tag at fault when it can."""
+    refusal = _("{0}: {1}").format(place, _(ELEMENT_REFUSALS[detail]))
+    named = named_at_fault(element, detail, refused)
+    if named:
+        refusal = _("{0}: {1}").format(refusal, named)
+
     if element.get("type") == "table":
         return _("{0}. {1}").format(refusal, _(TABLE_FORM))
 
     return refusal
+
+
+def named_at_fault(element: dict, detail: str, refused: Callable[[dict], bool]) -> str | None:
+    """Name the field, or the HTML tag, the converter refuses in `element` for `detail`, when one alone is at fault."""
+    if detail == "setting":
+        # The element keeps its type, so a part of it is refused for its fields alone
+        fields = [name for name in element if name != "type"]
+        count = least(0, len(fields), lambda count: refused(part_of(element, fields[:count])))
+        if not count:
+            return None
+
+        return fields[count - 1]
+
+    markup = element.get("content")
+    if detail != "html" or not isinstance(markup, str):
+        return None
+
+    unlisted = next((tag for tag in parsed(markup).tags if tag not in GUIDE_TAGS), None)
+    if unlisted is None:
+        return None
+
+    # Named only when the HTML is kept with that tag gone
+    unwrapped = re.sub(rf"</?{unlisted}\b[^>]*>", "", markup, flags=re.I)
+    if refused({**element, "content": unwrapped}):
+        return None
+
+    return f"<{unlisted}>"
+
+
+def part_of(element: dict, fields: list[str]) -> dict:
+    """Answer `element`'s type and `fields` alone."""
+    return {name: value for name, value in element.items() if name == "type" or name in fields}
 
 
 def least(lo: int, hi: int, refused: Callable[[int], bool]) -> int:
