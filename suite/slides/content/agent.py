@@ -55,9 +55,11 @@ GUIDE_TAGS = {
     "tbody",
 }
 GUIDE_TAGS |= {"tr", "th", "td"}
-# A table's rows and cells, which hold no table of their own in a form the editor keeps
-ROW = re.compile(r"<tr\s*>(.*?)</tr\s*>", re.S | re.I)
-CELL = re.compile(r"<(td|th)\b([^>]*)>(.*?)</\1\s*>", re.S | re.I)
+# A table's rows and cells, which hold no table of their own in a form the editor keeps: each
+# opening tag, by the names still looked for, as its name and attributes, and each name's end tag
+ROW = r"<({})(\s*)>"
+CELL = r"<({})\b([^>]*)>"
+END_TAGS = {name: re.compile(rf"</{name}\s*>", re.I) for name in ("tr", "td", "th")}
 SPAN = re.compile(r"\b(colspan|rowspan)\s*=\s*[\"']?\s*([^\"'\s>]*)", re.I)
 DIGITS = re.compile(r"\d*")
 # All a plain table holds around its rows: its own bare tags
@@ -76,7 +78,7 @@ LAYOUT_FIELDS = ("layout", "texts", "picture")
 LAYOUT_DROPS = {"id", "attachmentName"}
 DEFAULT_TEMPLATE = "Light"
 # A layout text's first paragraph, or its first list item when it is a list, is the form each line takes
-BLOCKS = {tag: re.compile(rf"<{tag}[\s>].*?</{tag}>", re.S) for tag in ("li", "p")}
+BLOCK_STARTS = {tag: re.compile(rf"<{tag}[\s>]") for tag in ("li", "p")}
 TAG = re.compile(r"(<[^>]*>)")
 ROOTS = ("slides", "elements")
 # deck.ts's order digits, so an order a write gives sorts as a tab's does
@@ -453,20 +455,39 @@ def is_frame(element: dict) -> bool:
 def with_words(markup: str, lines: list[str]) -> str:
     """Answer the text HTML `markup` holding `lines`, each in a copy of its first paragraph or list item."""
     tag = "li" if "<li" in markup else "p"
-    first = BLOCKS[tag].search(markup)
-    if first is None:
+    block = first_block(markup, tag)
+    if block is None:
         return "".join(worded("<p></p>", line) for line in lines)
 
     # What wraps the blocks, as a list's <ul>, stays, and the blocks after the first go
+    start, end = block
     closing = f"</{tag}>"
     after = markup.rindex(closing) + len(closing)
-    blocks = "".join(worded(first.group(), line) for line in lines)
-    return markup[: first.start()] + blocks + markup[after:]
+    blocks = "".join(worded(markup[start:end], line) for line in lines)
+    return markup[:start] + blocks + markup[after:]
+
+
+def first_block(markup: str, tag: str) -> tuple[int, int] | None:
+    """Answer where `markup`'s first `tag` block starts and ends: its first opening tag, to the end tag after it."""
+    first = BLOCK_STARTS[tag].search(markup)
+    if first is None:
+        return None
+
+    # When the first opening tag has no end tag after it, no later one does
+    closing = f"</{tag}>"
+    end = markup.find(closing, first.end())
+    if end < 0:
+        return None
+
+    return first.start(), end + len(closing)
 
 
 def worded(block: str, words: str) -> str:
     """Answer `block` holding `words` alone, in its innermost tag, its tags and styles kept."""
-    parts = TAG.split(block)
+    # A tag ends at a `>`, so the split stops at the last one and what follows is text
+    tags_end = block.rfind(">") + 1
+    parts = TAG.split(block[:tags_end])
+    parts[-1] += block[tags_end:]
     # The split puts the text between tags at the even places, and the words go before the first closing tag
     place = next(at for at, part in enumerate(parts) if part.startswith("</")) - 1
     for at in range(0, len(parts), 2):
@@ -598,19 +619,57 @@ def in_table_form(place: str, element: dict) -> dict:
 
 def rows_of(markup: str) -> list[list[tuple[str, str, str]]] | None:
     """Answer a table's rows of cells; None when a row or cell holds more, or a row or cell sits outside a row."""
-    if CELL_PART.search(ROW.sub("", markup)):
+    found, frame = split_off(markup, ROW, ("tr",))
+    if CELL_PART.search(frame):
         return None
 
     rows: list[list[tuple[str, str, str]]] = []
-    for row in ROW.findall(markup):
-        cells = CELL.findall(row)
+    for _tag, _space, row in found:
+        cells, rest = split_off(row, CELL, ("td", "th"))
         nested = any(TABLE_PART.search(inner) for _tag, _attrs, inner in cells)
-        if nested or CELL.sub("", row).strip(HTML_SPACE):
+        if nested or rest.strip(HTML_SPACE):
             return None
 
         rows.append(cells)
 
     return rows
+
+
+def split_off(text: str, start: str, names: tuple[str, ...]) -> tuple[list[tuple[str, str, str]], str]:
+    """Answer each element `pairs` finds as its name, attributes and inside, and the text around them."""
+    found: list[tuple[str, str, str]] = []
+    around: list[str] = []
+    kept = 0
+    for opened, closed in pairs(text, start, names):
+        found.append((opened[1], opened[2], text[opened.end() : closed.start()]))
+        around.append(text[kept : opened.start()])
+        kept = closed.end()
+
+    around.append(text[kept:])
+    return found, "".join(around)
+
+
+def pairs(text: str, start: str, names: tuple[str, ...]) -> Iterator[tuple[re.Match, re.Match]]:
+    """Yield each opening tag of `names` and the first end tag after it, left to right, reading `text` once."""
+    looked_for = list(names)
+    at = 0
+    # An opening tag ends at a `>`, so none is looked for past the last one
+    tags_end = text.rfind(">") + 1
+    while looked_for:
+        opened = re.compile(start.format("|".join(looked_for)), re.I).search(text, at, tags_end)
+        if opened is None:
+            return
+
+        name = opened[1].lower()
+        closed = END_TAGS[name].search(text, opened.end())
+        if closed is None:
+            # No later opening tag of this name has an end tag after it either
+            looked_for.remove(name)
+            at = opened.start() + 1
+            continue
+
+        yield opened, closed
+        at = closed.end()
 
 
 def check_rows(place: str, spans: list[list[tuple[int, int]]]) -> None:
@@ -636,7 +695,8 @@ def check_rows(place: str, spans: list[list[tuple[int, int]]]) -> None:
 
 def is_plain(markup: str, rows: list[list[tuple[str, str, str]]]) -> bool:
     """Whether a table holds only bare table tags around rows of cells that span nothing and have no width yet."""
-    if not TABLE_FRAME.fullmatch(ROW.sub("", markup)):
+    _rows, frame = split_off(markup, ROW, ("tr",))
+    if not TABLE_FRAME.fullmatch(frame):
         return False
 
     for _tag, attrs, _inner in itertools.chain.from_iterable(rows):
@@ -894,8 +954,11 @@ def named_at_fault(element: dict, detail: str, refused: Callable[[dict], bool]) 
     if unlisted is None:
         return None
 
-    # Named only when the HTML is kept with that tag gone
-    unwrapped = re.sub(rf"</?{unlisted}\b[^>]*>", "", markup, flags=re.I)
+    # Named only when the HTML is kept with that tag gone; a tag ends at a `>`, so none is looked for past the last one
+    tags_end = markup.rfind(">") + 1
+    name = re.escape(unlisted)
+    pattern = rf"</?{name}\b[^>]*>"
+    unwrapped = re.sub(pattern, "", markup[:tags_end], flags=re.I) + markup[tags_end:]
     if refused({**element, "content": unwrapped}):
         return None
 

@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import time
 import uuid
 from collections.abc import Iterable
 from unittest.mock import patch
@@ -41,6 +42,10 @@ EDITOR = "slides-agent-editor@example.com"
 ATTRIBUTE = re.compile(r' \w+="[^"]*"')
 WORDS = re.compile(r">[^<]*<")
 PLACEHOLDER_WORDS = ("Title", "Subtitle", "Insert first point here")
+# An opening with no end, which a scan from each start to a missing end reads again and again
+UNCLOSED = ("<tr>", "<td>", "<td ", "<p>", "<")
+# Seconds the checks may take on such HTML; a scan from each start takes tens
+CHECK_SECONDS = 2
 
 
 def in_order(items: Iterable[tuple[str, pycrdt.Map]]) -> list[tuple[str, pycrdt.Map]]:
@@ -138,6 +143,20 @@ def every_layout(layouts: list[dict], picture: str) -> list[dict]:
         slides.append({"layout": number, **filled_in(layout, picture)})
 
     return slides
+
+
+def long_html_slides(unit: str) -> dict[str, tuple[dict, str]]:
+    # About 250 KB of `unit` in each place an agent can send HTML, and what the element should then hold
+    filler = unit * (250_000 // len(unit))
+    in_row = f"<table><tr>{filler}</tr></table>"
+    table = {"type": "table", "left": 80, "top": 120, "width": 400}
+    text = {"type": "text", "left": 80, "top": 200, "content": filler}
+    return {
+        "a table": ({"elements": [{**table, "content": filler}]}, filler),
+        "a table's row": ({"elements": [{**table, "content": in_row}]}, in_row),
+        "a text": ({"elements": [text]}, filler),
+        "a layout's words": ({"layout": 2, "texts": [filler]}, html.escape(filler, quote=False)),
+    }
 
 
 def words_of(markup: str) -> str:
@@ -1082,6 +1101,31 @@ class TestPresentationWrites(LoggedDeckCase):
 
         (slide,) = slides_routes.presentation_read(node)["slides"]
         self.assertNotIn('style="width: 400px"', slide["elements"][0]["content"])
+
+    def test_long_unclosed_html_is_checked_at_once_and_left_for_the_converter(self):
+        # The checks before the converter, which read the HTML once; the converter's own time is not timed here
+        layouts = self.layouts("Light")
+        answers: dict[str, str] = {}
+        for unit in UNCLOSED:
+            for place, (slide, kept) in long_html_slides(unit).items():
+                answers[f"{unit} in {place}"] = self.checked_answer(slide, kept, layouts)
+
+        self.assertEqual(answers, dict.fromkeys(answers, "kept"))
+
+    def checked_answer(self, slide: dict, kept: str, layouts: list[dict]) -> str:
+        started = time.monotonic()
+        try:
+            rows, _pictures = agent.slide_rows([slide], ["Slide 1"], lambda: layouts)
+        except SlidesRefused:
+            return "refused"
+        finally:
+            took = time.monotonic() - started
+
+        if took >= CHECK_SECONDS:
+            return f"{took:.1f} s"
+
+        markups = [element.get("content") or "" for element in json.loads(rows[0].elements)]
+        return "kept" if any(kept in markup for markup in markups) else "changed"
 
     def test_a_table_whose_rows_differ_writes_nothing(self):
         uneven = "<table><tr><td>Goal</td><td>Owner</td></tr><tr><td>Ship</td></tr></table>"
