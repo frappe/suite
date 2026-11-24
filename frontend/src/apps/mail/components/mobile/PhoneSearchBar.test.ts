@@ -27,6 +27,7 @@ vi.mock('@/platform/session', async (original) => {
     user: ref({ id: 'ada@suite.test', fullName: 'Ada', avatar: null }),
     capabilities: ref({ jmap: true, systemManager: false }),
     onLogout: () => () => {},
+    refresh: async () => {},
   }
   return { ...(await original<object>()), useSession: () => session }
 })
