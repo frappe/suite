@@ -5,7 +5,7 @@ applications using the browser's picture-in-picture capabilities. This is a
 PWA-only enhancement; it does not require a native application.
 
 - Prefer Document Picture-in-Picture where available, with a meeting video view,
-  compact Meet toolbar with microphone, camera, screen sharing, and leave
+  compact Meet toolbar with microphone, camera, and leave
   controls connected to the existing meeting. Reuse Meet toolbar buttons/icons.
 - Keep the local participant on top. Mirror their camera or show their avatar
   when it is off. Show one remote participant below, prioritizing active

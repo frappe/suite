@@ -266,8 +266,6 @@
       "
       :mic-on="mediaState.isMicOn"
       :camera-on="mediaState.isCameraOn"
-      :is-screen-sharing="mediaState.isScreenSharing"
-      @toggle-screen-share="mediaControls.toggleScreenShare()"
       @toggle-camera="mediaControls.toggleCamera()"
       @toggle-microphone="mediaControls.toggleMicrophone()"
       @leave="confirmAndEndCall"

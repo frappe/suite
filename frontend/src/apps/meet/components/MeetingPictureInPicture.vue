@@ -99,17 +99,6 @@
           <MeetCameraOffIcon v-else />
         </ToolbarButton>
         <ToolbarButton
-          v-if="canScreenShare()"
-          :title="isScreenSharing ? __('Stop sharing') : __('Share screen')"
-          :aria-pressed="isScreenSharing"
-          :variant="isScreenSharing ? 'muted' : 'default'"
-          :show-tooltip="false"
-          @click="toggleScreenShare"
-        >
-          <MeetPresentPauseIcon v-if="isScreenSharing" />
-          <MeetPresentIcon v-else />
-        </ToolbarButton>
-        <ToolbarButton
           :title="__('Leave meeting')"
           variant="active"
           :show-tooltip="false"
@@ -150,14 +139,7 @@ import MeetCameraOffIcon from '../icons/MeetCameraOffIcon.vue'
 import MeetMicIcon from '../icons/MeetMicIcon.vue'
 import MeetMicOffIcon from '../icons/MeetMicOffIcon.vue'
 import MeetPhoneOffIcon from '../icons/MeetPhoneOffIcon.vue'
-import MeetPresentIcon from '../icons/MeetPresentIcon.vue'
-import MeetPresentPauseIcon from '../icons/MeetPresentPauseIcon.vue'
-import {
-  canScreenShare,
-  getPlatform,
-  isFirefoxDesktop,
-  supportsFirefoxMeetingPip,
-} from '../utils/device'
+import { getPlatform, isFirefoxDesktop, supportsFirefoxMeetingPip } from '../utils/device'
 import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
 import LocalScreenShareCover from './LocalScreenShareCover.vue'
 import MeetAvatar from './MeetAvatar.vue'
@@ -176,12 +158,10 @@ const props = defineProps<{
   active: boolean
   micOn: boolean
   cameraOn: boolean
-  isScreenSharing: boolean
 }>()
 const emit = defineEmits<{
   'toggle-microphone': []
   'toggle-camera': []
-  'toggle-screen-share': []
   leave: []
 }>()
 const context = useMeetingContext()!
@@ -405,10 +385,6 @@ function close() {
 function returnToMeeting() {
   window.focus()
   close()
-}
-function toggleScreenShare() {
-  if (!props.isScreenSharing) returnToMeeting()
-  emit('toggle-screen-share')
 }
 function leaveMeeting() {
   returnToMeeting()

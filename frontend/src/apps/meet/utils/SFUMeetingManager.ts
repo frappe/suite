@@ -1053,12 +1053,11 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
         console.warn('Failed to update picture-in-picture subscription', error),
       )
     }
-    const next = new Set(
-      ids
-        .values()
-        .map((id) => this.getVideoConsumerId(id))
-        .filter((id): id is string => !!id),
-    )
+    const next = new Set<string>()
+    for (const id of ids) {
+      const consumerId = this.getVideoConsumerId(id)
+      if (consumerId) next.add(consumerId)
+    }
     const previous = this.pipConsumerIds
     this.pipConsumerIds = next
     for (const id of new Set([...previous, ...next])) {

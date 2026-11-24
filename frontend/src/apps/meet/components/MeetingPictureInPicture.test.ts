@@ -98,7 +98,6 @@ function mount(
     active: options.active ?? true,
     micOn: true,
     cameraOn: true,
-    isScreenSharing: false,
   })
   const participantStore = reactive({
     activeSpeakerIds: ['remote'],
@@ -124,7 +123,6 @@ function mount(
   }
   const toggle = vi.fn()
   const toggleCamera = vi.fn()
-  const share = vi.fn()
   const leave = vi.fn()
   let pip!: {
     supported: boolean
@@ -151,7 +149,6 @@ function mount(
           },
           onToggleMicrophone: toggle,
           onToggleCamera: toggleCamera,
-          onToggleScreenShare: share,
           onLeave: leave,
         })
     },
@@ -172,7 +169,6 @@ function mount(
     remote,
     manager,
     toggle,
-    share,
     toggleCamera,
     leave,
   }
@@ -326,6 +322,11 @@ describe('MeetingPictureInPicture browser behavior', () => {
     ).toEqual(['You', 'Remote speaker'])
     expect(win.document.querySelector('img[alt="You"]')).not.toBeNull()
     const buttons = win.document.querySelectorAll('[role=toolbar] button')
+    expect([...buttons].map((button) => button.textContent)).toEqual([
+      'Mute',
+      'Turn camera off',
+      'Leave meeting',
+    ])
     buttons[0].click()
     expect(test.toggle).toHaveBeenCalledOnce()
     test.state.micOn = false
@@ -476,32 +477,7 @@ describe('MeetingPictureInPicture browser behavior', () => {
     await test.pip.open()
     expect(requestWindow).not.toHaveBeenCalled()
   })
-  it('stops an active share in place and returns to Meet to start a new share', async () => {
-    Object.defineProperty(navigator, 'mediaDevices', {
-      configurable: true,
-      value: { getDisplayMedia: vi.fn() },
-    })
-    const win = fakeWindow()
-    const test = mount({ requestWindow: vi.fn().mockResolvedValue(win) })
-    await test.pip.open()
-    await flush()
-    vi.spyOn(window, 'focus').mockImplementation(() => {})
-    test.state.isScreenSharing = true
-    await flush()
-    const button = win.document.querySelectorAll('[role=toolbar] button')[2]
-    expect(button.textContent).toBe('Stop sharing')
-    button.click()
-    expect(win.close).not.toHaveBeenCalled()
-    test.state.isScreenSharing = false
-    await flush()
-    expect(button.textContent).toBe('Share screen')
-    button.click()
-    expect(test.share).toHaveBeenCalledTimes(2)
-    await flush()
-    expect(window.focus).toHaveBeenCalledOnce()
-    expect(win.close).toHaveBeenCalledOnce()
-    expect(test.leave).not.toHaveBeenCalled()
-  })
+
   it('survives an unsupported MediaSession action and a denied request, allowing retry', async () => {
     setActionHandler.mockImplementation(() => {
       throw new Error('unsupported action')
