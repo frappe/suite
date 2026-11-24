@@ -164,7 +164,6 @@ def reconcile_capture(job):
             )
             result = client.recorder(job.capture, job.meet_room, "manifest")
     if result.get("state") not in ("complete", "partial", "failed"):
-        # A video interruption can put the recording in Stopping while audio is still live.
         if job.stop_requested:
             client.sfu(job.capture, job.meet_room, "stop")
         return

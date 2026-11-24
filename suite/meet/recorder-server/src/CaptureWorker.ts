@@ -671,8 +671,6 @@ export class CaptureWorker {
 						this.requestStop(false, 'capture_budget_unavailable');
 					return;
 				}
-				// The existing reservation still applies. The next segment reports
-				// cumulative progress and can refresh it when Suite is reachable.
 			}
 		}
 		if (this.stopPromise) return;
