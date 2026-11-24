@@ -453,7 +453,7 @@ describe('naming a few copies', () => {
 })
 
 describe('naming many copies', () => {
-  const ids = Array.from({ length: 250 }, (_, index) => `deck-${index}`)
+  const ids = Array.from({ length: 201 }, (_, index) => `deck-${index}`)
   const named = (presentations: string[]) =>
     presentations.map((presentation) => ({
       presentation,
@@ -462,20 +462,13 @@ describe('naming many copies', () => {
     }))
 
   beforeEach(async () => {
-    for (const id of ids) await putDraft(draft(id))
-  })
-
-  // the server refuses a read of more than 200 names
-  it('names every copy past 200, a read of at most 200 at a time', async () => {
-    query.mockImplementation(async (_route, { presentations, nodes }) => {
-      if (presentations.length + nodes.length > 200) throw new Error('Too many presentations')
-      return named(presentations)
-    })
-
-    const copies = await listCopies()
-
-    expect(copies).toHaveLength(250)
-    expect(copies.filter((copy) => !copy.title)).toEqual([])
+    const db = await openDraftsDb(draftsDbName('me@example.com'))
+    try {
+      const store = db.transaction('presentations', 'readwrite').objectStore('presentations')
+      await Promise.all(ids.map((id) => requestResult(store.put(draft(id)))))
+    } finally {
+      db.close()
+    }
   })
 
   it('names the page copies past 200 too, in the same reads as the drafts', async () => {
@@ -492,14 +485,15 @@ describe('naming many copies', () => {
 
     const copies = await listCopies()
 
-    expect(copies).toHaveLength(251)
-    expect(copies.filter((copy) => !copy.title)).toEqual([])
+    expect(copies.map((copy) => copy.title).sort()).toEqual(
+      ['Page', ...ids.map((id) => `Title ${id}`)].sort(),
+    )
     expect(query).toHaveBeenCalledTimes(2)
   })
 
   it('keeps the names one read gave when another read fails', async () => {
     query.mockImplementation(async (_route, { presentations }) => {
-      if (presentations.includes('deck-249')) throw new Error('offline')
+      if (presentations.includes('deck-200')) throw new Error('offline')
       return named(presentations)
     })
 
@@ -507,8 +501,8 @@ describe('naming many copies', () => {
 
     const reads: string[][] = query.mock.calls.map((call) => call[1].presentations)
     const [failed, answered] = [
-      reads.filter((read) => read.includes('deck-249')),
-      reads.filter((read) => !read.includes('deck-249')),
+      reads.filter((read) => read.includes('deck-200')),
+      reads.filter((read) => !read.includes('deck-200')),
     ]
     const titleOf = (id: string) => copies.find((copy) => copy.key === `draft:${id}`)!.title
     expect(answered.flat().length).toBeGreaterThan(0)

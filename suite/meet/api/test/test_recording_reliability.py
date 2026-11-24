@@ -774,13 +774,28 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(sum(call.args[0] == "Meet Room" for call in get_all.call_args_list), 1)
 
     def test_recordings_list_is_limited_to_the_latest_one_hundred(self):
-        names = []
-        for index in range(101):
-            name, _ = self._publish_recording()
-            frappe.db.set_value(
-                "Meet Recording", name, "started_at", datetime(2026, 1, 1) + timedelta(minutes=index)
+        first_name, artifact = self._publish_recording()
+        start_time = datetime(2026, 1, 1)
+        frappe.db.set_value("Meet Recording", first_name, "started_at", start_time)
+        names = [first_name]
+        # Listing only needs completed rows with a readable artifact. The other
+        # tests in this class exercise publishing and Drive visibility.
+        for index in range(1, 101):
+            recording = frappe.get_doc(
+                {
+                    "doctype": "Meet Recording",
+                    "name": str(uuid.uuid4()),
+                    "meet_room": self.room.name,
+                    "room_owner": self.owner,
+                    "status": "Ready",
+                    "started_at": start_time + timedelta(minutes=index),
+                    "artifact": artifact,
+                    "recorder_job_id": str(uuid.uuid4()),
+                    "request_id": str(uuid.uuid4()),
+                }
             )
-            names.append(name)
+            recording.db_insert()
+            names.append(recording.name)
 
         rows = get_recordings()
         self.assertEqual([row.name for row in rows], list(reversed(names[1:])))

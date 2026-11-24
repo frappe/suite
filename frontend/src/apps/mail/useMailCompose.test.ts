@@ -1,7 +1,7 @@
 import { useKeyboardShortcut } from 'frappe-ui'
 import { createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h } from 'vue'
+import { createApp, defineComponent, h, nextTick } from 'vue'
 import { createMemoryHistory, createRouter, RouterView, type Router } from 'vue-router'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
@@ -188,6 +188,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
 
 const PAGE = '/calendar/week/2026-11-18?event=standup'
@@ -350,13 +351,17 @@ describe('writing to people from another app', { timeout: 30_000 }, () => {
     }
     let answer!: () => void
     server.saveAnswered = new Promise((resolve) => (answer = resolve))
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     type('Planning')
     // The autosave goes out, and the server takes its time.
-    await vi.waitFor(() => expect(server.saves).toHaveLength(1), { timeout: 5_000 })
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(2_000)
+    expect(server.saves).toHaveLength(1)
     type('Planning, Thursday at ten')
 
     leave()
     answer()
+    vi.useRealTimers()
 
     await vi.waitFor(() => expect(server.saves).toHaveLength(2), { timeout: 5_000 })
     expect(server.saves[1]).toMatchObject({

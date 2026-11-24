@@ -168,7 +168,7 @@ def held_name(node: str, source_id: str, held: Collection[str]) -> str | None:
 
 
 def renamed_id(node: str, source_id: str) -> str:
-    """Rename an id another node held as Build does (build/comments.py `_renamed_id`); a test pins it."""
+    """Rename an id another node held as Build does (build/comments.py `_renamed_id`)."""
     material = json.dumps(
         ["drive-comment-rename/1", node, source_id], ensure_ascii=False, separators=(",", ":")
     )

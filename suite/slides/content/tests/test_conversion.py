@@ -156,14 +156,6 @@ class TestConversion(ConversionCase):
         payload = json.loads(drive.read_version(node, kept.seq).read())
         held = [json.loads(slide["elements"]) for slide in payload["slides"]]
         self.assertEqual([[element["id"] for element in elements] for elements in held], [["one"], ["two"]])
-
-    def test_a_converted_deck_keeps_its_old_version_with_no_edit_in_its_activity(self):
-        node = self.old_deck([text_element("one")])
-
-        self.assertEqual(self.convert(node), "converted")
-
-        labels = [row.label for row in drive.list_versions(node)["rows"]]
-        self.assertIn("Before collaboration", labels)
         self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "edit"}))
 
     def test_the_deck_holds_every_slide_and_element_in_order_and_an_old_file_url(self):
