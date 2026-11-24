@@ -31,7 +31,7 @@ from frappe.utils.html_utils import (
 )
 from pypika.terms import Values
 
-from suite.content import compaction, db, stage
+from suite.content import checker, compaction, convert, db, stage
 from suite.content.app_row import copy_row, forget_cached, locked_app_row, write_copy
 from suite.content.editors import HtmlCopy, ReadableCopy, spec_of
 from suite.content.log import Refusal
@@ -214,7 +214,15 @@ def render_owed(app: str, doc_id: str) -> None:
     if log_read is None:
         return
 
-    install(app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy)
+    try:
+        install(
+            app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy
+        )
+    except (checker.CheckerBusy, convert.ConverterChanged):
+        # No answer from the converter says nothing of the document, so the next sweep renders it
+        frappe.db.rollback()
+        frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id).run()
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
 def is_at_head(app: str, doc_id: str) -> bool:

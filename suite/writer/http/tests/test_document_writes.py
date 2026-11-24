@@ -414,6 +414,28 @@ class TestDocumentWrites(DriveCallbackCase):
         self.age_copy(node)
         self.assertEqual(self.swept_renders(node), 0)
 
+    def test_the_owed_job_is_swept_again_only_when_the_converter_gave_no_answer(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        doc_id = self.doc_row(node).id
+        logged = connection_for("Error Log").count("Error Log")
+
+        with patch.object(converter, "run", side_effect=checker.CheckerBusy("another child ran")):
+            jobs.render_owed(writer_content.APP, doc_id)
+
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+
+        # A render the converter refuses is the document's, and fails the same in every sweep
+        with (
+            patch.object(converter, "run", side_effect=RuntimeError("the converter rendered no copy")),
+            self.assertRaisesRegex(RuntimeError, "rendered no copy"),
+        ):
+            jobs.render_owed(writer_content.APP, doc_id)
+
+        self.assertEqual(self.swept_renders(node), 0)
+
     def test_a_write_keeps_what_it_owes_when_its_request_fails_later(self):
         node = self.create("First.")
 
