@@ -1,6 +1,5 @@
 import re
 
-import tantivy
 from frappe.utils import EMAIL_MATCH_PATTERN
 
 from suite.store.search_store import FieldSpec, SearchStore
@@ -134,12 +133,5 @@ class EmailAddressIndex(SearchStore):
         every sent-to address is read and sorted here: one read, as a sheet opens.
         """
 
-        sent, _total = self._run_search(
-            lambda _index: tantivy.Query.range_query(
-                self._schema, "last_sent_at", tantivy.FieldType.Integer, 1, 2**62
-            ),
-            limit=None,
-            offset=0,
-            order_by=None,
-        )
+        sent = self.search_range("last_sent_at", 1, 2**62)
         return sorted(sent, key=lambda address: -(address.get("last_sent_at") or 0))[:limit]

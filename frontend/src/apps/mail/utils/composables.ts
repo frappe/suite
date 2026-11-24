@@ -187,8 +187,6 @@ export function hasMailSearchQuery(query: LocationQuery): boolean {
   return Object.keys(query).some((key) => key !== 'all_accounts')
 }
 
-// Asks the phone's search field for the caret (see openSearch).
-
 export const useMobileSearch = () => {
   const route = useRoute()
   const router = useRouter()

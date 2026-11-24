@@ -152,10 +152,22 @@ class Suggestions(UnitTestCase):
 
     def test_blank_query_offers_the_people_last_mailed_without_asking_jmap(self):
         self.index.get_recent_addresses.return_value = [
-            {"name": "Jane Doe", "email": "jd@example.com", "last_sent_at": 100}
+            {"name": "Jane Doe", "email": "jd@example.com", "last_sent_at": 200},
+            {"name": None, "email": "sam@acme.example", "last_sent_at": 100},
+        ]
+        # A colleague the index knows only by address, and one never written to.
+        self.directory = [
+            {"name": "Sam Colleague", "email": "Sam@acme.example"},
+            {"name": "Ann Lee", "email": "ann@acme.example"},
         ]
 
-        self.assertEqual(self.suggest("   "), [{"name": "Jane Doe", "email": "jd@example.com"}])
+        self.assertEqual(
+            self.suggest("   "),
+            [
+                {"name": "Jane Doe", "email": "jd@example.com"},
+                {"name": "Sam Colleague", "email": "sam@acme.example"},
+            ],
+        )
         self.fetch_contact_cards.assert_not_called()
         self.get_account_client.assert_not_called()
 

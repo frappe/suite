@@ -17,8 +17,10 @@ export const searchKey = (entry: Pick<MailRecentSearch, 'text' | 'filters'>) =>
   `${entry.text}\u0000${JSON.stringify(entry.filters)}`
 
 export const useRecentMailSearches = () => {
+  // Read as the user changes, so a sign-in as someone else reads their own list.
+  const { user } = useSession()
   const recentSearches = useStorage<MailRecentSearch[]>(
-    `${STORAGE_KEY}:${useSession().user.value?.id ?? 'guest'}`,
+    () => `${STORAGE_KEY}:${user.value?.id ?? 'guest'}`,
     [],
   )
 

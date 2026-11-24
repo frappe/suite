@@ -59,7 +59,14 @@ class EmailSuggestions:
         """With nothing typed: the people the account last sent mail to, most recent first."""
 
         recent = get_email_address_index(self.account).get_recent_addresses(limit)
-        return [{"name": address.get("name"), "email": address.get("email")} for address in recent]
+        # Named as typing names them: a colleague the index has only as an address takes the
+        # directory's name.
+        sent_to = {(address.get("email") or "").lower() for address in recent}
+        directory = [a for a in get_directory_addresses() if (a.get("email") or "").lower() in sent_to]
+        return [
+            {"name": address["name"], "email": address["email"]}
+            for address in _deduplicate(recent + directory)
+        ]
 
     def get_local_suggestions(self, query: str, limit: int) -> list[dict]:
         """Directory users and accounts merged with the address index, ranked as one list."""

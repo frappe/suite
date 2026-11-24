@@ -39,7 +39,7 @@
     <div class="overflow-x-auto px-4 pb-2 pt-1 [scrollbar-width:none]">
       <div class="flex w-max items-center gap-1.5">
         <AdaptiveDropdown :options="folderOptions" :title="__('Folder')">
-          <Button v-bind="chip(!!query.inMailbox)" :label="folderLabel">
+          <Button v-bind="searchChip(!!query.inMailbox)" :label="folderLabel">
             <template #suffix><ChevronDown class="size-4" /></template>
           </Button>
         </AdaptiveDropdown>
@@ -47,7 +47,7 @@
         <Button
           v-for="person in people"
           :key="person.key"
-          v-bind="chip(!!query[person.key])"
+          v-bind="searchChip(!!query[person.key])"
           class="max-w-56"
           :label="person.label"
           @click="pickPerson(person.key)"
@@ -55,17 +55,17 @@
           <template #suffix><ChevronDown class="size-4 shrink-0" /></template>
         </Button>
         <AdaptiveDropdown :options="dateOptions" :title="__('Date')">
-          <Button v-bind="chip(!!(query.after || query.before))" :label="dateLabel">
+          <Button v-bind="searchChip(!!(query.after || query.before))" :label="dateLabel">
             <template #suffix><ChevronDown class="size-4" /></template>
           </Button>
         </AdaptiveDropdown>
         <Button
-          v-bind="chip(query.isRead === 'false')"
+          v-bind="searchChip(query.isRead === 'false')"
           :label="__('Unread')"
           @click="toggle('isRead', 'false')"
         />
         <Button
-          v-bind="chip(query.hasAttachment === 'true')"
+          v-bind="searchChip(query.hasAttachment === 'true')"
           :label="__('Has attachments')"
           @click="toggle('hasAttachment', 'true')"
         />
@@ -74,7 +74,7 @@
         <Button
           v-for="extra in extraFilters"
           :key="extra.key"
-          v-bind="chip(true)"
+          v-bind="searchChip(true)"
           :label="extra.label"
           :aria-label="__('Remove {0}', [extra.label])"
           @click="setFilter(extra.key, undefined)"
@@ -128,8 +128,7 @@ import { folderIcon } from '@/apps/mail/utils/useThreadActions'
 import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { translate as __ } from '@/platform/translation'
 
-/** What the list under it holds, once the search has answered: "12 results". */
-// The count: a label once found, null while searching, left out when there is none to show.
+/** How many the list under it holds ("12 results"); null while searching, left out when none. */
 defineProps<{ count?: string | null }>()
 
 const route = useRoute()
@@ -200,8 +199,6 @@ const remember = () =>
 defineExpose({ remember })
 
 // --- The chips ---
-
-const chip = searchChip
 
 const folderName = (id: string) =>
   store.mailboxes.data?.find((mailbox: MailboxData) => mailbox.id === id)?._name ?? id

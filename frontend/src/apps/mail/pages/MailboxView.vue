@@ -963,10 +963,10 @@ const searchResultsLabel = computed(() => {
   return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
 })
 // A phone's search, under its chips: how many it found, selecting or not (the selection says itself
-// in the bar at the bottom), and null while it looks, so its line is held. None found is the empty
-// list's to say.
+// in the bar at the bottom), and null while it looks, so its line is held. None found, or a search
+// that failed, is the list's to say.
 const searchCount = computed(() => {
-  if (!hasSearchQuery.value) return undefined
+  if (!hasSearchQuery.value || listState.value === 'error') return undefined
   if (searchTotal.value === null) return null
   return searchTotal.value ? searchResultsLabel.value : undefined
 })
@@ -1152,8 +1152,11 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
   // A search asked again (its filters taken off, say) can answer from what the query kept, before
   // this reset; the read then changes no total, and the watch above stays quiet. The count is the
   // read's, once it is in.
+  // Only for the search it ran for: an earlier one landing late leaves a newer one's count alone.
+  const asked = JSON.stringify(route.query)
   void refetchThreads().then(() => {
-    if (mailbox === 'search') searchTotal.value = searchResults.total ?? null
+    if (mailbox === 'search' && JSON.stringify(route.query) === asked)
+      searchTotal.value = searchResults.total ?? null
   })
   if (reloadMailboxes) void store.refreshCounts()
 }
