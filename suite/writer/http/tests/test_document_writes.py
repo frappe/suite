@@ -146,19 +146,6 @@ class TestDocumentWrites(DriveCallbackCase):
             '<heading level="1">Plan</heading><paragraph>Ship <bold>today</bold>, café ✓.</paragraph>',
         )
 
-    def test_a_write_answers_the_document_and_the_rev_it_made(self):
-        title = f"Agent {uuid.uuid4().hex[:8]}"
-        node = self.create("First.", title)
-        before = self.doc_row(node).head_rev
-
-        written = writer_routes.document_write(node, "Second.", "append")
-
-        self.assertEqual(
-            (written["name"], written["title"], written["parent_node"], written["kind"]),
-            (node, title, self.folder, "document"),
-        )
-        self.assertEqual(written["rev"], before + 1)
-
     def test_a_user_who_cannot_add_to_the_folder_creates_nothing(self):
         ensure_user(OUTSIDER)
         frappe.set_user(OUTSIDER)
@@ -203,8 +190,10 @@ class TestDocumentWrites(DriveCallbackCase):
         with self.assertRaises(drive.DriveNotFound):
             writer_routes.document_write(self.folder, "Second.", "append")
 
-    def test_append_adds_the_markdown_after_the_body(self):
-        node = self.create("First.")
+    def test_append_adds_markdown_and_returns_the_updated_document(self):
+        title = f"Agent {uuid.uuid4().hex[:8]}"
+        node = self.create("First.", title)
+        before = self.doc_row(node).head_rev
 
         written = writer_routes.document_write(node, "Second, *later*.", "append")
 
@@ -212,6 +201,11 @@ class TestDocumentWrites(DriveCallbackCase):
             self.blocks_of(node),
             "<paragraph>First.</paragraph><paragraph>Second, <italic>later</italic>.</paragraph>",
         )
+        self.assertEqual(
+            (written["name"], written["title"], written["parent_node"], written["kind"]),
+            (node, title, self.folder, "document"),
+        )
+        self.assertEqual(written["rev"], before + 1)
         self.assertEqual(written["rev"], self.doc_row(node).head_rev)
 
     def test_an_appended_heading_shares_no_id_with_the_one_it_repeats(self):

@@ -244,26 +244,21 @@ class TestPresentationWrites(LoggedDeckCase):
         # The line's connector holds on to the box under the id it was given
         self.assertEqual(line["connectorStart"], {"elementId": "box", "anchor": "right"})
 
-    def test_a_write_answers_the_presentation_and_the_rev_it_made(self):
+    def test_replace_overwrites_the_slides_and_returns_the_updated_presentation(self):
         title = f"Agent {uuid.uuid4().hex[:8]}"
-        node = self.create([title_slide()], title)
+        node = self.create([title_slide("First"), shape_slide()], title)
 
         first = slides_routes.presentation_write(node, [title_slide("Second")], "replace")
-        second = slides_routes.presentation_write(node, [title_slide("Third")], "replace")
 
+        self.assertEqual(self.texts_of(node), [["<paragraph>Second</paragraph>"]])
         self.assertEqual(
             (first["name"], first["title"], first["parent_node"], first["content_doctype"]),
             (node, title, self.folder, "Presentation"),
         )
-        # Each write is a push of its own, so the rev it answers moves on
+
+        second = slides_routes.presentation_write(node, [title_slide("Third")], "replace")
+
         self.assertGreater(second["rev"], first["rev"])
-
-    def test_replace_leaves_only_the_new_slides(self):
-        node = self.create([title_slide("First"), shape_slide()])
-
-        slides_routes.presentation_write(node, [title_slide("Only this")], "replace")
-
-        self.assertEqual(self.texts_of(node), [["<paragraph>Only this</paragraph>"]])
 
     def test_a_replace_keeps_a_version_of_what_a_person_made(self):
         node = self.create([title_slide("First")])

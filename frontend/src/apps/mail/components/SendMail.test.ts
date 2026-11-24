@@ -85,6 +85,7 @@ beforeEach(() => {
 afterEach(() => {
   for (const app of apps.splice(0)) app.unmount()
   document.body.innerHTML = ''
+  vi.useRealTimers()
 })
 
 /** The composer window open on a saved draft to Dana. */
@@ -299,8 +300,10 @@ describe('leaving with the composer open while a save is out', () => {
     '%s, its save %s, shows none of the Close’s toasts',
     async (_, _outcome, where, answer) => {
       const { subject, leave } = await openOwn(where)
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
       let release!: () => void
       const held = new Promise<void>((resolve) => (release = resolve))
+      onTestFinished(release)
       server.answer = async (method) => {
         if (method !== 'update_draft_mail') return reply({ message: [] })
         await held
@@ -308,12 +311,14 @@ describe('leaving with the composer open while a save is out', () => {
       }
       await type(subject, 'Brief, v2')
       // The autosave goes out, and the server takes its time.
-      await vi.waitFor(() => expect(saves()).toHaveLength(1), { timeout: 5_000 })
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(saves()).toHaveLength(1)
       await type(subject, 'Brief, v3')
 
       leave()
       release()
-      await new Promise((resolve) => setTimeout(resolve, 300))
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(saves()).toHaveLength(1)
 
       // Neither the Close's "Draft saved" nor its "Draft not saved" with Reopen.
       const said = [...toasts.success.mock.calls, ...toasts.error.mock.calls].map(
@@ -399,22 +404,14 @@ describe('sending a reply in a thread', () => {
   const press = (key: string) =>
     document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
 
-  it('keeps the keys typed after Send from the thread’s shortcuts', async () => {
-    const { body } = await sendHeld()
-    const heard = heardByThePage()
-    // The locked composer gives up the focus (a browser does this for `inert`; jsdom does not).
-    body.blur()
-
-    press('e')
-    press('Backspace')
-
-    expect(heard).toEqual([])
-  })
-
-  // jsdom does not keep the focus or the pointer out of an inert element; a browser does.
-  it('locks the reply from Send until the answer, and unlocks it on a refusal', async () => {
+  it('locks the reply and its shortcuts until a refusal restores focus', async () => {
     const { body, answer } = await sendHeld()
     expect(body.closest('[inert]')).not.toBeNull()
+    const heard = heardByThePage()
+    body.blur()
+    press('e')
+    press('Backspace')
+    expect(heard).toEqual([])
 
     answer(answered('Dana’s server refused the address'))
 
@@ -422,18 +419,7 @@ describe('sending a reply in a thread', () => {
     expect(toasts.error).toHaveBeenCalledWith('Mail not sent', {
       description: 'Dana’s server refused the address',
     })
-  })
-
-  it('puts the focus back in the reply when the send is refused', async () => {
-    const { body, answer } = await sendHeld()
-    body.blur()
-
-    answer(answered('Dana’s server refused the address'))
-
-    await vi.waitFor(() => expect(toasts.error).toHaveBeenCalled())
     await vi.waitFor(() => expect(document.activeElement).toBe(body))
-    // And a key typed then is the reply's again, not held back from the page.
-    const heard = heardByThePage()
     press('a')
     expect(heard).toEqual(['a'])
   })

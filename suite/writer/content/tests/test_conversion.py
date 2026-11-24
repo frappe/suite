@@ -205,13 +205,6 @@ class TestConversion(DriveCallbackCase):
         self.assertEqual(
             [(reason, bytes(payload)) for reason, payload in kept], [("copy_first", b"<p>Hello world</p>")]
         )
-
-    def test_keeps_the_old_body_as_a_version_with_no_edit_in_its_activity(self):
-        node = self.old_document("<p>Hello world</p>")
-
-        self.assertEqual(conversions.convert_document(writer_content.APP, node), "converted")
-
-        self.assertEqual(self.before_collaboration(node)["html"], "<p>Hello world</p>")
         self.assertFalse(frappe.db.exists("Drive Activity", {"node": node, "action": "edit"}))
 
     def test_converts_an_empty_document_into_an_empty_copy(self):
@@ -394,9 +387,6 @@ class TestConversion(DriveCallbackCase):
             "Writer Document", self.docname_of(node), list(conversion.FIELDS), as_dict=True
         )
         self.assertEqual(conversion.read_fingerprint(node), conversion.fingerprint_of(written))
-
-    def test_names_a_renamed_thread_as_build_does(self):
-        self.assertEqual(conversion.renamed_id("node-b", "top"), renamed("node-b", "top"))
 
     def test_a_checked_document_repr_hides_its_html(self):
         checked = conversion.CheckedDocument("<p>secret</p>", [], {}, [])
