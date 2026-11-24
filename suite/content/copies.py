@@ -224,7 +224,7 @@ def render_owed(app: str, doc_id: str) -> None:
         install(
             app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy
         )
-    except (checker.CheckerFailed, convert.ConverterChanged):
+    except (checker.CheckerBusy, convert.ConverterChanged):
         # No answer from the converter says nothing of the document, so the next sweep renders it
         frappe.db.rollback()
         frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id).run()

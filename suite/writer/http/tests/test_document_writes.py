@@ -527,23 +527,17 @@ class TestDocumentWrites(DriveCallbackCase):
         doc_id = self.doc_row(node).id
         logged = connection_for("Error Log").count("Error Log")
 
-        no_answers = (
-            checker.CheckerBusy("another child ran"),
-            convert.Refused("child_timeout"),
-            convert.Refused("child_crash"),
-        )
-        for no_answer in no_answers:
-            with self.subTest(no_answer=no_answer), patch.object(converter, "run", side_effect=[no_answer]):
-                jobs.render_owed(writer_content.APP, doc_id)
+        with patch.object(converter, "run", side_effect=checker.CheckerBusy("another child ran")):
+            jobs.render_owed(writer_content.APP, doc_id)
 
-                self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
-                self.age_copy(node)
-                self.assertEqual(self.swept_renders(node), 1)
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
 
-        # A render the converter refuses is the document's, and fails the same in every sweep
+        # A child that crashes or runs out of time may do so on every render, so it is not tried again
         with (
-            patch.object(converter, "run", side_effect=RuntimeError("the converter rendered no copy")),
-            self.assertRaisesRegex(RuntimeError, "rendered no copy"),
+            patch.object(converter, "run", return_value=convert.Refused("child_crash")),
+            self.assertRaisesRegex(RuntimeError, "rendered no copy: child_crash"),
         ):
             jobs.render_owed(writer_content.APP, doc_id)
 
