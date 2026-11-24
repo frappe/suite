@@ -668,6 +668,27 @@ class TestPresentationWrites(LoggedDeckCase):
         (slide,) = self.deck_of(node)
         self.assertEqual(len(slide["elements"]), len(elements))
 
+    def test_every_layout_slide_the_guide_shows_writes_its_words_and_picture(self):
+        blocks = re.findall(r'```json\n(\{ "layout".*?)```', slides_routes.AGENT_GUIDE.read_text(), re.S)
+        node = self.create([title_slide()])
+        picture = self.stored_picture(node)
+        slides = [json.loads(block.replace("<picture id>", picture)) for block in blocks]
+        self.assertEqual([slide["layout"] for slide in slides], [3, 6, 7])
+
+        slides_routes.presentation_write(node, slides, "replace")
+
+        written = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(
+            [words_of(element["content"]) for element in written[0]["elements"]],
+            ["Plan for today", "What we ship this week"],
+        )
+        self.assertEqual(
+            [words_of(point) for point in points_of(written[1]["elements"][1]["content"])],
+            ["Ship the editor", "Hire two people", "Plan the launch"],
+        )
+        self.assertEqual(written[1]["transition"], "Fade")
+        self.assertEqual([element.get("src") for element in written[2]["elements"]], [None, picture])
+
     def test_a_picture_uploaded_to_the_presentation_keeps_its_id(self):
         node = self.create([title_slide("First")])
         picture = self.stored_picture(node)

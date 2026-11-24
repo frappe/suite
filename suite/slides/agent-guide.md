@@ -2,6 +2,8 @@
 
 How an agent, or any script, finds, builds, edits, reads and shares a Slides presentation with no tab open. A write takes the presentation's slides as JSON, and a read gives the same JSON back.
 
+Make slides from layouts. It is the supported way for now. A layout slide names one of the template's layouts and gives its words, and the slide takes the layout's places, fonts and colours. Raw slide JSON, under [Raw slides](#raw-slides), is there for what the layouts can't make.
+
 ## The loop
 
 Sign in as the user the agent works for, here with an API key. History and versions name that user. The calls below use:
@@ -34,34 +36,28 @@ Both answer rows, shown here with the fields an agent needs. `name` is the node 
 { "data": { "rows": [{ "name": "84n0kmpagb", "title": "Plans", "kind": "folder", "parent_node": "84kgnp5ehu", "mime": null }], "next_cursor": null } }
 ```
 
-**3. Create a presentation** in a folder. The user needs upload access to it. `slides` is a list of one or more slides, in the order they show.
+**3. Create a presentation** in a folder. The user needs upload access to it. `slides` is a list of one or more slides, in the order they show. `template` is optional and names the template the layouts come from, `Light` when it is left out.
 
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations -H "$AUTH" -H 'Content-Type: application/json' -d '{
   "parent": "<folder node>",
   "title": "Plan",
-  "slides": [
-    {
-      "background": "#FFFFFF",
-      "elements": [
-        { "type": "text", "left": 80, "top": 200, "width": 800,
-          "content": "<p><span style=\"font-size: 48px\"><strong>Plan for today</strong></span></p>" }
-      ]
-    }
-  ]
+  "template": "Light",
+  "slides": [ { "layout": 2, "texts": ["Plan for today"] } ]
 }'
 ```
 
-**4. Read it.** The answer is the JSON a write takes, with every slide's and every element's `id`. A presentation with no slides answers `{"slides": []}`.
+**4. Read it.** The answer is the JSON a write takes, with every slide's and every element's `id`. A layout slide reads as the elements it made. A presentation with no slides answers `{"slides": []}`.
 
 ```sh
 curl -H "$AUTH" $SITE/api/suite/slides/presentations/<node>
 ```
 
 ```json
-{ "data": { "slides": [{ "id": "ef848f885", "background": "#FFFFFF", "elements": [
-  { "id": "b00910cca", "type": "text", "left": 80, "top": 60, "width": 800, "transform": "none", "transformOrigin": "top left",
-    "content": "<p style=\"line-height: 1.5;\"><strong>Plan for today</strong></p>", "zIndex": 1 }
+{ "data": { "slides": [{ "id": "ef848f885", "background": "#FFFFFFFF", "elements": [
+  { "id": "b00910cca", "type": "text", "lineHeight": 1.5, "left": 480.16796875, "top": 270, "width": 794.3359375,
+    "transform": "translate(-50%, -50%)", "transformOrigin": "center center", "zIndex": 1,
+    "content": "<p style=\"text-align: center; line-height: 1.5;\"><span style=\"color: rgb(0, 0, 0); font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\"><strong>Plan for today</strong></span></p>" }
 ] }] } }
 ```
 
@@ -70,14 +66,16 @@ curl -H "$AUTH" $SITE/api/suite/slides/presentations/<node>
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations/<node>/slides -H "$AUTH" -H 'Content-Type: application/json' -d '{
   "mode": "replace",
-  "slides": [ { "background": "#FFFFFF", "elements": [ { "type": "text", "left": 80, "top": 80, "content": "<p>Only this</p>" } ] } ]
+  "slides": [ { "layout": 3, "texts": ["Only this", "And what it means"] } ]
 }'
 
 curl -X POST $SITE/api/suite/slides/presentations/<node>/slides -H "$AUTH" -H 'Content-Type: application/json' -d '{
   "mode": "append",
-  "slides": [ { "background": "#FFFFFF", "elements": [ { "type": "text", "left": 80, "top": 80, "content": "<p>One more</p>" } ] } ]
+  "slides": [ { "layout": 6, "texts": ["Next steps", ["Ship the editor", "Hire two people"]] } ]
 }'
 ```
+
+The layouts come from the presentation's template, or from Light when that template is gone.
 
 Create and write both answer the presentation as its row in step 2, shown here with the fields an agent needs, and `rev`, the revision the write made:
 
@@ -86,29 +84,44 @@ Create and write both answer the presentation as its row in step 2, shown here w
   "content_docname": "q7k3m9d2vt", "rev": 2 } }
 ```
 
-To edit a presentation, read it, change the JSON, and write it back: the whole of it with `replace`, or one slide with step 6. Send back what the read answers, not the forms you first wrote, and keep the ids: Magic Move pairs elements by id, and a connector holds on to an element by it.
+To edit a presentation, read it, change the JSON, and write it back: the whole of it with `replace`, or one slide with step 6. Send back what the read answers, not the forms you first wrote, and keep the ids and `refId`s: Magic Move pairs elements by them, and a connector holds on to an element by its id.
 
-A read gives each item as the editor keeps it, so it can differ from what was written:
+A read gives each item as the editor keeps it, so it can differ from what was written. All of it is safe to send back as it is:
 
-- `zIndex` counts 1, 2, 3 … in each slide, from the bottom element up.
-- A colour is 6 or 8 hex digits, and a named one becomes hex: `red` reads `#ff0000ff`.
+- Every element has `zIndex`, which counts 1, 2, 3 … in each slide, from the bottom element up.
+- A colour field is 6 or 8 hex digits, and a named one becomes hex: `red` reads `#ff0000ff`.
+- A colour inside text HTML reads as `rgb(...)`: `color: #1F2937` reads `color: rgb(31, 41, 55)`.
 - A `circle` shape reads as `oval`.
-- Text HTML reads as the editor writes it, with `line-height` on each paragraph.
+- Text HTML reads as the editor writes it: `line-height` on each paragraph, a `lineheight` on each `<li>`, and a `;` after each style. A table cell gains `colspan="1" rowspan="1"`.
 - Every text, shape and table has `content`. An empty one is `<p style="line-height: 1.5;"></p>`.
 - `editorMetadata.lineHeight` reads as `lineHeight`, and an old shadow in pixels reads as the editor's shadow fields.
 - A connector end that names an element not on its slide reads as `null`.
 - A text has `transform` and `transformOrigin`. Leave them as they are.
+- An element given a new id, because its id was taken, has a `refId` naming the one it was.
 
-**6. Change one slide.** Send the slide as the read gave it, changed, to its own path. It takes the slide's fields and elements, and the presentation's other slides stay as they are. The answer is the presentation's row with `rev`, as in step 5.
+**6. Change one slide.** Send the whole slide to its own path, in either form. The slide keeps only what is sent: a field or element left out goes, and `"elements": []` empties it. A slide with neither `elements` nor `layout` is refused. `id` is optional, and when sent it must be the path's. The presentation's other slides stay as they are. The answer is the presentation's row with `rev`, as in step 5.
+
+From a layout, the slide gets the layout's elements, with new ids:
 
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations/<node>/slides/<slide id> -H "$AUTH" -H 'Content-Type: application/json' -d '{
-  "slide": { "id": "ef848f885", "background": "#FFFFFF", "elements": [
-    { "id": "b00910cca", "type": "text", "left": 80, "top": 60, "width": 800, "transform": "none", "transformOrigin": "top left",
-      "content": "<p style=\"line-height: 1.5;\"><strong>Plan for tomorrow</strong></p>", "zIndex": 1 }
+  "slide": { "layout": 2, "texts": ["Plan for tomorrow"] }
+}'
+```
+
+As raw JSON, send the slide as the read gave it, changed. Its elements keep their ids, so Magic Move and connectors keep their pairs:
+
+```sh
+curl -X POST $SITE/api/suite/slides/presentations/<node>/slides/<slide id> -H "$AUTH" -H 'Content-Type: application/json' -d '{
+  "slide": { "id": "ef848f885", "background": "#FFFFFFFF", "elements": [
+    { "id": "b00910cca", "type": "text", "lineHeight": 1.5, "left": 480.16796875, "top": 270, "width": 794.3359375,
+      "transform": "translate(-50%, -50%)", "transformOrigin": "center center", "zIndex": 1,
+      "content": "<p style=\"text-align: center; line-height: 1.5;\"><span style=\"color: rgb(0, 0, 0); font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\"><strong>Plan for tomorrow</strong></span></p>" }
   ] }
 }'
 ```
+
+To add an element, give it a `zIndex` above the others, or it may sit under them.
 
 **7. Open it in a browser** at `$SITE/d/<node>`.
 
@@ -119,7 +132,70 @@ curl -X PUT $SITE/api/suite/drive/nodes/<node>/grants/<user's email> -H "$AUTH" 
   -d '{"role": 40}'
 ```
 
-## Slides
+## Layouts
+
+A layout slide is `layout`, the layout's number, with `texts` and `picture` when the layout holds them. `layout` counts from 1, in the order the template holds its layouts. Light and Dark hold these:
+
+| `layout` | `texts` |
+| --- | --- |
+| `1` | None: a blank slide |
+| `2` | A title, in the middle |
+| `3` | A title and a subtitle, in the middle |
+| `4` | A title, on the left |
+| `5` | A title and a subtitle, on the left |
+| `6` | A title, and a list of points |
+| `7` | A title on the left half. `picture` fills the right half |
+
+```json
+{ "layout": 3, "texts": ["Plan for today", "What we ship this week"] }
+```
+
+```json
+{ "layout": 6, "texts": ["Goals", ["Ship the editor", "Hire two people", "Plan the launch"]], "transition": "Fade" }
+```
+
+```json
+{ "layout": 7, "texts": ["Our new office"], "picture": "<picture id>" }
+```
+
+- `texts` fill the layout's texts in order. Each is words, or a list of words for several lines. In a list, each one is a point.
+- The words are plain text, in the layout's style. HTML in them shows as it is written.
+- A text left out, `null` or `""` leaves its element out, so no placeholder words are written.
+- `picture` is a picture's id, uploaded as in [Pictures and videos](#pictures-and-videos). With no `picture`, the layout's picture frame is left out.
+- A layout slide takes a slide's fields, such as `background` or `transition`, and they win over the layout's own.
+- A call can mix layout slides and raw slides.
+- A layout slide holds no `elements`. To change its elements, read it and write it back as raw JSON.
+
+Another template's layouts are its slides in order. List the templates the user can use, then read one by its `node` as in step 4:
+
+```sh
+curl -H "$AUTH" $SITE/api/method/suite.slides.doctype.presentation.presentation.get_templates
+```
+
+## Pictures and videos
+
+A picture or video is named by its id. Upload the file to the presentation first: create the presentation, take `content_docname` from the answer, and send the file. Send `content_docname`, not the presentation's node. A node answers "That presentation is not in Drive yet".
+
+```sh
+curl -X POST $SITE/api/method/suite.slides.api.media.add -H "$AUTH" -F docname=<content_docname> -F file=@chart.png
+```
+
+```json
+{ "message": { "file_url": "84r2c1b0dd", "file_name": "chart.webp" } }
+```
+
+- `file_url` is the id.
+- It takes `image/*` and `video/*` files, up to the site's largest file size, 25 MB unless the site sets another.
+- A PNG or JPEG is stored as WebP.
+- A refusal here has Frappe's shape, not the one under [Refusals](#refusals): it answers status 417 and an `exception` to read, with no `errors`. An unknown `docname` and a missing file answer this way.
+
+A picture or video another presentation holds may be named too, when the user can read it: the write copies it into this presentation, and a read names the copy. A link, or a file kept elsewhere in Drive, is refused: upload it to the presentation.
+
+## Raw slides
+
+Raw JSON gives every element's place and style. Use it for what the layouts can't make, and to change a slide a read gave back.
+
+### Slides
 
 A slide is 960 wide and 540 high. `left` and `top` place an element's top left corner from the slide's top left, and `width` and `height` size it, all in those units.
 
@@ -131,15 +207,21 @@ A slide is 960 wide and 540 high. `left` and `top` place an element's top left c
 | `transitionDuration` | Seconds, such as `1` |
 | `fadeUnmatchedElements` | `true` or `false`. With Magic Move, fades in what the slide before has no element for |
 | `advanceAfter` | Seconds before the slideshow moves on by itself, or leave it out to wait for a click |
-| `elements` | A list of elements. One with a higher `zIndex` sits above, and with none, the later in the list sits higher |
+| `elements` | A list of elements. One with a higher `zIndex` sits above. When two have the same `zIndex`, or have none, which counts as `1`, the later in the list sits higher |
 
-A slide holds no other field.
+A raw slide holds no other field.
 
-## Elements
+### Elements
 
-Every element has a `type` and a place. It may have an `id`, with the same rule as a slide's, `opacity` from `0` to `100` and `rotation` in degrees. Colours are `#RRGGBB` or `#RRGGBBAA`.
+Every element has a `type` and a place. It may have:
 
-**Text.** `content` is HTML: paragraphs `<p>`, `<strong>`, `<em>`, `<u>`, `<s>`, lists `<ul>` and `<ol>` with `<li>`, line breaks `<br>`, and `<span style="…">` for `color`, `font-size`, `font-family`, `font-weight`, `letter-spacing` and `text-transform`. A paragraph takes `style="text-align: center"`. A text has no `height`: it grows with its lines.
+- `id`, with the same rule as a slide's.
+- `refId`, which Magic Move pairs it by. An element moves into the one on the next slide with the same `refId`, or with the same `id` when it has no `refId`. Set the same `refId` on two elements to pair them. A table never pairs.
+- `opacity` from `0` to `100`, and `rotation` in degrees.
+
+Colours are `#RRGGBB` or `#RRGGBBAA`.
+
+**Text.** `lineHeight` is the space between lines, such as `1.5`. `content` is HTML: paragraphs `<p>`, `<strong>`, `<em>`, `<u>`, `<s>`, lists `<ul>` and `<ol>` with `<li>`, line breaks `<br>`, and `<span style="…">` for `color`, `font-size`, `font-family`, `font-weight`, `letter-spacing` and `text-transform`. A paragraph takes `style="text-align: center"`. A text has no `height`: it grows with its lines.
 
 ```json
 { "type": "text", "left": 80, "top": 60, "width": 800, "lineHeight": 1.5,
@@ -162,37 +244,25 @@ Every element has a `type` and a place. It may have an `id`, with the same rule 
   "connector": { "route": "straight", "start": { "elementId": "box", "anchor": "right" }, "end": { "elementId": "other", "anchor": "left" } } }
 ```
 
-**Table.** `content` is a table's HTML in the form the editor saves, or the write is refused. The table's `style` holds its whole width, and `<colgroup>` holds one `<col>` per column with that column's width. Each cell's `colwidth` is its column's width, and holds paragraphs. A `<th>` cell is a heading cell. Copy this form:
+**Table.** `content` is a table's HTML in the form the editor saves. Other forms may be refused. The table's `style` holds its whole width, the sum of its columns' widths, and `<colgroup>` holds one `<col>` per column with that column's width. Each cell's `colwidth` is its column's width, and holds paragraphs. Keep the same number of cells in every row. A `<th>` cell is a heading cell. Copy this form:
 
 ```json
 { "type": "table", "left": 80, "top": 120, "width": 400,
   "content": "<table style=\"width: 400px\"><colgroup><col style=\"width: 200px\"><col style=\"width: 200px\"></colgroup><tbody><tr><th colwidth=\"200\"><p>Goal</p></th><th colwidth=\"200\"><p>Owner</p></th></tr><tr><td colwidth=\"200\"><p>Ship</p></td><td colwidth=\"200\"><p>Aanya</p></td></tr></tbody></table>" }
 ```
 
-**Picture.** `src` is the id of a picture the presentation holds. Upload it to the presentation first: create the presentation, take `content_docname` from the answer, and send the file.
-
-```sh
-curl -X POST $SITE/api/method/suite.slides.api.media.add -H "$AUTH" -F docname=<content_docname> -F file=@chart.png
-```
-
-```json
-{ "message": { "file_url": "84r2c1b0dd", "file_name": "chart.webp" } }
-```
-
-`file_url` is the id. A PNG or JPEG is stored as WebP. Then write the element:
+**Picture.** `src` is the id of a picture, uploaded as in [Pictures and videos](#pictures-and-videos).
 
 ```json
 { "type": "image", "src": "<picture id>", "left": 80, "top": 120, "width": 400, "height": 300, "borderRadius": 8 }
 ```
 
-**Video.** Uploaded the same way. `poster`, the picture shown before it plays, is optional and uploaded the same way too.
+**Video.** `src` is the id of a video, uploaded the same way. `poster`, the picture shown before it plays, is optional and uploaded the same way too.
 
 ```json
 { "type": "video", "src": "<video id>", "poster": "<picture id>", "left": 80, "top": 120, "width": 640, "height": 360,
   "autoplay": false, "loop": false }
 ```
-
-A picture or video another presentation holds may be named too, when the user can read it: the write copies it into this presentation, and a read names the copy. A link, or a file kept elsewhere in Drive, is refused: upload it to the presentation.
 
 ## What a write does
 
@@ -204,17 +274,17 @@ A picture or video another presentation holds may be named too, when the user ca
 - `append` with a slide as a read gives it, ids and all, adds a copy of it: the copy and its elements get ids of their own, and Magic Move pairs the copy's elements with the ones they copy.
 - A one-slide write makes that slide hold what it sends alone: a field or element it leaves out goes. The slide keeps its place, and an element keeps its id when the slide already holds it. It keeps no version.
 - `replace` first keeps a version of the presentation as it stood, named "Before a replace from JSON". It stays in the presentation's versions until someone deletes it. When no version can be kept, as when the Drive is full, the replace is refused. When the versions are only away for a moment, it answers `WriteBusy`.
-- An id that two slides or elements share, or that another item holds, is given a new one. A connector or Magic Move that named it may then lose its pair, so give every item its own id.
+- An id that two slides or elements share, or that another item in this presentation holds, is given a new one. A connector that named it may then lose its end, so give every item its own id. A renamed element keeps its Magic Move pair through its `refId`.
 - A combined presentation, one that shows other presentations' slides, takes no write.
 - One call takes up to 256 KB of JSON. Build a larger presentation by creating it with its first slides and adding the rest with `append`.
 
 ## Limits
 
-One user makes up to 30 creates and writes, and 60 reads, a minute. A call past that answers `RateLimitExceededError` until the minute ends.
+One user makes up to 30 creates and writes, and 60 reads, a minute. A call past that answers `RateLimitExceededError` until the minute ends. Uploads don't count toward these.
 
 ## Refusals
 
-A refusal answers its class and a message:
+A refusal answers its class and a message. Read `errors[0].type` and `errors[0].message`, and leave any other key:
 
 ```json
 { "errors": [{ "type": "SlidesRefused", "message": "A presentation can't keep these slides: a text's HTML holds what the editor can't keep" }] }
@@ -230,7 +300,7 @@ A refusal answers its class and a message:
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a value the editor has no place for, an id is not of the form above, a one-slide write names an `id` other than its path's, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which. Nothing was written. The same slides get the same answer, so change them |
+| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a value the editor has no place for, an id is not of the form above, a one-slide write names an `id` other than its path's or sends no `elements`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, and the element when one is at fault. Nothing was written. The same slides get the same answer, so change them |
 | `WriteRefused` | 409 | The presentation refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`; or no version could be kept before a replace; or the presentation is a combined one. The same call gets the same answer until that changes. A write to a presentation not converted yet asks for its conversion, so write again in a minute |
-| `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
+| `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, a layout's template is not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
