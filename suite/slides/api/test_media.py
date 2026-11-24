@@ -217,3 +217,16 @@ class TestSlidesMedia(IntegrationTestCase):
     def test_a_file_that_is_not_a_picture_or_video_is_refused(self):
         with self.assertRaises(frappe.ValidationError):
             self.upload("notes.txt", "text/plain")
+
+    def test_a_file_sent_as_a_picture_that_is_not_one_is_refused(self):
+        for filename, mimetype, content in (
+            ("notes.png", "image/png", b"Plain words, not a picture"),
+            ("page.png", "image/png", b"<!doctype html><p>Not a picture</p>"),
+            ("talk.mp4", "video/mp4", b"Plain words, not a video"),
+        ):
+            with self.subTest(filename), self.assertRaises(frappe.ValidationError):
+                self.upload(filename, mimetype, content)
+
+        self.assertFalse(
+            frappe.db.exists("Drive Node", {"parent_node": node_of(self.deck.name), "kind": "file"})
+        )

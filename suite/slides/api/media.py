@@ -10,6 +10,7 @@ from typing import IO
 
 import frappe
 from frappe import _
+from frappe.storage.blob import sniff_mime
 from PIL import Image, ImageOps
 
 from suite import drive
@@ -45,10 +46,13 @@ def add(docname: str) -> dict:
     upload = frappe.request.files.get("file")
     if not upload or not upload.filename:
         frappe.throw(_("Choose a file to upload"), frappe.ValidationError)
-    if not upload.mimetype.startswith(MEDIA_TYPES):
+
+    # The type sent is the caller's word, and the bytes are what the slide shows
+    sniffed = sniff_mime(upload.stream)
+    if not (upload.mimetype.startswith(MEDIA_TYPES) and sniffed.startswith(MEDIA_TYPES)):
         frappe.throw(_("A slide can show only pictures and videos"), frappe.ValidationError)
     file_name, stream = upload.filename, upload.stream
-    if upload.mimetype in WEBP_SOURCE_TYPES:
+    if sniffed in WEBP_SOURCE_TYPES:
         file_name, stream = as_webp(file_name, stream)
     media = drive.store_file(node, file_name, stream)
     return {"file_url": media, "file_name": file_name}
