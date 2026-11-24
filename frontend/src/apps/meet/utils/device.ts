@@ -28,10 +28,6 @@ export function isFirefoxDesktop(): boolean {
   return /Firefox\//.test(navigator.userAgent) && !isMobileDevice()
 }
 
-export function supportsFirefoxMeetingPip(): boolean {
-  return isFirefoxDesktop() && 'documentPictureInPicture' in window
-}
-
 export function supportsAutomaticMeetingPip(): boolean {
   return (
     'documentPictureInPicture' in window &&
