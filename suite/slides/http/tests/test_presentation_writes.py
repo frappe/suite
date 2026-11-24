@@ -11,7 +11,10 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
+from frappe.handler import execute_cmd
 from frappe.utils.synchronization import filelock
+from werkzeug.test import EnvironBuilder
+from werkzeug.wrappers import Request
 
 from suite import content, drive
 from suite.content import checker, compaction, convert, jobs
@@ -998,3 +1001,155 @@ class TestPresentationWrites(LoggedDeckCase):
         (logged,) = frappe.local.message_log
         self.assertIn("(image, id gone) names no-such-file", logged["message"])
         self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+
+    def test_a_slide_write_with_an_id_that_is_not_text_writes_nothing(self):
+        node = self.create([title_slide("First")])
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+
+        for given in ([], {}):
+            with (
+                self.subTest(given),
+                self.assertRaisesRegex(SlidesRefused, "id must be the one the path names"),
+            ):
+                slides_routes.presentation_slide_write(node, slide["id"], {"id": given, "elements": []})
+
+        self.assertEqual(slides_routes.presentation_read(node)["slides"], [slide])
+
+    def test_a_background_is_a_hex_colour_alone(self):
+        node = self.create([title_slide("First")])
+
+        with self.assertRaisesRegex(SlidesRefused, "background must be a colour like #FFFFFF"):
+            slides_routes.presentation_write(
+                node, [title_slide("Second", background="#fff url(https://x/p.png)")], "replace"
+            )
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+        kept = [title_slide("Second", background=colour) for colour in ("#fff", "#FFFFFF", "#ffffff80")]
+        slides_routes.presentation_write(node, kept, "replace")
+        written = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual([slide["background"] for slide in written], ["#fff", "#FFFFFF", "#ffffff80"])
+
+    def test_a_picture_copy_the_drive_has_no_room_for_writes_nothing(self):
+        other = self.create([title_slide("Other")])
+        picture = self.stored_picture(other)
+        node = self.create([title_slide("First")])
+        root = drive.ensure_personal_root(OWNER)
+        quota, used = frappe.db.get_value("Drive Root", root, ["quota_bytes", "used_bytes"])
+        frappe.db.set_value("Drive Root", root, "quota_bytes", used)
+        self.addCleanup(frappe.db.commit)
+        self.addCleanup(frappe.db.set_value, "Drive Root", root, "quota_bytes", quota)
+
+        with self.assertRaises(drive.DriveOverQuota):
+            slides_routes.presentation_write(node, [picture_slide(picture)], "replace")
+
+        frappe.db.rollback()
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+        self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": node, "kind": "file"}))
+
+    def test_a_layouts_words_keep_their_words_whatever_the_spaces(self):
+        texts = ["Plan\nfor\ttoday", ["  two  spaces", " leading", "trailing ", "a\nnewline"]]
+
+        node = self.create([{"layout": 6, "texts": texts}])
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        title, points = slide["elements"]
+        self.assertEqual(words_of(title["content"]).split(), ["Plan", "for", "today"])
+        self.assertEqual(
+            [words_of(point).split() for point in points_of(points["content"])],
+            [["two", "spaces"], ["leading"], ["trailing"], ["a", "newline"]],
+        )
+
+    def test_a_template_the_user_cannot_read_is_not_offered_and_creates_nothing(self):
+        ensure_user(OUTSIDER)
+        secret = f"Secret {uuid.uuid4().hex[:8]}"
+        template = self.create([title_slide()], title=secret)
+        frappe.db.set_value("Drive Node", template, "is_template", 1)
+        folder = frappe.db.get_value("Drive Root", drive.ensure_personal_root(OUTSIDER), "node")
+        frappe.db.commit()
+        frappe.set_user(OUTSIDER)
+
+        with self.assertRaisesRegex(SlidesRefused, f"No template you can use is called {secret}") as refused:
+            slides_routes.presentation_create(folder, "Agent refused", [{"layout": 2}], secret)
+
+        _refusal, listed = str(refused.exception).split("These are: ")
+        offered = listed.split(", ")
+        self.assertIn("Light", offered)
+        self.assertNotIn(secret, offered)
+        self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": folder, "title": "Agent refused"}))
+
+    def test_a_trashed_presentation_takes_no_write(self):
+        # Trashed here, so not through `create`, whose cleanup trashes it again
+        node = slides_routes.presentation_create(self.folder, "Agent trashed", [title_slide("First")])["name"]
+        self.addCleanup(delete_log, node)
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        trash_node(node)
+        frappe.db.commit()
+        frappe.set_user(OWNER)
+        log = content.find(slides_content.APP, node)
+
+        writes = {
+            "replace": lambda: slides_routes.presentation_write(node, [title_slide("Second")], "replace"),
+            "append": lambda: slides_routes.presentation_write(node, [title_slide("Second")], "append"),
+            "one slide": lambda: slides_routes.presentation_slide_write(
+                node, slide["id"], title_slide("Second")
+            ),
+        }
+        for case, write in writes.items():
+            with self.subTest(case), self.assertRaises(drive.DriveError) as refused:
+                write()
+
+            self.assertIn(type(refused.exception), (drive.DriveNotFound, drive.DriveForbidden))
+
+        self.assertEqual(content.find(slides_content.APP, node), log)
+
+    def test_a_guest_with_no_key_reaches_no_data_route(self):
+        node = self.create([title_slide("First")])
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        log = content.find(slides_content.APP, node)
+        calls = {
+            "presentation_create": (
+                "POST",
+                {"folder": self.folder, "title": "Agent refused", "slides": [title_slide()]},
+            ),
+            "presentation_write": (
+                "POST",
+                {"node": node, "slides": [title_slide("Second")], "mode": "replace"},
+            ),
+            "presentation_slide_write": (
+                "POST",
+                {"node": node, "slide_id": slide["id"], "slide": title_slide("Second")},
+            ),
+            "presentation_read": ("GET", {"node": node}),
+        }
+        frappe.set_user("Guest")
+        for name, (method, form) in calls.items():
+            frappe.local.request = Request(EnvironBuilder(method=method).get_environ())
+            frappe.local.form_dict = frappe._dict(form)
+            with self.subTest(name), self.assertRaises(frappe.PermissionError):
+                execute_cmd(f"suite.slides.http.routes.{name}")
+
+        frappe.local.request = None
+        frappe.set_user(OWNER)
+        self.assertEqual(content.find(slides_content.APP, node), log)
+        self.assert_created_nothing("Agent refused")
+
+    def test_slides_or_elements_sent_with_one_id_each_get_their_own(self):
+        node = self.create([title_slide("First")])
+        twice = [{**title_slide("One"), "id": "same"}, {**title_slide("Two"), "id": "same"}]
+
+        slides_routes.presentation_write(node, twice, "replace")
+
+        one, two = slides_routes.presentation_read(node)["slides"]
+        self.assertNotEqual(one["id"], two["id"])
+        self.assertEqual(
+            self.texts_of(node), [["<paragraph>One</paragraph>"], ["<paragraph>Two</paragraph>"]]
+        )
+
+        element = {"type": "text", "left": 0, "top": 0, "content": "<p>x</p>", "id": "same-element"}
+        elements = [element, {**element, "content": "<p>y</p>"}]
+        slides_routes.presentation_write(node, [{"background": "#FFFFFFFF", "elements": elements}], "replace")
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        first, second = slide["elements"]
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(self.texts_of(node), [["<paragraph>x</paragraph>", "<paragraph>y</paragraph>"]])

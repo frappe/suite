@@ -28,6 +28,8 @@ SLIDES_MAX = 256 * 1024
 SLIDE_KEYS = {"id", "elements"} | set(SLIDE_COLUMNS.values())
 # A part of the layer's open key, so an id is a key the deck's roots take
 ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+# A hex colour alone, since an export binds a background as the CSS shorthand, which can load a URL
+COLOUR = re.compile(r"#(?:[0-9A-Fa-f]{3,4}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8})")
 PICTURE_KEYS = ("src", "poster")
 MEDIA_TYPES = ("image", "video")
 # A layout slide names its layout by place, and takes the words and picture to fill it with
@@ -138,7 +140,8 @@ def write_slide(node: str, slide_id: str, slide: object) -> int:
     if not isinstance(slide, dict):
         raise SlidesRefused(_("slide must be an object"))
 
-    if slide.get("id") not in {None, slide_id}:
+    given = slide.get("id")
+    if given is not None and given != slide_id:
         raise SlidesRefused(_("The slide's id must be the one the path names, or left out"))
 
     if "elements" not in slide and "layout" not in slide:
@@ -479,7 +482,7 @@ def check_ids(label: str, slide: dict, elements: list[dict]) -> None:
 def check_pictures(label: str, slide: dict, elements: list[dict]) -> dict[str, str]:
     """Refuse a picture named but by a Drive file's id, and answer each one named and where it first is."""
     background = slide.get("background")
-    if background and not (isinstance(background, str) and background.startswith("#")):
+    if background and not (isinstance(background, str) and COLOUR.fullmatch(background)):
         raise SlidesRefused(_("{0}'s background must be a colour like #FFFFFF").format(label))
 
     pictures: dict[str, str] = {}

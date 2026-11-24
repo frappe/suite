@@ -283,6 +283,8 @@ SLIDES_ERRORS = (
     drive.DriveForbidden,
     drive.DriveLocked,
     drive.DriveLinkExpired,
+    # A picture a write copies under the presentation counts against the Drive's room
+    drive.DriveOverQuota,
     *WRITE_REFUSALS,
 )
 

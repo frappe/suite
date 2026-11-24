@@ -71,6 +71,7 @@ export type PresentationCreateError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
+  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
@@ -98,6 +99,7 @@ const operationPresentationCreate: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
+    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
@@ -175,6 +177,7 @@ export type PresentationWriteError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
+  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
@@ -201,6 +204,7 @@ const operationPresentationWrite: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
+    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
@@ -277,6 +281,7 @@ export type PresentationSlideWriteError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
+  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
@@ -303,6 +308,7 @@ const operationPresentationSlideWrite: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
+    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
@@ -321,6 +327,7 @@ export type PresentationReadError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
+  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
@@ -347,6 +354,7 @@ const operationPresentationRead: QueryRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
+    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',

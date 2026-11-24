@@ -403,6 +403,7 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
+        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
         "WriteBusy",
@@ -811,6 +812,7 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
+        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
         "WriteBusy"
@@ -1209,6 +1211,7 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
+        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
         "WriteBusy"
@@ -1257,6 +1260,7 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
+        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
         "WriteBusy"
