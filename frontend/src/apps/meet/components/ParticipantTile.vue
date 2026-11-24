@@ -23,19 +23,10 @@
       playsinline
     />
 
-    <!-- Infinity mirror cover for local screen share presenter -->
-    <div
+    <LocalScreenShareCover
       v-if="participant.isLocalScreenShare && showBlur"
-      class="absolute inset-0 flex flex-col items-center justify-center bg-black/40 backdrop-blur-md"
-    >
-      <lucide-monitor-up class="w-8 h-8 text-white mb-6" />
-      <div v-if="showScreenShareCopy" class="text-white text-lg-medium mb-1">
-        {{ __('You are sharing your screen') }}
-      </div>
-      <div v-if="showScreenShareCopy" class="text-white text-sm-medium">
-        {{ __('Everyone else can see what you are presenting') }}
-      </div>
-    </div>
+      :show-copy="showScreenShareCopy"
+    />
 
     <div
       v-if="showAvatar && !isVideoEnabled && !participant.isLocalScreenShare"
@@ -159,6 +150,7 @@ import { useMeetingContext } from '../composables/useMeetingContext'
 import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
+import LocalScreenShareCover from './LocalScreenShareCover.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
 import NetworkIndicator from './NetworkIndicator.vue'

@@ -110,10 +110,13 @@ function mount(
     isCameraOn: !!options.local,
     localStream: options.local ? new TestStream([options.local]) : null,
     processedStream: null,
+    screenShareStream: fromPartial<TestStream | null>(null),
     screenShareStreams: fromPartial<Record<string, TestStream>>({}),
   })
   const pinnedTiles = shallowRef<{ type: 'participant' | 'screenshare'; id: string }[]>([])
-  const displayScreenShares = shallowRef<{ source: 'remote'; participantId: string }[]>([])
+  const displayScreenShares = shallowRef<{ source: 'remote' | 'local'; participantId: string }[]>(
+    [],
+  )
   const remote = shallowRef(options.remote ?? null)
   const manager = {
     getRemoteVideoTrack: vi.fn(() => remote.value),
@@ -276,6 +279,35 @@ describe('MeetingPictureInPicture browser behavior', () => {
     await refresh()
     expect(lowerLabel()).toBe('Remote speaker')
   })
+  it('covers the local presentation with the main meeting blur overlay', async () => {
+    const win = fakeWindow()
+    const test = mount({ requestWindow: vi.fn().mockResolvedValue(win), remote: track('camera') })
+    test.mediaState.screenShareStream = new TestStream([track('own screen')])
+    test.displayScreenShares.value = [{ source: 'local', participantId: 'self' }]
+    await test.pip.open()
+    await flush()
+
+    expect(win.document.body.textContent).toContain('You are sharing your screen')
+    expect(win.document.querySelector('[class~="backdrop-blur-md"]')).toBeNull()
+    expect([...win.document.querySelectorAll('video.blur-md')]).toEqual([
+      win.document.querySelectorAll('video')[2],
+    ])
+    expect(win.document.querySelectorAll('video')).toHaveLength(3)
+  })
+
+  it('closes PiP when the meeting tab becomes visible again', async () => {
+    const win = fakeWindow()
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+    const test = mount({ requestWindow: vi.fn().mockResolvedValue(win) })
+    await test.pip.open()
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(win.close).not.toHaveBeenCalled()
+    visibility.mockReturnValue('visible')
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(win.close).toHaveBeenCalledOnce()
+    expect(test.leave).not.toHaveBeenCalled()
+  })
+
   it('does not offer unsupported PiP or open any window', async () => {
     const test = mount()
     await flush()

@@ -67,7 +67,9 @@
             playsinline
             muted
             class="h-full w-full object-contain"
+            :class="{ 'blur-md': presentation.local }"
           />
+          <LocalScreenShareCover v-if="presentation.local" show-copy video-already-blurred />
           <NamePill :name="presentation.label" role="status" />
         </div>
       </div>
@@ -157,6 +159,7 @@ import {
   supportsFirefoxMeetingPip,
 } from '../utils/device'
 import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
+import LocalScreenShareCover from './LocalScreenShareCover.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
 import ToolbarButton from './ToolbarButton.vue'
@@ -196,7 +199,7 @@ const primaryAvatarLabel = ref('')
 const secondAvatar = ref<string | null>()
 const secondAvatarLabel = ref('')
 const secondName = ref('')
-const presentation = shallowRef<{ stream: MediaStream; label: string } | null>(null)
+const presentation = shallowRef<{ stream: MediaStream; label: string; local: boolean } | null>(null)
 const visibleRemoteId = ref<string | null>(null)
 const selfSpeaking = computed(() => {
   const id = context.currentUser?.currentUser.value?.user_id
@@ -304,6 +307,7 @@ function refresh() {
   )
   let presentationTrack: MediaStreamTrack | undefined
   let presentationLabel = ''
+  let localPresentation = false
   for (const share of new Set(pinnedShare ? [pinnedShare, ...shares] : shares)) {
     const source =
       share.source === 'local'
@@ -311,6 +315,7 @@ function refresh() {
         : context.mediaState.screenShareStreams[share.participantId]
     presentationTrack = source?.getVideoTracks().find((track) => track.readyState === 'live')
     if (!presentationTrack) continue
+    localPresentation = share.source === 'local'
     presentationLabel =
       share.source === 'local'
         ? __('Your screen')
@@ -319,10 +324,15 @@ function refresh() {
   }
   if (
     presentation.value?.stream.getVideoTracks()[0] !== presentationTrack ||
+    presentation.value?.local !== localPresentation ||
     presentation.value?.label !== presentationLabel
   ) {
     presentation.value = presentationTrack
-      ? { stream: new MediaStream([presentationTrack]), label: presentationLabel }
+      ? {
+          stream: new MediaStream([presentationTrack]),
+          local: localPresentation,
+          label: presentationLabel,
+        }
       : null
   }
   const secondId = visibleRemoteId.value
@@ -519,7 +529,14 @@ function onPipShortcut(event: KeyboardEvent) {
   event.preventDefault()
   void open(true)
 }
+function closeWhenMeetingReturns() {
+  if (document.visibilityState === 'visible' && (pipWindow.value || fallbackActive || pending)) {
+    close()
+  }
+}
 onMounted(() => {
+  window.addEventListener('focus', closeWhenMeetingReturns)
+  document.addEventListener('visibilitychange', closeWhenMeetingReturns)
   if (supportsFirefoxMeetingPip()) window.addEventListener('keydown', onPipShortcut)
   refresh()
   timer = setInterval(refresh, 500)
@@ -538,6 +555,8 @@ onBeforeUnmount(() => {
   fallbackVideo.value?.removeEventListener('leavepictureinpicture', release)
   fallbackVideo.value?.removeEventListener('webkitpresentationmodechanged', presentationChanged)
   window.removeEventListener('pagehide', close)
+  window.removeEventListener('focus', closeWhenMeetingReturns)
+  document.removeEventListener('visibilitychange', closeWhenMeetingReturns)
   if (actionRegistered)
     try {
       navigator.mediaSession.setActionHandler(action, null)
