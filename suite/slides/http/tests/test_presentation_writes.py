@@ -335,3 +335,81 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assertEqual(status, 200)
 
         self.assertEqual(self.texts_of(node), [["<paragraph>First typed</paragraph>"]])
+
+    def test_a_read_written_back_makes_the_same_presentation(self):
+        node = self.create([title_slide("First"), shape_slide()])
+        before = self.deck_of(node)
+        read = slides_routes.presentation_read(node)
+
+        slides_routes.presentation_write(node, read["slides"], "replace")
+
+        self.assertEqual(self.deck_of(node), before)
+        self.assertEqual(slides_routes.presentation_read(node), read)
+
+    def test_a_read_names_every_slide_and_element_by_its_id(self):
+        node = self.create([title_slide("First"), shape_slide()])
+        _header, state = opened(node)
+        doc = compaction.load_doc([state])
+
+        read = slides_routes.presentation_read(node)["slides"]
+
+        slide_ids = [slide_id for slide_id, _slide in in_order(doc.get("slides", type=pycrdt.Map).items())]
+        self.assertEqual([slide["id"] for slide in read], slide_ids)
+        element_ids: set[str] = set()
+        for slide in read:
+            element_ids |= {element["id"] for element in slide["elements"]}
+
+        self.assertEqual(element_ids, set(doc.get("elements", type=pycrdt.Map).keys()))
+        # The line still holds on to the box by the id the write gave it
+        _box, line = read[1]["elements"]
+        self.assertEqual(line["connector"]["start"], {"elementId": "box", "anchor": "right"})
+
+    def test_a_read_holds_what_a_tab_typed(self):
+        node = self.create([title_slide("First")])
+        _header, state = opened(node)
+        (element_id,) = compaction.load_doc([state]).get("elements", type=pycrdt.Map).keys()
+
+        def type_into(doc: pycrdt.Doc) -> None:
+            text = doc.get("elements", type=pycrdt.Map)[element_id]["text"]
+            text.children[0].children[0].insert(5, " typed")
+
+        status, _body = self.push(node, type_into)
+        self.assertEqual(status, 200)
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (element,) = slide["elements"]
+        self.assertIn("First typed", element["content"])
+
+    def test_a_reader_reads_and_an_outsider_finds_nothing(self):
+        ensure_user(READER)
+        ensure_user(OUTSIDER)
+        node = self.create([title_slide("First")])
+        share(docname_for_node(node), READER, drive.READ)
+        frappe.db.commit()
+
+        frappe.set_user(READER)
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertIn("First", slide["elements"][0]["content"])
+
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(drive.DriveNotFound):
+            slides_routes.presentation_read(node)
+
+    def test_a_combined_presentation_has_nothing_to_read(self):
+        node = self.create([title_slide("First")])
+        frappe.db.set_value("Presentation", docname_for_node(node), "is_composite", 1)
+        frappe.db.commit()
+
+        with self.assertRaisesRegex(WriteRefused, "combined"):
+            slides_routes.presentation_read(node)
+
+    def test_every_element_the_guide_shows_is_kept(self):
+        # An element's example is a block that opens on its id or type
+        blocks = re.findall(r'```json\n(\{ "(?:id|type)".*?)```', slides_routes.AGENT_GUIDE.read_text(), re.S)
+        elements = [json.loads(block) for block in blocks]
+        self.assertEqual(sorted(element["type"] for element in elements), ["shape", "shape", "table", "text"])
+
+        node = self.create([{"elements": elements}])
+
+        (slide,) = self.deck_of(node)
+        self.assertEqual(len(slide["elements"]), len(elements))

@@ -52,14 +52,17 @@ curl -X POST $SITE/api/suite/slides/presentations -H "$AUTH" -H 'Content-Type: a
 }'
 ```
 
-**4. Read it.** The answer is the JSON a write takes, with every slide's and every element's `id`.
+**4. Read it.** The answer is the JSON a write takes, with every slide's and every element's `id`. A presentation with no slides answers `{"slides": []}`.
 
 ```sh
 curl -H "$AUTH" $SITE/api/suite/slides/presentations/<node>
 ```
 
 ```json
-{ "data": { "slides": [{ "id": "k3j9d0a1b2", "background": "#FFFFFFFF", "elements": [{ "id": "p0q8r7s6t5", "type": "text", "left": 80, "top": 200, "width": 800, "content": "<p>…</p>" }] }] } }
+{ "data": { "slides": [{ "id": "ef848f885", "background": "#FFFFFF", "elements": [
+  { "id": "b00910cca", "type": "text", "left": 80, "top": 60, "width": 800, "transform": "none", "transformOrigin": "top left",
+    "content": "<p style=\"line-height: 1.5;\"><strong>Plan for today</strong></p>", "zIndex": 1 }
+] }] } }
 ```
 
 **5. Replace the slides.** The user needs edit access to the presentation. `mode` is `replace`.
@@ -77,7 +80,18 @@ Create and write both answer the presentation as its row in step 2, shown here w
 { "data": { "name": "l0e2q0u66a", "title": "Plan", "kind": "document", "parent_node": "84n0kmpagb", "mime": "frappe/slides", "rev": 2 } }
 ```
 
-To edit a presentation, read it, change the JSON, and write it back with `replace`. Keep the ids you read: an element that keeps its id keeps its comments' place, and Magic Move pairs elements by id.
+To edit a presentation, read it, change the JSON, and write it back with `replace`. Send back what the read answers, not the forms you first wrote, and keep the ids: Magic Move pairs elements by id, and a connector holds on to an element by it.
+
+A read gives each item as the editor keeps it, so it can differ from what was written:
+
+- `zIndex` counts 1, 2, 3 … in each slide, from the bottom element up.
+- A colour is 6 or 8 hex digits, and a named one becomes hex: `red` reads `#ff0000ff`.
+- A `circle` shape reads as `oval`.
+- Text HTML reads as the editor writes it, with `line-height` on each paragraph.
+- Every text, shape and table has `content`. An empty one is `<p style="line-height: 1.5;"></p>`.
+- `editorMetadata.lineHeight` reads as `lineHeight`, and an old shadow in pixels reads as the editor's shadow fields.
+- A connector end that names an element not on its slide reads as `null`.
+- A text has `transform` and `transformOrigin`. Leave them as they are.
 
 **6. Open it in a browser** at `$SITE/d/<node>`.
 
@@ -100,7 +114,7 @@ A slide is 960 wide and 540 high. `left` and `top` place an element's top left c
 | `transitionDuration` | Seconds, such as `1` |
 | `fadeUnmatchedElements` | `true` or `false`. With Magic Move, fades in what the slide before has no element for |
 | `advanceAfter` | Seconds before the slideshow moves on by itself, or leave it out to wait for a click |
-| `elements` | A list of elements. The later an element is in the list, the higher it sits |
+| `elements` | A list of elements. One with a higher `zIndex` sits above, and with none, the later in the list sits higher |
 
 A slide holds no other field.
 
@@ -131,11 +145,11 @@ Every element has a `type` and a place. It may have an `id`, with the same rule 
   "connector": { "route": "straight", "start": { "elementId": "box", "anchor": "right" }, "end": { "elementId": "other", "anchor": "left" } } }
 ```
 
-**Table.** `content` is a table's HTML. Each cell holds paragraphs. A first row of `<th>` is a heading row. `colwidth` sets a column's width.
+**Table.** `content` is a table's HTML in the form the editor saves, or the write is refused. The table's `style` holds its whole width, and `<colgroup>` holds one `<col>` per column with that column's width. Each cell's `colwidth` is its column's width, and holds paragraphs. A `<th>` cell is a heading cell. Copy this form:
 
 ```json
-{ "type": "table", "left": 80, "top": 120, "width": 800,
-  "content": "<table><tr><th colwidth=\"400\"><p>Goal</p></th><th colwidth=\"400\"><p>Owner</p></th></tr><tr><td><p>Ship</p></td><td><p>Aanya</p></td></tr></table>" }
+{ "type": "table", "left": 80, "top": 120, "width": 400,
+  "content": "<table style=\"width: 400px\"><colgroup><col style=\"width: 200px\"><col style=\"width: 200px\"></colgroup><tbody><tr><th colwidth=\"200\"><p>Goal</p></th><th colwidth=\"200\"><p>Owner</p></th></tr><tr><td colwidth=\"200\"><p>Ship</p></td><td colwidth=\"200\"><p>Aanya</p></td></tr></tbody></table>" }
 ```
 
 **Pictures and videos** are refused for now.
