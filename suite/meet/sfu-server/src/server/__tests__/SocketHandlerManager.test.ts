@@ -2333,7 +2333,7 @@ describe('SocketHandlerManager characterization', () => {
 			sender.fire('chat:send', { message: oversized }, rejected);
 			expect(rejected).toHaveBeenCalledWith({
 				success: false,
-				error: expect.stringContaining('32 KiB'),
+				error: 'This message is too long. Shorten it and try again.',
 			});
 			expect(receiver.emitCalls.some((c) => c.event === 'chat:message')).toBe(false);
 			expect(sender.emitCalls.some((c) => c.event === 'chat:message')).toBe(false);

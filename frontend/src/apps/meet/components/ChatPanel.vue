@@ -229,7 +229,7 @@
               role="status"
               class="px-3 pb-2 text-sm text-ink-red-4"
             >
-              {{ __('Messages can be up to 32 KiB. Shorten your message and try again.') }}
+              {{ __('This message is too long. Shorten it and try again.') }}
             </p>
           </template>
           <div

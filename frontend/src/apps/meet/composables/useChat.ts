@@ -225,7 +225,7 @@ export function useChat(deps: {
 
   const onSendChat = async (text: string) => {
     if (new TextEncoder().encode(text).length > MAX_CHAT_TEXT_BYTES) {
-      toast.error(__('Messages can be up to 32 KiB. Shorten your message and try again.'))
+      toast.error(__('This message is too long. Shorten it and try again.'))
       return false
     }
     try {
