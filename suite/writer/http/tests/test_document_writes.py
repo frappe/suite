@@ -445,19 +445,29 @@ class TestDocumentWrites(DriveCallbackCase):
         self.age_copy(node)
         self.assertEqual(self.swept_renders(node), 0)
 
-    def test_an_export_answers_when_its_render_request_fails(self):
+    def test_exports_answer_and_log_once_while_the_queue_is_down(self):
         node = self.create("First.")
         writer_routes.document_write(node, "Second.", "append")
         failed = {"method": "Collab readable copy: render request failed"}
         logged = connection_for("Error Log").count("Error Log", failed)
+        tried: list[str] = []
 
-        with patch.object(scheduling, "enqueue", side_effect=ConnectionError("no queue")):
-            html = exported(node, "html")
+        def queue_down(method, **kwargs):
+            tried.append(kwargs["job_id"])
+            raise ConnectionError("no queue")
 
-        self.assertEqual(html, "<p>First.</p><p>Second.</p>")
+        with patch.object(frappe, "enqueue", queue_down):
+            answers = [exported(node, "html"), exported(node, "html")]
+
+        self.assertEqual(answers, ["<p>First.</p><p>Second.</p>"] * 2)
+        self.assertEqual(tried, [f"suite-collab-copy-writer-{self.doc_row(node).id}"])
         self.assertEqual(connection_for("Error Log").count("Error Log", failed), logged + 1)
+        # Once the queue's rest ends, the sweep asks for the copy again
         self.age_copy(node)
-        self.assertEqual(self.swept_renders(node), 1)
+        rest = scheduling.QUEUE_PAUSE.total_seconds() + 1
+        clock = scheduling.time.monotonic
+        with patch.object(scheduling.time, "monotonic", lambda: clock() + rest):
+            self.assertEqual(self.swept_renders(node), 1)
 
     def test_an_export_answers_a_refresh_when_the_owed_copy_cannot_be_rendered(self):
         node = self.create("First.")

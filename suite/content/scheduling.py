@@ -198,18 +198,24 @@ def enqueue(method: str, job_id: str, *, timeout: int = TIMEOUT, **kwargs: objec
 
 def request_compaction(app: str, doc_id: str, method: str) -> None:
     """Enqueue `method(app, doc_id)` once per document."""
+    job_id = f"suite-collab-compact-{app}-{doc_id}"
+    request_job(method, job_id, "Collab compaction: request failed", app, doc_id)
+
+
+def request_job(method: str, job_id: str, failed_title: str, app: str, doc_id: str) -> None:
+    """Enqueue `method(app, doc_id)` once per `job_id`, and after the queue fails log it once and rest every request."""
     global paused_until
     if time.monotonic() < paused_until:
         return
 
     try:
-        enqueue(method, f"suite-collab-compact-{app}-{doc_id}", app=app, doc_id=doc_id)
+        enqueue(method, job_id, app=app, doc_id=doc_id)
     except Exception:
-        # A request is only a hint, so the open or push that made it carries on and this process rests a while
+        # A request is only a hint, so the call that made it carries on and this process rests a while
         paused_until = time.monotonic() + QUEUE_PAUSE.total_seconds()
         traceback = frappe.get_traceback()
         frappe.log_error(
-            title="Collab compaction: request failed",
+            title=failed_title,
             message=f"{app} document {doc_id}\n{traceback}",
             reference_doctype="Suite Collab Settings",
         )
