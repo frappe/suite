@@ -30,8 +30,7 @@ from suite.slides.content.tests.support import (
     opened,
     owner_folder,
 )
-from suite.slides.doctype.presentation.presentation import readable_templates
-from suite.slides.drive import DOCTYPE, docname_for_node
+from suite.slides.drive import DOCTYPE, docname_for_node, readable_templates
 from suite.slides.http import routes as slides_routes
 from suite.slides.tests.utils import share, trash_node
 from suite.tests.utils import ensure_user

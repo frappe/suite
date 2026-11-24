@@ -21,8 +21,7 @@ from suite.content import ChainBroken, checker, compaction, convert, jobs
 from suite.slides.content import APP, EDITOR, converter
 from suite.slides.content.conversion import SLIDE_COLUMNS, legacy_deck, old_row
 from suite.slides.content.files import MEDIA_ID
-from suite.slides.doctype.presentation.presentation import readable_templates
-from suite.slides.drive import docname_for_node
+from suite.slides.drive import docname_for_node, readable_templates
 
 SLIDES_MAX = 256 * 1024
 SLIDE_KEYS = {"id", "elements"} | set(SLIDE_COLUMNS.values())
