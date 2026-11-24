@@ -1,5 +1,6 @@
 import base64
 import gzip
+import io
 import json
 import os
 import re
@@ -24,6 +25,7 @@ from suite.tests.utils import ensure_user
 
 READER = "slides-agent-reader@example.com"
 OUTSIDER = "slides-agent-outsider@example.com"
+EDITOR = "slides-agent-editor@example.com"
 ATTRIBUTE = re.compile(r' \w+="[^"]*"')
 
 
@@ -42,6 +44,10 @@ def element_fields(item: pycrdt.Map) -> dict:
         fields["text"] = ATTRIBUTE.sub("", str(fields["text"]))
 
     return fields
+
+
+def picture_slide(src: str) -> dict:
+    return {"elements": [{"type": "image", "src": src, "left": 0, "top": 0, "width": 400, "height": 300}]}
 
 
 def title_slide(text: str = "Plan for <strong>today</strong>", **fields) -> dict:
@@ -136,6 +142,18 @@ class TestPresentationWrites(LoggedDeckCase):
 
         deck = self.slides_in(state)
         return [[element.get("text") for element in slide["elements"]] for slide in deck]
+
+    def stored_picture(self, parent: str) -> str:
+        with patch.object(frappe, "enqueue"):
+            picture = drive.store_file(parent, "picture.png", io.BytesIO(uuid.uuid4().bytes))
+
+        frappe.db.commit()
+        return picture
+
+    def picture_of(self, node: str) -> str:
+        (slide,) = self.deck_of(node)
+        (picture,) = slide["elements"]
+        return picture["src"]
 
     def assert_created_nothing(self, title: str) -> None:
         self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": title}))
@@ -547,10 +565,86 @@ class TestPresentationWrites(LoggedDeckCase):
     def test_every_element_the_guide_shows_is_kept(self):
         # An element's example is a block that opens on its id or type
         blocks = re.findall(r'```json\n(\{ "(?:id|type)".*?)```', slides_routes.AGENT_GUIDE.read_text(), re.S)
-        elements = [json.loads(block) for block in blocks]
-        self.assertEqual(sorted(element["type"] for element in elements), ["shape", "shape", "table", "text"])
+        node = self.create([title_slide()])
+        # The guide's placeholders stand for files uploaded to the presentation
+        picture = self.stored_picture(node)
+        video = self.stored_picture(node)
+        filled = [block.replace("<picture id>", picture).replace("<video id>", video) for block in blocks]
+        elements = [json.loads(block) for block in filled]
+        self.assertEqual(
+            sorted(element["type"] for element in elements),
+            ["image", "shape", "shape", "table", "text", "video"],
+        )
 
-        node = self.create([{"elements": elements}])
+        slides_routes.presentation_write(node, [{"elements": elements}], "replace")
 
         (slide,) = self.deck_of(node)
         self.assertEqual(len(slide["elements"]), len(elements))
+
+    def test_a_picture_uploaded_to_the_presentation_keeps_its_id(self):
+        node = self.create([title_slide("First")])
+        picture = self.stored_picture(node)
+
+        slides_routes.presentation_write(node, [picture_slide(picture)], "replace")
+
+        self.assertEqual(self.picture_of(node), picture)
+
+    def test_a_picture_another_presentation_holds_is_copied_under_this_one(self):
+        other = self.create([title_slide("Other")])
+        picture = self.stored_picture(other)
+        node = self.create([title_slide("First")])
+
+        slides_routes.presentation_write(node, [picture_slide(picture)], "replace")
+
+        copied = self.picture_of(node)
+        self.assertNotEqual(copied, picture)
+        self.assertEqual(frappe.db.get_value("Drive Node", copied, "parent_node"), node)
+        # The other presentation keeps its own file
+        self.assertEqual(frappe.db.get_value("Drive Node", picture, "parent_node"), other)
+
+    def test_a_picture_named_by_a_link_writes_nothing(self):
+        node = self.create([title_slide("First")])
+
+        for src in ("https://example.com/logo.png", "/private/files/logo.png"):
+            with self.subTest(src), self.assertRaisesRegex(SlidesRefused, "names a picture by a link"):
+                slides_routes.presentation_write(node, [picture_slide(src)], "replace")
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+
+    def test_a_picture_the_writer_cannot_read_writes_nothing(self):
+        ensure_user(EDITOR)
+        hidden = self.stored_picture(self.create([title_slide("Hidden")]))
+        node = self.create([title_slide("First")])
+        share(docname_for_node(node), EDITOR, drive.EDIT)
+        frappe.db.commit()
+        frappe.set_user(EDITOR)
+
+        # A file kept from the writer answers as one that isn't there
+        for src in (hidden, "no-such-file"):
+            with (
+                self.subTest(src),
+                self.assertRaisesRegex(SlidesRefused, "isn't there or that you can't read"),
+            ):
+                slides_routes.presentation_write(node, [picture_slide(src)], "append")
+
+        frappe.set_user("Administrator")
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+        self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": node, "kind": "file"}))
+
+    def test_a_picture_no_presentation_holds_writes_nothing(self):
+        node = self.create([title_slide("First")])
+        loose = self.stored_picture(self.folder)
+        self.addCleanup(trash_node, loose)
+
+        with self.assertRaisesRegex(SlidesRefused, "no presentation holds"):
+            slides_routes.presentation_write(node, [picture_slide(loose)], "replace")
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+        self.assertEqual(self.kept_versions(node), [])
+
+        with self.assertRaisesRegex(SlidesRefused, "no presentation holds"):
+            slides_routes.presentation_create(self.folder, "Agent refused", [picture_slide(loose)])
+
+        # The refusal comes once the presentation is made, and the request rolls it back
+        frappe.db.rollback()
+        self.assert_created_nothing("Agent refused")

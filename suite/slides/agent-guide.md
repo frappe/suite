@@ -82,7 +82,8 @@ curl -X POST $SITE/api/suite/slides/presentations/<node>/slides -H "$AUTH" -H 'C
 Create and write both answer the presentation as its row in step 2, shown here with the fields an agent needs, and `rev`, the revision the write made:
 
 ```json
-{ "data": { "name": "l0e2q0u66a", "title": "Plan", "kind": "document", "parent_node": "84n0kmpagb", "mime": "frappe/slides", "rev": 2 } }
+{ "data": { "name": "l0e2q0u66a", "title": "Plan", "kind": "document", "parent_node": "84n0kmpagb", "mime": "frappe/slides",
+  "content_docname": "q7k3m9d2vt", "rev": 2 } }
 ```
 
 To edit a presentation, read it, change the JSON, and write it back: the whole of it with `replace`, or one slide with step 6. Send back what the read answers, not the forms you first wrote, and keep the ids: Magic Move pairs elements by id, and a connector holds on to an element by it.
@@ -168,7 +169,30 @@ Every element has a `type` and a place. It may have an `id`, with the same rule 
   "content": "<table style=\"width: 400px\"><colgroup><col style=\"width: 200px\"><col style=\"width: 200px\"></colgroup><tbody><tr><th colwidth=\"200\"><p>Goal</p></th><th colwidth=\"200\"><p>Owner</p></th></tr><tr><td colwidth=\"200\"><p>Ship</p></td><td colwidth=\"200\"><p>Aanya</p></td></tr></tbody></table>" }
 ```
 
-**Pictures and videos** are refused for now.
+**Picture.** `src` is the id of a picture the presentation holds. Upload it to the presentation first: create the presentation, take `content_docname` from the answer, and send the file.
+
+```sh
+curl -X POST $SITE/api/method/suite.slides.api.media.add -H "$AUTH" -F docname=<content_docname> -F file=@chart.png
+```
+
+```json
+{ "message": { "file_url": "84r2c1b0dd", "file_name": "chart.webp" } }
+```
+
+`file_url` is the id. A PNG or JPEG is stored as WebP. Then write the element:
+
+```json
+{ "type": "image", "src": "<picture id>", "left": 80, "top": 120, "width": 400, "height": 300, "borderRadius": 8 }
+```
+
+**Video.** Uploaded the same way. `poster`, the picture shown before it plays, is optional and uploaded the same way too.
+
+```json
+{ "type": "video", "src": "<video id>", "poster": "<picture id>", "left": 80, "top": 120, "width": 640, "height": 360,
+  "autoplay": false, "loop": false }
+```
+
+A picture or video another presentation holds may be named too, when the user can read it: the write copies it into this presentation, and a read names the copy. A link, or a file kept elsewhere in Drive, is refused: upload it to the presentation.
 
 ## What a write does
 
@@ -206,7 +230,7 @@ A refusal answers its class and a message:
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a value the editor has no place for, an id is not of the form above, a one-slide write names an `id` other than its path's, a text's HTML holds what the editor can't keep, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which. Nothing was written. The same slides get the same answer, so change them |
+| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a value the editor has no place for, an id is not of the form above, a one-slide write names an `id` other than its path's, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which. Nothing was written. The same slides get the same answer, so change them |
 | `WriteRefused` | 409 | The presentation refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`; or no version could be kept before a replace; or the presentation is a combined one. The same call gets the same answer until that changes. A write to a presentation not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |

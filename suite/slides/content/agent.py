@@ -18,12 +18,13 @@ from suite import content, drive
 from suite.content import ChainBroken, checker, compaction, convert, jobs
 from suite.slides.content import APP, EDITOR, converter
 from suite.slides.content.conversion import SLIDE_COLUMNS, legacy_deck, old_row
+from suite.slides.content.files import MEDIA_ID
+from suite.slides.drive import adopt_all, docname_for_node
 
 SLIDES_MAX = 256 * 1024
 SLIDE_KEYS = {"id", "elements"} | set(SLIDE_COLUMNS.values())
 # A part of the layer's open key, so an id is a key the deck's roots take
 ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
-PICTURE_TYPES = {"image", "video"}
 PICTURE_KEYS = ("src", "poster")
 ROOTS = ("slides", "elements")
 # deck.ts's order digits, so an order a write gives sorts as a tab's does
@@ -33,7 +34,7 @@ FIRST_ORDER = "V"
 # or a restore is landing or landed under the write
 PASSING = ("busy", "compacting", "restoring", "restored")
 PLAIN_DETAILS = {
-    "element_type": "an element's type must be text, shape or table",
+    "element_type": "an element's type must be text, shape, table, image or video",
     "elements": "an element is not an object",
     "fault": "the slides hold a value the editor has no place for",
     "html": "a text's HTML holds what the editor can't keep",
@@ -75,7 +76,7 @@ def create(parent: str, title: str, slides: object) -> tuple[str, int]:
     drive.check(parent, drive.UPLOAD)
     deck = deck_state(slides)
     node = drive.create_document(parent, title, content_doctype=EDITOR.doctype)
-    return node, push(node, replacing(deck))
+    return node, push(node, replacing(adopted(node, deck)))
 
 
 def write(node: str, slides: object, mode: Literal["replace", "append"]) -> int:
@@ -83,14 +84,15 @@ def write(node: str, slides: object, mode: Literal["replace", "append"]) -> int:
     writable(node)
     if mode == "append":
         held = item_ids(current_doc(node))
-        return push(node, appending(deck_state(slides, held)))
+        return push(node, appending(adopted(node, deck_state(slides, held))))
 
-    deck = deck_state(slides)
+    # Before the version, so a refused picture keeps none
+    source = adopted(node, deck_state(slides))
     # A presentation with no log refuses the write below, so it keeps no version
     if content.find(APP, node):
         keep_version(node)
 
-    return push(node, replacing(deck))
+    return push(node, replacing(source))
 
 
 def write_slide(node: str, slide_id: str, slide: object) -> int:
@@ -108,7 +110,7 @@ def write_slide(node: str, slide_id: str, slide: object) -> int:
 
     # The slide's own elements keep their ids, and one another slide holds gets a new one
     held = item_ids(doc) - {slide_id} - set(elements_on(doc, slide_id))
-    return push(node, rewriting(slide_id, deck_state([{**slide, "id": slide_id}], held)))
+    return push(node, rewriting(slide_id, adopted(node, deck_state([{**slide, "id": slide_id}], held))))
 
 
 def read(node: str) -> dict:
@@ -227,7 +229,7 @@ def slide_row(at: int, slide: object) -> frappe._dict:
         raise SlidesRefused(_("Slide {0}'s elements must be a list of objects").format(at))
 
     check_ids(at, slide, elements)
-    check_no_pictures(at, slide, elements)
+    check_pictures(at, slide, elements)
     return frappe._dict(
         client_id=slide.get("id"),
         elements=json.dumps(elements),
@@ -247,17 +249,61 @@ def check_ids(at: int, slide: dict, elements: list[dict]) -> None:
             )
 
 
-def check_no_pictures(at: int, slide: dict, elements: list[dict]) -> None:
-    """Refuse pictures and videos, which a write can't take yet."""
+def check_pictures(at: int, slide: dict, elements: list[dict]) -> None:
+    """Refuse a picture named but by a Drive file's id, and a background that isn't a colour."""
     background = slide.get("background")
     if background and not (isinstance(background, str) and background.startswith("#")):
-        raise SlidesRefused(
-            _("Slide {0}'s background must be a colour like #FFFFFF. Pictures come later.").format(at)
-        )
+        raise SlidesRefused(_("Slide {0}'s background must be a colour like #FFFFFF").format(at))
 
     for element in elements:
-        if element.get("type") in PICTURE_TYPES or any(element.get(key) for key in PICTURE_KEYS):
-            raise SlidesRefused(_("Slide {0} holds a picture or video. Pictures come later.").format(at))
+        if not all(is_media_id(element.get(key)) for key in PICTURE_KEYS):
+            raise SlidesRefused(
+                _("Slide {0} names a picture by a link: give the id an upload answers").format(at)
+            )
+
+
+def is_media_id(value: object) -> bool:
+    """Answer whether `value` is left out or names a Drive file by its id."""
+    return value is None or (isinstance(value, str) and MEDIA_ID.fullmatch(value) is not None)
+
+
+def adopted(node: str, deck: bytes) -> pycrdt.Doc:
+    """Load `deck`, with each picture it names brought under the presentation, as a paste brings one."""
+    source = compaction.load_doc([deck])
+    pictures = pictures_in(source.get("elements", type=pycrdt.Map))
+    if not pictures:
+        return source
+
+    mapping = adopted_ids(node, {element[key] for element, key in pictures})
+    for element, key in pictures:
+        element[key] = mapping[element[key]]
+
+    return source
+
+
+def pictures_in(elements: pycrdt.Map) -> list[tuple[pycrdt.Map, str]]:
+    """Answer each element and key that names a picture."""
+    found: list[tuple[pycrdt.Map, str]] = []
+    for element in elements.values():
+        found.extend((element, key) for key in PICTURE_KEYS if element.get(key))
+
+    return found
+
+
+def adopted_ids(node: str, named: set[str]) -> dict[str, str]:
+    """Bring the files `named` under the presentation, and answer each one's id there."""
+    try:
+        return adopt_all(cast("str", docname_for_node(node)), named, set())
+    except drive.DriveConflict:
+        # Drive adopts only a picture another presentation or document holds
+        raise SlidesRefused(
+            _("A picture names a Drive file no presentation holds: upload it to this presentation")
+        ) from None
+    except drive.DriveError:
+        raise
+    except frappe.ValidationError:
+        # A file the user can't read and one that isn't there get the same answer
+        raise SlidesRefused(_("A picture names a file that isn't there or that you can't read")) from None
 
 
 def converted(legacy: dict) -> convert.Converted:
@@ -282,9 +328,8 @@ def converted(legacy: dict) -> convert.Converted:
     raise SlidesRefused(_("A presentation can't keep these slides: {0}").format(refusal))
 
 
-def replacing(deck: bytes) -> Callable[[pycrdt.Doc], None]:
-    """Answer the change that makes a presentation `deck`'s slides alone."""
-    source = compaction.load_doc([deck])
+def replacing(source: pycrdt.Doc) -> Callable[[pycrdt.Doc], None]:
+    """Answer the change that makes a presentation `source`'s slides alone."""
 
     def change(state: pycrdt.Doc) -> None:
         for name in ROOTS:
@@ -298,9 +343,8 @@ def replacing(deck: bytes) -> Callable[[pycrdt.Doc], None]:
     return change
 
 
-def appending(deck: bytes) -> Callable[[pycrdt.Doc], None]:
-    """Answer the change that adds `deck`'s slides after a presentation's last, in their order."""
-    source = compaction.load_doc([deck])
+def appending(source: pycrdt.Doc) -> Callable[[pycrdt.Doc], None]:
+    """Answer the change that adds `source`'s slides after a presentation's last, in their order."""
 
     def change(state: pycrdt.Doc) -> None:
         slides = state.get("slides", type=pycrdt.Map)
@@ -321,9 +365,8 @@ def appending(deck: bytes) -> Callable[[pycrdt.Doc], None]:
     return change
 
 
-def rewriting(slide_id: str, deck: bytes) -> Callable[[pycrdt.Doc], None]:
-    """Answer the change that makes the slide `slide_id` `deck`'s one slide, where it stands."""
-    source = compaction.load_doc([deck])
+def rewriting(slide_id: str, source: pycrdt.Doc) -> Callable[[pycrdt.Doc], None]:
+    """Answer the change that makes the slide `slide_id` `source`'s one slide, where it stands."""
 
     def change(state: pycrdt.Doc) -> None:
         slides = state.get("slides", type=pycrdt.Map)
