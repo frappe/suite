@@ -7,6 +7,7 @@ keep refuses the write.
 
 import functools
 import html
+import itertools
 import json
 import re
 from collections.abc import Callable, Iterator
@@ -55,9 +56,15 @@ GUIDE_TAGS = {
 }
 GUIDE_TAGS |= {"tr", "th", "td"}
 # A table's rows and cells, which hold no table of their own in a form the editor keeps
-ROW = re.compile(r"<tr\b[^>]*>(.*?)</tr>", re.S | re.I)
-CELL = re.compile(r"<(td|th)\b([^>]*)>(.*?)</\1>", re.S | re.I)
-SPAN = re.compile(r"\b(colspan|rowspan)\s*=\s*[\"']?(\d+)", re.I)
+ROW = re.compile(r"<tr\s*>(.*?)</tr\s*>", re.S | re.I)
+CELL = re.compile(r"<(td|th)\b([^>]*)>(.*?)</\1\s*>", re.S | re.I)
+SPAN = re.compile(r"\b(colspan|rowspan)\s*=\s*[\"']?\s*([^\"'\s>]*)", re.I)
+DIGITS = re.compile(r"\d*")
+# All a plain table holds around its rows: its own bare tags
+TABLE_FRAME = re.compile(r"(?:[ \t\n\r\f]|</?(?:table|thead|tbody|tfoot)\s*>)*", re.I)
+TABLE_PART = re.compile(r"</?(?:table|caption|colgroup|col|thead|tbody|tfoot|tr|td|th)\b", re.I)
+CELL_PART = re.compile(r"</?t[rdh]\b", re.I)
+HTML_SPACE = " \t\n\r\f"
 BLOCK = re.compile(r"\s*<(p|ul|ol)\b", re.I)
 # A Drive title is a Data field, which holds this many characters
 TITLE_MAX = 140
@@ -570,39 +577,74 @@ def checked_element(place: str, element: dict) -> dict:
 
 
 def in_table_form(place: str, element: dict) -> dict:
-    """Answer a table in the editor's form, its columns sharing the element's width, and refuse uneven rows."""
+    """Answer a plain table in the editor's form, its columns sharing the element's width; refuse rows it would change."""
+    # A table that holds more than rows of cells is left as sent, for the converter to keep or refuse
     markup = element.get("content")
+    width = element.get("width")
     if element.get("type") != "table" or not isinstance(markup, str):
         return element
 
-    rows = [CELL.findall(row) for row in ROW.findall(markup)]
-    widths: set[int] = set()
-    merged = False
-    spanned = False
-    for row in rows:
-        spans = [spans_of(attrs) for _tag, attrs, _inner in row]
-        widths.add(sum(across for across, _down in spans))
-        merged = merged or any(down > 1 for _across, down in spans)
-        spanned = spanned or any(across > 1 for across, _down in spans)
-
-    # A cell that spans rows leaves the rows under it short, as the editor's merged cells do
-    if merged:
+    rows = rows_of(markup)
+    if not rows:
         return element
 
-    if len(widths) > 1:
+    spans = [[spans_of(attrs) for _tag, attrs, _inner in row] for row in rows]
+    check_rows(place, spans)
+    if type(width) is not int or width < 1 or not is_plain(markup, rows):
+        return element
+
+    return {**element, "content": editor_table(rows, width)}
+
+
+def rows_of(markup: str) -> list[list[tuple[str, str, str]]] | None:
+    """Answer a table's rows of cells; None when a row or cell holds more, or a row or cell sits outside a row."""
+    if CELL_PART.search(ROW.sub("", markup)):
+        return None
+
+    rows: list[list[tuple[str, str, str]]] = []
+    for row in ROW.findall(markup):
+        cells = CELL.findall(row)
+        nested = any(TABLE_PART.search(inner) for _tag, _attrs, inner in cells)
+        if nested or CELL.sub("", row).strip(HTML_SPACE):
+            return None
+
+        rows.append(cells)
+
+    return rows
+
+
+def check_rows(place: str, spans: list[list[tuple[int, int]]]) -> None:
+    """Refuse a row with no cells, and rows of different lengths, which the editor evens out."""
+    if not all(spans):
+        raise SlidesRefused(
+            _("{0}: a row of its table holds no cells. Give every row its cells").format(place)
+        )
+
+    lengths: set[int] = set()
+    for row in spans:
+        # A cell that spans rows leaves the rows under it short, as the editor's merged cells do
+        if any(down != 1 for _across, down in row):
+            return
+
+        lengths.add(sum(across for across, _down in row))
+
+    if len(lengths) > 1:
         raise SlidesRefused(
             _("{0}: its rows hold different numbers of cells. Give every row the same number").format(place)
         )
 
-    # Only a plain table is rewritten, and a plain cell that spans columns has no one width to take
-    width = element.get("width")
-    if "<colgroup" in markup or not rows or type(width) is not int:
-        return element
 
-    if spanned:
-        return element
+def is_plain(markup: str, rows: list[list[tuple[str, str, str]]]) -> bool:
+    """Whether a table holds only bare table tags around rows of cells that span nothing and have no width yet."""
+    if not TABLE_FRAME.fullmatch(ROW.sub("", markup)):
+        return False
 
-    return {**element, "content": editor_table(rows, width)}
+    for _tag, attrs, _inner in itertools.chain.from_iterable(rows):
+        spanned = any(value != "1" for _name, value in SPAN.findall(attrs))
+        if spanned or "colwidth" in attrs.lower():
+            return False
+
+    return True
 
 
 def editor_table(rows: list[list[tuple[str, str, str]]], width: int) -> str:
@@ -620,9 +662,9 @@ def editor_table(rows: list[list[tuple[str, str, str]]], width: int) -> str:
 
 
 def spans_of(attrs: str) -> tuple[int, int]:
-    """Answer how many columns and rows a cell with `attrs` spans."""
-    spans = dict(SPAN.findall(attrs.lower()))
-    return int(spans.get("colspan", 1)), int(spans.get("rowspan", 1))
+    """Answer how many columns and rows a cell with `attrs` spans, as HTML reads them: 0 rows runs to the end."""
+    spans = {name.lower(): DIGITS.match(value).group() for name, value in SPAN.findall(attrs)}
+    return int(spans.get("colspan") or 0) or 1, int(spans.get("rowspan") or 1)
 
 
 def table_cell(cell: tuple[str, str, str], width: int) -> str:
@@ -635,8 +677,9 @@ def table_cell(cell: tuple[str, str, str], width: int) -> str:
 
 
 def is_kept_href(href: str) -> bool:
-    """Answer whether the editor keeps a link to `href`, as Tiptap's isAllowedUri answers."""
-    return not href or KEPT_HREF.match(HREF_SPACE.sub("", href)) is not None
+    """Answer whether the editor keeps a link to `href`, as Tiptap's link reads one: a href its isAllowedUri allows."""
+    # The editor drops an empty href before it asks
+    return KEPT_HREF.match(HREF_SPACE.sub("", href)) is not None
 
 
 def check_pictures(label: str, slide: dict, elements: list[dict]) -> dict[str, str]:

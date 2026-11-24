@@ -970,6 +970,8 @@ class TestPresentationWrites(LoggedDeckCase):
             "spaced javascript": " java\tscript:alert(1)",
             "data": "data:text/html,hi",
             "an unknown scheme": "intent:plans",
+            "an empty href": "",
+            "a href of spaces": " \t",
         }
         for case, href in cases.items():
             slides = [title_slide(f'<a href="{href}">Plans</a>')]
@@ -1007,6 +1009,80 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assertEqual(re.findall(r'colwidth="(\d+)"', table["content"]), ["200"] * 4)
         self.assertEqual(words_of(table["content"]), "GoalOwnerShipAanya")
 
+    def test_a_plain_table_with_a_heading_keeps_its_heading_cells(self):
+        plain = (
+            "<table><thead><tr><th>Goal</th><th>Owner</th></tr></thead>"
+            "<tbody><tr><td>Ship</td><td>Aanya</td></tr></tbody></table>"
+        )
+        node = self.create(
+            [{"elements": [{"type": "table", "left": 80, "top": 120, "width": 300, "content": plain}]}]
+        )
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (table,) = slide["elements"]
+        self.assertEqual(re.findall(r"<(th|td)\b", table["content"]), ["th", "th", "td", "td"])
+        self.assertEqual(re.findall(r'colwidth="(\d+)"', table["content"]), ["150"] * 4)
+
+    def test_a_table_read_and_written_back_reads_the_same(self):
+        plain = "<table><tr><td>Goal</td><td>Owner</td></tr><tr><td>Ship</td><td>Aanya</td></tr></table>"
+        node = self.create(
+            [{"elements": [{"type": "table", "left": 80, "top": 120, "width": 400, "content": plain}]}]
+        )
+        slides = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_write(node, slides, "replace")
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(slide["elements"], slides[0]["elements"])
+
+    def test_a_table_with_a_caption_writes_nothing(self):
+        table = "<table><caption>Q1</caption><tr><td>Plan</td></tr></table>"
+        element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}
+
+        with self.assertRaisesRegex(SlidesRefused, r"element 1 \(table\)"):
+            slides_routes.presentation_create(self.folder, "Agent refused", [{"elements": [element]}])
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_table_row_with_no_cells_writes_nothing(self):
+        for table in ("<table><tr></tr></table>", "<table><tr><td>Goal</td></tr><tr> </tr></table>"):
+            element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}
+            with (
+                self.subTest(table),
+                self.assertRaisesRegex(
+                    SlidesRefused, r"element 1 \(table\): a row of its table holds no cells"
+                ),
+            ):
+                slides_routes.presentation_create(self.folder, "Agent refused", [{"elements": [element]}])
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_table_with_more_than_plain_rows_is_left_for_the_converter(self):
+        cases = {
+            "a nested table": (
+                "<table><tr><td><table><tr><td>A</td></tr></table></td><td>B</td></tr></table>"
+            ),
+            "cells with no end tag": "<table><tr><td>A<td>B</tr></table>",
+            "a row with no end tag": "<table><tr><td>A</td></table>",
+            "a cell with a width": '<table><tr><td colwidth="90">A</td><td>B</td></tr></table>',
+            "a row with attributes": '<table><tr class="first"><td>A</td></tr></table>',
+        }
+        for case, table in cases.items():
+            element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}
+            with self.subTest(case):
+                self.assertIs(agent.in_table_form("element 1 (table)", element), element)
+                self.assert_not_rewritten(element)
+
+    def assert_not_rewritten(self, element: dict) -> None:
+        # The converter keeps or refuses the table, but never as the agent's rewrite
+        try:
+            node = self.create([{"elements": [element]}])
+        except SlidesRefused:
+            return
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertNotIn('style="width: 400px"', slide["elements"][0]["content"])
+
     def test_a_table_whose_rows_differ_writes_nothing(self):
         uneven = "<table><tr><td>Goal</td><td>Owner</td></tr><tr><td>Ship</td></tr></table>"
         guide_form = (
@@ -1014,7 +1090,9 @@ class TestPresentationWrites(LoggedDeckCase):
             '<tbody><tr><td colwidth="200"><p>Goal</p></td><td colwidth="200"><p>Owner</p></td></tr>'
             '<tr><td colspan="1" rowspan="1" colwidth="200"><p>Ship</p></td></tr></tbody></table>'
         )
-        for case, markup in {"plain": uneven, "the editor's form": guide_form}.items():
+        zero_span = '<table><tr><td colspan="0">A</td><td>B</td></tr><tr><td>C</td></tr></table>'
+        cases = {"plain": uneven, "the editor's form": guide_form, "a cell spanning 0 columns": zero_span}
+        for case, markup in cases.items():
             element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": markup}
             with (
                 self.subTest(case),
