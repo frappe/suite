@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
+from frappe.app import make_form_dict
 from frappe.handler import execute_cmd
 from frappe.utils.synchronization import filelock
 from werkzeug.test import EnvironBuilder
@@ -1042,9 +1043,9 @@ class TestPresentationWrites(LoggedDeckCase):
         with self.assertRaises(drive.DriveOverQuota):
             slides_routes.presentation_write(node, [picture_slide(picture)], "replace")
 
+        self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": node, "kind": "file"}))
         frappe.db.rollback()
         self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
-        self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": node, "kind": "file"}))
 
     def test_a_layouts_words_keep_their_words_whatever_the_spaces(self):
         texts = ["Plan\nfor\ttoday", ["  two  spaces", " leading", "trailing ", "a\nnewline"]]
@@ -1095,10 +1096,8 @@ class TestPresentationWrites(LoggedDeckCase):
             ),
         }
         for case, write in writes.items():
-            with self.subTest(case), self.assertRaises(drive.DriveError) as refused:
+            with self.subTest(case), self.assertRaises(drive.DriveForbidden):
                 write()
-
-            self.assertIn(type(refused.exception), (drive.DriveNotFound, drive.DriveForbidden))
 
         self.assertEqual(content.find(slides_content.APP, node), log)
 
@@ -1109,26 +1108,27 @@ class TestPresentationWrites(LoggedDeckCase):
         calls = {
             "presentation_create": (
                 "POST",
-                {"folder": self.folder, "title": "Agent refused", "slides": [title_slide()]},
+                {"json": {"parent": self.folder, "title": "Agent refused", "slides": [title_slide()]}},
             ),
             "presentation_write": (
                 "POST",
-                {"node": node, "slides": [title_slide("Second")], "mode": "replace"},
+                {"json": {"node": node, "slides": [title_slide("Second")], "mode": "replace"}},
             ),
             "presentation_slide_write": (
                 "POST",
-                {"node": node, "slide_id": slide["id"], "slide": title_slide("Second")},
+                {"json": {"node": node, "slide_id": slide["id"], "slide": title_slide("Second")}},
             ),
-            "presentation_read": ("GET", {"node": node}),
+            "presentation_read": ("GET", {"query_string": {"node": node}}),
         }
+        self.addCleanup(setattr, frappe.local, "request", getattr(frappe.local, "request", None))
         frappe.set_user("Guest")
-        for name, (method, form) in calls.items():
-            frappe.local.request = Request(EnvironBuilder(method=method).get_environ())
-            frappe.local.form_dict = frappe._dict(form)
+        for name, (method, sent) in calls.items():
+            path = f"/api/method/suite.slides.http.routes.{name}"
+            frappe.local.request = Request(EnvironBuilder(path=path, method=method, **sent).get_environ())
+            make_form_dict(frappe.local.request)
             with self.subTest(name), self.assertRaises(frappe.PermissionError):
-                execute_cmd(f"suite.slides.http.routes.{name}")
+                execute_cmd(path.removeprefix("/api/method/"))
 
-        frappe.local.request = None
         frappe.set_user(OWNER)
         self.assertEqual(content.find(slides_content.APP, node), log)
         self.assert_created_nothing("Agent refused")
