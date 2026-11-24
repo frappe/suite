@@ -1,5 +1,6 @@
 import base64
 import gzip
+import html
 import io
 import json
 import os
@@ -12,12 +13,20 @@ import frappe
 import pycrdt
 from frappe.utils.synchronization import filelock
 
-from suite import drive
-from suite.content import checker, compaction, convert
+from suite import content, drive
+from suite.content import checker, compaction, convert, jobs
 from suite.slides import content as slides_content
 from suite.slides.content import agent
 from suite.slides.content.agent import SlidesRefused, WriteBusy, WriteRefused
-from suite.slides.content.tests.support import LoggedDeckCase, call_route, delete_log, opened, owner_folder
+from suite.slides.content.tests.support import (
+    OWNER,
+    LoggedDeckCase,
+    call_route,
+    delete_log,
+    opened,
+    owner_folder,
+)
+from suite.slides.doctype.presentation.presentation import _readable_templates
 from suite.slides.drive import docname_for_node
 from suite.slides.http import routes as slides_routes
 from suite.slides.tests.utils import share, trash_node
@@ -27,6 +36,8 @@ READER = "slides-agent-reader@example.com"
 OUTSIDER = "slides-agent-outsider@example.com"
 EDITOR = "slides-agent-editor@example.com"
 ATTRIBUTE = re.compile(r' \w+="[^"]*"')
+WORDS = re.compile(r">[^<]*<")
+PLACEHOLDER_WORDS = ("Title", "Subtitle", "Insert first point here")
 
 
 def in_order(items: Iterable[tuple[str, pycrdt.Map]]) -> list[tuple[str, pycrdt.Map]]:
@@ -91,6 +102,49 @@ def line_from_box() -> dict:
     }
 
 
+def unworded(slide: dict) -> dict:
+    # A slide as a layout gives it: no ids, no words, and no picture in its frame
+    elements: list[dict] = []
+    for element in slide["elements"]:
+        shape = {key: value for key, value in element.items() if key not in {"id", "src", "attachmentName"}}
+        if "content" in shape:
+            shape["content"] = WORDS.sub("><", shape["content"])
+
+        elements.append(shape)
+
+    return {**{key: value for key, value in slide.items() if key != "id"}, "elements": elements}
+
+
+def filled_in(layout: dict, picture: str) -> dict:
+    # Words for every text of the layout, a line for each of a list's points, and the picture
+    filling: dict = {"texts": []}
+    for element in layout["elements"]:
+        if element["type"] == "image":
+            filling["picture"] = picture
+        elif "<li" in element["content"]:
+            filling["texts"].append(["Point"] * element["content"].count("<li"))
+        else:
+            filling["texts"].append("Words")
+
+    return filling
+
+
+def every_layout(layouts: list[dict], picture: str) -> list[dict]:
+    slides: list[dict] = []
+    for number, layout in enumerate(layouts, start=1):
+        slides.append({"layout": number, **filled_in(layout, picture)})
+
+    return slides
+
+
+def words_of(markup: str) -> str:
+    return html.unescape(re.sub(r"<[^>]+>", "", markup))
+
+
+def points_of(markup: str) -> list[str]:
+    return re.findall(r"<li[\s>].*?</li>", markup, re.S)
+
+
 class TestPresentationWrites(LoggedDeckCase):
     def setUp(self):
         super().setUp()
@@ -104,9 +158,9 @@ class TestPresentationWrites(LoggedDeckCase):
 
         self.folder = owner_folder()
 
-    def create(self, slides: list[dict], title: str | None = None) -> str:
+    def create(self, slides: list[dict], title: str | None = None, template: str | None = None) -> str:
         title = title or f"Agent {uuid.uuid4().hex[:8]}"
-        node = slides_routes.presentation_create(self.folder, title, slides)["name"]
+        node = slides_routes.presentation_create(self.folder, title, slides, template)["name"]
         self.addCleanup(trash_node, node)
         self.addCleanup(delete_log, node)
         return node
@@ -154,6 +208,16 @@ class TestPresentationWrites(LoggedDeckCase):
         (slide,) = self.deck_of(node)
         (picture,) = slide["elements"]
         return picture["src"]
+
+    def layouts(self, title: str) -> list[dict]:
+        # The template's slides as a read gives them, converted first as opening it would
+        (template,) = (row for row in _readable_templates() if row["title"] == title)
+        if not content.find(slides_content.APP, template["node"]):
+            jobs.convert_one(slides_content.APP, template["node"])
+            frappe.db.commit()
+            frappe.set_user(OWNER)
+
+        return slides_routes.presentation_read(template["node"])["slides"]
 
     def assert_created_nothing(self, title: str) -> None:
         self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": title}))
@@ -242,7 +306,7 @@ class TestPresentationWrites(LoggedDeckCase):
         cases = [
             ("slides must be a list", "nothing"),
             ("slides must be a list", []),
-            ("Slide 1 is not an object", ["slide"]),
+            ("Slide 1 in this call is not an object", ["slide"]),
             ("a slide has no place for: notes", [{"notes": "x"}]),
             ("elements must be a list of objects", [{"elements": ["text"]}]),
             ("Leave it out to get a new one", [{"id": "a slide", "elements": []}]),
@@ -671,3 +735,241 @@ class TestPresentationWrites(LoggedDeckCase):
         # The refusal comes once the presentation is made, and the request rolls it back
         frappe.db.rollback()
         self.assert_created_nothing("Agent refused")
+
+    def test_each_layout_writes_as_the_template_holds_it(self):
+        for title in ("Light", "Dark"):
+            with self.subTest(title):
+                layouts = self.layouts(title)
+                node = self.create([title_slide()], template=title)
+                picture = self.stored_picture(node)
+                slides_routes.presentation_write(node, every_layout(layouts, picture), "replace")
+
+                written = slides_routes.presentation_read(node)["slides"]
+                self.assertEqual(len(written), 7)
+                self.assertEqual(
+                    [unworded(slide) for slide in written], [unworded(slide) for slide in layouts]
+                )
+
+    def test_a_picture_layout_holds_the_picture_where_its_placeholder_was(self):
+        _first, *_rest, picture_layout = self.layouts("Light")
+        _title, placeholder = picture_layout["elements"]
+        node = self.create([title_slide()])
+        picture = self.stored_picture(node)
+
+        team = {"layout": 7, "texts": ["Team"]}
+        slides_routes.presentation_write(node, [{**team, "picture": picture}, team], "replace")
+
+        with_picture, without = slides_routes.presentation_read(node)["slides"]
+        (image,) = [element for element in with_picture["elements"] if element["type"] == "image"]
+        frame = ("left", "top", "width", "height")
+        self.assertEqual([image[key] for key in frame], [placeholder[key] for key in frame])
+        self.assertEqual(image["src"], picture)
+        # With no picture the placeholder is never written
+        self.assertEqual([element["type"] for element in without["elements"]], ["text"])
+
+    def test_a_list_of_words_gives_a_point_each_in_the_first_points_style(self):
+        *_others, points_layout, _picture_layout = self.layouts("Light")
+        _title, placeholder = points_layout["elements"]
+        first_point, *_more = points_of(placeholder["content"])
+
+        node = self.create([{"layout": 6, "texts": ["Plan", ["One", "Two", "Three", "Four"]]}])
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        _title, points = slide["elements"]
+        written = points_of(points["content"])
+        self.assertEqual([words_of(point) for point in written], ["One", "Two", "Three", "Four"])
+        self.assertEqual({WORDS.sub("><", point) for point in written}, {WORDS.sub("><", first_point)})
+
+    def test_a_text_left_out_leaves_its_element_out(self):
+        node = self.create(
+            [
+                {"layout": 3, "texts": ["Only a title"]},
+                {"layout": 3, "texts": [None, "Only a subtitle"]},
+                {"layout": 3, "texts": ["", ""]},
+                {"layout": 6, "texts": ["Points", ["", "One"]]},
+                {"layout": 7},
+            ]
+        )
+
+        slides = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(
+            [[words_of(element["content"]) for element in slide["elements"]] for slide in slides],
+            [["Only a title"], ["Only a subtitle"], [], ["Points", "One"], []],
+        )
+        written = json.dumps(slides)
+        for words in PLACEHOLDER_WORDS:
+            self.assertNotIn(words, written)
+
+    def test_a_layouts_words_are_plain_text(self):
+        node = self.create([{"layout": 2, "texts": ["<b>x</b> & y"]}])
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (title,) = slide["elements"]
+        self.assertEqual(words_of(title["content"]), "<b>x</b> & y")
+        self.assertNotIn("<b>", title["content"])
+
+    def test_a_layout_slide_that_cannot_be_laid_out_names_why(self):
+        whole = "Slide 1 in this call's layout must be a whole number from 1 to 7"
+        cases = [
+            (whole, [{"layout": 8}]),
+            (whole, [{"layout": 0}]),
+            (whole, [{"layout": 2.0}]),
+            (whole, [{"layout": "2"}]),
+            (whole, [{"layout": True}]),
+            (
+                "Slide 2 in this call: layout 3 holds 2 texts, and 3 were sent",
+                [title_slide(), {"layout": 3, "texts": ["a", "b", "c"]}],
+            ),
+            ("Slide 1 in this call: layout 2 holds no picture", [{"layout": 2, "picture": "a-picture"}]),
+            ("Slide 1 in this call names a layout and elements", [{"layout": 2, "elements": []}]),
+            ("texts must be a list of words", [{"layout": 2, "texts": "Title"}]),
+            ("texts must be a list of words", [{"layout": 2, "texts": [3]}]),
+        ]
+        for message, slides in cases:
+            with self.subTest(slides), self.assertRaisesRegex(SlidesRefused, message):
+                slides_routes.presentation_create(self.folder, "Agent refused", slides)
+
+        with self.assertRaisesRegex(
+            SlidesRefused, "No template you can use is called Neon. These are: .*Light"
+        ):
+            slides_routes.presentation_create(self.folder, "Agent refused", [{"layout": 2}], "Neon")
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_presentation_takes_layouts_from_the_template_it_was_made_on(self):
+        templates = {row["title"]: row["name"] for row in _readable_templates()}
+        dark = self.create([{"layout": 2, "texts": ["Dark"]}], template="Dark")
+        light = self.create([{"layout": 2, "texts": ["Light"]}])
+
+        slides_routes.presentation_write(dark, [{"layout": 2, "texts": ["Later"]}], "append")
+
+        self.assertEqual(
+            [slide["background"] for slide in slides_routes.presentation_read(dark)["slides"]],
+            ["#000000FF", "#000000FF"],
+        )
+        (slide,) = slides_routes.presentation_read(light)["slides"]
+        self.assertEqual(slide["background"], "#FFFFFFFF")
+        # A tab's "Add slide" takes the same template
+        self.assertEqual(
+            frappe.db.get_value("Presentation", docname_for_node(dark), "theme"), templates["Dark"]
+        )
+        self.assertEqual(
+            frappe.db.get_value("Presentation", docname_for_node(light), "theme"), templates["Light"]
+        )
+
+    def test_a_call_mixes_layout_slides_and_slide_json(self):
+        _blank, title_layout, *_rest = self.layouts("Light")
+
+        node = self.create(
+            [title_slide("Raw"), {"layout": 2, "texts": ["Laid out"], "id": "chosen", "transition": "Fade"}]
+        )
+
+        raw, laid_out = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(words_of(raw["elements"][0]["content"]), "Raw")
+        self.assertEqual(laid_out["id"], "chosen")
+        self.assertEqual(laid_out["transition"], "Fade")
+        self.assertEqual(
+            {**unworded(laid_out), "transition": title_layout["transition"]}, unworded(title_layout)
+        )
+        # Each slide made from a layout gets element ids of its own
+        self.assertNotEqual(laid_out["elements"][0]["id"], title_layout["elements"][0]["id"])
+
+    def test_a_slide_write_from_a_layout_keeps_the_slides_id_and_place(self):
+        node = self.create([title_slide("First"), title_slide("Second"), title_slide("Third")])
+        first, second, third = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_slide_write(node, second["id"], {"layout": 2, "texts": ["Laid out"]})
+
+        after = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual((after[0], after[2]), (first, third))
+        self.assertEqual(after[1]["id"], second["id"])
+        self.assertEqual([words_of(element["content"]) for element in after[1]["elements"]], ["Laid out"])
+
+    def test_a_slide_write_with_no_elements_writes_nothing(self):
+        node = self.create([title_slide("First")])
+        (first,) = slides_routes.presentation_read(node)["slides"]
+
+        with self.assertRaisesRegex(SlidesRefused, r'Send the whole slide.*"elements": \[\] empties it'):
+            slides_routes.presentation_slide_write(node, first["id"], {"transition": "Fade"})
+
+        self.assertEqual(slides_routes.presentation_read(node)["slides"], [first])
+        slides_routes.presentation_slide_write(node, first["id"], {"elements": []})
+        self.assertEqual(self.texts_of(node), [[]])
+
+    def test_a_slide_with_no_elements_is_a_blank_slide_elsewhere(self):
+        node = self.create([{"background": "#FFFFFFFF"}])
+
+        slides_routes.presentation_write(node, [{"transition": "Fade"}], "append")
+
+        self.assertEqual(self.texts_of(node), [[], []])
+
+    def test_a_refused_element_is_named_by_its_slide_and_place(self):
+        odd = {"id": "odd", "type": "text", "content": "<p>x</p><iframe></iframe>"}
+        cases = [
+            (
+                r"Slide 2 in this call, element 2 \(text, id odd\): its HTML holds what the editor can't keep",
+                [title_slide(), {"elements": [title_slide()["elements"][0], odd]}],
+            ),
+            (
+                r"Slide 1 in this call, element 1 \(chart\): its type must be",
+                [{"elements": [{"type": "chart"}]}],
+            ),
+            (
+                r"Slide 1 in this call, element 1 \(text\): it holds a field",
+                [{"elements": [{"type": "text", "content": "<p>x</p>", "wobble": 1}]}],
+            ),
+            (
+                r"element 1 \(table\): its HTML holds .*Use the table form in the agent guide",
+                [{"elements": [{"type": "table", "content": "<table><tr><td>x</td></tr></table>"}]}],
+            ),
+        ]
+        for message, slides in cases:
+            with self.subTest(message), self.assertRaisesRegex(SlidesRefused, message):
+                slides_routes.presentation_create(self.folder, "Agent refused", slides)
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_refused_element_in_a_slide_write_is_named_by_the_slides_id(self):
+        node = self.create([title_slide("First")])
+        (first,) = slides_routes.presentation_read(node)["slides"]
+
+        with self.assertRaisesRegex(SlidesRefused, rf"Slide {first['id']}, element 1 \(chart\)"):
+            slides_routes.presentation_slide_write(node, first["id"], {"elements": [{"type": "chart"}]})
+
+        self.assertEqual(slides_routes.presentation_read(node)["slides"], [first])
+
+    def test_a_picture_with_no_file_writes_nothing(self):
+        node = self.create([title_slide("First")])
+        no_src = r"Slide 1 in this call, element 1 \((image|video)\) has no src"
+        cases = [
+            (no_src, {"type": "image"}),
+            (no_src, {"type": "image", "src": None}),
+            (no_src, {"type": "video", "src": ""}),
+            (r"element 1 \(video\)'s poster is empty", {"type": "video", "src": "a-video", "poster": ""}),
+            ("names a video by a link", {"type": "video", "src": "https://example.com/talk.mp4"}),
+        ]
+        for message, element in cases:
+            with self.subTest(element), self.assertRaisesRegex(SlidesRefused, message):
+                slides_routes.presentation_write(node, [{"elements": [element]}], "replace")
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+
+    def test_a_picture_not_there_is_named_with_no_paste_words(self):
+        node = self.create([title_slide("First")])
+        picture = self.stored_picture(node)
+        frappe.local.message_log: list[dict] = []
+
+        slides = [
+            picture_slide(picture),
+            {"elements": [{**picture_slide("no-such-file")["elements"][0], "id": "gone"}]},
+        ]
+        with self.assertRaisesRegex(
+            SlidesRefused,
+            r"Slide 2 in this call, element 1 \(image, id gone\) names no-such-file, a file that isn't there",
+        ):
+            slides_routes.presentation_write(node, slides, "replace")
+
+        # The answer carries the refusal alone, and none of a paste's words
+        (logged,) = frappe.local.message_log
+        self.assertIn("(image, id gone) names no-such-file", logged["message"])
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])

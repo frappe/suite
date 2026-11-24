@@ -29,6 +29,10 @@
             },
             "title": "Slides",
             "type": "array"
+          },
+          "template": {
+            "title": "Template",
+            "type": "string"
           }
         },
         "required": [

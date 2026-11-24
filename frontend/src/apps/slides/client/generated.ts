@@ -33,6 +33,7 @@ export type PresentationCreateInput = {
   parent: string
   title: string
   slides: Array<{ [key: string]: unknown }>
+  template?: string
 }
 
 export type PresentationCreateOutput = {

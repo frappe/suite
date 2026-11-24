@@ -155,6 +155,7 @@ class CreatePresentation(TypedDict):
     parent: str
     title: str
     slides: list[dict[str, object]]
+    template: NotRequired[str]
 
 
 class WriteSlides(TypedDict):
@@ -217,10 +218,13 @@ def text(value: Given, name: str) -> str:
 @write_limit
 @refusing
 def presentation_create(
-    parent: Given = None, title: Given = None, slides: Given = None
+    parent: Given = None, title: Given = None, slides: Given = None, template: Given = None
 ) -> WrittenPresentation:
-    """Create a presentation from slide JSON, as an agent does."""
-    node, rev = agent.create(text(parent, "parent"), text(title, "title"), slides)
+    """Create a presentation from slide JSON on a template, as an agent does."""
+    if template is not None:
+        template = text(template, "template")
+
+    node, rev = agent.create(text(parent, "parent"), text(title, "title"), slides, template)
     return {**drive.get_node(node), "rev": rev}
 
 

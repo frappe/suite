@@ -58,6 +58,7 @@ export const operationPresentationCreate: Validators<
             title: 'Slides',
             type: 'array',
           },
+          template: { title: 'Template', type: 'string' },
         },
         required: ['parent', 'title', 'slides'],
         additionalProperties: false,
