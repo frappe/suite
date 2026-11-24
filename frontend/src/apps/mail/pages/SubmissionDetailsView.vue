@@ -7,6 +7,7 @@
         class="min-w-0 flex-1"
         :title="__('Outbox')"
         with-back
+        compact
         @back="backToList"
       />
       <!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->

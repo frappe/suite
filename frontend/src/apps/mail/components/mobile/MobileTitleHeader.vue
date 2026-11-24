@@ -25,13 +25,15 @@
       </button>
       <div class="flex-1" />
     </template>
-    <!-- The back arrow stands where the ☰ does, at its size, and the title starts where the
-         folder's name does: a category and its Inbox read as the same row. -->
+    <!-- The back arrow stands where the ☰ does, at its size. The title is the page's, at the
+         folder name's size, so a category reads as a page like its Inbox and not as the small
+         back link a thread opens under. `compact` is for a bar whose title only names where
+         back leads. -->
     <div v-else class="flex min-w-0 flex-1 items-center" :class="{ 'pl-4': !withBack }">
       <button v-if="withBack" :aria-label="__('Back')" :class="ICON_SLOT" @click="emit('back')">
         <ChevronLeft class="size-5" />
       </button>
-      <span :class="[TITLE, 'text-xl']">{{ title }}</span>
+      <span :class="[TITLE, compact ? 'text-xl' : 'text-3xl']">{{ title }}</span>
     </div>
     <slot name="actions" />
   </div>
@@ -46,6 +48,7 @@ defineProps<{
   title: string
   withMenu?: boolean
   withBack?: boolean
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{ back: [] }>()
