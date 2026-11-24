@@ -540,6 +540,49 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(job.status, "Queued")
         self.assertEqual(len(json.loads(job.manifest)["segments"]), 2)
 
+    def test_video_timeout_keeps_transcription_running_until_host_requests_stop(self):
+        from suite.meet.api.recording import get_active_recording_state
+        from suite.meet.transcription.capture import reconcile_capture, request_stop
+
+        recording = frappe.get_doc(
+            {
+                "doctype": "Meet Recording",
+                "meet_room": self.room.name,
+                "room_owner": self.owner,
+                "initiated_by": self.owner,
+                "status": "Starting",
+                "video_enabled": 1,
+                "transcription_enabled": 1,
+                "estimated_seconds": 3600,
+                "estimated_bytes": 1000,
+                "budget_bytes": 1000,
+                "recorder_job_id": frappe.generate_hash(),
+                "request_id": frappe.generate_hash(),
+                "drive_home_folder": drive.personal_root_for(self.owner),
+            }
+        ).insert(ignore_permissions=True)
+        frappe.db.set_value(
+            "Meet Recording", recording.name, {"status": "Stopping", "end_reason": "interruption_timeout"}
+        )
+        job = self.job("Capturing")
+        job.capture = recording.name
+        job.save(ignore_permissions=True)
+        with (
+            patch("suite.meet.transcription.client.recorder", return_value={"state": "capturing"}),
+            patch("suite.meet.transcription.client.sfu", return_value={"state": "capturing"}) as sfu,
+        ):
+            reconcile_capture(job)
+            sfu.assert_called_once_with(recording.name, self.room.name, "query")
+            state = get_active_recording_state(self.room.name)
+            self.assertEqual(state.status, "Recording")
+            self.assertEqual(state.transcription_capture_state, "capturing")
+
+            request_stop(recording.name)
+            job.reload()
+            reconcile_capture(job)
+            sfu.assert_called_with(recording.name, self.room.name, "stop")
+            self.assertEqual(get_active_recording_state(self.room.name).status, "Stopping")
+
     def test_missing_recorder_source_fails_without_a_false_silence_artifact(self):
         import requests
 

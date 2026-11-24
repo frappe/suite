@@ -307,7 +307,7 @@ def _participant_recording_state(recording):
                 audio_started = _system_datetime_as_utc(job.capture_started_at).replace(tzinfo=None)
                 state.started_at = state.started_at or audio_started
                 state.capture_started_at = state.capture_started_at or audio_started
-                if state.status not in ("Recording", "Interrupted", "Stopping"):
+                if state.status not in ("Recording", "Interrupted"):
                     state.status = "Stopping" if job.stop_requested else "Recording"
     return state
 

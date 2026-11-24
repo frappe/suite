@@ -16,7 +16,7 @@ const CHUNK_SIZE = 8 * 1024 * 1024;
 const PROGRESS_ATTEMPTS = 3;
 const PROGRESS_ATTEMPT_TIMEOUT_MS = 10_000;
 
-class CallbackRequestError extends Error {
+export class CallbackRequestError extends Error {
 	constructor(
 		message: string,
 		readonly reason: string,

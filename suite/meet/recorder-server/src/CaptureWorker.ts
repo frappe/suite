@@ -1,5 +1,6 @@
 import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CallbackRequestError } from './CallbackClient.js';
 import type {
 	CaptureEpoch,
 	CaptureInterruption,
@@ -647,7 +648,6 @@ export class CaptureWorker {
 		epoch: number,
 		_segment: CaptureSegment,
 	): Promise<void> {
-		const stopping = Boolean(this.stopPromise);
 		const capturedBytes = this.manifest
 			.get()
 			.segments.reduce((sum, segment) => sum + segment.bytes, 0);
@@ -666,11 +666,16 @@ export class CaptureWorker {
 							? error.message.slice(0, 160)
 							: 'unknown_error',
 				});
-				if (!stopping) this.requestStop(false, 'capture_budget_unavailable');
-				return;
+				if (!(error instanceof CallbackRequestError && error.retryable)) {
+					if (!this.stopPromise)
+						this.requestStop(false, 'capture_budget_unavailable');
+					return;
+				}
+				// The existing reservation still applies. The next segment reports
+				// cumulative progress and can refresh it when Suite is reachable.
 			}
 		}
-		if (stopping) return;
+		if (this.stopPromise) return;
 		if (this.healthyEpoch?.epoch === epoch)
 			this.healthyEpoch.resolve(new Date(this.now()).toISOString());
 		if (this.limitReached()) {
