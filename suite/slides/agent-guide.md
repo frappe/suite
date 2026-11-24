@@ -54,14 +54,14 @@ curl -H "$AUTH" $SITE/api/suite/slides/presentations/<node>
 ```
 
 ```json
-{ "data": { "slides": [{ "id": "ef848f885", "background": "#FFFFFFFF", "elements": [
+{ "data": { "slides": [{ "id": "ef848f885", "background": "#FFFFFFFF", "transition": "None", "transitionDuration": "0", "fadeUnmatchedElements": 0, "elements": [
   { "id": "b00910cca", "type": "text", "lineHeight": 1.5, "left": 480.16796875, "top": 270, "width": 794.3359375,
     "transform": "translate(-50%, -50%)", "transformOrigin": "center center", "zIndex": 1,
     "content": "<p style=\"text-align: center; line-height: 1.5;\"><span style=\"color: rgb(0, 0, 0); font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\"><strong>Plan for today</strong></span></p>" }
 ] }] } }
 ```
 
-**5. Replace the slides, or add some.** The user needs edit access to the presentation. `mode` is `replace` to make the slides these alone, or `append` to add them after the last slide and leave the rest as they are.
+**5. Replace the slides, or add some.** The user needs edit access to the presentation. `mode` is `replace` to make the slides these alone, or `append` to add them after the last slide and leave the rest as they are. Both take one or more slides, as create does, so a write can't empty a presentation.
 
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations/<node>/slides -H "$AUTH" -H 'Content-Type: application/json' -d '{
@@ -98,6 +98,7 @@ A read gives each item as the editor keeps it, so it can differ from what was wr
 - A connector end that names an element not on its slide reads as `null`.
 - A text has `transform` and `transformOrigin`. Leave them as they are.
 - An element given a new id, because its id was taken, has a `refId` naming the one it was.
+- A slide made from a layout reads with its template's own `transition`, `transitionDuration` and `fadeUnmatchedElements`: `"None"`, the string `"0"`, and `0` where `false` would be. A field sent with the slide reads as it was sent.
 
 **6. Change one slide.** Send the whole slide to its own path, in either form. The slide keeps only what is sent: a field or element left out goes, and `"elements": []` empties it. A slide with neither `elements` nor `layout` is refused. `id` is optional, and when sent it must be the path's. The presentation's other slides stay as they are. The answer is the presentation's row with `rev`, as in step 5.
 
@@ -113,7 +114,7 @@ As raw JSON, send the slide as the read gave it, changed. Its elements keep thei
 
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations/<node>/slides/<slide id> -H "$AUTH" -H 'Content-Type: application/json' -d '{
-  "slide": { "id": "ef848f885", "background": "#FFFFFFFF", "elements": [
+  "slide": { "id": "ef848f885", "background": "#FFFFFFFF", "transition": "None", "transitionDuration": "0", "fadeUnmatchedElements": 0, "elements": [
     { "id": "b00910cca", "type": "text", "lineHeight": 1.5, "left": 480.16796875, "top": 270, "width": 794.3359375,
       "transform": "translate(-50%, -50%)", "transformOrigin": "center center", "zIndex": 1,
       "content": "<p style=\"text-align: center; line-height: 1.5;\"><span style=\"color: rgb(0, 0, 0); font-size: 60px; font-family: Inter; letter-spacing: 0px; opacity: 1;\"><strong>Plan for tomorrow</strong></span></p>" }
@@ -172,6 +173,14 @@ Another template's layouts are its slides in order. List the templates the user 
 curl -H "$AUTH" $SITE/api/method/suite.slides.doctype.presentation.presentation.get_templates
 ```
 
+It answers in Frappe's shape, under `message`, shown here with the fields an agent needs. Take `title` for create's `template`, and `node` for the read. Ignore `name`, `layouts` and the other keys.
+
+```json
+{ "message": [{ "title": "Light", "node": "84q7a1b2c3" }, { "title": "Dark", "node": "84q7a1b2c4" }] }
+```
+
+A template's read gives layout 7's picture frame a placeholder path as `src`, and a write refuses that path. So don't send a template's slide back as it is: use the layout form.
+
 ## Pictures and videos
 
 A picture or video is named by its id. Upload the file to the presentation first: create the presentation, take `content_docname` from the answer, and send the file. Send `content_docname`, not the presentation's node. A node answers "That presentation is not in Drive yet".
@@ -187,6 +196,7 @@ curl -X POST $SITE/api/method/suite.slides.api.media.add -H "$AUTH" -F docname=<
 - `file_url` is the id.
 - It takes `image/*` and `video/*` files, up to the site's largest file size, 25 MB unless the site sets another.
 - A PNG or JPEG is stored as WebP.
+- For a picture on a slide that isn't the last one, create the presentation with that slide as layout 7 and no `picture`. Upload the picture, then change that slide as in step 6 with `layout: 7`, its `texts` and the `picture`. The slide keeps its place.
 - A refusal here has Frappe's shape, not the one under [Refusals](#refusals): it answers status 417 and an `exception` to read, with no `errors`. An unknown `docname` and a missing file answer this way.
 
 A picture or video another presentation holds may be named too, when the user can read it: the write copies it into this presentation, and a read names the copy. A link, or a file kept elsewhere in Drive, is refused: upload it to the presentation.
@@ -197,7 +207,7 @@ Raw JSON gives every element's place and style. Use it for what the layouts can'
 
 ### Slides
 
-A slide is 960 wide and 540 high. `left` and `top` place an element's top left corner from the slide's top left, and `width` and `height` size it, all in those units.
+A slide is 960 wide and 540 high. `left` and `top` place an element's top left corner from the slide's top left, and `width` and `height` size it, all in those units. When a text has `"transform": "translate(-50%, -50%)"`, as a layout's texts do, its `left` and `top` are its centre instead.
 
 | Field | Value |
 | --- | --- |
@@ -221,7 +231,9 @@ Every element has a `type` and a place. It may have:
 
 Colours are `#RRGGBB` or `#RRGGBBAA`.
 
-**Text.** `lineHeight` is the space between lines, such as `1.5`. `content` is HTML: paragraphs `<p>`, `<strong>`, `<em>`, `<u>`, `<s>`, lists `<ul>` and `<ol>` with `<li>`, line breaks `<br>`, and `<span style="…">` for `color`, `font-size`, `font-family`, `font-weight`, `letter-spacing` and `text-transform`. A paragraph takes `style="text-align: center"`. A text has no `height`: it grows with its lines.
+**Text.** `lineHeight` is the space between lines, such as `1.5`. `content` is HTML: paragraphs `<p>`, `<strong>`, `<em>`, `<u>`, `<s>`, lists `<ul>` and `<ol>` with `<li>`, line breaks `<br>`, links `<a href="https://…">`, and `<span style="…">` for `color`, `font-size`, `font-family`, `font-weight`, `letter-spacing` and `text-transform`. A paragraph takes `style="text-align: center"`. A text has no `height`: it grows with its lines.
+
+A link's `href` is kept when it starts with `http:`, `https:`, `ftp:`, `ftps:`, `mailto:`, `tel:`, `callto:`, `sms:`, `cid:` or `xmpp:`, or has no scheme, such as `/plans` or `#goals`. A link with any other scheme, such as `javascript:` or `data:`, is dropped and its words are kept, with no refusal. A read gives each link `target="_blank"` and `rel="noopener noreferrer nofollow"`.
 
 ```json
 { "type": "text", "left": 80, "top": 60, "width": 800, "lineHeight": 1.5,
@@ -268,7 +280,7 @@ Colours are `#RRGGBB` or `#RRGGBBAA`.
 
 - It lands as one change by the signed-in user, the same way a tab's edit does. Open tabs get it live.
 - The automatic version follows it.
-- A write keeps all of the slides or refuses all of them, and refuses what the editor would change or leave out.
+- A write keeps all of the slides or refuses all of them. It refuses what the editor would change or leave out, except a link whose `href` the editor can't keep: that link is dropped and its words kept.
 - `replace` removes every slide and writes the new ones. An edit someone makes at that moment to a removed slide goes with it.
 - `append` leaves every slide there is, with what others edit in it, and adds the new slides after the last one.
 - `append` with a slide as a read gives it, ids and all, adds a copy of it: the copy and its elements get ids of their own, and Magic Move pairs the copy's elements with the ones they copy.
@@ -290,10 +302,12 @@ A refusal answers its class and a message. Read `errors[0].type` and `errors[0].
 { "errors": [{ "type": "SlidesRefused", "message": "A presentation can't keep these slides: a text's HTML holds what the editor can't keep" }] }
 ```
 
+A wrong API key answers `AuthenticationError` with no `message`.
+
 | Class | Status | Meaning |
 | --- | --- | --- |
 | `AuthenticationError` | 401 | The API key or secret is wrong |
-| `PermissionError` | 403 | A write has no `Authorization` header |
+| `PermissionError` | 403 | A call has no `Authorization` header |
 | `DriveError` | 400 | A field is missing or wrong, such as an empty title, a `mode` other than `replace` or `append`, or a `role` that is not one of the numbers. The message names it. Nothing was written |
 | `DriveNotFound` | 404 | The folder, presentation or slide does not exist for this user, the item is not a presentation, or the presentation was deleted during the write |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the presentation, or the presentation is in the trash |
