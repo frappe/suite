@@ -31,7 +31,7 @@ from suite.slides.content.tests.support import (
     owner_folder,
 )
 from suite.slides.doctype.presentation.presentation import readable_templates
-from suite.slides.drive import docname_for_node
+from suite.slides.drive import DOCTYPE, docname_for_node
 from suite.slides.http import routes as slides_routes
 from suite.slides.tests.utils import share, trash_node
 from suite.tests.utils import ensure_user
@@ -1063,8 +1063,9 @@ class TestPresentationWrites(LoggedDeckCase):
     def test_a_template_the_user_cannot_read_is_not_offered_and_creates_nothing(self):
         ensure_user(OUTSIDER)
         secret = f"Secret {uuid.uuid4().hex[:8]}"
-        template = self.create([title_slide()], title=secret)
-        frappe.db.set_value("Drive Node", template, "is_template", 1)
+        template = drive.create_document(self.folder, secret, content_doctype=DOCTYPE, is_template=True)
+        self.addCleanup(trash_node, template)
+        self.addCleanup(delete_log, template)
         folder = frappe.db.get_value("Drive Root", drive.ensure_personal_root(OUTSIDER), "node")
         frappe.db.commit()
         frappe.set_user(OUTSIDER)
