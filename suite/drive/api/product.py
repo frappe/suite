@@ -336,7 +336,7 @@ def webdav_config() -> dict:
         config.update(
             {
                 "server_url": frappe.utils.get_url("/dav/"),
-                "username": frappe.session.user,
+                "username": frappe.utils.get_email_address(frappe.session.user) or frappe.session.user,
                 "enabled_for_user": user_webdav_enabled(frappe.session.user),
                 "two_factor_blocked": bool(should_run_2fa(frappe.session.user)),
                 # api_key doubles as the WebDAV username for key-based sign-in;
