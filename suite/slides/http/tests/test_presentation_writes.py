@@ -1127,6 +1127,42 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assertEqual(table["width"], 400.5)
         self.assertEqual(words_of(table["content"]), "GoalOwnerShipAanya")
 
+    def test_a_table_with_no_rows_writes_nothing(self):
+        cases = {
+            "bare": ("<table></table>", {"width": 400}),
+            "with its parts": (
+                "<TABLE> <thead></thead><tbody>\n</tbody><tfoot></tfoot></table >",
+                {"width": 400},
+            ),
+            "with no width": ("<table></table>", {}),
+        }
+        for case, (table, width) in cases.items():
+            title = f"Agent rows {uuid.uuid4().hex[:8]}"
+            slides = [{"elements": [{"type": "table", "left": 80, "top": 120, **width, "content": table}]}]
+            with self.subTest(case):
+                message = self.refusal_sent(
+                    "presentations", {"parent": self.folder, "title": title, "slides": slides}
+                )
+
+                self.assertIn("Slide 1 in this call, element 1 (table): its table holds no rows", message)
+                self.assert_created_nothing(title)
+
+    def test_an_empty_table_element_read_and_written_back_reads_the_same(self):
+        empty = {
+            "type": "table",
+            "left": 80,
+            "top": 120,
+            "width": 400,
+            "content": '<p style="line-height: 1.5;"></p>',
+        }
+        node = self.create([{"elements": [empty]}])
+        slides = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_write(node, slides, "replace")
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(slide["elements"], slides[0]["elements"])
+
     def test_a_table_with_a_caption_writes_nothing(self):
         table = "<table><caption>Q1</caption><tr><td>Plan</td></tr></table>"
         element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}

@@ -606,7 +606,14 @@ def in_table_form(place: str, element: dict) -> dict:
         return element
 
     rows = rows_of(markup)
+    if rows is None:
+        return element
+
     if not rows:
+        # A table frame with no rows has no editor form; markup that isn't a table goes on as sent
+        if markup.strip(HTML_SPACE) and TABLE_FRAME.fullmatch(markup):
+            raise SlidesRefused(_("{0}: its table holds no rows. Give it a row of cells").format(place))
+
         return element
 
     spans = [[spans_of(attrs) for _tag, attrs, _inner in row] for row in rows]
