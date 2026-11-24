@@ -78,9 +78,11 @@ from contextlib import contextmanager
 import frappe
 import pycrdt
 from frappe import _
+from frappe.rate_limiter import rate_limit
 
 from suite import drive
-from suite.content import with_content
+from suite.content import ChainBroken, checker, find, jobs, read, with_content
+from suite.writer.content import APP, converter
 from suite.writer.content.files import (
     BODY_FRAGMENT,
     elements,
@@ -100,6 +102,9 @@ EMPTY_BODY = "AAA="
 
 HTML_FORMAT = "html"
 HTML_MIME = "text/html"
+MARKDOWN_FORMAT = "markdown"
+MARKDOWN_MIME = "text/markdown"
+MARKDOWN_READS_A_MINUTE = 60
 
 VERSION_SCHEMA = "writer-document/1"
 # The bytes every envelope `version_bytes` writes starts with
@@ -157,15 +162,48 @@ def duplicate(source_docname: str, node: str) -> str:
 
 
 def export(docname: str, format: str) -> tuple[io.BytesIO, str]:
-    """Stream one document as HTML, which Drive's Download asks for by default."""
+    """Stream one document as HTML, which Drive's Download asks for by default, or as Markdown."""
+    if format == MARKDOWN_FORMAT:
+        return markdown_export(docname)
+
     if format != HTML_FORMAT:
-        frappe.throw(_("Writer exports {0} only").format(HTML_FORMAT), frappe.ValidationError)
+        frappe.throw(_("Writer does not export {0}").format(format), frappe.ValidationError)
     row = frappe.db.get_value(DOCTYPE, docname, ("html",), as_dict=True)
     if not row:
         frappe.throw(_("That Writer document was not found"), frappe.DoesNotExistError)
 
     html_bytes = (row.html or "").encode("utf-8")
     return io.BytesIO(html_bytes), HTML_MIME
+
+
+# The site runs one converter at a time, so one user's reads take at most a turn a second
+@rate_limit(limit=MARKDOWN_READS_A_MINUTE, seconds=60, ip_based=False, user_based=True)
+def markdown_export(docname: str) -> tuple[io.BytesIO, str]:
+    """Stream one document as Markdown, made from its log as it stands, to a signed-in reader."""
+    if frappe.session.user == "Guest":
+        # A public link's reader never takes the converter's turn
+        raise drive.DriveForbidden(_("Sign in to read a document as Markdown"))
+
+    node = frappe.db.get_value(DOCTYPE, docname, NODE_FIELD)
+    log = find(APP, node)
+    try:
+        # Read in Drive's transaction, which a callback may not commit: it takes no lock and saves nothing
+        log_read = log and read(APP, log.id, own_snapshot=False)
+    except ChainBroken:
+        # A push or a compaction landed between the read's queries, twice; the next read finds the rows whole
+        raise drive.DriveConflict(_("The document changed during the read. Try again.")) from None
+
+    if not log_read:
+        jobs.request_conversion(APP, node)
+        raise drive.DriveConflict(_("This document is not converted yet"))
+
+    try:
+        markdown = converter.markdown_of(log_read.checkpoint, log_read.payloads())
+    except checker.CheckerFailed:
+        # Busy, out of time or crashed: the document is not at fault, so the same read works later
+        frappe.throw(_("The converter gave no answer. Try again in a moment."), frappe.RateLimitExceededError)
+
+    return io.BytesIO(markdown.encode("utf-8")), MARKDOWN_MIME
 
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
@@ -257,7 +295,7 @@ SPEC = with_content(
         listing_type="document",
         # Drive's Download sends no format; WebDAV hides documents by their node kind
         default_export=HTML_FORMAT,
-        export_formats=(HTML_FORMAT,),
+        export_formats=(HTML_FORMAT, MARKDOWN_FORMAT),
         create_empty=create_empty,
         duplicate=duplicate,
         export=export,

@@ -1,11 +1,14 @@
 """What each content route does once the caller has checked access to the node: a frame answers as bytes,
 anything else as a status and a JSON body, and a refusal raises `Refusal`."""
 
+import hashlib
 import json
+import uuid
 from collections.abc import Callable
 from http import HTTPStatus
 
 import frappe
+import pycrdt
 from frappe import _
 from frappe.query_builder import Table
 from frappe.query_builder.functions import Coalesce
@@ -23,11 +26,13 @@ from suite.content import (
     suspect,
     touches,
 )
+from suite.content.editors import HtmlCopy, spec_of
 from suite.content.pushes import push, put_piece
-from suite.content.snapshot import read, rows_after, with_tombstones
+from suite.content.snapshot import Snapshot, read, rows_after, with_tombstones
 from suite.content.tables import table
 from suite.content.wire import (
     PROTOCOL_VERSION,
+    PushHeader,
     encode_frame,
     limits,
     open_header,
@@ -118,7 +123,78 @@ def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tup
     """`authorize` checks the user the push names may edit `node`, and answers its app."""
     header, payload = parse_push(body)
     app = authorize(header.expected_user)
+    return 200, push_and_follow(app, logged_doc(app, node), header, payload)
+
+
+def write(app: str, node: str, change: Callable[[pycrdt.Doc], None]) -> int:
+    """Push what `change` does to the document as the request's user, as a tab would, and answer its rev."""
+    # The caller has checked access
     doc = logged_doc(app, node)
+    log_read = read(app, doc.id)
+    if log_read is None:
+        raise log.Refusal(404, "not_found")
+
+    sid = uuid.uuid4().hex
+    client_id = sessions.issue_session(app, doc.id, sid, frappe.session.user)
+    payload = own_update(log_read, client_id, change)
+    header = PushHeader(
+        lineage=log_read.lineage,
+        sid=sid,
+        seq_from=1,
+        seq_to=1,
+        client_id=client_id,
+        seen_rev=log_read.head_rev,
+        schema=spec_of(app).schema.version,
+        shas=[hashlib.sha256(payload).digest()],
+        stage_id=None,
+        # The session's only push, so it waits its turn and compaction can close the session
+        is_final=True,
+        restore=None,
+        expected_user=None,
+    )
+    rev = int(push_and_follow(app, doc, header, payload)["rev"])
+    rebuild_copy(app, doc.id, rev, log_read.lineage, log_read.q_epoch)
+    return rev
+
+
+def own_update(log_read: Snapshot, client_id: int, change: Callable[[pycrdt.Doc], None]) -> bytes:
+    """Answer the one update `change` makes to the read's document, as the writer `client_id`."""
+    state: pycrdt.Doc = pycrdt.Doc(client_id=client_id)
+    if log_read.checkpoint:
+        state.apply_update(log_read.checkpoint)
+
+    for payload in log_read.payloads():
+        state.apply_update(payload)
+
+    updates: list[bytes] = []
+    state.observe(lambda event: updates.append(event.update))
+    with state.transaction():
+        change(state)
+
+    if len(updates) != 1:
+        # A change that does nothing makes no update
+        raise log.Refusal(400, "malformed")
+
+    return updates[0]
+
+
+def rebuild_copy(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int) -> None:
+    """Make the app's render of the document at `rev` the readable copy, as no tab is here to render it."""
+    html_copy = spec_of(app).readable_copy
+    # A copy of another kind, or one only a tab can render, waits for the next tab to open the document
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return
+
+    try:
+        copies.install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
+    except Exception:
+        frappe.db.rollback()
+        # The row is committed; the next tab to open the document renders the copy
+        frappe.log_error(title="Collab write: copy not rebuilt", message=f"{app} document {doc_id}")
+
+
+def push_and_follow(app: str, doc: frappe._dict, header: PushHeader, payload: bytes) -> dict:
+    """Push the rows, then do what is due after them: followers and compaction."""
     try:
         answer = push(app, doc.id, doc.head_rev, header, payload, frappe.session.user)
     except log.Refusal as refusal:
@@ -130,7 +206,7 @@ def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tup
     pushed = due_after_push(app, doc.id)
     answer["copy"] = bool(pushed) and copies.wanted_on(app, pushed)
     if not pushed:
-        return 200, answer
+        return answer
 
     for follower in (touches.TOUCH, touches.VERSION):
         if touches.due(pushed, follower):
@@ -141,7 +217,7 @@ def push_rows(node: str, body: bytes, authorize: Callable[[object], str]) -> tup
         final_from = header.sid
 
     scheduling.request_on(app, doc.id, pushed, jobs.COMPACT, final_from=final_from)
-    return 200, answer
+    return answer
 
 
 def due_after_push(app: str, doc_id: str) -> frappe._dict | None:

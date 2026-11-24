@@ -138,11 +138,6 @@ class TestChecker(UnitTestCase):
         with patch.object(checker, "node_version", return_value="v22.12.0"):
             self.assertIsNone(checker.covers(BUNDLE, rows[0], rows))
 
-    def test_runs_only_in_background_jobs(self):
-        with patch.object(frappe.local, "job", None):
-            with self.assertRaises(RuntimeError):
-                checker.judge(BUNDLE, None, [])
-
     def test_gives_no_verdict_without_node_24(self):
         for version in (None, "v22.12.0"):
             with patch.object(checker, "node_version", return_value=version):

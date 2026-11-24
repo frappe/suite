@@ -46,6 +46,8 @@ class HtmlCopy:
 
     field: str
     is_html_complete: Callable[[bytes, str, str], bool]
+    # Renders a state where no tab does, for a write on the server; None when only a tab can render
+    render: Callable[[bytes], str] | None = None
 
     def read(self, doctype: str, docname: str) -> Mapping[str, str]:
         """Answer the field as the copy's one row, or no row when it is empty."""

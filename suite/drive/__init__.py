@@ -16,8 +16,8 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The thirteen calls an app makes are `check`, `touch`, `take_version`,
-`create_document`, `import_document`, `copy`, `adopt_media`, `read_file`,
+The fifteen calls an app makes are `check`, `throw_again`, `touch`, `take_version`,
+`create_document`, `import_document`, `copy`, `adopt_media`, `get_node`, `read_file`,
 `stream_file`, `push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
 imports its workflow inside the call, so importing `suite.drive` for byte
@@ -166,6 +166,7 @@ which is what an offboarded user looks like.
 | `legacy_node` | one primary-key read of `Drive Legacy Route` |
 | `node_url` | one primary-key read of the node's kind |
 | `node_owner` | one primary-key read of the node's owner |
+| `get_node` | one primary-key read of the node, one READ check, and one read of its owner as a person |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
 | `record_visit` | one READ check and one upsert of the caller's `Drive Recent` row |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
@@ -240,7 +241,7 @@ def transfer_user_drive(
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import IO, TYPE_CHECKING
+from typing import IO, TYPE_CHECKING, NoReturn
 
 from suite.drive._core.content import (
     ContentTypeSpec,
@@ -275,6 +276,7 @@ from suite.drive._core.roots import (
 from suite.drive._core.roots import (
     provision_personal_root as ensure_personal_root,
 )
+from suite.drive.http.node_shape import NodeShape
 
 if TYPE_CHECKING:
     from werkzeug.wrappers import Response
@@ -290,6 +292,13 @@ def check(node: str, role: int) -> str | None:
     require(row, role, _principals())
     _refuse_trashed_write(row, role)
     return row.content_doctype
+
+
+def throw_again(refusal: Exception) -> NoReturn:
+    """Throw `refusal` as a Drive route answers it, so an app's route that calls Drive answers the same."""
+    from suite.drive.http.routes import throw_again as _throw_again
+
+    _throw_again(refusal)
 
 
 def create_document(
@@ -410,6 +419,14 @@ def node_url(node: str) -> str:
     from suite.drive._core.nodes import node_url as _node_url
 
     return _node_url(node)
+
+
+def get_node(node: str) -> NodeShape:
+    """Answer one node the caller can read, as a Drive write answers it: `GET nodes/{node}` with no expansion."""
+    from suite.drive._core.nodes import get
+    from suite.drive.http.shapes import node_shape
+
+    return node_shape(get(_principals(), node))
 
 
 def node_owner(node: str) -> str:
@@ -683,6 +700,7 @@ __all__ = (
     "DriveNotFound",
     "DriveOverQuota",
     "DriveStorageUnmeasured",
+    "NodeShape",
     "PersonOnNode",
     "Satellite",
     "administration_usage",
@@ -696,6 +714,7 @@ __all__ = (
     "create_storage_reservation",
     "ensure_folder",
     "ensure_personal_root",
+    "get_node",
     "get_storage_reservation",
     "get_storage_usage",
     "get_version",
@@ -729,6 +748,7 @@ __all__ = (
     "store_file",
     "stream_file",
     "take_version",
+    "throw_again",
     "touch",
     "transfer_user_drive",
 )

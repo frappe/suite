@@ -159,9 +159,9 @@ class TestWriterDeclaration(UnitTestCase):
 
     # the declaration
 
-    def test_writer_exports_html_by_default_and_only_html(self):
+    def test_writer_exports_html_by_default_and_markdown_too(self):
         self.assertEqual(writer.SPEC.default_export, "html")
-        self.assertEqual(writer.SPEC.export_formats, ("html",))
+        self.assertEqual(writer.SPEC.export_formats, ("html", "markdown"))
         self.assertTrue(callable(writer.SPEC.export))
 
     # staged activation

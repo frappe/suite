@@ -1,11 +1,15 @@
 import { JSDOM } from 'jsdom'
+import { applyUpdate, Doc } from 'yjs'
 
 import { readFrames } from '@/apps/writer/collab/child-input'
 import { convertLegacy } from '@/apps/writer/collab/conversion'
 import { addInnerText } from '@/apps/writer/collab/headless-dom'
 import type { LegacyBody } from '@/apps/writer/collab/legacy-read'
+import { markdownOf } from '@/apps/writer/collab/markdown'
+import { writerRender } from '@/apps/writer/collab/render'
 
-type ConverterInput = { legacy: LegacyBody; maxState: number } | Record<string, never>
+type ConverterInput =
+  { legacy: LegacyBody; maxState: number } | { markdown: true } | Record<string, never>
 
 // The editor parses old HTML into a document that loads nothing; each window name is read only when
 // used, since some, like localStorage, throw on the blank page's origin
@@ -40,15 +44,29 @@ for (const name of ['fetch', 'WebSocket', 'EventSource', 'XMLHttpRequest']) {
 
 // The Node child the server runs per document: on stdin, frames whose first is the JSON header
 // {legacy, maxState}; on stdout, the conversion with its state in base64 and the converter
-// version. An empty header answers the version alone
+// version. A header {markdown} answers the frames after it, a log's checkpoint and rows, as
+// Markdown, and an empty one the version alone
 const stdinChunks: Buffer[] = []
+
+// The document the log's parts make, rendered as a tab renders it and written as Markdown
+function logMarkdown(parts: Buffer[]) {
+  const doc = new Doc()
+  for (const part of parts) {
+    // A log with no checkpoint sends an empty frame in its place
+    if (part.length) applyUpdate(doc, part)
+  }
+
+  const { html } = writerRender(doc)
+  return markdownOf(new DOMParser().parseFromString(html, 'text/html').body)
+}
 
 function convertInput() {
   // Trusted as the server's own request; anything else throws, and the server sees the child fail
-  const [headerFrame] = readFrames(Buffer.concat(stdinChunks))
+  const [headerFrame, ...parts] = readFrames(Buffer.concat(stdinChunks))
   // SAFETY: this private stdin pipe is written by suite/content/convert.py, which
   // constructs {legacy, maxState} from this app's read_old result, or {} for version probes.
   // The conversion owner checks unsupported nested legacy content before producing state.
+  // suite/writer/content/converter.py writes it too, with {markdown} and a log's parts for a Markdown read
   const input = JSON.parse(headerFrame.toString()) as ConverterInput
 
   const result = 'legacy' in input ? convertLegacy(input.legacy, input.maxState) : undefined
@@ -57,8 +75,11 @@ function convertInput() {
       ? { ...result, state: Buffer.from(result.state).toString('base64') }
       : result
 
+  const markdown = 'markdown' in input ? logMarkdown(parts) : undefined
+
   const reply = {
     ...answer,
+    markdown,
     version: __CONVERTER_VERSION__,
   }
   process.stdout.write(JSON.stringify(reply))
