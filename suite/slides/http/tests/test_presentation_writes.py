@@ -1070,6 +1070,28 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assertEqual(re.findall(r'colwidth="(\d+)"', table["content"]), ["200"] * 4)
         self.assertEqual(words_of(table["content"]), "GoalOwnerShipAanya")
 
+    def test_a_plain_table_keeps_the_whole_width_when_it_does_not_divide_evenly(self):
+        cases = [
+            (
+                401,
+                "<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>",
+                ["201", "200"],
+            ),
+            (800, "<table><tr><td>A</td><td>B</td><td>C</td></tr></table>", ["267", "267", "266"]),
+        ]
+        for width, plain, columns in cases:
+            element = {"type": "table", "left": 80, "top": 120, "width": width, "content": plain}
+            with self.subTest(width):
+                node = self.create([{"elements": [element]}])
+
+                (slide,) = slides_routes.presentation_read(node)["slides"]
+                (table,) = slide["elements"]
+                self.assertIn(f'<table style="width: {width}px', table["content"])
+                self.assertEqual(re.findall(r'<col style="width: (\d+)px', table["content"]), columns)
+                self.assertEqual(
+                    re.findall(r'colwidth="(\d+)"', table["content"]), columns * (plain.count("<tr>"))
+                )
+
     def test_a_plain_table_with_a_heading_keeps_its_heading_cells(self):
         plain = (
             "<table><thead><tr><th>Goal</th><th>Owner</th></tr></thead>"

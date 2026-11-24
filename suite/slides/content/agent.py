@@ -724,15 +724,16 @@ def is_plain(markup: str, rows: list[list[tuple[str, str, str]]]) -> bool:
 def editor_table(rows: list[list[tuple[str, str, str]]], width: int) -> str:
     """Answer a plain table's `rows` in the editor's form, its columns sharing `width`."""
     columns = len(rows[0])
-    each = width // columns
-    total = each * columns
-    cols = f'<col style="width: {each}px">' * columns
+    # The first columns take a pixel each of what doesn't divide evenly, so the table keeps the whole width
+    each, wider = divmod(width, columns)
+    widths = [each + 1] * wider + [each] * (columns - wider)
+    cols = "".join(f'<col style="width: {column}px">' for column in widths)
     body = ""
     for row in rows:
-        cells = "".join(table_cell(cell, each) for cell in row)
+        cells = "".join(table_cell(cell, column) for cell, column in zip(row, widths, strict=True))
         body += f"<tr>{cells}</tr>"
 
-    return f'<table style="width: {total}px"><colgroup>{cols}</colgroup><tbody>{body}</tbody></table>'
+    return f'<table style="width: {width}px"><colgroup>{cols}</colgroup><tbody>{body}</tbody></table>'
 
 
 def spans_of(attrs: str) -> tuple[int, int]:
