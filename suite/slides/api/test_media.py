@@ -7,6 +7,7 @@ picture that cannot be converted whole, as uploaded.
 """
 
 import os
+import time
 from io import BytesIO
 from unittest.mock import patch
 
@@ -149,6 +150,24 @@ class TestSlidesMedia(IntegrationTestCase):
             with self.subTest(case):
                 self.assertStoredAsUploaded(content, "logo.svg", "image/svg+xml")
 
+    def test_an_svg_whose_doctype_declares_entities_is_stored_as_uploaded(self):
+        # As Illustrator's Save As SVG writes one, its root past Frappe's look for it
+        entities = b""
+        for index in range(12):
+            entities += b'\t<!ENTITY ns_%d "http://ns.adobe.com/Extensibility/%d.0/">\n' % (index, index)
+
+        drawing = (
+            b'<?xml version="1.0" encoding="utf-8"?>\n'
+            b"<!-- Generator: Adobe Illustrator 16.0.0, SVG Export Plug-In -->\n"
+            b'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd" [\n'
+            + entities
+            + b"]>\n"
+            + SVG
+        )
+        self.assertGreater(drawing.index(b"<svg"), 512)
+
+        self.assertStoredAsUploaded(drawing, "logo.svg", "image/svg+xml")
+
     def test_a_video_is_stored_as_uploaded(self):
         for filename, mimetype, start in (
             ("talk.mp4", "video/mp4", MP4_START),
@@ -276,3 +295,15 @@ class TestSlidesMedia(IntegrationTestCase):
         self.assertFalse(
             frappe.db.exists("Drive Node", {"parent_node": node_of(self.deck.name), "kind": "file"})
         )
+
+    def test_words_after_a_sniff_of_spaces_or_comments_are_refused_at_once(self):
+        for case, content in (
+            ("spaces", b" " * SNIFF_BYTES + b"Plain words"),
+            ("empty comments", b"<!---->" * 500 + b"Plain words"),
+        ):
+            started = time.monotonic()
+            with self.subTest(case), self.assertRaises(frappe.ValidationError):
+                self.upload("logo.svg", "image/svg+xml", content)
+
+            # A pattern that backtracks takes minutes on these
+            self.assertLess(time.monotonic() - started, 2)

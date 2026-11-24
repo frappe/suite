@@ -36,8 +36,11 @@ MAX_WEBP_SOURCE_PIXELS = 64_000_000
 JPEG_START_OF_SCAN = 0xDA
 JPEG_END_OF_IMAGE = b"\xff\xd9"
 SVG = "image/svg+xml"
-# What may come before an SVG's root that Frappe's sniff does not skip: an XML declaration, comments, a DOCTYPE
-SVG_START = re.compile(rb"(?:\s+|<\?xml\b.*?\?>|<!--.*?-->|<!DOCTYPE\s+svg\b[^>]*>)*<svg\b", re.S | re.I)
+# What may come before an SVG's root that Frappe's sniff does not skip, each piece and the end it runs to
+DOCTYPE = b"<!doctype"
+SVG_PROLOGUE = {b"<?xml": b"?>", b"<!--": b"-->", DOCTYPE: b">"}
+SVG_ROOT = re.compile(rb"<svg[\s/>]", re.I)
+SPACE = re.compile(rb"\s*")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -73,7 +76,42 @@ def media_type(upload: FileStorage) -> str:
 
     head = upload.stream.read(SNIFF_BYTES).removeprefix(codecs.BOM_UTF8)
     upload.stream.seek(0)
-    return SVG if SVG_START.match(head) else sniffed
+    return SVG if is_svg(head) else sniffed
+
+
+def is_svg(head: bytes) -> bool:
+    """Answer whether `head` reaches an SVG's root past whitespace, an XML declaration, comments and a DOCTYPE."""
+    # Each step moves forward, so a head of only spaces or comments is read once
+    at: int | None = 0
+    while at is not None:
+        at = SPACE.match(head, at).end()
+        if SVG_ROOT.match(head, at):
+            return True
+
+        at = past_prologue(head, at)
+
+    return False
+
+
+def past_prologue(head: bytes, at: int) -> int | None:
+    """Answer where the prologue piece starting at `at` ends; None when none starts there or it never ends."""
+    for start, end in SVG_PROLOGUE.items():
+        if head[at : at + len(start)].lower() != start:
+            continue
+
+        found = head.find(end, at + len(start))
+        # A DOCTYPE's internal subset, in brackets, holds declarations that end in `>` too
+        subset = head.find(b"[", at, found)
+        if start == DOCTYPE and found >= 0 and subset >= 0:
+            end = b"]>"
+            found = head.find(end, subset)
+
+        if found < 0:
+            return None
+
+        return found + len(end)
+
+    return None
 
 
 def as_webp(file_name: str, stream: IO[bytes]) -> tuple[str, IO[bytes]]:
