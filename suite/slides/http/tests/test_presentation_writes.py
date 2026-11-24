@@ -978,7 +978,16 @@ class TestPresentationWrites(LoggedDeckCase):
             ),
             (
                 r"element 1 \(table\): its HTML holds .*Use the table form in the agent guide",
-                [{"elements": [{"type": "table", "content": "<table><tr><td>x</td></tr></table>"}]}],
+                [
+                    {
+                        "elements": [
+                            {
+                                "type": "table",
+                                "content": "<table><caption>x</caption><tr><td>x</td></tr></table>",
+                            }
+                        ]
+                    }
+                ],
             ),
         ]
         for message, slides in cases:
@@ -1086,6 +1095,37 @@ class TestPresentationWrites(LoggedDeckCase):
 
         (slide,) = slides_routes.presentation_read(node)["slides"]
         self.assertEqual(slide["elements"], slides[0]["elements"])
+
+    def test_a_plain_table_with_no_whole_width_writes_nothing(self):
+        plain = "<table><tr><th>Name</th><th>Score</th></tr><tr><td>Asha</td><td>9</td></tr></table>"
+        widths = {"missing": {}, "0": {"width": 0}, "below 0": {"width": -5}, "a float": {"width": 2.5}}
+        widths |= {"a string": {"width": "400"}, "a bool": {"width": True}}
+        for case, width in widths.items():
+            title = f"Agent width {uuid.uuid4().hex[:8]}"
+            slides = [{"elements": [{"type": "table", "left": 80, "top": 120, **width, "content": plain}]}]
+            with self.subTest(case):
+                message = self.refusal_sent(
+                    "presentations", {"parent": self.folder, "title": title, "slides": slides}
+                )
+
+                self.assertIn(
+                    "Slide 1 in this call, element 1 (table): its width must be a whole number", message
+                )
+                self.assert_created_nothing(title)
+
+    def test_a_table_in_the_editors_form_keeps_a_width_of_any_kind(self):
+        guide_form = (
+            '<table style="width: 400px"><colgroup><col style="width: 200px"><col style="width: 200px"></colgroup>'
+            '<tbody><tr><th colwidth="200"><p>Goal</p></th><th colwidth="200"><p>Owner</p></th></tr>'
+            '<tr><td colwidth="200"><p>Ship</p></td><td colwidth="200"><p>Aanya</p></td></tr></tbody></table>'
+        )
+        element = {"type": "table", "left": 80, "top": 120, "width": 400.5, "content": guide_form}
+        node = self.create([{"elements": [element]}])
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (table,) = slide["elements"]
+        self.assertEqual(table["width"], 400.5)
+        self.assertEqual(words_of(table["content"]), "GoalOwnerShipAanya")
 
     def test_a_table_with_a_caption_writes_nothing(self):
         table = "<table><caption>Q1</caption><tr><td>Plan</td></tr></table>"

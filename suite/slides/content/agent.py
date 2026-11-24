@@ -598,7 +598,7 @@ def checked_element(place: str, element: dict) -> dict:
 
 
 def in_table_form(place: str, element: dict) -> dict:
-    """Answer a plain table in the editor's form, its columns sharing the element's width; refuse rows it would change."""
+    """Answer a plain table in the editor's form, its columns sharing the element's width; refuse rows it would change, or no width to share."""
     # A table that holds more than rows of cells is left as sent, for the converter to keep or refuse
     markup = element.get("content")
     width = element.get("width")
@@ -611,8 +611,15 @@ def in_table_form(place: str, element: dict) -> dict:
 
     spans = [[spans_of(attrs) for _tag, attrs, _inner in row] for row in rows]
     check_rows(place, spans)
-    if type(width) is not int or width < 1 or not is_plain(markup, rows):
+    if not is_plain(markup, rows):
         return element
+
+    if type(width) is not int or width < 1:
+        raise SlidesRefused(
+            _(
+                "{0}: its width must be a whole number of 1 or more, as a plain table's columns share it"
+            ).format(place)
+        )
 
     return {**element, "content": editor_table(rows, width)}
 
