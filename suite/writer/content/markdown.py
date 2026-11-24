@@ -4,6 +4,7 @@ The Markdown becomes HTML as frappe makes it, then a body through the converter 
 body an agent writes is one the editor could have made. What the converter can't keep refuses the write.
 """
 
+import json
 import uuid
 from typing import Literal, cast
 
@@ -70,16 +71,22 @@ def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> int:
         raise drive.DriveNotFound(_("That document was not found"))
 
     body = body_state(markdown)
-    # A document with no log refuses the write below, so it keeps no version
-    if mode == "replace" and content.find(APP, node):
-        keep_version(node)
+    if mode == "replace":
+        doc = content.find(APP, node)
+        # A document with no log refuses the write below, so it keeps no version
+        if doc:
+            keep_version(node, doc.head_chain)
 
     return write_body(node, body, mode)
 
 
-def keep_version(node: str) -> None:
+def keep_version(node: str, head_chain: bytes) -> None:
     """Nothing is replaced without a version of the head first, as nothing is restored without one."""
     try:
+        # A replace refused after its version is asked again, and the head it kept has not moved
+        if is_head_kept(node, head_chain):
+            return
+
         # A milestone, as a restore's: an automatic version thins with age, and a named one is a person's
         drive.take_version(node, kind="milestone", label=_("Before a replace from Markdown"))
     except drive.DriveConflict as away:
@@ -90,6 +97,17 @@ def keep_version(node: str) -> None:
 
     # The write reads in a transaction of its own, so the version is saved before the body goes
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def is_head_kept(node: str, head_chain: bytes) -> bool:
+    """Whether the document's newest version is a milestone of the head whose chain is `head_chain`."""
+    newest = drive.list_versions(node, limit=1)["rows"]
+    if not newest or newest[0]["kind"] != "milestone":
+        return False
+
+    with drive.read_version(node, newest[0]["seq"]) as stream:
+        # A version from before the log has no chain
+        return json.loads(stream.read()).get("chain") == bytes(head_chain).hex()
 
 
 def body_state(markdown: str) -> bytes:

@@ -269,6 +269,27 @@ class TestDocumentWrites(DriveCallbackCase):
             self.version_blocks(node, kept["seq"]), "<paragraph>First. Typed by hand.</paragraph>"
         )
 
+    def test_a_replace_asked_again_after_a_refusal_keeps_one_version_of_the_head(self):
+        node = self.create("First.")
+        room = self.doc_row(node).state_bytes
+        self.set_doc(node, state_bytes=capacity.STATE_MAX)
+
+        for _attempt in range(2):
+            with self.assertRaisesRegex(WriteRefused, "doc_full"):
+                writer_routes.document_write(node, "Only this.", "replace")
+
+        self.assertEqual(len(self.kept_versions(node)), 1)
+
+        # A head that moved is kept again
+        self.set_doc(node, state_bytes=room)
+        self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed by hand."))
+        writer_routes.document_write(node, "Only this.", "replace")
+
+        newest, _first = self.kept_versions(node)
+        self.assertEqual(
+            self.version_blocks(node, newest["seq"]), "<paragraph>First. Typed by hand.</paragraph>"
+        )
+
     def test_a_replace_that_can_keep_no_version_writes_nothing(self):
         node = self.create("First.")
         full = drive.DriveOverQuota("The drive is full")
