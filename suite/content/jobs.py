@@ -147,7 +147,16 @@ def render_owed(app: str, doc_id: str) -> None:
 
 def request_owed_copy(app: str, doc_id: str) -> None:
     """Enqueue the render of the copy a write on the server owed, once."""
-    scheduling.enqueue(RENDER_OWED, f"suite-collab-copy-{app}-{doc_id}", app=app, doc_id=doc_id)
+    try:
+        scheduling.enqueue(RENDER_OWED, f"suite-collab-copy-{app}-{doc_id}", app=app, doc_id=doc_id)
+    except Exception:
+        # A request is only a hint: the read that made it still answers, and the next sweep asks again
+        traceback = frappe.get_traceback()
+        frappe.log_error(
+            title="Collab readable copy: render request failed",
+            message=f"{app} document {doc_id}\n{traceback}",
+            reference_doctype="Suite Collab Settings",
+        )
 
 
 def sweep() -> None:
