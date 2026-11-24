@@ -2293,61 +2293,84 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.connectWebRtcTransport).not.toHaveBeenCalled();
 	});
 
-	it('chat:send broadcasts to other full-access participants in the same room and not back to the sender', async () => {
-		const harness = createManager();
+	it.each([
+		{
+			kind: 'plain text',
+			message: '🙂'.repeat(8192),
+			oversized: '🙂'.repeat(8192) + 'x',
+		},
+		{
+			kind: 'encrypted text',
+			message: 'e2ee:' + Buffer.alloc(32796).toString('base64'),
+			oversized: 'e2ee:' + Buffer.alloc(32797).toString('base64'),
+		},
+	])(
+		'chat:send delivers complete $kind at the limit and rejects larger messages',
+		async ({ message, oversized }) => {
+			const harness = createManager();
 
-		const sender = connectFullSocket(harness, {
-			id: 'sock-sender',
-			userId: 'sender-1',
-			userName: 'Sender',
-		});
-		emitJoin(sender, { userId: 'sender-1', name: 'Sender' });
-		await new Promise((r) => setImmediate(r));
+			const sender = connectFullSocket(harness, {
+				id: 'sock-sender',
+				userId: 'sender-1',
+				userName: 'Sender',
+			});
+			emitJoin(sender, { userId: 'sender-1', name: 'Sender' });
+			await new Promise((r) => setImmediate(r));
 
-		const receiver = connectFullSocket(harness, {
-			id: 'sock-receiver',
-			userId: 'receiver-1',
-			userName: 'Receiver',
-		});
-		emitJoin(receiver, { userId: 'receiver-1', name: 'Receiver' });
-		await new Promise((r) => setImmediate(r));
+			const receiver = connectFullSocket(harness, {
+				id: 'sock-receiver',
+				userId: 'receiver-1',
+				userName: 'Receiver',
+			});
+			emitJoin(receiver, { userId: 'receiver-1', name: 'Receiver' });
+			await new Promise((r) => setImmediate(r));
 
-		sender.emitCalls.length = 0;
-		receiver.emitCalls.length = 0;
-		const callback = vi.fn();
+			sender.emitCalls.length = 0;
+			receiver.emitCalls.length = 0;
+			const callback = vi.fn();
 
-		sender.fire('chat:send', { message: 'hello world' }, callback);
+			const rejected = vi.fn();
+			sender.fire('chat:send', { message: oversized }, rejected);
+			expect(rejected).toHaveBeenCalledWith({
+				success: false,
+				error: 'This message is too long. Shorten it and try again.',
+			});
+			expect(receiver.emitCalls.some((c) => c.event === 'chat:message')).toBe(false);
+			expect(sender.emitCalls.some((c) => c.event === 'chat:message')).toBe(false);
 
-		const receiverMsg = receiver.emitCalls.find(
-			(c) => c.event === 'chat:message',
-		);
-		expect(receiverMsg).toBeDefined();
-		expect(receiverMsg?.data).toEqual(
-			expect.objectContaining({
-				roomId: 'room-1',
-				message: 'hello world',
-				fromUser: 'sender-1',
-				fromName: 'Sender',
-				timestamp: expect.any(String),
-			}),
-		);
-		expect(callback).toHaveBeenCalledWith({
-			success: true,
-			timestamp: receiverMsg?.data.timestamp,
-			messageId: expect.any(String),
-		});
+			sender.fire('chat:send', { message }, callback);
 
-		const senderChatMessages = sender.emitCalls.filter(
-			(c) => c.event === 'chat:message',
-		);
-		expect(senderChatMessages.length).toBe(1);
-		expect(senderChatMessages[0]?.data).toEqual(
-			expect.objectContaining({
-				fromUser: 'sender-1',
-				message: 'hello world',
-			}),
-		);
-	});
+			const receiverMsg = receiver.emitCalls.find(
+				(c) => c.event === 'chat:message',
+			);
+			expect(receiverMsg).toBeDefined();
+			expect(receiverMsg?.data).toEqual(
+				expect.objectContaining({
+					roomId: 'room-1',
+					message,
+					fromUser: 'sender-1',
+					fromName: 'Sender',
+					timestamp: expect.any(String),
+				}),
+			);
+			expect(callback).toHaveBeenCalledWith({
+				success: true,
+				timestamp: receiverMsg?.data.timestamp,
+				messageId: expect.any(String),
+			});
+
+			const senderChatMessages = sender.emitCalls.filter(
+				(c) => c.event === 'chat:message',
+			);
+			expect(senderChatMessages.length).toBe(1);
+			expect(senderChatMessages[0]?.data).toEqual(
+				expect.objectContaining({
+					fromUser: 'sender-1',
+					message,
+				}),
+			);
+		},
+	);
 
 	it('chat:send with hostOnlyChat enabled and a non-host sender returns sfu_error HOST_ONLY_CHAT and broadcasts no chat:message', async () => {
 		const harness = createManager();

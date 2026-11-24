@@ -213,6 +213,7 @@
                 theme="gray"
                 size="sm"
                 :label="__('Send message')"
+                :loading="sending"
               >
                 <template #icon>
                   <lucide-send class="h-4 w-4" />
@@ -271,6 +272,7 @@ const props = defineProps<{
   userName?: string
   avatarByUser?: Record<string, string | null | undefined>
   messages?: ChatMessage[]
+  sendMessage: (text: string) => Promise<boolean>
   isHost?: boolean
   isCohost?: boolean
   isGuest?: boolean
@@ -306,13 +308,13 @@ const handlePollSubmit = async (payload: { question: string; options: { text: st
 
 const emit = defineEmits<{
   close: []
-  send: [text: string]
   pin: [messageId: string]
   unpin: []
 }>()
 const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const draft = ref('')
+const sending = ref(false)
 
 const emojiSuggestions = ref<EmojiSuggestion[]>([])
 const emojiSelectedIndex = ref(0)
@@ -454,17 +456,22 @@ function onKeydown(event: KeyboardEvent) {
   }
 }
 
-function handleSend() {
-  const text = draft.value.trim()
-  if (!canSendMessages.value) return
-  if (!text) return
-  emit('send', text)
-  draft.value = ''
+async function handleSend() {
+  const submittedDraft = draft.value
+  const text = submittedDraft.trim()
+  if (!canSendMessages.value || !text || sending.value) return
+
+  sending.value = true
   closeEmojiMenu()
-  nextTick(() => {
-    autosize()
-    focusInput()
-  })
+  try {
+    const sent = await props.sendMessage(text)
+    if (sent && draft.value === submittedDraft) draft.value = ''
+  } finally {
+    sending.value = false
+  }
+  await nextTick()
+  autosize()
+  focusInput()
 }
 
 function focusInput() {
