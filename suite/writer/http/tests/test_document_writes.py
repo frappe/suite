@@ -707,13 +707,16 @@ class TestDocumentWrites(DriveCallbackCase):
         with self.assertRaises(frappe.RateLimitExceededError):
             self.as_request(lambda: self.markdown_of(node))
 
-    def test_a_guest_on_a_public_link_cannot_read_markdown(self):
+    def test_a_guest_on_a_public_link_reads_the_copy_and_no_markdown(self):
         node = self.create("Hello")
         share_as_writer(node, "$PUBLIC", drive.READ)
         frappe.set_user("Guest")
 
         with self.assertRaises(drive.DriveForbidden):
             self.markdown_of(node)
+
+        # The link still reads the document, as its copy
+        self.assertEqual(exported(node, "html"), "<p>Hello</p>")
 
     def test_a_converter_of_another_version_answers_busy_and_creates_nothing(self):
         another_version = """process.stdout.write('{"version": "0"}')"""
