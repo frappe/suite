@@ -424,6 +424,41 @@ class TestDocumentWrites(DriveCallbackCase):
 
         run.assert_not_called()
 
+    def test_an_export_while_the_write_renders_its_copy_answers_the_write(self):
+        node = self.create("First.")
+        self.age_copy(node)
+        body = body_state("Second.")
+        render = converter.run
+        exports: list[str] = []
+
+        def export_while_rendering(legacy: dict):
+            with patch.object(converter, "run", render), patch.object(scheduling, "enqueue"):
+                exports.append(exported(node, "html"))
+
+            return render(legacy)
+
+        with patch.object(converter, "run", side_effect=export_while_rendering):
+            write_body(node, body, "append")
+
+        self.assertEqual(exports, ["<p>First.</p><p>Second.</p>"])
+        self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_an_export_answers_when_its_render_request_fails(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        failed = {"method": "Collab readable copy: render request failed"}
+        logged = connection_for("Error Log").count("Error Log", failed)
+
+        with patch.object(scheduling, "enqueue", side_effect=ConnectionError("no queue")):
+            html = exported(node, "html")
+
+        self.assertEqual(html, "<p>First.</p><p>Second.</p>")
+        self.assertEqual(connection_for("Error Log").count("Error Log", failed), logged + 1)
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+
     def test_an_export_answers_a_refresh_when_the_owed_copy_cannot_be_rendered(self):
         node = self.create("First.")
         writer_routes.document_write(node, "Second.", "append")
@@ -492,12 +527,18 @@ class TestDocumentWrites(DriveCallbackCase):
         doc_id = self.doc_row(node).id
         logged = connection_for("Error Log").count("Error Log")
 
-        with patch.object(converter, "run", side_effect=checker.CheckerBusy("another child ran")):
-            jobs.render_owed(writer_content.APP, doc_id)
+        no_answers = (
+            checker.CheckerBusy("another child ran"),
+            convert.Refused("child_timeout"),
+            convert.Refused("child_crash"),
+        )
+        for no_answer in no_answers:
+            with self.subTest(no_answer=no_answer), patch.object(converter, "run", side_effect=[no_answer]):
+                jobs.render_owed(writer_content.APP, doc_id)
 
-        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
-        self.age_copy(node)
-        self.assertEqual(self.swept_renders(node), 1)
+                self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+                self.age_copy(node)
+                self.assertEqual(self.swept_renders(node), 1)
 
         # A render the converter refuses is the document's, and fails the same in every sweep
         with (

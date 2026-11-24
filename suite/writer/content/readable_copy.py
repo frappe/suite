@@ -7,7 +7,7 @@ from html.parser import HTMLParser
 
 import pycrdt
 
-from suite.content import convert
+from suite.content import checker, convert
 from suite.writer.content import converter
 
 
@@ -54,10 +54,14 @@ def render(state: bytes) -> str:
     """Render `state` as its readable copy with the converter, as no browser is there to."""
     legacy = {"content": base64.b64encode(state).decode(), "html": None, "collab": 1, "ycomments": None}
     answer = converter.run(legacy)
-    if isinstance(answer, convert.Refused):
-        raise RuntimeError(f"the converter rendered no copy: {answer.reason}")
+    if not isinstance(answer, convert.Refused):
+        return answer.html
 
-    return answer.html
+    # The converter gave no answer, which says nothing of the document
+    if answer.reason in {"child_timeout", "child_crash"}:
+        raise checker.CheckerFailed(answer.reason)
+
+    raise RuntimeError(f"the converter rendered no copy: {answer.reason}")
 
 
 def nodes(

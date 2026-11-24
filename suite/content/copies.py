@@ -29,6 +29,7 @@ from frappe.utils.html_utils import (
     svg_attributes,
     svg_elements,
 )
+from pypika.queries import QueryBuilder
 from pypika.terms import Values
 
 from suite.content import checker, compaction, convert, db, stage
@@ -173,22 +174,27 @@ def follow_write(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, *,
     if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
         return
 
-    is_rendered = False
-    # A young copy waits for a reader or the sweep, so writing a document in parts does not render every part
-    if is_wanted:
-        try:
-            install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
-            is_rendered = True
-        except Exception:
-            # The row is committed; the sweep renders once more, and its job reports what fails there
-            frappe.db.rollback()
-
     doc = Table(table(app, "doc"))
-    marked = frappe.qb.update(doc).set(doc.copy_owed, int(not is_rendered)).where(doc.id == doc_id)
-    if is_rendered:
-        # A write after this one keeps what it owes
-        marked = marked.where(doc.head_rev == rev)
+    # Before any render, so an export while one runs renders the copy rather than refusing
+    mark(app, doc_id, rev, frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id))
+    # A young copy waits for a reader or the sweep, so writing a document in parts does not render every part
+    if not is_wanted:
+        return
 
+    try:
+        install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
+    except Exception:
+        # The row and its mark are committed; the sweep renders once more, and its job reports what fails there
+        frappe.db.rollback()
+        return
+
+    # A write after this one keeps what it owes
+    paid = frappe.qb.update(doc).set(doc.copy_owed, 0).where(doc.id == doc_id).where(doc.head_rev == rev)
+    mark(app, doc_id, rev, paid)
+
+
+def mark(app: str, doc_id: str, rev: int, marked: QueryBuilder) -> None:
+    """Run `marked`, which says whether the copy a write at `rev` left is owed, and commit it."""
     try:
         marked.run()
         # At once: the write has landed, and what follows in the request must not undo the mark or wait on its row
@@ -218,7 +224,7 @@ def render_owed(app: str, doc_id: str) -> None:
         install(
             app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy
         )
-    except (checker.CheckerBusy, convert.ConverterChanged):
+    except (checker.CheckerFailed, convert.ConverterChanged):
         # No answer from the converter says nothing of the document, so the next sweep renders it
         frappe.db.rollback()
         frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id).run()
