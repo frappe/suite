@@ -14,26 +14,13 @@
         <Switch v-model="autoHideToolbarLocal" />
       </SettingsRow>
       <SettingsRow
-        v-if="supportsFirefoxMeetingPip()"
-        :title="__('Meeting picture-in-picture')"
-        :description="__('Open the floating meeting window during a call.')"
-      >
-        <kbd class="rounded-3 bg-surface-gray-2 px-2 py-1 text-sm text-ink-gray-9">{{
-          getPlatform() === 'mac' ? 'Control + Shift + M' : 'Alt + Shift + M'
-        }}</kbd>
-      </SettingsRow>
-      <SettingsRow
-        v-else-if="supportsAutomaticMeetingPip()"
-        :title="__('Automatic picture-in-picture')"
-        :description="
-          __(
-            'Keep the meeting in a floating window when you switch tabs or apps. Requires a supported browser and permission for automatic picture-in-picture.',
-          )
-        "
+        v-if="supportsAutomaticMeetingPip()"
+        :title="__('Picture-in-picture mode')"
+        :description="__('Keep the meeting in a floating window when you switch tabs or apps.')"
       >
         <Switch
           v-model="automaticPictureInPictureLocal"
-          :aria-label="__('Automatic picture-in-picture')"
+          :aria-label="__('Picture-in-picture mode')"
         />
       </SettingsRow>
     </div>
@@ -54,11 +41,7 @@ import {
   setAutoHideToolbar,
   setAutomaticPictureInPicture,
 } from '../../data/mediaPreferences'
-import {
-  getPlatform,
-  supportsAutomaticMeetingPip,
-  supportsFirefoxMeetingPip,
-} from '../../utils/device'
+import { supportsAutomaticMeetingPip } from '../../utils/device'
 
 const automaticPictureInPictureLocal = computed({
   get: () => automaticPictureInPicture.value,

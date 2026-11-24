@@ -118,6 +118,7 @@ function mount(
   )
   const remote = shallowRef(options.remote ?? null)
   const manager = {
+    getRemoteAudioTrack: vi.fn(() => null),
     getRemoteVideoTrack: vi.fn(() => remote.value),
     setPictureInPictureParticipant: vi.fn(),
   }
@@ -208,28 +209,6 @@ afterEach(() => {
 })
 
 describe('MeetingPictureInPicture browser behavior', () => {
-  it.each([
-    ['Linux', { altKey: true }],
-    ['Macintosh', { ctrlKey: true }],
-  ])('opens Firefox PiP on %s even with automatic entry disabled', async (platform, modifiers) => {
-    vi.spyOn(navigator, 'userAgent', 'get').mockReturnValue(
-      `Mozilla/5.0 (${platform}) Firefox/151.0`,
-    )
-    setAutomaticPictureInPicture(false)
-    const win = fakeWindow()
-    const requestWindow = vi.fn().mockResolvedValue(win)
-    mount({ requestWindow })
-    const shortcut = () =>
-      new KeyboardEvent('keydown', { code: 'KeyM', ...modifiers, shiftKey: true, bubbles: true })
-    const field = document.body.appendChild(document.createElement('textarea'))
-    field.dispatchEvent(shortcut())
-    expect(requestWindow).not.toHaveBeenCalled()
-    window.dispatchEvent(shortcut())
-    await flush()
-    expect(requestWindow).toHaveBeenCalledOnce()
-    expect(win.document.querySelector('[role=toolbar]')).not.toBeNull()
-    expect(setActionHandler).not.toHaveBeenCalled()
-  })
   it('keeps the pinned camera visible above an active presentation', async () => {
     const win = fakeWindow()
     const test = mount({ requestWindow: vi.fn().mockResolvedValue(win), remote: track('camera') })

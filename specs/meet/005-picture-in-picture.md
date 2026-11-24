@@ -22,10 +22,7 @@ PWA-only enhancement; it does not require a native application.
   The browser owns eligibility and permission; switching away
   must not bypass its restrictions by forcing a popup on blur.
 - Do not provide a “Pop out meeting” dropdown action. Entry is driven by the
-  browser's automatic action where supported. On desktop Firefox with Document
-  PiP, Control+Shift+M on macOS or Alt+Shift+M elsewhere opens the window
-  from the active meeting. Layout settings
-  show the shortcut in place of the automatic-entry preference.
+  browser's automatic action where supported.
   Where only video picture-in-picture is supported, use a playable meeting video;
   custom controls are available only in Document Picture-in-Picture.
 - Keep the existing Participant Connection and audio playback. Opening another

@@ -26,11 +26,18 @@
             />
             <MeetCameraOffIcon v-else-if="!videoAvailable" class="size-10 text-ink-gray-5" />
             <NamePill :name="participantName || __('Meeting')" role="status">
-              <MicOff v-if="!micOn" class="size-3 shrink-0" :aria-label="__('Muted')" />
-              <AudioLines
-                v-else-if="selfSpeaking"
-                class="size-3 shrink-0"
-                :aria-label="__('Speaking')"
+              <MicOff
+                v-if="!micOn"
+                class="size-3 shrink-0 -scale-x-100"
+                :aria-label="__('Muted')"
+              />
+              <AudioIndicator
+                v-else-if="selfAudio"
+                :media-stream="selfAudio"
+                :is-active="true"
+                :max-height="12"
+                :sensitivity="3.0"
+                active-color-class="bg-white"
               />
             </NamePill>
           </div>
@@ -48,11 +55,18 @@
             />
             <MeetAvatar v-else :image="secondAvatar" :label="secondAvatarLabel" size="2xl" />
             <NamePill :name="secondName" role="status">
-              <MicOff v-if="remoteMuted" class="size-3 shrink-0" :aria-label="__('Muted')" />
-              <AudioLines
-                v-else-if="remoteSpeaking"
-                class="size-3 shrink-0"
-                :aria-label="__('Speaking')"
+              <MicOff
+                v-if="remoteMuted"
+                class="size-3 shrink-0 -scale-x-100"
+                :aria-label="__('Muted')"
+              />
+              <AudioIndicator
+                v-else-if="remoteAudio"
+                :media-stream="remoteAudio"
+                :is-active="true"
+                :max-height="12"
+                :sensitivity="3.0"
+                active-color-class="bg-white"
               />
             </NamePill>
           </div>
@@ -86,7 +100,7 @@
           @click="emit('toggle-microphone')"
         >
           <MeetMicIcon v-if="micOn" />
-          <MeetMicOffIcon v-else />
+          <MeetMicOffIcon v-else class="size-5 -scale-x-100" />
         </ToolbarButton>
         <ToolbarButton
           :title="cameraOn ? __('Turn camera off') : __('Turn camera on')"
@@ -127,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { AudioLines, MicOff } from 'lucide-vue-next'
+import { MicOff } from 'lucide-vue-next'
 import { computed, inject, onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
@@ -139,8 +153,9 @@ import MeetCameraOffIcon from '../icons/MeetCameraOffIcon.vue'
 import MeetMicIcon from '../icons/MeetMicIcon.vue'
 import MeetMicOffIcon from '../icons/MeetMicOffIcon.vue'
 import MeetPhoneOffIcon from '../icons/MeetPhoneOffIcon.vue'
-import { getPlatform, isFirefoxDesktop, supportsFirefoxMeetingPip } from '../utils/device'
+import { isFirefoxDesktop } from '../utils/device'
 import type { SFUMeetingManager } from '../utils/SFUMeetingManager'
+import AudioIndicator from './AudioIndicator.vue'
 import LocalScreenShareCover from './LocalScreenShareCover.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import NamePill from './NamePill.vue'
@@ -181,19 +196,18 @@ const secondAvatarLabel = ref('')
 const secondName = ref('')
 const presentation = shallowRef<{ stream: MediaStream; label: string; local: boolean } | null>(null)
 const visibleRemoteId = ref<string | null>(null)
-const selfSpeaking = computed(() => {
-  const id = context.currentUser?.currentUser.value?.user_id
-  return !!id && context.participantStore.activeSpeakerIds.includes(id)
-})
+const selfAudio = shallowRef<MediaStream | null>(null)
+const remoteAudio = shallowRef<MediaStream | null>(null)
+function updateAudioStream(target: typeof selfAudio, track: MediaStreamTrack | null | undefined) {
+  const liveTrack = track?.readyState === 'live' ? track : null
+  if ((target.value?.getAudioTracks()[0] ?? null) !== liveTrack) {
+    target.value = liveTrack ? new MediaStream([liveTrack]) : null
+  }
+}
 const remoteMuted = computed(
   () =>
     !!visibleRemoteId.value &&
     context.participantStore.participants[visibleRemoteId.value]?.audio_enabled === false,
-)
-const remoteSpeaking = computed(
-  () =>
-    !!visibleRemoteId.value &&
-    context.participantStore.activeSpeakerIds.includes(visibleRemoteId.value),
 )
 const secondStream = shallowRef<MediaStream | null>(null)
 const participantName = ref('')
@@ -241,12 +255,7 @@ watch(
 )
 
 function refresh() {
-  if (
-    disposed ||
-    !props.active ||
-    (!automaticPictureInPicture.value && !supportsFirefoxMeetingPip())
-  )
-    return
+  if (disposed || !props.active || !automaticPictureInPicture.value) return
   const participants = context.participantStore.participants
   const self = context.currentUser?.currentUser.value
   const ids = [
@@ -316,6 +325,14 @@ function refresh() {
       : null
   }
   const secondId = visibleRemoteId.value
+  updateAudioStream(
+    selfAudio,
+    documentMode && props.micOn ? context.mediaState.localStream?.getAudioTracks()[0] : null,
+  )
+  updateAudioStream(
+    remoteAudio,
+    secondId && !remoteMuted.value ? manager?.value?.getRemoteAudioTrack(secondId) : null,
+  )
   const camera =
     secondId && participants[secondId]?.video_enabled
       ? manager?.value?.getRemoteVideoTrack(secondId)
@@ -361,6 +378,8 @@ function refresh() {
 }
 function release() {
   pipWindow.value = null
+  selfAudio.value = null
+  remoteAudio.value = null
   secondStream.value = null
   presentation.value = null
   visibleRemoteId.value = null
@@ -390,10 +409,10 @@ function leaveMeeting() {
   returnToMeeting()
   emit('leave')
 }
-async function open(manual = false) {
+async function open() {
   if (
     disposed ||
-    (!manual && !automaticPictureInPicture.value) ||
+    !automaticPictureInPicture.value ||
     !supported.value ||
     pending ||
     pipWindow.value ||
@@ -434,11 +453,9 @@ async function open(manual = false) {
     refresh()
   } catch {
     if (props.active && requestGeneration === generation) {
-      error.value = manual
-        ? __('Allow picture-in-picture for this site in Firefox, then try the shortcut again.')
-        : __(
-            'Could not open picture-in-picture. Allow automatic picture-in-picture in your browser settings.',
-          )
+      error.value = __(
+        'Could not open picture-in-picture. Allow automatic picture-in-picture in your browser settings.',
+      )
       clearTimeout(errorTimer)
       errorTimer = setTimeout(() => {
         error.value = ''
@@ -480,31 +497,6 @@ function presentationChanged() {
   fallbackActive = fallbackVideo.value?.webkitPresentationMode === 'picture-in-picture'
   refresh()
 }
-function onPipShortcut(event: KeyboardEvent) {
-  const modifierMatches =
-    getPlatform() === 'mac' ? event.ctrlKey && !event.altKey : event.altKey && !event.ctrlKey
-  if (
-    !props.active ||
-    !supportsFirefoxMeetingPip() ||
-    event.code !== 'KeyM' ||
-    !modifierMatches ||
-    !event.shiftKey ||
-    event.metaKey ||
-    event.repeat ||
-    event.defaultPrevented ||
-    event.isComposing
-  )
-    return
-  if (
-    event.target instanceof Element &&
-    event.target.closest(
-      'input, textarea, select, [contenteditable]:not([contenteditable="false"])',
-    )
-  )
-    return
-  event.preventDefault()
-  void open(true)
-}
 function closeWhenMeetingReturns() {
   if (document.visibilityState === 'visible' && (pipWindow.value || fallbackActive || pending)) {
     close()
@@ -513,7 +505,6 @@ function closeWhenMeetingReturns() {
 onMounted(() => {
   window.addEventListener('focus', closeWhenMeetingReturns)
   document.addEventListener('visibilitychange', closeWhenMeetingReturns)
-  if (supportsFirefoxMeetingPip()) window.addEventListener('keydown', onPipShortcut)
   refresh()
   timer = setInterval(refresh, 500)
   fallbackVideo.value?.addEventListener('enterpictureinpicture', enteredVideoPip)
@@ -523,7 +514,6 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   disposed = true
-  window.removeEventListener('keydown', onPipShortcut)
   clearInterval(timer)
   clearTimeout(errorTimer)
   close()

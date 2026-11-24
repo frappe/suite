@@ -1,5 +1,9 @@
 <template>
-  <div class="flex items-center gap-1" :style="{ height: `${props.maxHeight || 80}px` }">
+  <div
+    ref="indicator"
+    class="flex items-center gap-1"
+    :style="{ height: `${props.maxHeight || 80}px` }"
+  >
     <div
       v-for="(bar, index) in bars"
       :key="index"
@@ -15,6 +19,8 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch } from 'vue'
+
+const indicator = ref<HTMLDivElement | null>(null)
 
 const props = defineProps<{
   deviceId?: string
@@ -40,6 +46,7 @@ const bars = ref<BarState[]>(
 let audioContext: AudioContext | null = null
 let analyser: AnalyserNode | null = null
 let microphone: MediaStreamAudioSourceNode | null = null
+let animationWindow: Window | null = null
 let animationFrame: number | null = null
 let isListening = false
 let localMediaStream: MediaStream | null = null
@@ -91,6 +98,7 @@ const startListening = async () => {
     const maxHeight = props.maxHeight || 80 // px (capped by prop)
 
     // Animation loop (global RMS -> per-bar center-weighted -> smoothing)
+    animationWindow = indicator.value?.ownerDocument.defaultView ?? window
     const animate = () => {
       if (!analyser) return
 
@@ -133,7 +141,7 @@ const startListening = async () => {
         bars.value[i] = { scale: displayScale, className }
       }
 
-      animationFrame = requestAnimationFrame(animate)
+      animationFrame = animationWindow?.requestAnimationFrame(animate) ?? null
     }
 
     animate()
@@ -154,9 +162,11 @@ const stopListening = () => {
   isListening = false
 
   if (animationFrame) {
-    cancelAnimationFrame(animationFrame)
+    animationWindow?.cancelAnimationFrame(animationFrame)
     animationFrame = null
   }
+
+  animationWindow = null
 
   if (microphone) {
     microphone.disconnect()
