@@ -125,3 +125,13 @@ A refusal answers its class and a message:
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`, or no version could be kept before a replace. The same call gets the same answer until that changes. A write to a document not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The document is busy, a version is being restored into it or was just restored, the document's versions are away for a moment before a replace, or the converter gave no answer: it was busy or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end. Or, on a read, the converter gave no answer: it was busy, ran out of time or failed. Read again in a moment |
+
+## A document that never converts
+
+A document from before live editing is converted before it can be read as Markdown or written. A read, a write or a tab that opens it asks for the conversion, and it most often lands within a minute. Until then a read answers `DriveConflict` with "This document is not converted yet", and a write answers `WriteRefused` with `unconverted`.
+
+When both still answer that after a few tries a minute apart, stop asking. Either the document can't be converted, and it stays read-only, or the site converts nothing right now. More calls change neither.
+
+- Its HTML still reads. Ask step 4 for `format=html`, and the answer is the body as it was last saved.
+- Tell the user. Someone who opens the document in Writer sees which of the two it is, and a System Manager also sees the reason.
+- To go on meanwhile, write into a new document, as in step 3, and leave the old one as it is.
