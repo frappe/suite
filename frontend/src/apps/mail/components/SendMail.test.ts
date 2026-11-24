@@ -408,7 +408,6 @@ describe('sending a reply in a thread', () => {
     const { body, answer } = await sendHeld()
     expect(body.closest('[inert]')).not.toBeNull()
     const heard = heardByThePage()
-    // A browser moves focus out of an inert element. jsdom needs an explicit blur.
     body.blur()
     press('e')
     press('Backspace')

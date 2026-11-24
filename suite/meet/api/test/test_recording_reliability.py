@@ -778,8 +778,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         start_time = datetime(2026, 1, 1)
         frappe.db.set_value("Meet Recording", first_name, "started_at", start_time)
         names = [first_name]
-        # Listing only needs completed rows with a readable artifact. The other
-        # tests in this class exercise publishing and Drive visibility.
         for index in range(1, 101):
             recording = frappe.get_doc(
                 {

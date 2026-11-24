@@ -370,8 +370,6 @@ class TestCommentWorkflows(IntegrationTestCase):
         with self.assertRaises(DriveNotFound):
             comment_threads(self.outsider, self.document.name)
 
-        # Migrated comments can share a timestamp. Give that thread source
-        # positions that disagree with alphabetical order of the stored names.
         later, earlier = sorted((opener, answer))
         for idx, name in enumerate((earlier, later), start=1):
             frappe.db.set_value("Drive Comment", name, {"creation": "2000-01-01 00:00:00", "idx": idx})

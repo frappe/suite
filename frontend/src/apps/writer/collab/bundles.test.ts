@@ -98,7 +98,6 @@ describe('Writer server bundles under --permission', () => {
       const bundle = path.join(outDir, 'converter.cjs')
 
       const answer = run(bundle, {
-        // Opening a table exercises its node view under the server's permissions.
         legacy: {
           content: null,
           html: '<table><tr><td><p>Cell</p></td></tr></table>',
