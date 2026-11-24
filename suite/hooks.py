@@ -549,6 +549,7 @@ ALLOWED_WILDCARD_PATHS = [
     # writer — backward-compatible prefix for embed URLs stored in old documents
     # (see override_whitelisted_methods).
     "/api/method/writer.api.",
+    "/api/suite/slides/",
     "/api/method/suite.slides.api.",
     "/api/method/suite.sheets.api.",
     # drive — WebDAV namespace

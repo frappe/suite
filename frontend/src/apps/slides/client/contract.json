@@ -3,6 +3,885 @@
   "prefix": "/api/suite/slides/",
   "operations": [
     {
+      "id": "presentation_create",
+      "kind": "mutation",
+      "publicName": "presentations.create",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "presentations",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "parent": {
+            "title": "Parent",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "slides": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Slides",
+            "type": "array"
+          }
+        },
+        "required": [
+          "parent",
+          "title",
+          "slides"
+        ],
+        "title": "CreatePresentation",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind",
+              "role"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "description": "The presentation's node as Drive answers it, and the revision the write made.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          },
+          "rev": {
+            "title": "Rev",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified",
+          "rev"
+        ],
+        "title": "WrittenPresentation",
+        "type": "object"
+      },
+      "errors": [
+        "DriveError",
+        "RateLimitExceededError",
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "SlidesRefused",
+        "WriteRefused",
+        "WriteBusy",
+        "DriveConflict"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "presentation_write",
+      "kind": "mutation",
+      "publicName": "presentations.write",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "presentations/{node}/slides",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": {
+        "properties": {
+          "slides": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Slides",
+            "type": "array"
+          },
+          "mode": {
+            "const": "replace",
+            "title": "Mode",
+            "type": "string"
+          }
+        },
+        "required": [
+          "slides",
+          "mode"
+        ],
+        "title": "WriteSlides",
+        "type": "object"
+      },
+      "output": {
+        "$defs": {
+          "AccessShape": {
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              },
+              "via_link": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Via Link"
+              },
+              "source_node": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Node"
+              },
+              "source_principal": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Source Principal"
+              },
+              "can_manage": {
+                "title": "Can Manage",
+                "type": "boolean"
+              }
+            },
+            "title": "AccessShape",
+            "type": "object"
+          },
+          "AudienceShape": {
+            "description": "How widely a node is shared. It names nobody, so any reader may see it.",
+            "properties": {
+              "kind": {
+                "enum": [
+                  "public",
+                  "organization",
+                  "link",
+                  "people"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "people": {
+                "title": "People",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "people"
+            ],
+            "title": "AudienceShape",
+            "type": "object"
+          },
+          "BreadcrumbShape": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "title": "Title",
+                "type": "string"
+              },
+              "kind": {
+                "title": "Kind",
+                "type": "string"
+              },
+              "role": {
+                "title": "Role",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "kind",
+              "role"
+            ],
+            "title": "BreadcrumbShape",
+            "type": "object"
+          },
+          "Person": {
+            "properties": {
+              "id": {
+                "title": "Id",
+                "type": "string"
+              },
+              "full_name": {
+                "title": "Full Name",
+                "type": "string"
+              },
+              "user_image": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "User Image"
+              }
+            },
+            "required": [
+              "id",
+              "full_name",
+              "user_image"
+            ],
+            "title": "Person",
+            "type": "object"
+          },
+          "PreviewShape": {
+            "properties": {
+              "url": {
+                "title": "Url",
+                "type": "string"
+              },
+              "expires": {
+                "title": "Expires",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "url",
+              "expires"
+            ],
+            "title": "PreviewShape",
+            "type": "object"
+          }
+        },
+        "description": "The presentation's node as Drive answers it, and the revision the write made.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "parent_node": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Node"
+          },
+          "root": {
+            "title": "Root",
+            "type": "string"
+          },
+          "state": {
+            "title": "State",
+            "type": "string"
+          },
+          "trash_root": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trash Root"
+          },
+          "size": {
+            "title": "Size",
+            "type": "integer"
+          },
+          "mime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mime"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          },
+          "content_doctype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Doctype"
+          },
+          "content_docname": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Docname"
+          },
+          "is_template": {
+            "title": "Is Template",
+            "type": "integer"
+          },
+          "owner": {
+            "$ref": "#/$defs/Person"
+          },
+          "creation": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Creation"
+          },
+          "modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modified"
+          },
+          "content_modified": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Modified"
+          },
+          "access": {
+            "$ref": "#/$defs/AccessShape"
+          },
+          "audience": {
+            "$ref": "#/$defs/AudienceShape"
+          },
+          "breadcrumbs": {
+            "items": {
+              "$ref": "#/$defs/BreadcrumbShape"
+            },
+            "title": "Breadcrumbs",
+            "type": "array"
+          },
+          "contents_size": {
+            "title": "Contents Size",
+            "type": "integer"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PreviewShape"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "opened_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opened At"
+          },
+          "favourite": {
+            "title": "Favourite",
+            "type": "boolean"
+          },
+          "rev": {
+            "title": "Rev",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "title",
+          "kind",
+          "parent_node",
+          "root",
+          "state",
+          "trash_root",
+          "size",
+          "mime",
+          "url",
+          "content_doctype",
+          "content_docname",
+          "is_template",
+          "owner",
+          "creation",
+          "modified",
+          "content_modified",
+          "rev"
+        ],
+        "title": "WrittenPresentation",
+        "type": "object"
+      },
+      "errors": [
+        "DriveError",
+        "RateLimitExceededError",
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "SlidesRefused",
+        "WriteRefused",
+        "WriteBusy"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "presentation_read",
+      "kind": "query",
+      "publicName": "presentations.read",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "presentations/{node}",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "properties": {
+          "slides": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Slides",
+            "type": "array"
+          }
+        },
+        "required": [
+          "slides"
+        ],
+        "title": "PresentationSlides",
+        "type": "object"
+      },
+      "errors": [
+        "DriveError",
+        "RateLimitExceededError",
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "SlidesRefused",
+        "WriteRefused",
+        "WriteBusy"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "agent_guide",
+      "kind": "query",
+      "publicName": "agentGuide.read",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "agent-guide",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": true,
+      "bytes": true
+    },
+    {
       "id": "get_public_presentation",
       "kind": "query",
       "publicName": "documents.get",
