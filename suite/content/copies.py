@@ -206,11 +206,31 @@ def render_owed(app: str, doc_id: str) -> None:
     frappe.qb.update(doc).set(doc.copy_owed, 0).where(doc.id == doc_id).run()
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     html_copy = spec_of(app).readable_copy
+    # A tab may have rendered the head since the write
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render or is_at_head(app, doc_id):
+        return
+
     log_read = read(app, doc_id)
-    if log_read is None or not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+    if log_read is None:
         return
 
     install(app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy)
+
+
+def is_at_head(app: str, doc_id: str) -> bool:
+    """Whether the document's copy is of its head."""
+    doc = Table(table(app, "doc"))
+    projection = Table(table(app, "projection"))
+    found = (
+        frappe.qb.from_(doc)
+        .join(projection)
+        .on(projection.doc_id == doc.id)
+        .select(doc.id)
+        .where(doc.id == doc_id)
+        .where(projection.projected_rev >= doc.head_rev)
+        .run()
+    )
+    return bool(found)
 
 
 def owed_docs(app: str, limit: int = 100) -> list[str]:

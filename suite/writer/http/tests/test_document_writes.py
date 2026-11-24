@@ -18,7 +18,7 @@ from frappe.utils.logging import connection_for
 from frappe.utils.synchronization import filelock
 
 from suite import content, drive
-from suite.content import capacity, checker, convert, jobs, scheduling, steps
+from suite.content import capacity, checker, convert, copies, jobs, scheduling, steps
 from suite.content.http import routes
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
@@ -387,6 +387,32 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(self.swept_renders(node), 1)
         jobs.render_owed(writer_content.APP, self.doc_row(node).id)
         self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
+
+    def test_the_owed_job_renders_nothing_once_a_tab_rendered_the_head(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        doc = self.doc_row(node)
+        tab_render = "<p>First.</p><p>Second.</p>"
+        self.assertEqual(
+            copies.install(
+                writer_content.APP,
+                doc.id,
+                doc.head_rev,
+                doc.lineage,
+                doc.q_epoch,
+                lambda _state: tab_render,
+                writer_content.EDITOR.readable_copy,
+            ),
+            "installed",
+        )
+
+        with patch.object(converter, "run") as run:
+            jobs.render_owed(writer_content.APP, doc.id)
+
+        run.assert_not_called()
+        self.assertEqual(self.copy_of(node), tab_render)
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 0)
 
     def test_a_write_keeps_what_it_owes_when_its_request_fails_later(self):
         node = self.create("First.")
