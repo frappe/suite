@@ -212,7 +212,7 @@ A slide is 960 wide and 540 high. `left` and `top` place an element's top left c
 | Field | Value |
 | --- | --- |
 | `id` | Optional. 1 to 128 letters, digits, `-` or `_`. Leave it out for a new slide, and one is made |
-| `background` | A colour, such as `#FFFFFF`, or with opacity `#FFFFFF80` |
+| `background` | A hex colour: `#RGB` or `#RRGGBB`, or with opacity `#RGBA` or `#RRGGBBAA`, such as `#FFFFFF80` |
 | `transition` | `None`, `Fade`, `Slide In` or `Magic Move` |
 | `transitionDuration` | Seconds, such as `1` |
 | `fadeUnmatchedElements` | `true` or `false`. With Magic Move, fades in what the slide before has no element for |
@@ -281,6 +281,7 @@ A link's `href` is kept when it starts with `http:`, `https:`, `ftp:`, `ftps:`, 
 - It lands as one change by the signed-in user, the same way a tab's edit does. Open tabs get it live.
 - The automatic version follows it.
 - A write keeps all of the slides or refuses all of them. It refuses what the editor would change or leave out, except a link whose `href` the editor can't keep: that link is dropped and its words kept.
+- A write checks the names of fields, each element's `type`, the ids, the pictures, the background and the HTML. It doesn't check the kind of every other value: `"left": true` or `"width": "x"` is kept as sent. So send each value in the kind a read gives it, since a wrong kind may be kept and draw wrong.
 - `replace` removes every slide and writes the new ones. An edit someone makes at that moment to a removed slide goes with it.
 - `append` leaves every slide there is, with what others edit in it, and adds the new slides after the last one.
 - `append` with a slide as a read gives it, ids and all, adds a copy of it: the copy and its elements get ids of their own, and Magic Move pairs the copy's elements with the ones they copy.
@@ -292,7 +293,7 @@ A link's `href` is kept when it starts with `http:`, `https:`, `ftp:`, `ftps:`, 
 
 ## Limits
 
-One user makes up to 30 creates and writes, and 60 reads, a minute. A call past that answers `RateLimitExceededError` until the minute ends. Uploads don't count toward these.
+One user makes up to 30 creates, 30 slides writes and 30 one-slide writes a minute, each counted on its own, and 60 reads. A call past that answers `RateLimitExceededError` until the minute ends. Uploads don't count toward these.
 
 ## Refusals
 
@@ -313,8 +314,9 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the presentation, or the presentation is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
+| `DriveOverQuota` | 413 | The Drive has no room for a picture the write copies under the presentation. Nothing was written. Upload less, or free some space |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a value the editor has no place for, an id is not of the form above, a one-slide write names an `id` other than its path's or sends no `elements`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, and the element when one is at fault. Nothing was written. The same slides get the same answer, so change them |
+| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a `type` the editor has no place for, a background is not a hex colour, an id is not of the form above, a one-slide write names an `id` other than its path's or sends no `elements`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, and the element when one is at fault. Nothing was written. The same slides get the same answer, so change them |
 | `WriteRefused` | 409 | The presentation refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`; or no version could be kept before a replace; or the presentation is a combined one. The same call gets the same answer until that changes. A write to a presentation not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, a layout's template is not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
