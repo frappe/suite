@@ -168,8 +168,8 @@
                   :is-guest="isGuestSession"
                   :host-only-chat="chatStore.hostOnlyChat"
                   :pinned-message="chatStore.pinnedMessage"
+                  :send-message="chat.onSendChat"
                   @close="toggleChat"
-                  @send="chat.onSendChat"
                   @pin="chat.pinMessage"
                   @unpin="unpinChatMessage"
                 />

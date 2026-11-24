@@ -2,6 +2,7 @@ import { toast } from 'frappe-ui'
 
 import { translate as __ } from '@/platform/translation'
 
+import { E2EE_CHAT_PREFIX, MAX_CHAT_TEXT_BYTES } from '../../../../../suite/meet/types/chatLimits'
 import { isUnknownRecord } from '../types'
 import audioNotificationManager from '../utils/audioNotifications'
 import { E2EEMeeting } from '../utils/media/E2EEMeeting'
@@ -11,7 +12,7 @@ import type { CurrentUser } from './useCurrentUser'
 
 interface ChatAPI {
   setupChatEvents: (notify: (notification: ChatNotification) => void) => void
-  onSendChat: (text: string) => void
+  onSendChat: (text: string) => Promise<boolean>
   toggleRestriction: (enabled: boolean) => void
   pinMessage: (messageId: string, action?: 'pin' | 'unpin') => void
 }
@@ -46,8 +47,6 @@ function normalizeChatMessage(value: unknown): IncomingChatMessage | null {
     messageId: typeof value.messageId === 'string' ? value.messageId : undefined,
   }
 }
-
-const E2EE_CHAT_PREFIX = 'e2ee:'
 
 function isEncryptedChatMessage(message: string): boolean {
   return message.startsWith(E2EE_CHAT_PREFIX)
@@ -225,30 +224,26 @@ export function useChat(deps: {
   }
 
   const onSendChat = async (text: string) => {
+    if (new TextEncoder().encode(text).length > MAX_CHAT_TEXT_BYTES) {
+      toast.error(__('Messages can be up to 32 KiB. Shorten your message and try again.'))
+      return false
+    }
     try {
       let messageToSend = text
-      if (sfuClient.isConnected()) {
-        if (isE2EERequired(sfuClient) || shouldEncryptChat()) {
-          const key = await getChatKey()
-          if (!key) {
-            toast.error(
-              __('Could not send the message. Wait for encryption to finish, then try again.'),
-            )
-            return
-          }
-          messageToSend = await encryptChatMessage(key, text)
+      if (isE2EERequired(sfuClient) || shouldEncryptChat()) {
+        const key = await getChatKey()
+        if (!key) {
+          toast.error(
+            __('Could not send the message. Wait for encryption to finish, then try again.'),
+          )
+          return false
         }
+        messageToSend = await encryptChatMessage(key, text)
       }
 
-      let timestamp = new Date().toISOString()
-      let messageId: string | undefined
-      if (sfuClient.isConnected()) {
-        const response = await sfuClient.sendChatMessage(messageToSend, {
-          clientId: currentUser.currentUser.value?.user_id,
-        })
-        timestamp = response.timestamp
-        messageId = response.messageId
-      }
+      const { timestamp, messageId } = await sfuClient.sendChatMessage(messageToSend, {
+        clientId: currentUser.currentUser.value?.user_id,
+      })
 
       const message: ChatMessage = {
         id: Date.now() + Math.random(),
@@ -263,9 +258,11 @@ export function useChat(deps: {
         timestamp,
       }
       chatStore.addMessage(message)
+      return true
     } catch (error) {
       console.error('Failed to send chat message:', error)
       toast.error(__('Could not send the message'))
+      return false
     }
   }
 

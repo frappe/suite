@@ -1,9 +1,22 @@
 import { randomUUID } from 'node:crypto';
 import type { Socket } from 'socket.io';
+import {
+	CHAT_TOO_LONG_ERROR,
+	E2EE_CHAT_PREFIX,
+	MAX_CHAT_TEXT_BYTES,
+	MAX_ENCRYPTED_CHAT_LENGTH,
+} from '../../../../types/chatLimits';
 import type { ChatMessage, PinnedChatMessage } from '../../types';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 import { ensureParticipantOwner } from './utils';
+
+function isChatTooLong(text: string): boolean {
+	const limit = text.startsWith(E2EE_CHAT_PREFIX)
+		? MAX_ENCRYPTED_CHAT_LENGTH
+		: MAX_CHAT_TEXT_BYTES;
+	return Buffer.byteLength(text, 'utf8') > limit;
+}
 
 function toPinnedChatMessage(
 	message: ChatMessage,
@@ -46,9 +59,11 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					socket,
 					deps.registry,
 				);
-				const text = (
-					typeof data.message === 'string' ? data.message : ''
-				).slice(0, 2000);
+				const text = typeof data?.message === 'string' ? data.message : '';
+				if (isChatTooLong(text)) {
+					callback?.({ success: false, error: CHAT_TOO_LONG_ERROR });
+					return;
+				}
 
 				if (!text.trim() || !socket.userName) {
 					callback?.({ success: false, error: 'Invalid chat message' });
@@ -160,6 +175,10 @@ export function registerChatHandlers(deps: HandlerDeps) {
 					typeof data.encryptedMessage === 'string'
 						? data.encryptedMessage
 						: message.message;
+				if (isChatTooLong(encryptedMessage)) {
+					callback?.({ success: false, error: CHAT_TOO_LONG_ERROR });
+					return;
+				}
 				const pinned = toPinnedChatMessage(message, encryptedMessage);
 				deps.registry.setPinnedChatMessage(roomId, pinned);
 				deps.registry.emitToFullAccessParticipants(roomId, 'chat:pin_updated', {

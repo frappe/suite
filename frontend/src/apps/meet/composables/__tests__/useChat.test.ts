@@ -131,6 +131,24 @@ describe('useChat E2EE gating', () => {
     })
   })
 
+  it('reports a rejected send as failed and leaves it out of the timeline', async () => {
+    E2EEMeeting.instance = new E2EEMeeting()
+    const chatStore = makeChatStore()
+    const sfuClient = makeSFUClient({
+      isE2EERequired: () => false,
+      sendChatMessage: vi.fn().mockRejectedValue(new Error('Connection lost')),
+    })
+    const chat = useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    })
+
+    await expect(chat.onSendChat('Please keep this draft')).resolves.toBe(false)
+    expect(sfuClient.sendChatMessage).toHaveBeenCalled()
+    expect(chatStore.chatMessages).toEqual([])
+  })
+
   it('uses the server timestamp for locally sent messages', async () => {
     E2EEMeeting.instance = new E2EEMeeting()
     const chatStore = makeChatStore()
