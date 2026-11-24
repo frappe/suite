@@ -478,7 +478,8 @@ def readable_copy(app: str, doc_id: str) -> str | None:
         return None
 
     copy = copy_row(app, doc_id, html_copy)
-    if copy is None:
+    # A projection row made at rev 0 has no hash until a copy is written
+    if copy is None or copy.projection_hash is None:
         return None
 
     serialized = html_copy.serialized(copy.written)
