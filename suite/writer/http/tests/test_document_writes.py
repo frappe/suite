@@ -276,8 +276,14 @@ class TestDocumentWrites(DriveCallbackCase):
         self.set_doc(node, state_bytes=capacity.STATE_MAX)
 
         for _attempt in range(2):
-            with self.assertRaisesRegex(WriteRefused, "doc_full"):
+            with (
+                patch.object(drive, "read_version") as read_version,
+                self.assertRaisesRegex(WriteRefused, "doc_full"),
+            ):
                 writer_routes.document_write(node, "Only this.", "replace")
+
+            # A version's file may be large or gone, so no replace reads one to know what it holds
+            read_version.assert_not_called()
 
         self.assertEqual(len(self.kept_versions(node)), 1)
 
