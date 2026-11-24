@@ -162,6 +162,10 @@ class WriteSlides(TypedDict):
     mode: Literal["replace", "append"]
 
 
+class WriteSlide(TypedDict):
+    slide: dict[str, object]
+
+
 class WrittenPresentation(drive.NodeShape):
     """The presentation's node as Drive answers it, and the revision the write made."""
 
@@ -232,6 +236,15 @@ def presentation_write(node: str, slides: Given = None, mode: Given = None) -> W
     return {**drive.get_node(node), "rev": rev}
 
 
+@frappe.whitelist(methods=["POST"])
+@write_limit
+@refusing
+def presentation_slide_write(node: str, slide_id: str, slide: Given = None) -> WrittenPresentation:
+    """Replace one slide of a presentation with slide JSON, leaving the others."""
+    rev = agent.write_slide(node, slide_id, slide)
+    return {**drive.get_node(node), "rev": rev}
+
+
 @frappe.whitelist(methods=["GET"])
 @read_limit
 @refusing
@@ -289,6 +302,16 @@ ROUTES = (
         errors=SLIDES_ERRORS,
         kind="mutation",
         public_name="presentations.write",
+    ),
+    Route(
+        "POST",
+        "presentations/{node}/slides/{slide_id}",
+        "presentation_slide_write",
+        body=WriteSlide,
+        output=WrittenPresentation,
+        errors=SLIDES_ERRORS,
+        kind="mutation",
+        public_name="presentations.writeSlide",
     ),
     Route(
         "GET",

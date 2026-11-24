@@ -93,6 +93,24 @@ def write(node: str, slides: object, mode: Literal["replace", "append"]) -> int:
     return push(node, replacing(deck))
 
 
+def write_slide(node: str, slide_id: str, slide: object) -> int:
+    """Make the presentation's slide `slide_id` hold `slide`'s fields and elements alone, and answer the rev."""
+    writable(node)
+    if not isinstance(slide, dict):
+        raise SlidesRefused(_("slide must be an object"))
+
+    if slide.get("id") not in {None, slide_id}:
+        raise SlidesRefused(_("The slide's id must be the one the path names, or left out"))
+
+    doc = current_doc(node)
+    if slide_id not in doc.get("slides", type=pycrdt.Map):
+        raise drive.DriveNotFound(_("That slide was not found"))
+
+    # The slide's own elements keep their ids, and one another slide holds gets a new one
+    held = item_ids(doc) - {slide_id} - set(elements_on(doc, slide_id))
+    return push(node, rewriting(slide_id, deck_state([{**slide, "id": slide_id}], held)))
+
+
 def read(node: str) -> dict:
     """Answer the presentation as slide JSON, made from its log as it stands, in the form a write takes."""
     if drive.check(node, drive.READ) != EDITOR.doctype:
@@ -301,6 +319,48 @@ def appending(deck: bytes) -> Callable[[pycrdt.Doc], None]:
         copy_items(state.get("elements", type=pycrdt.Map), source.get("elements", type=pycrdt.Map))
 
     return change
+
+
+def rewriting(slide_id: str, deck: bytes) -> Callable[[pycrdt.Doc], None]:
+    """Answer the change that makes the slide `slide_id` `deck`'s one slide, where it stands."""
+    source = compaction.load_doc([deck])
+
+    def change(state: pycrdt.Doc) -> None:
+        slides = state.get("slides", type=pycrdt.Map)
+        elements = state.get("elements", type=pycrdt.Map)
+        if slide_id not in slides:
+            # A tab removed the slide after the ids were read
+            raise drive.DriveNotFound(_("That slide was not found"))
+
+        own = elements_on(state, slide_id)
+        added = source.get("elements", type=pycrdt.Map)
+        if not set(added.keys()).isdisjoint(item_ids(state) - {slide_id} - set(own)):
+            raise WriteBusy(_("The presentation changed during the write. Try again."))
+
+        set_fields(slides[slide_id], source.get("slides", type=pycrdt.Map)[slide_id])
+        for key in own:
+            del elements[key]
+
+        copy_items(elements, added)
+
+    return change
+
+
+def elements_on(doc: pycrdt.Doc, slide_id: str) -> list[str]:
+    """Answer the ids of the elements on the slide `slide_id`."""
+    elements = doc.get("elements", type=pycrdt.Map)
+    return [key for key, element in elements.items() if element.get("parent") == slide_id]
+
+
+def set_fields(slide: pycrdt.Map, source: pycrdt.Map) -> None:
+    """Make `slide`'s fields `source`'s, keeping its order, so a tab's copy of it stays the same item."""
+    for name in list(slide.keys()):
+        if name != "order" and name not in source:
+            del slide[name]
+
+    for name, value in source.items():
+        if name != "order":
+            slide[name] = value
 
 
 def order_of(item: pycrdt.Map) -> str:

@@ -247,12 +247,16 @@ class TestPresentationWrites(LoggedDeckCase):
     def test_a_reader_cannot_write(self):
         ensure_user(READER)
         node = self.create([title_slide("First")])
+        (slide,) = slides_routes.presentation_read(node)["slides"]
         share(docname_for_node(node), READER, drive.READ)
         frappe.db.commit()
         frappe.set_user(READER)
 
         with self.assertRaises(drive.DriveForbidden):
             slides_routes.presentation_write(node, [title_slide("Second")], "replace")
+
+        with self.assertRaises(drive.DriveForbidden):
+            slides_routes.presentation_slide_write(node, slide["id"], title_slide("Second"))
 
         frappe.set_user("Administrator")
         self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
@@ -381,6 +385,53 @@ class TestPresentationWrites(LoggedDeckCase):
             slides_routes.presentation_write(node, [title_slide("Appended", id="taken-meanwhile")], "append")
 
         self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"], []])
+
+    def test_a_slide_write_changes_that_slide_alone(self):
+        node = self.create([title_slide("First"), shape_slide(), title_slide("Third")])
+        first, shapes, third = slides_routes.presentation_read(node)["slides"]
+        box, _line = shapes["elements"]
+
+        written = {**shapes, "transition": "None", "elements": [{**box, "content": "<p>Changed</p>"}]}
+        slides_routes.presentation_slide_write(node, shapes["id"], written)
+
+        after = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual((after[0], after[2]), (first, third))
+        self.assertEqual(after[1]["id"], shapes["id"])
+        self.assertEqual(after[1]["transition"], "None")
+        (changed,) = after[1]["elements"]
+        self.assertEqual(changed["id"], "box")
+        self.assertIn("Changed", changed["content"])
+        self.assertEqual(self.kept_versions(node), [])
+
+    def test_a_slide_write_gives_an_id_another_slide_holds_a_new_one(self):
+        node = self.create([shape_slide(), title_slide("Second")])
+        shapes, second = slides_routes.presentation_read(node)["slides"]
+
+        borrowed = {"elements": [{**box_shape(), "content": "<p>Borrowed</p>"}]}
+        slides_routes.presentation_slide_write(node, second["id"], borrowed)
+
+        shapes_after, second_after = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(shapes_after, shapes)
+        (element,) = second_after["elements"]
+        self.assertNotEqual(element["id"], "box")
+        self.assertIn("Borrowed", element["content"])
+
+    def test_a_slide_write_to_a_slide_not_there_writes_nothing(self):
+        node = self.create([title_slide("First")])
+
+        with self.assertRaises(drive.DriveNotFound):
+            slides_routes.presentation_slide_write(node, "no-such-slide", title_slide("Second"))
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+
+    def test_a_slide_write_naming_another_id_writes_nothing(self):
+        node = self.create([title_slide("First"), title_slide("Second")])
+        first, second = slides_routes.presentation_read(node)["slides"]
+
+        with self.assertRaisesRegex(SlidesRefused, "id must be the one the path names"):
+            slides_routes.presentation_slide_write(node, first["id"], {**second, "id": second["id"]})
+
+        self.assertEqual(slides_routes.presentation_read(node)["slides"], [first, second])
 
     def test_a_busy_converter_answers_busy_and_creates_nothing(self):
         with (

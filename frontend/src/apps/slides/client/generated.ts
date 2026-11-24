@@ -207,6 +207,108 @@ const operationPresentationWrite: MutationRef<
   loadValidators: async () => (await import('./validators')).operationPresentationWrite,
 }
 
+export type PresentationSlideWriteOutputAccessShape = {
+  role?: number
+  via_link?: string | null
+  source_node?: string | null
+  source_principal?: string | null
+  can_manage?: boolean
+}
+
+export type PresentationSlideWriteOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type PresentationSlideWriteOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
+
+export type PresentationSlideWriteOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
+export type PresentationSlideWriteOutputPreviewShape = { url: string; expires: number }
+
+export type PresentationSlideWriteInput = {
+  slide: { [key: string]: unknown }
+  node: string
+  slide_id: string
+}
+
+export type PresentationSlideWriteOutput = {
+  name: string
+  title: string
+  kind: string
+  parent_node: string | null
+  root: string
+  state: string
+  trash_root: string | null
+  size: number
+  mime: string | null
+  url: string | null
+  content_doctype: string | null
+  content_docname: string | null
+  is_template: number
+  owner: PresentationSlideWriteOutputPerson
+  creation: string | null
+  modified: string | null
+  content_modified: string | null
+  access?: PresentationSlideWriteOutputAccessShape
+  audience?: PresentationSlideWriteOutputAudienceShape
+  breadcrumbs?: Array<PresentationSlideWriteOutputBreadcrumbShape>
+  contents_size?: number
+  preview?: PresentationSlideWriteOutputPreviewShape | null
+  opened_at?: string | null
+  favourite?: boolean
+  rev: number
+}
+
+export type PresentationSlideWriteError =
+  | 'DriveError'
+  | 'RateLimitExceededError'
+  | 'DriveNotFound'
+  | 'DriveForbidden'
+  | 'DriveLocked'
+  | 'DriveLinkExpired'
+  | 'SlidesRefused'
+  | 'WriteRefused'
+  | 'WriteBusy'
+
+const operationPresentationSlideWrite: MutationRef<
+  PresentationSlideWriteInput,
+  PresentationSlideWriteOutput,
+  PresentationSlideWriteError
+> = {
+  id: 'presentation_slide_write',
+  owner: 'slides',
+  kind: 'mutation',
+  publicName: 'presentations.writeSlide',
+  method: 'POST',
+  path: 'presentations/{node}/slides/{slide_id}',
+  prefix: '/api/suite/slides/',
+  pathParams: ['node', 'slide_id'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: [
+    'DriveError',
+    'RateLimitExceededError',
+    'DriveNotFound',
+    'DriveForbidden',
+    'DriveLocked',
+    'DriveLinkExpired',
+    'SlidesRefused',
+    'WriteRefused',
+    'WriteBusy',
+  ],
+  loadValidators: async () => (await import('./validators')).operationPresentationSlideWrite,
+}
+
 export type PresentationReadInput = { node: string }
 
 export type PresentationReadOutput = { slides: Array<{ [key: string]: unknown }> }
@@ -780,6 +882,7 @@ export const api = {
   presentations: {
     create: operationPresentationCreate,
     write: operationPresentationWrite,
+    writeSlide: operationPresentationSlideWrite,
     read: operationPresentationRead,
   },
   agentGuide: {
