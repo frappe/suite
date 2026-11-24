@@ -6,10 +6,12 @@ add media at all. A still PNG or JPEG is stored as WebP; other media, and any
 picture that cannot be converted whole, as uploaded.
 """
 
+import os
 from io import BytesIO
 from unittest.mock import patch
 
 import frappe
+from frappe.storage.blob import SNIFF_BYTES
 from frappe.tests import IntegrationTestCase
 from PIL import Image, ImageCms, ImageFile
 
@@ -32,6 +34,13 @@ READER = "slides-media-reader@example.com"
 
 
 SVG = b'<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8"/></svg>'
+# The first bytes each format starts with, as cameras and encoders write them
+MP4_START = b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2avc1mp41"
+MOV_START = b"\x00\x00\x00\x14ftypqt  \x00\x00\x02\x00qt  "
+WEBM_START = (
+    b"\x1a\x45\xdf\xa3\x9f\x42\x86\x81\x01\x42\xf7\x81\x01\x42\xf2\x81\x04\x42\xf3\x81\x08"
+    b"\x42\x82\x84webm\x42\x87\x81\x04\x42\x85\x81\x02"
+)
 
 
 def gradient(size: tuple[int, int] = (256, 256)) -> Image.Image:
@@ -126,6 +135,40 @@ class TestSlidesMedia(IntegrationTestCase):
         ):
             with self.subTest(filename):
                 self.assertStoredAsUploaded(content, filename, mimetype)
+
+    def test_an_svg_after_a_bom_a_comment_or_a_doctype_is_stored_as_uploaded(self):
+        # Longer than the bytes a sniff reads, so the whole file must be stored
+        drawing = SVG.replace(b"/>", b"/>" + b"<!-- padding -->" * 1024, 1)
+        doctype = b'<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">'
+        cases = {
+            "a BOM": b"\xef\xbb\xbf" + drawing,
+            "a comment": b"<!-- Made in a drawing app -->\n" + drawing,
+            "a DOCTYPE": doctype + b"\n" + drawing,
+        }
+        for case, content in cases.items():
+            with self.subTest(case):
+                self.assertStoredAsUploaded(content, "logo.svg", "image/svg+xml")
+
+    def test_a_video_is_stored_as_uploaded(self):
+        for filename, mimetype, start in (
+            ("talk.mp4", "video/mp4", MP4_START),
+            ("talk.mov", "video/quicktime", MOV_START),
+            ("talk.webm", "video/webm", WEBM_START),
+        ):
+            with self.subTest(filename):
+                self.assertStoredAsUploaded(start + frappe.generate_hash(32).encode(), filename, mimetype)
+
+    def test_a_jpeg_sent_as_a_png_is_stored_as_a_webp(self):
+        jpeg = encoded(gradient(), "JPEG")
+
+        self.assertEqual(self.stored_picture(jpeg, "photo.png", "image/png").size, (256, 256))
+
+    def test_a_gif_longer_than_a_sniff_is_stored_whole(self):
+        noise = Image.frombytes("L", (128, 128), os.urandom(128 * 128))
+        gif = encoded(noise, "GIF")
+        self.assertGreater(len(gif), SNIFF_BYTES)
+
+        self.assertStoredAsUploaded(gif, "noise.gif", "image/gif")
 
     def test_a_damaged_picture_is_stored_as_uploaded_whatever_pillows_flag_says(self):
         png = encoded(gradient())
@@ -223,6 +266,9 @@ class TestSlidesMedia(IntegrationTestCase):
             ("notes.png", "image/png", b"Plain words, not a picture"),
             ("page.png", "image/png", b"<!doctype html><p>Not a picture</p>"),
             ("talk.mp4", "video/mp4", b"Plain words, not a video"),
+            ("logo.svg", "image/svg+xml", b"Plain words, not a drawing"),
+            ("logo.svg", "image/svg+xml", b"<html><body>Not a drawing</body></html>"),
+            ("logo.svg", "image/svg+xml", b"<!-- Made by hand -->\n<html><p>Not a drawing</p></html>"),
         ):
             with self.subTest(filename), self.assertRaises(frappe.ValidationError):
                 self.upload(filename, mimetype, content)
