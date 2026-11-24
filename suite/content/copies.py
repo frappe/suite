@@ -189,7 +189,14 @@ def follow_write(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, *,
         # A write after this one keeps what it owes
         marked = marked.where(doc.head_rev == rev)
 
-    marked.run()
+    try:
+        marked.run()
+        # At once: the write has landed, and what follows in the request must not undo the mark or wait on its row
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    except Exception:
+        # The write still answers its rev, as one asked again would land twice
+        frappe.db.rollback()
+        db.alert("Collab readable copy: not marked as owed", f"{app} document {doc_id} at rev {rev}")
 
 
 def render_owed(app: str, doc_id: str) -> None:

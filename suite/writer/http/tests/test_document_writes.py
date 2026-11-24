@@ -14,6 +14,7 @@ import frappe
 import pycrdt
 from bs4 import BeautifulSoup
 from frappe.utils import now_datetime
+from frappe.utils.logging import connection_for
 from frappe.utils.synchronization import filelock
 
 from suite import content, drive
@@ -386,6 +387,57 @@ class TestDocumentWrites(DriveCallbackCase):
         self.assertEqual(self.swept_renders(node), 1)
         jobs.render_owed(writer_content.APP, self.doc_row(node).id)
         self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
+
+    def test_a_write_keeps_what_it_owes_when_its_request_fails_later(self):
+        node = self.create("First.")
+
+        write_body(node, body_state("Second."), "append")
+        frappe.db.rollback()
+
+        self.assertEqual(self.doc_row(node).copy_owed, 1)
+
+    def test_a_write_answers_its_rev_when_the_copy_cannot_be_marked_as_owed(self):
+        node = self.create("First.")
+        doc = self.doc_row(node)
+        body = body_state("Second.")
+        site = frappe.local.site
+        locked = threading.Event()
+        written = threading.Event()
+
+        def hold_row():
+            frappe.init(site=site)
+            frappe.connect()
+            try:
+                frappe.db.sql("SELECT `id` FROM `__writer_content_doc` WHERE `id` = %s FOR UPDATE", doc.id)
+                locked.set()
+                written.wait(30)
+            finally:
+                frappe.destroy()
+
+        holder = threading.Thread(target=hold_row)
+        push = steps.push_and_follow
+
+        def push_then_lose_the_row(*args, **kwargs):
+            answer = push(*args, **kwargs)
+            holder.start()
+            locked.wait(30)
+            return answer
+
+        frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")
+        self.addCleanup(frappe.db.sql, "SET SESSION innodb_lock_wait_timeout = DEFAULT")
+        unmarked = {"method": "Collab readable copy: not marked as owed"}
+        logged = connection_for("Error Log").count("Error Log", unmarked)
+
+        try:
+            with patch.object(steps, "push_and_follow", side_effect=push_then_lose_the_row):
+                rev = write_body(node, body, "append")
+        finally:
+            written.set()
+            holder.join()
+
+        self.assertEqual(rev, doc.head_rev + 1)
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph><paragraph>Second.</paragraph>")
+        self.assertEqual(connection_for("Error Log").count("Error Log", unmarked), logged + 1)
 
     def test_a_mode_other_than_replace_or_append_writes_nothing(self):
         node = self.create("First.")
