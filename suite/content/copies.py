@@ -196,9 +196,8 @@ def follow_write(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, *,
 def mark(app: str, doc_id: str, rev: int, marked: QueryBuilder) -> None:
     """Run `marked`, which says whether the copy a write at `rev` left is owed, and commit it."""
     try:
-        marked.run()
         # At once: the write has landed, and what follows in the request must not undo the mark or wait on its row
-        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+        db.claim(marked)
     except Exception:
         # The write still answers its rev, as one asked again would land twice
         frappe.db.rollback()
