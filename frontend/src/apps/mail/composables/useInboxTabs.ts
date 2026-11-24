@@ -1,10 +1,11 @@
 import { useStorage } from '@vueuse/core'
 import { computed, shallowRef, watch } from 'vue'
-import { useRoute, type RouteLocationNamedRaw } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute, useRouter, type RouteLocationNamedRaw } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { slideRouteChange } from '@/apps/mail/utils/pageSlide'
 
 export type InboxCategory = 'primary' | 'updates' | 'forums' | 'promotions' | 'social'
 
@@ -114,6 +115,16 @@ export const useInboxTabs = (
   )
   watch(active, (tab, previous) => {
     if (tab && previous && tab !== previous) onSwitch?.()
+  })
+
+  // On a phone a category is a page pushed over Primary: it slides in from the right, and back out
+  // to it on the way back to Primary.
+  const router = useRouter()
+  onBeforeRouteUpdate((to, from) => {
+    const categoryOf = (query: typeof to.query) => String(query.category ?? 'primary')
+    const [left, going] = [categoryOf(from.query), categoryOf(to.query)]
+    if (!isMobile.value || to.path !== from.path || left === going) return
+    return slideRouteChange(router, going === 'primary' ? 'back' : 'forward')
   })
 
   return { tabs, active, category, routeFor }

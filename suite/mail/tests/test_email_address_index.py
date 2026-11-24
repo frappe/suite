@@ -203,6 +203,19 @@ class Index(unittest.TestCase):
         )
         self.assertEqual(self.index.get_email_address_hits("doe"), [])
 
+    def test_recent_addresses_are_those_sent_to_latest_first(self):
+        self.index.index_addresses(
+            [
+                {"email": "old@example.com", "last_sent_at": 100},
+                {"email": "never@example.com"},
+                {"email": "new@example.com", "last_sent_at": 300},
+                {"email": "mid@example.com", "last_sent_at": 200},
+            ]
+        )
+
+        recent = [address["email"] for address in self.index.get_recent_addresses(2)]
+        self.assertEqual(recent, ["new@example.com", "mid@example.com"])
+
     def test_blank_query_finds_nothing(self):
         self.index.index_addresses([{"email": "jane@example.com"}])
 

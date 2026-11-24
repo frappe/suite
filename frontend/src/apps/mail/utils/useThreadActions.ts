@@ -44,6 +44,15 @@ interface MailThreadInstance {
  * server doesn't need to resolve thread ids). Optimistic UI, undo and toasts live here too.
  */
 
+/** A folder's own icon in its own colour, as a menu of folders draws it: Move to's, and search's. */
+export const folderIcon = (
+  mailbox: Parameters<typeof getIcon>[0] & { color?: keyof typeof FOLDER_ICON_COLOR_MAP | null },
+) =>
+  h(Icon, {
+    name: getIcon(mailbox),
+    class: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
+  })
+
 /**
  * The confirmation for deleting threads for good: how many, that it can't be undone, and a button
  * that says "Delete Forever" in red rather than "Confirm".
@@ -184,10 +193,7 @@ export function useThreadActions(deps: {
       ?.filter((m) => canMoveToMailbox(m.id, filedIn, store.mailboxIds))
       .map((m) => ({
         label: m._name,
-        icon: h(Icon, {
-          name: getIcon(m),
-          class: FOLDER_ICON_COLOR_MAP[m.color],
-        }),
+        icon: folderIcon(m),
         onClick: () =>
           handleMoveThreads({
             [m.id]: selections.value,

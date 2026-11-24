@@ -144,3 +144,52 @@ body {
 .min-w-0.flex-1 > label[for].text-base-medium.block {
   width: fit-content;
 }
+
+/* A phone's page pushed over the one it came from, and popped off it (apps/mail/utils/pageSlide.ts):
+   the new page slides in from the right while the old one gives way a little to the left, and
+   back the other way. Each image is drawn as it is, not blended, since both are opaque. Whatever
+   carries its own view-transition-name (the tab bar) stays where it is. */
+/* The curve every phone page push moves on: a thread opening (ThreadPane) and a category (below). */
+:root {
+  --page-slide-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+html[data-page-slide]::view-transition-old(root),
+html[data-page-slide]::view-transition-new(root) {
+  mix-blend-mode: normal;
+  animation-duration: 300ms;
+  animation-timing-function: var(--page-slide-ease);
+  animation-fill-mode: both;
+}
+html[data-page-slide='forward']::view-transition-old(root) {
+  animation-name: page-slide-give-way;
+}
+html[data-page-slide='forward']::view-transition-new(root) {
+  animation-name: page-slide-in;
+}
+html[data-page-slide='back']::view-transition-old(root) {
+  z-index: 1;
+  animation-name: page-slide-out;
+}
+html[data-page-slide='back']::view-transition-new(root) {
+  animation-name: page-slide-come-back;
+}
+@keyframes page-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+}
+@keyframes page-slide-out {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes page-slide-give-way {
+  to {
+    transform: translateX(-25%);
+  }
+}
+@keyframes page-slide-come-back {
+  from {
+    transform: translateX(-25%);
+  }
+}

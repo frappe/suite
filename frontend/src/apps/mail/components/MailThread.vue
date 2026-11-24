@@ -263,13 +263,15 @@
 								     preview) flush. Collapsed rows keep the preview-keyed padding. -->
                       <!-- Open, the avatar grows down from the top while the name, date and actions
                            keep the folded row's 24px line: a 24px line and the 16px one under it
-                           fill the 40px avatar, so nothing on that line moves as it opens. -->
+                           fill the 40px avatar, so nothing on that line moves as it opens. A phone's
+                           avatar is 36px either way, centred on the two lines beside it, so it
+                           neither grows nor moves. -->
                       <div
                         class="flex space-x-3"
                         :class="{
                           'cursor-pointer': mail !== lastMessage,
-                          'items-center': isCollapsed(mail),
-                          'items-start': !isCollapsed(mail),
+                          'items-center': isCollapsed(mail) && !isMobile,
+                          'items-start': !isCollapsed(mail) || isMobile,
                           'pb-6': !isCollapsed(mail) && !isMobile,
                           'pb-4': !isCollapsed(mail) && isMobile,
                         }"
@@ -278,8 +280,15 @@
                         <Avatar
                           :label="getSenderInitial(mail)"
                           :image="mail.user_image"
-                          :size="isCollapsed(mail) ? (isMobile ? 'xl' : 'md') : '2xl'"
-                          :class="{ 'cursor-pointer': !isCollapsed(mail) && !isMobile }"
+                          :size="isMobile ? 'xl' : isCollapsed(mail) ? 'md' : '2xl'"
+                          :class="[
+                            // A phone's sender keeps one size, folded or open: 36px, which frappe-ui
+                            // takes from a size class (an array, as its override reads one). It is
+                            // centred on the two 44px lines beside it, name and preview or name and
+                            // recipients, so it sits in one place either way.
+                            isMobile && 'mt-1 size-9',
+                            !isCollapsed(mail) && !isMobile && 'cursor-pointer',
+                          ]"
                           @pointerdown="noteSenderCardPress(mail)"
                           @click="toggleSenderCard(mail, $event)"
                         />
@@ -419,7 +428,8 @@
 											     addressed has no line: an empty one only left a gap. -->
                             <div
                               v-if="!isCollapsed(mail) && recipientsSummary(mail)"
-                              class="flex h-4 items-center space-x-1.5 truncate leading-4"
+                              class="flex items-center space-x-1.5 truncate"
+                              :class="isMobile ? 'h-5 leading-5' : 'h-4 leading-4'"
                             >
                               <span class="truncate">
                                 {{ recipientsSummary(mail) }}
@@ -448,7 +458,7 @@
                             <!-- A phone's folded row reads its first words under the sender's name. -->
                             <span
                               v-if="isCollapsed(mail) && isMobile"
-                              class="text-ink-gray-5 truncate text-base"
+                              class="text-ink-gray-5 h-5 truncate text-base leading-5"
                             >
                               {{ mail.preview }}
                             </span>

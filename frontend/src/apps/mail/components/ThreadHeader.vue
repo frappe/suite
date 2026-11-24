@@ -59,22 +59,9 @@
   <div
     class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b"
   >
-    <!-- A phone names the list Back returns to, as its own apps do; cut short before the actions
-         are. -->
+    <!-- The arrow alone, on a phone too: the subject below names the thread, and a list's own
+         title is a back arrow and its name, which a named Back here would repeat. -->
     <Button
-      v-if="isMobile && backLabel"
-      variant="ghost"
-      class="-ml-2 mr-1 min-w-0 max-w-28 shrink !px-1.5 touch-target"
-      :aria-label="__('Back to {0}', [backLabel])"
-      @click="$router.push(backRoute)"
-    >
-      <template #prefix>
-        <ChevronLeft class="icon shrink-0 !h-[18px] !w-[18px]" />
-      </template>
-      <span class="truncate text-base">{{ backLabel }}</span>
-    </Button>
-    <Button
-      v-else
       variant="ghost"
       class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
       :aria-label="__('Back')"
@@ -274,7 +261,6 @@ import {
   INBOX_FOLDER,
   mailboxForUnifiedFolder,
   mailboxIdForParam,
-  STARRED_FOLDER,
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
 } from '@/apps/mail/utils/unifiedFolders'
@@ -326,13 +312,6 @@ const mailbox = computed(() =>
 const threadID = computed(() =>
   Array.isArray(route.params.threadID) ? (route.params.threadID[0] ?? '') : route.params.threadID,
 )
-
-// The name of that list, for a phone's Back: the folder's, Starred's or Search's.
-const backLabel = computed(() => {
-  if (route.params.mailbox === STARRED_FOLDER) return __('Starred')
-  if (route.params.mailbox === 'search') return __('Search')
-  return mailboxes.value.data?.find((folder) => folder.id === mailbox.value)?._name ?? ''
-})
 
 // Back returns to the list the thread was opened from: the merged folder
 // list on its thread route, the mailbox list otherwise.

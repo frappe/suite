@@ -14,7 +14,7 @@
       ref="bar"
       v-if="!isMobileSelectionActive"
       :class="{ 'invisible translate-y-full': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col transition-[transform,visibility] duration-200 ease-out items-end gap-3 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col [view-transition-name:mail-tab-bar] transition-[transform,visibility] duration-200 ease-out items-end gap-3 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
       <!-- Not where composing is not the task: search results and the profile page. -->
       <Button

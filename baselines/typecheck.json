@@ -47,7 +47,7 @@
   "frontend/src/apps/mail/pages/UnifiedFolderView.vue": 4,
   "frontend/src/apps/mail/utils/index.ts": 1,
   "frontend/src/apps/mail/utils/quotedContentExtension.ts": 1,
-  "frontend/src/apps/mail/utils/useThreadActions.ts": 10,
+  "frontend/src/apps/mail/utils/useThreadActions.ts": 8,
   "frontend/src/apps/meet/components/AudioIndicator.vue": 7,
   "frontend/src/apps/meet/components/ChatPanel.vue": 1,
   "frontend/src/apps/meet/components/FloatingReactions.vue": 3,

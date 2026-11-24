@@ -234,6 +234,22 @@ class SearchStore:
             lambda _index: self._build_prefix_query(terms, fields), limit, offset, order_by
         )
 
+    def search_range(self, field: str, low: int, high: int) -> list[dict]:
+        """Every document whose integer `field` lies between `low` and `high`, both in, unranked.
+
+        For reads by a value rather than by words, such as the addresses written to since a date.
+        """
+
+        hits, _count = self._run_search(
+            lambda _index: tantivy.Query.range_query(
+                self._schema, field, tantivy.FieldType.Integer, low, high
+            ),
+            None,
+            0,
+            None,
+        )
+        return hits
+
     def search_phrase_prefix(
         self,
         terms: list[str],

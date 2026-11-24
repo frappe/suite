@@ -4,6 +4,11 @@ import { nextTick, reactive } from 'vue'
 import { listScope, useClearList } from './useClearList'
 import { useInboxTabs, useTabChoice, useTabChoiceMenu, type InboxCategory } from './useInboxTabs'
 
+type RouteGuard = (
+  to: { path: string; query: object },
+  from: { path: string; query: object },
+) => unknown
+
 type Counts = { category: InboxCategory; unread_threads: number }[]
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -27,9 +32,19 @@ type InboxTabsStore = {
 
 const state = vi.hoisted(() => ({
   route: fromPartial<{ query: Record<string, string> }>({ query: {} }),
+  // The route changes the tabs hold for, and how each went.
+  guards: new Array<RouteGuard>(),
+  slides: new Array<string>(),
   store: fromPartial<InboxTabsStore>({}),
 }))
-vi.mock('vue-router', () => ({ useRoute: () => state.route }))
+vi.mock('vue-router', () => ({
+  useRoute: () => state.route,
+  useRouter: () => ({}),
+  onBeforeRouteUpdate: (guard: RouteGuard) => state.guards.push(guard),
+}))
+vi.mock('@/apps/mail/utils/pageSlide', () => ({
+  slideRouteChange: (_router: unknown, direction: string) => state.slides.push(direction),
+}))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))
 const saved = vi.hoisted(() => fromPartial<unknown[]>([]))
 const toasts = vi.hoisted(() => fromPartial<string[]>([]))
@@ -101,6 +116,8 @@ describe('the Inbox tabs', () => {
     toasts.length = 0
     localStorage.clear()
     screen.isMobile.value = false
+    state.slides = []
+    state.guards = []
     state.store = reactive({
       userResource: {
         data: {
@@ -178,6 +195,24 @@ describe('the Inbox tabs', () => {
 
     state.route.query = {}
     expect(active.value).toBe('primary')
+  })
+
+  it('slide a category in over Primary on a phone, and back off it, and change in place on a desktop', () => {
+    tabsFor('account')
+    const inbox = (category?: string) => ({
+      path: '/mail/account/a/mailbox/inbox',
+      query: category ? { category } : {},
+    })
+
+    screen.isMobile.value = true
+    state.guards.at(-1)?.(inbox('promotions'), inbox())
+    state.guards.at(-1)?.(inbox('primary'), inbox('promotions'))
+    // Another of Primary's own lists is not a page of its own.
+    state.guards.at(-1)?.({ ...inbox(), query: { isRead: 'false' } }, inbox())
+    screen.isMobile.value = false
+    state.guards.at(-1)?.(inbox('updates'), inbox('primary'))
+
+    expect(state.slides).toEqual(['forward', 'back'])
   })
 
   it('refetch the list when All mail opens, as any other tab does', async () => {
