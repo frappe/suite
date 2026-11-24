@@ -1,4 +1,5 @@
 import { fromPartial } from '@total-typescript/shoehorn'
+import { toast } from 'frappe-ui'
 import { describe, expect, it, vi } from 'vitest'
 
 import { E2EEMeeting } from '../../utils/media/E2EEMeeting'
@@ -129,6 +130,22 @@ describe('useChat E2EE gating', () => {
       fromName: 'Bob',
       type: 'chat',
     })
+  })
+
+  it('shows an error without sending an oversized draft', async () => {
+    E2EEMeeting.instance = new E2EEMeeting()
+    const chatStore = makeChatStore()
+    const sfuClient = makeSFUClient({ isE2EERequired: () => false })
+    const chat = useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    })
+
+    await expect(chat.onSendChat('🙂'.repeat(8192) + '!')).resolves.toBe(false)
+    expect(toast.error).toHaveBeenCalledWith('This message is too long. Shorten it and try again.')
+    expect(sfuClient.sendChatMessage).not.toHaveBeenCalled()
+    expect(chatStore.chatMessages).toEqual([])
   })
 
   it('reports a rejected send as failed and leaves it out of the timeline', async () => {

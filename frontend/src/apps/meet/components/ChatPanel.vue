@@ -201,8 +201,6 @@
               <textarea
                 ref="inputEl"
                 v-model="draft"
-                :aria-invalid="draftTooLong"
-                :aria-describedby="draftTooLong ? 'meet-chat-size-error' : undefined"
                 rows="1"
                 :placeholder="__('Type a message')"
                 class="chat-composer-input min-h-7 min-w-0 flex-1 resize-none border-0 bg-transparent py-1.5 text-base text-ink-gray-8 shadow-none outline-none ring-0 placeholder-ink-gray-4 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
@@ -215,7 +213,6 @@
                 theme="gray"
                 size="sm"
                 :label="__('Send message')"
-                :disabled="draftTooLong"
                 :loading="sending"
               >
                 <template #icon>
@@ -223,14 +220,6 @@
                 </template>
               </Button>
             </div>
-            <p
-              v-if="draftTooLong"
-              id="meet-chat-size-error"
-              role="status"
-              class="px-3 pb-2 text-sm text-ink-red-4"
-            >
-              {{ __('This message is too long. Shorten it and try again.') }}
-            </p>
           </template>
           <div
             v-else
@@ -252,7 +241,6 @@ import { computed, inject, markRaw, nextTick, onMounted, ref, watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-import { MAX_CHAT_TEXT_BYTES } from '../../../../../suite/meet/types/chatLimits'
 import { pollKey } from '../composables/usePoll'
 import { usePollStore } from '../composables/usePollStore'
 import type { PollPayloadFE } from '../types'
@@ -327,9 +315,6 @@ const listEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const draft = ref('')
 const sending = ref(false)
-const draftTooLong = computed(
-  () => new TextEncoder().encode(draft.value.trim()).length > MAX_CHAT_TEXT_BYTES,
-)
 
 const emojiSuggestions = ref<EmojiSuggestion[]>([])
 const emojiSelectedIndex = ref(0)
@@ -474,7 +459,7 @@ function onKeydown(event: KeyboardEvent) {
 async function handleSend() {
   const submittedDraft = draft.value
   const text = submittedDraft.trim()
-  if (!canSendMessages.value || !text || draftTooLong.value || sending.value) return
+  if (!canSendMessages.value || !text || sending.value) return
 
   sending.value = true
   closeEmojiMenu()
