@@ -3,10 +3,11 @@
 
 import type { Doc } from 'yjs'
 
+import type { LegacyDeck } from './conversion'
 import { DRAWN_BLANK } from './deck'
 import { drawnSlides } from './drawnDeck'
 
-export function deckJson(doc: Doc) {
+export function deckJson(doc: Doc): LegacyDeck {
   // The drawn blank is not in the doc, so a presentation with no slides answers none
   const slides = drawnSlides(doc).filter(({ clientId }) => clientId !== DRAWN_BLANK)
   return { slides: slides.map(({ clientId, idx: _idx, ...slide }) => ({ id: clientId, ...slide })) }
