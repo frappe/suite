@@ -10,6 +10,23 @@ const effects = {
   get_updated_json: 'none',
   update_slide_attachments: 'none',
   convert_version: 'none',
+  presentation_create: { invalidates: ['drive.node_children', 'drive.view_list'] },
+  presentation_write: {
+    invalidates: [
+      'presentation_read',
+      'get_public_presentation',
+      'drive.node_versions',
+      'drive.view_list',
+    ],
+  },
+  presentation_slide_write: {
+    invalidates: [
+      'presentation_read',
+      'get_public_presentation',
+      'drive.node_versions',
+      'drive.view_list',
+    ],
+  },
 } as const
 
 export const registration: OwnerRegistration = {

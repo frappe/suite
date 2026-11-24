@@ -447,7 +447,7 @@ def get_templates():
     A template is a deck whose node carries `is_template` (§8.10), and who
     may use it is the grant on that node, so the list is scoped by READ.
     """
-    templates = _readable_templates()
+    templates = readable_templates()
     # a converted template's rows stopped at its conversion: the tab reads its saved slides
     is_on = log.enabled(APP)
     for template in templates:
@@ -487,7 +487,7 @@ def attach_row_layouts(templates: list[dict]) -> None:
             )
 
 
-def _readable_templates() -> list[dict]:
+def readable_templates() -> list[dict]:
     """The readable template nodes, oldest first, under the keys the picker reads."""
     nodes = frappe.get_all(
         "Drive Node",

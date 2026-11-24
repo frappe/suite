@@ -44,6 +44,7 @@ BASELINE_DEBT = {
         (
             "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
             "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+            "suite/slides/http/tests/test_presentation_writes.py|drive-table-write|Drive Root",
         ),
     ),
     **_debt(

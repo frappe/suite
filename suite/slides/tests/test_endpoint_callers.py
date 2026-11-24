@@ -12,6 +12,7 @@ from unittest import TestCase
 
 import frappe
 
+from suite.slides.http.framework import HTTP
 from suite.slides.http.routes import CONTRACT_ROUTES
 
 RETIRED = {
@@ -84,7 +85,7 @@ def uncalled_routes() -> list[str]:
 
 class TestEndpointCallers(TestCase):
     def test_every_whitelisted_function_is_routed_or_retired(self):
-        routed = {route.handler for route in CONTRACT_ROUTES}
+        routed = {route.handler for route in (*HTTP.routes, *HTTP.contract_routes)} | {HTTP.unknown}
 
         self.assertEqual(sorted(whitelisted_names() - routed - RETIRED.keys()), [])
 
