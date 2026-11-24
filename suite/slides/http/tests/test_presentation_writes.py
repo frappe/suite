@@ -14,6 +14,8 @@ import frappe
 import pycrdt
 from frappe.app import make_form_dict
 from frappe.handler import execute_cmd
+from frappe.tests.test_api import make_request
+from frappe.utils import get_test_client
 from frappe.utils.synchronization import filelock
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
@@ -34,7 +36,7 @@ from suite.slides.content.tests.support import (
 from suite.slides.drive import DOCTYPE, docname_for_node, readable_templates
 from suite.slides.http import routes as slides_routes
 from suite.slides.tests.utils import share, trash_node
-from suite.tests.utils import ensure_user
+from suite.tests.utils import ensure_user, session_for
 
 READER = "slides-agent-reader@example.com"
 OUTSIDER = "slides-agent-outsider@example.com"
@@ -168,6 +170,8 @@ def points_of(markup: str) -> list[str]:
 
 
 class TestPresentationWrites(LoggedDeckCase):
+    CLIENT = get_test_client(use_cookies=False)
+
     def setUp(self):
         super().setUp()
         if not checker.usable_node(convert.NODE_MIN) or not slides_content.CONVERTER_BUILD.is_file():
@@ -243,6 +247,18 @@ class TestPresentationWrites(LoggedDeckCase):
 
     def assert_created_nothing(self, title: str) -> None:
         self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": title}))
+
+    def refusal_sent(self, path: str, body: dict) -> str:
+        # A whole request on its own connection, so the message is the one an agent reads after Frappe cleans it
+        frappe.db.commit()
+        sid = session_for(OWNER)
+        kwargs = {"method": "POST", "headers": {"Cookie": f"sid={sid}"}, "json": body}
+        response = make_request(target=self.CLIENT.open, args=(f"/api/suite/slides/{path}",), kwargs=kwargs)
+        frappe.db.rollback()
+        self.assertEqual(response.status_code, 422, response.get_data(as_text=True))
+        (error,) = response.json["errors"]
+        self.assertEqual(error["type"], "SlidesRefused")
+        return error["message"]
 
     def test_a_new_presentation_holds_the_slides_in_order(self):
         node = self.create([title_slide(), shape_slide()])
@@ -949,7 +965,7 @@ class TestPresentationWrites(LoggedDeckCase):
         odd = {"id": "odd", "type": "text", "content": "<p>x</p><iframe></iframe>"}
         cases = [
             (
-                r"Slide 2 in this call, element 2 \(text, id odd\): its HTML holds what the editor can't keep: <iframe>$",
+                r"Slide 2 in this call, element 2 \(text, id odd\): its HTML holds what the editor can't keep: the iframe tag$",
                 [title_slide(), {"elements": [title_slide()["elements"][0], odd]}],
             ),
             (
@@ -970,6 +986,23 @@ class TestPresentationWrites(LoggedDeckCase):
                 slides_routes.presentation_create(self.folder, "Agent refused", slides)
 
         self.assert_created_nothing("Agent refused")
+
+    def test_a_refused_tag_is_named_in_the_answer_an_agent_reads(self):
+        for tag in ("script", "iframe"):
+            title = f"Agent {tag} {uuid.uuid4().hex[:8]}"
+            slides = [{"elements": [{"type": "text", "content": f"<p>x</p><{tag}></{tag}>"}]}]
+            with self.subTest(tag):
+                message = self.refusal_sent(
+                    "presentations", {"parent": self.folder, "title": title, "slides": slides}
+                )
+
+                self.assertTrue(
+                    message.endswith(
+                        f"element 1 (text): its HTML holds what the editor can't keep: the {tag} tag"
+                    ),
+                    message,
+                )
+                self.assert_created_nothing(title)
 
     def test_a_refused_value_names_its_field(self):
         text = {"type": "text", "content": "<p>x</p>", "lineHeight": 1.5}

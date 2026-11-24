@@ -962,7 +962,8 @@ def named_at_fault(element: dict, detail: str, refused: Callable[[dict], bool]) 
     if refused({**element, "content": unwrapped}):
         return None
 
-    return f"<{unlisted}>"
+    # Named in words, since a tag in brackets is cleaned out of the answer's message
+    return _("the {0} tag").format(unlisted)
 
 
 def part_of(element: dict, fields: list[str]) -> dict:
