@@ -89,7 +89,7 @@ To edit a presentation, read it, change the JSON, and write it back: the whole o
 A read gives each item as the editor keeps it, so it can differ from what was written. All of it is safe to send back as it is:
 
 - Every element has `zIndex`, which counts 1, 2, 3 … in each slide, from the bottom element up.
-- A colour field is 6 or 8 hex digits, and a named one becomes hex: `red` reads `#ff0000ff`.
+- A hex colour reads as sent: `#fff` reads `#fff`. A named element colour becomes hex: `red` reads `#ff0000ff`.
 - A colour inside text HTML reads as `rgb(...)`: `color: #1F2937` reads `color: rgb(31, 41, 55)`.
 - A `circle` shape reads as `oval`.
 - Text HTML reads as the editor writes it: `line-height` on each paragraph, a `lineheight` on each `<li>`, and a `;` after each style. A table cell gains `colspan="1" rowspan="1"`.
@@ -194,10 +194,11 @@ curl -X POST $SITE/api/method/suite.slides.api.media.add -H "$AUTH" -F docname=<
 ```
 
 - `file_url` is the id.
-- It takes `image/*` and `video/*` files, up to the site's largest file size, 25 MB unless the site sets another.
+- It takes `image/*` and `video/*` files, up to 25 MB, unless the site config sets another `max_file_size`.
 - A PNG or JPEG is stored as WebP.
 - For a picture on a slide that isn't the last one, create the presentation with that slide as layout 7 and no `picture`. Upload the picture, then change that slide as in step 6 with `layout: 7`, its `texts` and the `picture`. The slide keeps its place.
-- A refusal here has Frappe's shape, not the one under [Refusals](#refusals): it answers status 417 and an `exception` to read, with no `errors`. An unknown `docname` and a missing file answer this way.
+- A refusal here has Frappe's shape, not the one under [Refusals](#refusals): an `exception` to read, with no `errors`. An unknown `docname`, a missing file and a file that isn't a picture or video answer status 417. A full Drive answers 413 with `DriveOverQuota` in the `exception`.
+- A file over the size limit is refused before it reaches Suite: status 413 and an HTML page, with no `exception`.
 
 A picture or video another presentation holds may be named too, when the user can read it: the write copies it into this presentation, and a read names the copy. A link, or a file kept elsewhere in Drive, is refused: upload it to the presentation.
 
@@ -316,7 +317,7 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveOverQuota` | 413 | The Drive has no room for a picture the write copies under the presentation. Nothing was written. Upload less, or free some space |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a `type` the editor has no place for, a background is not a hex colour, an id is not of the form above, a one-slide write names an `id` other than its path's or sends no `elements`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, and the element when one is at fault. Nothing was written. The same slides get the same answer, so change them |
+| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a `type` the editor has no place for, a background is not a hex colour, an id is not of the form above, a one-slide write names an `id` other than its path's or sends neither `elements` nor `layout`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, and the element when one is at fault. Nothing was written. The same slides get the same answer, so change them |
 | `WriteRefused` | 409 | The presentation refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`; or no version could be kept before a replace; or the presentation is a combined one. The same call gets the same answer until that changes. A write to a presentation not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, a layout's template is not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
