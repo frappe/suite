@@ -105,7 +105,6 @@ const moduleGraphDebtGroups = [
       'mail/components/Settings/MailInboxSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'mail/components/Settings/MailSendingSettings.vue|@/components/settings/AppSettingsBody.vue',
       'mail/components/Settings/MailSendingSettings.vue|@/components/settings/AppSettingsHeader.vue',
-      'mail/composables/useMailCommandPaletteSearch.ts|@/utils/session',
       'mail/pages/MailLayout.vue|@/boot/config',
       'mail/pages/MailLayout.vue|@/stores/root',
       'mail/pages/ProfileView.vue|@/components/MobileProfilePage.vue',

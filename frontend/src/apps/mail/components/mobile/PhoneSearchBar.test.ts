@@ -20,7 +20,18 @@ vi.mock('@/apps/mail/stores/user', () => ({
     },
   }),
 }))
-vi.mock('@/utils/session', () => ({ getSessionUser: () => 'ada@suite.test' }))
+vi.mock('@/platform/session', async (original) => {
+  const { ref } = await import('vue')
+  const session = {
+    status: ref('authenticated'),
+    user: ref({ id: 'ada@suite.test', fullName: 'Ada', avatar: null }),
+    capabilities: ref({ jmap: true, systemManager: false }),
+    onLogout: () => () => {},
+  }
+  return { ...(await original<object>()), useSession: () => session }
+})
+// A folder's icon is the Move to menu's, which needs the whole of a thread's actions.
+vi.mock('@/apps/mail/utils/useThreadActions', () => ({ folderIcon: () => null }))
 // The sheets and menus are frappe-ui's and the platform's; here each option is a button.
 vi.mock('@/platform/feedback/AdaptiveDropdown.vue', async () => {
   const { defineComponent, h } = await import('vue')

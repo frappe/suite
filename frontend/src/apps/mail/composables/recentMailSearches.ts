@@ -1,7 +1,7 @@
 import { useStorage } from '@vueuse/core'
 
 import type { MailRecentSearch } from '@/apps/mail/components/CommandPalette/types'
-import { getSessionUser } from '@/utils/session'
+import { useSession } from '@/platform/session'
 
 // The searches the reader ran last, offered before anything is typed: by the palette, and by a
 // phone's search screen. Five, since there they are the whole of an empty page; in the browser, as a
@@ -18,7 +18,7 @@ export const searchKey = (entry: Pick<MailRecentSearch, 'text' | 'filters'>) =>
 
 export const useRecentMailSearches = () => {
   const recentSearches = useStorage<MailRecentSearch[]>(
-    `${STORAGE_KEY}:${getSessionUser() ?? 'guest'}`,
+    `${STORAGE_KEY}:${useSession().user.value?.id ?? 'guest'}`,
     [],
   )
 

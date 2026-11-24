@@ -103,18 +103,15 @@
 <script setup lang="ts">
 import { watchDebounced } from '@vueuse/core'
 import { Button } from 'frappe-ui'
-import { Icon } from 'frappe-ui/experimental'
 import { ChevronDown, Search, X } from 'lucide-vue-next'
-import { computed, h, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import SearchDateRangeSheet from '@/apps/mail/components/mobile/SearchDateRangeSheet.vue'
 import SearchPersonSheet from '@/apps/mail/components/mobile/SearchPersonSheet.vue'
 import { useRecentMailSearches } from '@/apps/mail/composables/recentMailSearches'
-import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
-import { getIcon } from '@/apps/mail/utils'
 import { mailSearchRoute } from '@/apps/mail/utils/composables'
 import {
   dateRangeLabel,
@@ -122,6 +119,7 @@ import {
   searchDatePresets,
   searchLabel,
 } from '@/apps/mail/utils/phoneSearch'
+import { folderIcon } from '@/apps/mail/utils/useThreadActions'
 import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { translate as __ } from '@/platform/translation'
 
@@ -213,11 +211,7 @@ const folderOptions = computed(() => [
   },
   ...(store.mailboxes.data ?? []).map((mailbox: MailboxData) => ({
     label: mailbox._name,
-    // Each folder's own icon in its own colour, drawn as the sidebar draws it.
-    icon: h(Icon, {
-      name: getIcon(mailbox),
-      class: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
-    }),
+    icon: folderIcon(mailbox),
     selected: query.value.inMailbox === mailbox.id,
     onClick: () => setFilter('inMailbox', mailbox.id),
   })),
