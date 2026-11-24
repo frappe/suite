@@ -26,7 +26,7 @@ from suite.slides.content.tests.support import (
     opened,
     owner_folder,
 )
-from suite.slides.doctype.presentation.presentation import _readable_templates
+from suite.slides.doctype.presentation.presentation import readable_templates
 from suite.slides.drive import docname_for_node
 from suite.slides.http import routes as slides_routes
 from suite.slides.tests.utils import share, trash_node
@@ -211,7 +211,7 @@ class TestPresentationWrites(LoggedDeckCase):
 
     def layouts(self, title: str) -> list[dict]:
         # The template's slides as a read gives them, converted first as opening it would
-        (template,) = (row for row in _readable_templates() if row["title"] == title)
+        (template,) = (row for row in readable_templates() if row["title"] == title)
         if not content.find(slides_content.APP, template["node"]):
             jobs.convert_one(slides_content.APP, template["node"])
             frappe.db.commit()
@@ -820,6 +820,10 @@ class TestPresentationWrites(LoggedDeckCase):
                 "Slide 2 in this call: layout 3 holds 2 texts, and 3 were sent",
                 [title_slide(), {"layout": 3, "texts": ["a", "b", "c"]}],
             ),
+            (
+                "Slide 1 in this call: layout 2 holds 1 text, and 2 were sent",
+                [{"layout": 2, "texts": ["a", "b"]}],
+            ),
             ("Slide 1 in this call: layout 2 holds no picture", [{"layout": 2, "picture": "a-picture"}]),
             ("Slide 1 in this call names a layout and elements", [{"layout": 2, "elements": []}]),
             ("texts must be a list of words", [{"layout": 2, "texts": "Title"}]),
@@ -837,7 +841,7 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assert_created_nothing("Agent refused")
 
     def test_a_presentation_takes_layouts_from_the_template_it_was_made_on(self):
-        templates = {row["title"]: row["name"] for row in _readable_templates()}
+        templates = {row["title"]: row["name"] for row in readable_templates()}
         dark = self.create([{"layout": 2, "texts": ["Dark"]}], template="Dark")
         light = self.create([{"layout": 2, "texts": ["Light"]}])
 

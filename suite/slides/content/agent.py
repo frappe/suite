@@ -21,7 +21,7 @@ from suite.content import ChainBroken, checker, compaction, convert, jobs
 from suite.slides.content import APP, EDITOR, converter
 from suite.slides.content.conversion import SLIDE_COLUMNS, legacy_deck, old_row
 from suite.slides.content.files import MEDIA_ID
-from suite.slides.doctype.presentation.presentation import _readable_templates
+from suite.slides.doctype.presentation.presentation import readable_templates
 from suite.slides.drive import docname_for_node
 
 SLIDES_MAX = 256 * 1024
@@ -332,9 +332,11 @@ def laid_out(label: str, slide: dict, layouts: list[dict]) -> dict:
 
     holders = sum(element.get("type") == "text" for element in layout["elements"])
     if len(texts) > holders:
-        raise SlidesRefused(
-            _("{0}: layout {1} holds {2} texts, and {3} were sent").format(label, number, holders, len(texts))
-        )
+        refusal = _("{0}: layout {1} holds {2} texts, and {3} were sent")
+        if holders == 1:
+            refusal = _("{0}: layout {1} holds {2} text, and {3} were sent")
+
+        raise SlidesRefused(refusal.format(label, number, holders, len(texts)))
 
     picture = slide.get("picture")
     if picture is not None and not any(is_frame(element) for element in layout["elements"]):
@@ -425,7 +427,7 @@ def worded(block: str, words: str) -> str:
 
 def template_named(title: str | None) -> dict | None:
     """Answer the template called `title` that the user can read, or Light for none; another title refuses."""
-    templates = _readable_templates()
+    templates = readable_templates()
     named = titled(templates, "title", title or DEFAULT_TEMPLATE)
     if title is not None and named is None:
         titles = ", ".join(template["title"] for template in templates)
@@ -437,7 +439,7 @@ def template_named(title: str | None) -> dict | None:
 def theme_of(node: str) -> dict | None:
     """Answer the template the presentation takes its layouts from, or Light when that one is gone or kept from the user."""
     theme = frappe.db.get_value(EDITOR.doctype, docname_for_node(node), "theme")
-    templates = _readable_templates()
+    templates = readable_templates()
     return titled(templates, "name", theme) or titled(templates, "title", DEFAULT_TEMPLATE)
 
 
