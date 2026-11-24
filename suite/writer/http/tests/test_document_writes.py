@@ -17,13 +17,13 @@ from frappe.utils import now_datetime
 from frappe.utils.synchronization import filelock
 
 from suite import content, drive
-from suite.content import capacity, checker, convert, scheduling, steps
+from suite.content import capacity, checker, convert, jobs, scheduling, steps
 from suite.content.http import routes
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
 from suite.writer.content import converter
-from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused
+from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused, body_state, write_body
 from suite.writer.content.tests.drive_callback_case import (
     DriveCallbackCase,
     embed,
@@ -131,6 +131,25 @@ class TestDocumentWrites(DriveCallbackCase):
         # A minute's count outlives the test, and one an earlier run left would cut this one short
         frappe.cache.delete_keys("rl:suite.writer")
         self.addCleanup(frappe.cache.delete_keys, "rl:suite.writer")
+
+    def copy_of(self, node: str) -> str:
+        return frappe.db.get_value("Writer Document", {"node": node}, "html") or ""
+
+    def age_copy(self, node: str) -> None:
+        # As a minute after the copy was written
+        frappe.db.sql(
+            "UPDATE `__writer_content_projection` SET `updated` = %s WHERE `doc_id` = %s",
+            (now_datetime() - timedelta(seconds=61), self.doc_row(node).id),
+        )
+        frappe.db.commit()
+
+    def swept_renders(self, node: str) -> int:
+        # The copy jobs one sweep queues for the document
+        with patch.object(scheduling, "enqueue") as enqueue:
+            jobs.sweep()
+
+        job = (jobs.RENDER_OWED, f"suite-collab-copy-writer-{self.doc_row(node).id}")
+        return [call.args for call in enqueue.call_args_list].count(job)
 
     def failing_converter(self, script: str):
         # A bundle whose child fails as a real one does
@@ -304,11 +323,48 @@ class TestDocumentWrites(DriveCallbackCase):
 
     def test_the_readable_copy_follows_a_write(self):
         node = self.create("First.")
+        self.age_copy(node)
 
         writer_routes.document_write(node, "Second.", "append")
 
         html = writer_routes.document(self.docname_of(node))["html"]
         self.assertIn("<p>First.</p><p>Second.</p>", html)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_writes_inside_a_minute_of_the_copy_leave_it_to_the_sweep(self):
+        node = self.create("First.")
+
+        writer_routes.document_write(node, "Second.", "append")
+        writer_routes.document_write(node, "Third.", "append")
+
+        self.assertIn("<p>First.</p>", self.copy_of(node))
+        self.assertNotIn("Second.", self.copy_of(node))
+        # Not before the copy is a minute old
+        self.assertEqual(self.swept_renders(node), 0)
+
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+        jobs.render_owed(writer_content.APP, self.doc_row(node).id)
+
+        self.assertIn("<p>First.</p><p>Second.</p><p>Third.</p>", self.copy_of(node))
+        self.assertEqual(exported(node, "html"), self.copy_of(node))
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_a_render_that_fails_at_the_write_is_left_to_the_sweep(self):
+        node = self.create("First.")
+        self.age_copy(node)
+        # Converted before the converter fails, so only the copy's render meets it
+        body = body_state("Second.")
+
+        with patch.object(converter, "run", side_effect=RuntimeError("no turn")):
+            write_body(node, body, "append")
+
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph><paragraph>Second.</paragraph>")
+        self.assertNotIn("Second.", self.copy_of(node))
+        self.assertEqual(self.swept_renders(node), 1)
+        jobs.render_owed(writer_content.APP, self.doc_row(node).id)
+        self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
 
     def test_a_mode_other_than_replace_or_append_writes_nothing(self):
         node = self.create("First.")

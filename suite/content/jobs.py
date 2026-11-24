@@ -21,6 +21,7 @@ JUDGE = "suite.content.jobs.judge"
 DELETE_PURGED = "suite.content.jobs.delete_purged"
 TRIM = "suite.content.jobs.trim"
 CHECK_RENDER = "suite.content.jobs.check_render"
+RENDER_OWED = "suite.content.jobs.render_owed"
 CONVERT = "suite.content.jobs.convert_pending"
 CONVERT_ONE = "suite.content.jobs.convert_one"
 CONVERT_OPENED = "suite.content.jobs.convert_opened"
@@ -139,8 +140,13 @@ def request_render_check(app: str, doc_id: str) -> None:
     scheduling.enqueue(CHECK_RENDER, f"suite-collab-render-{app}-{doc_id}", app=app, doc_id=doc_id)
 
 
+def render_owed(app: str, doc_id: str) -> None:
+    """Render the copy a write on the server owed, as its queued job."""
+    copies.render_owed(app, doc_id)
+
+
 def sweep() -> None:
-    """Sweep every app's logs for due compactions, touches and staged renders to check."""
+    """Sweep every app's logs for due compactions, touches, staged renders to check and owed copies to render."""
     for app, spec in editors().items():
         scheduling.sweep(app, COMPACT, purge_method=DELETE_PURGED, judge_method=JUDGE)
         touches.sweep(app)
@@ -149,3 +155,6 @@ def sweep() -> None:
 
         for doc_id in stage.rendered_docs(app):
             request_render_check(app, doc_id)
+
+        for doc_id in copies.owed_docs(app):
+            scheduling.enqueue(RENDER_OWED, f"suite-collab-copy-{app}-{doc_id}", app=app, doc_id=doc_id)

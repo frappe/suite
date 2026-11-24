@@ -33,7 +33,7 @@ from pypika.terms import Values
 
 from suite.content import compaction, db, stage
 from suite.content.app_row import copy_row, forget_cached, locked_app_row, write_copy
-from suite.content.editors import ReadableCopy, spec_of
+from suite.content.editors import HtmlCopy, ReadableCopy, spec_of
 from suite.content.log import Refusal
 from suite.content.sessions import load_session
 from suite.content.snapshot import Snapshot, read
@@ -164,6 +164,64 @@ def install(
         return "stale"
 
     return "installed"
+
+
+def follow_write(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, *, is_wanted: bool) -> None:
+    """After a write on the server, where no tab renders: render the copy at `rev` if one is wanted, else owe it."""
+    html_copy = spec_of(app).readable_copy
+    # A copy of another kind, or one only a tab can render, waits for the next tab to open the document
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return
+
+    is_rendered = False
+    # A copy under COPY_AGE old waits, so a document written in parts renders once a minute, not once a part
+    if is_wanted:
+        try:
+            install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
+            is_rendered = True
+        except Exception:
+            # The row is committed; the sweep renders once more, and its job reports what fails there
+            frappe.db.rollback()
+
+    doc = Table(table(app, "doc"))
+    marked = frappe.qb.update(doc).set(doc.copy_owed, int(not is_rendered)).where(doc.id == doc_id)
+    if is_rendered:
+        # A write after this one keeps what it owes
+        marked = marked.where(doc.head_rev == rev)
+
+    marked.run()
+
+
+def render_owed(app: str, doc_id: str) -> None:
+    """Render the copy a write on the server owed, at the head the document has now."""
+    doc = Table(table(app, "doc"))
+    # Before the render: one that fails waits for the next write or tab, not for every sweep
+    frappe.qb.update(doc).set(doc.copy_owed, 0).where(doc.id == doc_id).run()
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    html_copy = spec_of(app).readable_copy
+    log_read = read(app, doc_id)
+    if log_read is None or not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return
+
+    install(app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy)
+
+
+def owed_docs(app: str, limit: int = 100) -> list[str]:
+    """Return the documents whose copy a write on the server owes and that is COPY_AGE old or was never written."""
+    doc = Table(table(app, "doc"))
+    projection = Table(table(app, "projection"))
+    found = (
+        frappe.qb.from_(doc)
+        .left_join(projection)
+        .on(projection.doc_id == doc.id)
+        .select(doc.id)
+        .where(doc.copy_owed == 1)
+        .where(doc.mode != "purged")
+        .where(projection.updated.isnull() | (projection.updated <= now_datetime() - COPY_AGE))
+        .limit(limit)
+        .run()
+    )
+    return [doc_id for (doc_id,) in found]
 
 
 def cleaned(html: str) -> tuple[str, str]:

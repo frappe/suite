@@ -70,6 +70,8 @@ DOC_COLUMNS = (
     "`restored_at` datetime(6) NULL",
     # The head chain the last pre-restore version holds
     "`milestone_chain` binary(32) NULL",
+    # A write on the server left the copy behind the head; the sweep renders it
+    "`copy_owed` tinyint(1) NOT NULL DEFAULT 0",
 )
 UPDATE_COLUMNS = (
     # Tables made before per-seq shas were kept
