@@ -1,6 +1,7 @@
 <template>
   <!-- Who a phone's search is from, or to: a name or an address typed in, the people it matches
-       under it, as a recipient field suggests them. What is typed goes as it is when no one matches.
+       under it, as a recipient field suggests them, and the people last mailed before anything is
+       typed. What is typed goes as it is when no one matches.
        The sheet is tall from the start and stays so: sized to its matches, it grew and shrank with
        every letter typed, and the field at its top went up and down with it. The field stays at
        the top while the matches scroll under it. -->
@@ -22,6 +23,9 @@
       <button v-if="value" :class="ROW" @click="pick(undefined)">
         <span class="text-ink-gray-8 flex-1 truncate text-left">{{ __('Anyone') }}</span>
       </button>
+      <p v-if="!typed.trim() && contacts.length" class="text-ink-gray-5 px-3 pb-1 pt-2 text-sm">
+        {{ __('Recent') }}
+      </p>
       <button
         v-for="contact in contacts"
         :key="contact.email"
@@ -82,7 +86,17 @@ const asked = refDebounced(typed, 300)
 const contactSearch = useQuery(api.mail.contacts.suggest, () =>
   open.value && asked.value.trim() ? { account: store.accountId, text: asked.value.trim() } : false,
 )
-const contacts = computed(() => (asked.value.trim() ? (contactSearch.data ?? []) : []))
+// With nothing typed, the people last mailed: one tap for the usual ones, and kept from one opening
+// to the next, so they are there as the sheet opens.
+const recent = useQuery(api.mail.contacts.suggest, () =>
+  open.value ? { account: store.accountId, text: '' } : false,
+)
+// Matches for what is in the field now: reopened empty, the last search's matches are gone at
+// once rather than when the debounce catches up.
+const contacts = computed(() => {
+  if (!typed.value.trim()) return recent.data ?? []
+  return asked.value.trim() ? (contactSearch.data ?? []) : []
+})
 const title = computed(() => (side === 'from' ? __('From') : __('To')))
 const typedLabel = computed(() =>
   side === 'from'

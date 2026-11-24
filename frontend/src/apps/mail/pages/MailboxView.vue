@@ -962,11 +962,14 @@ const searchResultsLabel = computed(() => {
   if (searchTotal.value === null) return __('Searching…')
   return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
 })
-// A phone's search, under its chips: how many it found, once it has answered, selecting or not
-// (the selection says itself in the bar at the bottom). None found is the empty list's to say.
-const searchCount = computed(() =>
-  hasSearchQuery.value && searchTotal.value ? searchResultsLabel.value : undefined,
-)
+// A phone's search, under its chips: how many it found, selecting or not (the selection says itself
+// in the bar at the bottom), and null while it looks, so its line is held. None found is the empty
+// list's to say.
+const searchCount = computed(() => {
+  if (!hasSearchQuery.value) return undefined
+  if (searchTotal.value === null) return null
+  return searchTotal.value ? searchResultsLabel.value : undefined
+})
 // The words searched for, and how many filters narrow them: what a search that found nothing says.
 const searchedText = computed(() =>
   typeof route.query.text === 'string' ? route.query.text.trim() : '',

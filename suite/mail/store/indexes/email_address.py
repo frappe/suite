@@ -1,5 +1,6 @@
 import re
 
+import tantivy
 from frappe.utils import EMAIL_MATCH_PATTERN
 
 from suite.store.search_store import FieldSpec, SearchStore
@@ -124,3 +125,21 @@ class EmailAddressIndex(SearchStore):
 
         hits, _total = self.search_prefix(tokens, limit=None)
         return hits
+
+    def get_recent_addresses(self, limit: int) -> list[dict]:
+        """Return up to `limit` addresses the account has sent mail to, most recently sent first.
+
+        What a recipient field offers before anything is typed. The index cannot sort by
+        `last_sent_at` itself (it is not a fast field, and making it one would wipe the index), so
+        every sent-to address is read and sorted here: one read, as a sheet opens.
+        """
+
+        sent, _total = self._run_search(
+            lambda _index: tantivy.Query.range_query(
+                self._schema, "last_sent_at", tantivy.FieldType.Integer, 1, 2**62
+            ),
+            limit=None,
+            offset=0,
+            order_by=None,
+        )
+        return sorted(sent, key=lambda address: -(address.get("last_sent_at") or 0))[:limit]

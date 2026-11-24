@@ -150,10 +150,14 @@ class Suggestions(UnitTestCase):
             suggestions.get_suggestions("ann"), [{"name": "Ann Lee", "email": "ann@example.com"}]
         )
 
-    def test_blank_query_asks_no_source(self):
-        self.assertEqual(self.suggest("   "), [])
-        self.index.get_email_address_hits.assert_not_called()
+    def test_blank_query_offers_the_people_last_mailed_without_asking_jmap(self):
+        self.index.get_recent_addresses.return_value = [
+            {"name": "Jane Doe", "email": "jd@example.com", "last_sent_at": 100}
+        ]
+
+        self.assertEqual(self.suggest("   "), [{"name": "Jane Doe", "email": "jd@example.com"}])
         self.fetch_contact_cards.assert_not_called()
+        self.get_account_client.assert_not_called()
 
 
 class Ranking(UnitTestCase):

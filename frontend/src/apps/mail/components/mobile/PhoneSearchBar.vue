@@ -83,7 +83,12 @@
         </Button>
       </div>
     </div>
-    <p v-if="count" class="text-ink-gray-5 px-4 pb-1 text-sm">{{ count }}</p>
+    <!-- How many the search found, its line held by a bar while it looks, so the list does not
+         move down when the number comes. -->
+    <p v-if="count !== undefined" class="text-ink-gray-5 flex h-6 items-center px-4 text-sm">
+      <span v-if="count === null" class="bg-surface-gray-3 h-3 w-20 animate-pulse rounded-4" />
+      <template v-else>{{ count }}</template>
+    </p>
 
     <SearchDateRangeSheet
       v-model:open="pickingRange"
@@ -124,7 +129,8 @@ import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { translate as __ } from '@/platform/translation'
 
 /** What the list under it holds, once the search has answered: "12 results". */
-defineProps<{ count?: string }>()
+// The count: a label once found, null while searching, left out when there is none to show.
+defineProps<{ count?: string | null }>()
 
 const route = useRoute()
 const router = useRouter()
