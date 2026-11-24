@@ -213,7 +213,7 @@ export const operationPresentationWrite: Validators<
             title: 'Slides',
             type: 'array',
           },
-          mode: { const: 'replace', title: 'Mode', type: 'string' },
+          mode: { enum: ['replace', 'append'], title: 'Mode', type: 'string' },
           node: { type: 'string' },
         },
         required: ['slides', 'mode', 'node'],

@@ -135,7 +135,7 @@ export type PresentationWriteOutputPreviewShape = { url: string; expires: number
 
 export type PresentationWriteInput = {
   slides: Array<{ [key: string]: unknown }>
-  mode: 'replace'
+  mode: 'replace' | 'append'
   node: string
 }
 

@@ -432,7 +432,10 @@
             "type": "array"
           },
           "mode": {
-            "const": "replace",
+            "enum": [
+              "replace",
+              "append"
+            ],
             "title": "Mode",
             "type": "string"
           }

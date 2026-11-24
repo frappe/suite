@@ -7,6 +7,7 @@ keep refuses the write.
 
 import json
 import re
+from collections.abc import Callable
 from typing import Literal, cast
 
 import frappe
@@ -25,6 +26,9 @@ ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 PICTURE_TYPES = {"image", "video"}
 PICTURE_KEYS = ("src", "poster")
 ROOTS = ("slides", "elements")
+# deck.ts's order digits, so an order a write gives sorts as a tab's does
+ORDER_DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+FIRST_ORDER = "V"
 # The layer's refusals that pass by themselves: another push holds the deck, a compaction makes room,
 # or a restore is landing or landed under the write
 PASSING = ("busy", "compacting", "restoring", "restored")
@@ -71,18 +75,22 @@ def create(parent: str, title: str, slides: object) -> tuple[str, int]:
     drive.check(parent, drive.UPLOAD)
     deck = deck_state(slides)
     node = drive.create_document(parent, title, content_doctype=EDITOR.doctype)
-    return node, write_deck(node, deck)
+    return node, push(node, replacing(deck))
 
 
-def write(node: str, slides: object, mode: Literal["replace"]) -> int:
-    """Replace the presentation's slides with `slides`, and answer the rev that makes."""
+def write(node: str, slides: object, mode: Literal["replace", "append"]) -> int:
+    """Replace the presentation's slides with `slides`, or append them, and answer the rev that makes."""
     writable(node)
+    if mode == "append":
+        held = item_ids(current_doc(node))
+        return push(node, appending(deck_state(slides, held)))
+
     deck = deck_state(slides)
     # A presentation with no log refuses the write below, so it keeps no version
-    if mode == "replace" and content.find(APP, node):
+    if content.find(APP, node):
         keep_version(node)
 
-    return write_deck(node, deck)
+    return push(node, replacing(deck))
 
 
 def read(node: str) -> dict:
@@ -93,6 +101,16 @@ def read(node: str) -> dict:
     if is_combined(node):
         raise WriteRefused(_("A combined presentation has no slides of its own"))
 
+    checkpoint, rows = logged_parts(node)
+    try:
+        return converter.deck_json(checkpoint, rows)
+    except checker.CheckerFailed:
+        # Busy, out of time or crashed: the presentation is not at fault, so the same read works later
+        raise WriteBusy(_("The converter gave no answer. Try again in a moment.")) from None
+
+
+def logged_parts(node: str) -> tuple[bytes | None, list[bytes]]:
+    """Answer the presentation's log as it stands, as its checkpoint and the rows after it."""
     log = content.find(APP, node)
     try:
         snapshot = log and content.read(APP, log.id)
@@ -104,11 +122,23 @@ def read(node: str) -> dict:
         jobs.request_conversion(APP, node)
         raise WriteBusy(_("This presentation is not converted yet. Try again in a moment."))
 
-    try:
-        return converter.deck_json(snapshot.checkpoint, snapshot.payloads())
-    except checker.CheckerFailed:
-        # Busy, out of time or crashed: the presentation is not at fault, so the same read works later
-        raise WriteBusy(_("The converter gave no answer. Try again in a moment.")) from None
+    return snapshot.checkpoint, snapshot.payloads()
+
+
+def current_doc(node: str) -> pycrdt.Doc:
+    """Answer the presentation's document as its log stands."""
+    checkpoint, rows = logged_parts(node)
+    # A quarantined row reads empty
+    return compaction.load_doc([part for part in (checkpoint, *rows) if part])
+
+
+def item_ids(doc: pycrdt.Doc) -> frozenset[str]:
+    """Answer the ids of every slide and element `doc` holds."""
+    ids: set[str] = set()
+    for name in ROOTS:
+        ids.update(doc.get(name, type=pycrdt.Map).keys())
+
+    return frozenset(ids)
 
 
 def writable(node: str) -> None:
@@ -143,10 +173,10 @@ def keep_version(node: str) -> None:
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 
 
-def deck_state(slides: object) -> bytes:
-    """Convert `slides` to the state of a presentation that holds all of them."""
+def deck_state(slides: object, held: frozenset[str] = frozenset()) -> bytes:
+    """Convert `slides` to the state of a presentation that holds all of them, with no id in `held`."""
     rows = slide_rows(slides)
-    answer = converted({**legacy_deck(frappe.generate_hash(), rows), "collab": 0})
+    answer = converted({**legacy_deck(frappe.generate_hash(), rows, held), "collab": 0})
     if answer.dropped:
         kinds = ", ".join(sorted({drop["kind"] for drop in answer.dropped}))
         raise SlidesRefused(_("A presentation can't keep these slides: {0}").format(kinds))
@@ -234,8 +264,8 @@ def converted(legacy: dict) -> convert.Converted:
     raise SlidesRefused(_("A presentation can't keep these slides: {0}").format(refusal))
 
 
-def write_deck(node: str, deck: bytes) -> int:
-    """Push `deck` as the whole presentation, as the request's user, and answer the rev it makes."""
+def replacing(deck: bytes) -> Callable[[pycrdt.Doc], None]:
+    """Answer the change that makes a presentation `deck`'s slides alone."""
     source = compaction.load_doc([deck])
 
     def change(state: pycrdt.Doc) -> None:
@@ -247,6 +277,51 @@ def write_deck(node: str, deck: bytes) -> int:
         copy_items(state.get("slides", type=pycrdt.Map), source.get("slides", type=pycrdt.Map))
         copy_items(state.get("elements", type=pycrdt.Map), source.get("elements", type=pycrdt.Map))
 
+    return change
+
+
+def appending(deck: bytes) -> Callable[[pycrdt.Doc], None]:
+    """Answer the change that adds `deck`'s slides after a presentation's last, in their order."""
+    source = compaction.load_doc([deck])
+
+    def change(state: pycrdt.Doc) -> None:
+        slides = state.get("slides", type=pycrdt.Map)
+        if not item_ids(source).isdisjoint(item_ids(state)):
+            # A tab made an item with an id the slides took after the ids were read
+            raise WriteBusy(_("The presentation changed during the write. Try again."))
+
+        order = max((order_of(slide) for slide in slides.values()), default="")
+        added = sorted(source.get("slides", type=pycrdt.Map).items(), key=lambda entry: order_of(entry[1]))
+        for key, slide in added:
+            order = order_past(order)
+            slides[key] = pycrdt.Map()
+            copy_fields(slides[key], slide)
+            slides[key]["order"] = order
+
+        copy_items(state.get("elements", type=pycrdt.Map), source.get("elements", type=pycrdt.Map))
+
+    return change
+
+
+def order_of(item: pycrdt.Map) -> str:
+    """Answer an item's order, where one with none sorts first, as deck.ts reads it."""
+    value = item.get("order")
+    return value if isinstance(value, str) else ""
+
+
+def order_past(lo: str) -> str:
+    """Answer the order a tab appending after `lo` writes (deck.ts's orderPast)."""
+    if not lo:
+        return FIRST_ORDER
+
+    if lo[0] == ORDER_DIGITS[-1]:
+        return lo[0] + order_past(lo[1:])
+
+    return ORDER_DIGITS[ORDER_DIGITS.index(lo[0]) + 1]
+
+
+def push(node: str, change: Callable[[pycrdt.Doc], None]) -> int:
+    """Push `change` to the presentation as the request's user, and answer the rev it makes."""
     try:
         return content.write(APP, node, change)
     except content.Refusal as refusal:

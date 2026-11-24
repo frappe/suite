@@ -65,12 +65,17 @@ curl -H "$AUTH" $SITE/api/suite/slides/presentations/<node>
 ] }] } }
 ```
 
-**5. Replace the slides.** The user needs edit access to the presentation. `mode` is `replace`.
+**5. Replace the slides, or add some.** The user needs edit access to the presentation. `mode` is `replace` to make the slides these alone, or `append` to add them after the last slide and leave the rest as they are.
 
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations/<node>/slides -H "$AUTH" -H 'Content-Type: application/json' -d '{
   "mode": "replace",
   "slides": [ { "background": "#FFFFFF", "elements": [ { "type": "text", "left": 80, "top": 80, "content": "<p>Only this</p>" } ] } ]
+}'
+
+curl -X POST $SITE/api/suite/slides/presentations/<node>/slides -H "$AUTH" -H 'Content-Type: application/json' -d '{
+  "mode": "append",
+  "slides": [ { "background": "#FFFFFF", "elements": [ { "type": "text", "left": 80, "top": 80, "content": "<p>One more</p>" } ] } ]
 }'
 ```
 
@@ -160,10 +165,12 @@ Every element has a `type` and a place. It may have an `id`, with the same rule 
 - The automatic version follows it.
 - A write keeps all of the slides or refuses all of them, and refuses what the editor would change or leave out.
 - `replace` removes every slide and writes the new ones. An edit someone makes at that moment to a removed slide goes with it.
+- `append` leaves every slide there is, with what others edit in it, and adds the new slides after the last one.
+- `append` with a slide as a read gives it, ids and all, adds a copy of it: the copy and its elements get ids of their own, and Magic Move pairs the copy's elements with the ones they copy.
 - `replace` first keeps a version of the presentation as it stood, named "Before a replace from JSON". It stays in the presentation's versions until someone deletes it. When no version can be kept, as when the Drive is full, the replace is refused. When the versions are only away for a moment, it answers `WriteBusy`.
 - An id that two slides or elements share, or that another item holds, is given a new one. A connector or Magic Move that named it may then lose its pair, so give every item its own id.
 - A combined presentation, one that shows other presentations' slides, takes no write.
-- One call takes up to 256 KB of JSON. Build a larger presentation over several writes.
+- One call takes up to 256 KB of JSON. Build a larger presentation by creating it with its first slides and adding the rest with `append`.
 
 ## Limits
 
@@ -181,7 +188,7 @@ A refusal answers its class and a message:
 | --- | --- | --- |
 | `AuthenticationError` | 401 | The API key or secret is wrong |
 | `PermissionError` | 403 | A write has no `Authorization` header |
-| `DriveError` | 400 | A field is missing or wrong, such as an empty title, a `mode` other than `replace`, or a `role` that is not one of the numbers. The message names it. Nothing was written |
+| `DriveError` | 400 | A field is missing or wrong, such as an empty title, a `mode` other than `replace` or `append`, or a `role` that is not one of the numbers. The message names it. Nothing was written |
 | `DriveNotFound` | 404 | The folder or presentation does not exist for this user, the item is not a presentation, or the presentation was deleted during the write |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the presentation, or the presentation is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
@@ -189,5 +196,5 @@ A refusal answers its class and a message:
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
 | `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a value the editor has no place for, an id is not of the form above, a text's HTML holds what the editor can't keep, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which. Nothing was written. The same slides get the same answer, so change them |
 | `WriteRefused` | 409 | The presentation refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`; or no version could be kept before a replace; or the presentation is a combined one. The same call gets the same answer until that changes. A write to a presentation not converted yet asks for its conversion, so write again in a minute |
-| `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read, a read found it not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
+| `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |

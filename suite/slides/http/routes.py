@@ -159,7 +159,7 @@ class CreatePresentation(TypedDict):
 
 class WriteSlides(TypedDict):
     slides: list[dict[str, object]]
-    mode: Literal["replace"]
+    mode: Literal["replace", "append"]
 
 
 class WrittenPresentation(drive.NodeShape):
@@ -172,6 +172,7 @@ class PresentationSlides(TypedDict):
     slides: list[dict[str, object]]
 
 
+MODES: tuple[Literal["replace", "append"], ...] = ("replace", "append")
 WRITE_REFUSALS = (agent.SlidesRefused, agent.WriteRefused, agent.WriteBusy)
 
 # As in Drive's handlers, a body field is annotated to take anything and checked in the handler: a narrow
@@ -223,9 +224,9 @@ def presentation_create(
 @write_limit
 @refusing
 def presentation_write(node: str, slides: Given = None, mode: Given = None) -> WrittenPresentation:
-    """Replace a presentation's slides with slide JSON."""
-    if mode != "replace":
-        raise frappe.ValidationError(_("mode must be replace"))
+    """Replace a presentation's slides with slide JSON, or add slides after its last."""
+    if mode not in MODES:
+        raise frappe.ValidationError(_("mode must be replace or append"))
 
     rev = agent.write(node, slides, mode)
     return {**drive.get_node(node), "rev": rev}

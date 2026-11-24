@@ -14,6 +14,7 @@ from frappe.utils.synchronization import filelock
 from suite import drive
 from suite.content import checker, compaction, convert
 from suite.slides import content as slides_content
+from suite.slides.content import agent
 from suite.slides.content.agent import SlidesRefused, WriteBusy, WriteRefused
 from suite.slides.content.tests.support import LoggedDeckCase, call_route, delete_log, opened, owner_folder
 from suite.slides.drive import docname_for_node
@@ -284,13 +285,102 @@ class TestPresentationWrites(LoggedDeckCase):
 
         self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
 
-    def test_a_mode_other_than_replace_writes_nothing(self):
+    def test_an_unknown_mode_writes_nothing(self):
         node = self.create([title_slide("First")])
 
         with self.assertRaisesRegex(drive.DriveError, "mode must be"):
             slides_routes.presentation_write(node=node, slides=[title_slide("Second")], mode="prepend")
 
         self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+
+    def test_append_adds_slides_after_the_last_and_leaves_the_rest(self):
+        node = self.create([title_slide("First"), title_slide("Second")])
+        before = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_write(node, [title_slide("Third"), title_slide("Fourth")], "append")
+
+        after = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(after[:2], before)
+        self.assertEqual(
+            self.texts_of(node),
+            [[f"<paragraph>{word}</paragraph>"] for word in ("First", "Second", "Third", "Fourth")],
+        )
+        # Nothing was removed, so nothing needs a version
+        self.assertEqual(self.kept_versions(node), [])
+
+    def test_append_lands_after_a_slide_a_tab_added_last(self):
+        node = self.create([title_slide("First")])
+
+        def add_slide(doc: pycrdt.Doc) -> None:
+            doc.get("slides", type=pycrdt.Map)["by-hand"] = pycrdt.Map({"order": "z"})
+
+        status, _body = self.push(node, add_slide)
+        self.assertEqual(status, 200)
+
+        slides_routes.presentation_write(node, [title_slide("Appended")], "append")
+
+        self.assertEqual(
+            self.texts_of(node), [["<paragraph>First</paragraph>"], [], ["<paragraph>Appended</paragraph>"]]
+        )
+
+    def test_an_appended_copy_of_a_slide_gets_ids_of_its_own(self):
+        node = self.create([shape_slide()])
+        (copied,) = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_write(node, [copied], "append")
+
+        first, copy = slides_routes.presentation_read(node)["slides"]
+        self.assertNotEqual(copy["id"], first["id"])
+        (box, line) = first["elements"]
+        (copy_box, copy_line) = copy["elements"]
+        self.assertEqual(box["id"], "box")
+        self.assertNotIn(copy_box["id"], {"box", line["id"]})
+        # Magic Move pairs the copy's box with the box it copies
+        self.assertEqual(copy_box["refId"], "box")
+        # Each line holds on to the box on its own slide
+        self.assertEqual(line["connector"]["start"]["elementId"], "box")
+        self.assertEqual(copy_line["connector"]["start"]["elementId"], copy_box["id"])
+
+    def test_a_tab_edit_made_while_an_append_converts_stays(self):
+        node = self.create([title_slide("First")])
+        _header, state = opened(node)
+        (element_id,) = compaction.load_doc([state]).get("elements", type=pycrdt.Map).keys()
+        read_ids = agent.current_doc
+
+        def type_into(doc: pycrdt.Doc) -> None:
+            text = doc.get("elements", type=pycrdt.Map)[element_id]["text"]
+            text.children[0].children[0].insert(5, " typed")
+
+        def read_then_type(at: str) -> pycrdt.Doc:
+            doc = read_ids(at)
+            status, _body = self.push(node, type_into)
+            self.assertEqual(status, 200)
+            return doc
+
+        with patch.object(agent, "current_doc", read_then_type):
+            slides_routes.presentation_write(node, [title_slide("Appended")], "append")
+
+        self.assertEqual(
+            self.texts_of(node), [["<paragraph>First typed</paragraph>"], ["<paragraph>Appended</paragraph>"]]
+        )
+
+    def test_an_append_whose_id_a_tab_took_meanwhile_answers_busy(self):
+        node = self.create([title_slide("First")])
+        read_ids = agent.current_doc
+
+        def add_slide(doc: pycrdt.Doc) -> None:
+            doc.get("slides", type=pycrdt.Map)["taken-meanwhile"] = pycrdt.Map({"order": "z"})
+
+        def read_then_add(at: str) -> pycrdt.Doc:
+            doc = read_ids(at)
+            status, _body = self.push(node, add_slide)
+            self.assertEqual(status, 200)
+            return doc
+
+        with patch.object(agent, "current_doc", read_then_add), self.assertRaises(WriteBusy):
+            slides_routes.presentation_write(node, [title_slide("Appended", id="taken-meanwhile")], "append")
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"], []])
 
     def test_a_busy_converter_answers_busy_and_creates_nothing(self):
         with (

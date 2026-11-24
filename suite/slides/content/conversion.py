@@ -111,14 +111,14 @@ def read_old(node: str, *, lock: bool = False) -> OldDeck | None:
     return OldDeck(row.name, legacy, fingerprint_of(row), newest)
 
 
-def legacy_deck(docname: str, rows: list[frappe._dict]) -> dict:
+def legacy_deck(docname: str, rows: list[frappe._dict], taken: frozenset[str] = frozenset()) -> dict:
     """Parse and repair a deck's rows, or say they don't parse: only the converter refuses."""
     parsed = [parsed_elements(row.elements) for row in rows]
     if any(elements is None for elements in parsed):
         return {"slides": [], "isUnreadable": True}
 
     try:
-        return {"slides": repaired_slides(docname, rows, parsed)}
+        return {"slides": repaired_slides(docname, rows, parsed, taken)}
     except TableKeyLost:
         return {"slides": [], "isTableKeyLost": True}
 
@@ -139,9 +139,12 @@ def parsed_elements(value: str | None) -> list[dict] | None:
     return elements
 
 
-def repaired_slides(docname: str, rows: list[frappe._dict], parsed: list[list[dict]]) -> list[dict]:
+def repaired_slides(
+    docname: str, rows: list[frappe._dict], parsed: list[list[dict]], taken: frozenset[str] = frozenset()
+) -> list[dict]:
     """Give every slide and element an id of its own, first holder keeping it; nothing is dropped."""
-    held = {row.client_id for row in rows}
+    # `taken` holds the ids a presentation's items have, so slides added to it take none of them
+    held = {row.client_id for row in rows} | taken
     for elements in parsed:
         held.update(element["id"] for element in elements if isinstance(element.get("id"), str))
 
@@ -153,7 +156,7 @@ def repaired_slides(docname: str, rows: list[frappe._dict], parsed: list[list[di
         held.add(fresh)
         return fresh
 
-    seen: set[str] = set()
+    seen = set(taken)
     slides: list[dict] = []
     for row, elements in zip(rows, parsed, strict=True):
         slide_id = row.client_id
