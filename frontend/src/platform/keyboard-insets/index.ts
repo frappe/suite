@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, readonly, ref } from 'vue'
 
 /**
  * What the on-screen keyboard has left of the layout viewport, for holding a full-screen pane
@@ -78,4 +78,80 @@ export const useStillDocument = () => {
     Object.assign(document.body.style, { overflow: '', position: '', width: '' })
     document.documentElement.style.overflow = ''
   })
+}
+
+// Input types that raise no on-screen keyboard: focusing one is not the keyboard coming up.
+// `shouldIgnoreKeypress` draws the same line for checkboxes.
+const NON_TEXT_INPUT_TYPES = new Set([
+  'button',
+  'checkbox',
+  'color',
+  'file',
+  'hidden',
+  'image',
+  'radio',
+  'range',
+  'reset',
+  'submit',
+])
+const isEditable = (el: Element | null) => {
+  if (!el) return false
+  if (el instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(el.type)
+  return el.tagName === 'TEXTAREA' || (el instanceof HTMLElement && el.isContentEditable)
+}
+
+// How far the visible screen has to come short of its full height to be a keyboard: more than a
+// browser toolbar folding away, or iOS's slim bar over a hardware keyboard, and less than any
+// phone's keyboard.
+const KEYBOARD_MIN_HEIGHT = 150
+/**
+ * Whether an on-screen keyboard is up: a field that types is focused, and the screen has given a
+ * keyboard's height to it.
+ *
+ * The focus alone says too much. A hardware keyboard (an iPad's, or the Simulator's) raises
+ * none, and Android's Back puts the keyboard away and leaves the field focused. The screen alone
+ * says too little: iOS keeps the window its full height under the keyboard and shrinks only the
+ * visible part, while under `interactive-widget=resizes-content` (index.html) Android shrinks the
+ * window itself, so the visible height is measured against the tallest it has been at this width.
+ * A change of width is a turn of the phone, and the measure starts again.
+ *
+ * It answers once the keyboard has taken the screen, not on the focus: what steps aside for a
+ * keyboard does not go and come back for a field that raises none. iOS's keyboard rises over
+ * what is at the bottom anyway, and Android's moves it and is answered in the same frame.
+ *
+ * `sync` reads the focus again, for a field torn down with its route, which fires no focusout.
+ */
+export const watchOnScreenKeyboard = () => {
+  const up = ref(false)
+  const visibleHeight = () => window.visualViewport?.height ?? window.innerHeight
+  let width = window.innerWidth
+  let fullHeight = Math.max(window.innerHeight, visibleHeight())
+
+  const screenTaken = () => {
+    const height = visibleHeight()
+    if (window.innerWidth !== width) {
+      width = window.innerWidth
+      fullHeight = Math.max(window.innerHeight, height)
+    }
+    fullHeight = Math.max(fullHeight, height)
+    return fullHeight - height >= KEYBOARD_MIN_HEIGHT
+  }
+  const sync = () => {
+    up.value = isEditable(document.activeElement) && screenTaken()
+  }
+  // On the next frame rather than on the event: moving between two fields fires focusout before
+  // focusin, and acting on the focusout would let go of the keyboard in between them.
+  const syncSoon = () => requestAnimationFrame(sync)
+
+  document.addEventListener('focusin', syncSoon)
+  document.addEventListener('focusout', syncSoon)
+  window.visualViewport?.addEventListener('resize', sync)
+  window.addEventListener('resize', sync)
+  const stop = () => {
+    document.removeEventListener('focusin', syncSoon)
+    document.removeEventListener('focusout', syncSoon)
+    window.visualViewport?.removeEventListener('resize', sync)
+    window.removeEventListener('resize', sync)
+  }
+  return { up: readonly(up), sync, stop }
 }

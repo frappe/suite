@@ -69,7 +69,13 @@
         <template #list>
           <!-- The search view's own header: the query (click to edit) + removable filter pills, above
 					     the results toolbar. It owns the query surface; the results below just read the route. -->
-          <SearchResultsHeader v-if="mailbox === 'search'" />
+          <SearchResultsHeader v-if="mailbox === 'search' && !isMobile" />
+          <!-- A phone's search is this screen: the field and its chips, over the results. -->
+          <PhoneSearchBar
+            v-if="mailbox === 'search' && isMobile"
+            ref="phoneSearch"
+            :count="searchCount"
+          />
 
           <!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
@@ -309,7 +315,11 @@
           </div>
           <div v-else class="flex h-full flex-col">
             <div ref="listTop" />
-            <div class="flex min-h-0 flex-1 items-center justify-center">
+            <PhoneSearchRecents
+              v-if="isMobile && mailbox === 'search' && !hasSearchQuery && listState !== 'error'"
+              class="min-h-0 flex-1 overflow-y-auto"
+            />
+            <div v-else class="flex min-h-0 flex-1 items-center justify-center">
               <LoadError
                 v-if="listState === 'error'"
                 :title="__('Could not load the list.')"
@@ -332,10 +342,19 @@
                             inboxCategory ? tabName(inboxCategory) : mailboxName,
                           ])
                       : hasSearchQuery
-                        ? __('No results found for the given query.')
+                        ? searchedText
+                          ? __('No mail matches “{0}”', [searchedText])
+                          : __('No mail matches these filters')
                         : __('Search your mail')
                   }}
                 </p>
+                <!-- The way out of a search that found nothing: the filters narrowing it. -->
+                <Button
+                  v-if="mailbox === 'search' && hasSearchQuery && searchFilterCount"
+                  class="mt-3"
+                  :label="__('Remove filters')"
+                  @click="removeSearchFilters"
+                />
               </div>
             </div>
           </div>
@@ -457,6 +476,8 @@ import MailThread from '@/apps/mail/components/MailThread.vue'
 import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
+import PhoneSearchBar from '@/apps/mail/components/mobile/PhoneSearchBar.vue'
+import PhoneSearchRecents from '@/apps/mail/components/mobile/PhoneSearchRecents.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
@@ -484,6 +505,7 @@ import {
   shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
 import {
+  mailSearchRoute,
   useDiscardingDrafts,
   useListReload,
   useMobileSearch,
@@ -934,6 +956,37 @@ const shortAccountLabel = (name?: string | null) =>
 // (all_accounts is scope, not a search condition, so it alone doesn't count as a query).
 const { hasSearchQuery } = useMobileSearch()
 
+// How many a search found. Null until the current search resolves: a neutral word, rather than a
+// stale or zero count.
+const searchResultsLabel = computed(() => {
+  if (searchTotal.value === null) return __('Searching…')
+  return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
+})
+// A phone's search, under its chips: how many it found, once it has answered, selecting or not
+// (the selection says itself in the bar at the bottom). None found is the empty list's to say.
+const searchCount = computed(() =>
+  hasSearchQuery.value && searchTotal.value ? searchResultsLabel.value : undefined,
+)
+// The words searched for, and how many filters narrow them: what a search that found nothing says.
+const searchedText = computed(() =>
+  typeof route.query.text === 'string' ? route.query.text.trim() : '',
+)
+const searchFilterCount = computed(
+  () => Object.keys(route.query).filter((key) => !['text', 'all_accounts'].includes(key)).length,
+)
+const removeSearchFilters = () =>
+  router.replace(
+    mailSearchRoute(store.accountId, searchedText.value ? { text: searchedText.value } : {}),
+  )
+// A search taken up by opening one of its results is one worth offering again.
+const phoneSearch = useTemplateRef<{ remember: () => void }>('phoneSearch')
+watch(
+  () => threadID,
+  (opened) => {
+    if (opened && mailbox === 'search') phoneSearch.value?.remember()
+  },
+)
+
 // Null while a search is pending — the count is only known once the fetch resolves (set in the
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
 const searchTotal = ref<number | null>(null)
@@ -1093,7 +1146,12 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
       return
     }
   }
-  void refetchThreads()
+  // A search asked again (its filters taken off, say) can answer from what the query kept, before
+  // this reset; the read then changes no total, and the watch above stays quiet. The count is the
+  // read's, once it is in.
+  void refetchThreads().then(() => {
+    if (mailbox === 'search') searchTotal.value = searchResults.total ?? null
+  })
   if (reloadMailboxes) void store.refreshCounts()
 }
 
@@ -1529,11 +1587,7 @@ const title = computed(() => {
     return selections.value.length === 1
       ? __('1 item selected')
       : __('{0} items selected', [String(selections.value.length)])
-  if (mailbox === 'search') {
-    // Null until the current search resolves — show a neutral label rather than a stale/zero count.
-    if (searchTotal.value === null) return __('Searching…')
-    return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
-  }
+  if (mailbox === 'search') return searchResultsLabel.value
   return filterTitle.value
 })
 

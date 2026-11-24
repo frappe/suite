@@ -18,6 +18,7 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
+import { watchOnScreenKeyboard } from '@/platform/keyboard-insets'
 import type { SettingsTabIds } from '@/platform/settings'
 import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
@@ -186,6 +187,8 @@ export function hasMailSearchQuery(query: LocationQuery): boolean {
   return Object.keys(query).some((key) => key !== 'all_accounts')
 }
 
+// Asks the phone's search field for the caret (see openSearch).
+
 export const useMobileSearch = () => {
   const route = useRoute()
   const router = useRouter()
@@ -195,11 +198,10 @@ export const useMobileSearch = () => {
     () => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
   )
 
-  // Keep the search route behind the palette so browser Back dismisses search and the
-  // route watcher in DefaultLayout closes the palette.
-  const openSearch = async () => {
-    if (!isSearchRoute.value) await router.push(mailSearchRoute(store.accountId))
-    root.paletteOpen = true
+  // A phone searches on the search route itself, where the field is (see PhoneSearchBar): the tab
+  // only goes there. The keyboard comes up when the field is tapped, not before.
+  const openSearch = () => {
+    if (!isSearchRoute.value) void router.push(mailSearchRoute(store.accountId))
   }
 
   const hasSearchQuery = computed(() => hasMailSearchQuery(route.query))
@@ -229,60 +231,28 @@ export const useMobileSelection = () => {
   }
 }
 
-const keyboardOpen = ref(false)
-let watchingFocus = false
-
-// Input types that raise no on-screen keyboard: focusing one is not the keyboard coming up, and
-// treating it as such takes the bottom bar away for a tick with nothing covering where it was.
-// `shouldIgnoreKeypress` draws the same line for checkboxes.
-const NON_TEXT_INPUT_TYPES = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'hidden',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit',
-])
-const isEditable = (el: Element | null) => {
-  if (!el) return false
-  if (el instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(el.type)
-  return el.tagName === 'TEXTAREA' || (el instanceof HTMLElement && el.isContentEditable)
-}
+let onScreenKeyboard: ReturnType<typeof watchOnScreenKeyboard> | undefined
+const NO_KEYBOARD = readonly(ref(false))
 
 /**
- * Whether the on-screen keyboard is up, read off what's focused rather than off the viewport.
+ * Whether the on-screen keyboard is up, for what steps aside for it, such as the phone's bottom
+ * bar: under `interactive-widget=resizes-content` (index.html) the keyboard pulls anything
+ * anchored to the bottom of the shell up above it. See `watchOnScreenKeyboard`.
  *
- * The viewport can't answer this under `interactive-widget=resizes-content` (index.html): the
- * keyboard shrinks the layout viewport itself, so the visual and layout viewports stay the same
- * size and `useKeyboardInsets` measures zero — the very case this is for. What the shrink DOES do
- * is pull anything anchored to the bottom of the shell up above the keyboard, which is why the
- * bottom bar has to be told to step aside.
- *
- * Mobile only: desktop has no on-screen keyboard, so a focused field there means nothing and the
- * listeners aren't worth attaching.
+ * Mobile only: desktop has no on-screen keyboard, and the listeners aren't worth attaching.
  */
 export const useKeyboardOpen = () => {
   const { isMobile } = useScreenSize()
-  if (!watchingFocus && isMobile.value) {
-    watchingFocus = true
-    // Re-read the focus on the next frame rather than trusting the event: moving between two
-    // fields fires focusout before focusin, and acting on the focusout would flash the nav back
-    // in between them.
-    const sync = () =>
-      requestAnimationFrame(() => (keyboardOpen.value = isEditable(document.activeElement)))
-    document.addEventListener('focusin', sync)
-    document.addEventListener('focusout', sync)
+  if (!onScreenKeyboard && isMobile.value) {
+    const keyboard = watchOnScreenKeyboard()
+    onScreenKeyboard = keyboard
     // A field torn down with its route never fires focusout — Chrome and Safari move focus to
     // <body> silently — so this would latch on and stay on. Compose is a page whose editor is
     // focused on mount and which closes by navigating away, i.e. exactly that shape: leaving it
     // left the bottom nav and the compose button hidden for the rest of the session.
-    router.afterEach(() => sync())
+    router.afterEach(() => requestAnimationFrame(keyboard.sync))
   }
-  return keyboardOpen
+  return onScreenKeyboard?.up ?? NO_KEYBOARD
 }
 const undoAction = ref<() => void>()
 

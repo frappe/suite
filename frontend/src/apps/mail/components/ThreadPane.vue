@@ -9,6 +9,10 @@
     class="sticky top-16 flex flex-col"
     :class="[
       split ? SPLIT_LIST_CLASS : 'w-full',
+      // On a phone the list gives way a little to the left as the thread slides over it, and comes
+      // back as it goes: the same push a category makes over Primary (see pageSlide.ts).
+      isMobile && 'transition-transform duration-300 ease-[var(--page-slide-ease)]',
+      { '-translate-x-1/4': isMobile && threadOpen },
       // A width saved on a wider window still leaves the pane what a drag would.
       { 'max-w-[calc(100%-25rem)] lg:max-w-[calc(100%-30rem)]': split && listWidth },
     ]"
@@ -55,7 +59,7 @@
         'overflow-hidden': isMobile,
         [SPLIT_PANE_CLASS]: split,
         'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-        'fixed inset-0 z-30 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+        'fixed inset-0 z-30 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[var(--page-slide-ease)]':
           isMobile,
         'invisible translate-x-full': isMobile && !threadOpen,
         hidden: !isMobile && !showReadingPane && !threadOpen,
