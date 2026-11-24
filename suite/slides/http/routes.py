@@ -283,10 +283,10 @@ SLIDES_ERRORS = (
     drive.DriveForbidden,
     drive.DriveLocked,
     drive.DriveLinkExpired,
-    # A picture a write copies under the presentation counts against the Drive's room
-    drive.DriveOverQuota,
     *WRITE_REFUSALS,
 )
+# A picture a write copies under the presentation counts against the Drive's room
+WRITE_ERRORS = (*SLIDES_ERRORS, drive.DriveOverQuota, drive.DriveStorageUnmeasured)
 
 ROUTES = (
     Route(
@@ -295,7 +295,7 @@ ROUTES = (
         "presentation_create",
         body=CreatePresentation,
         output=WrittenPresentation,
-        errors=(*SLIDES_ERRORS, drive.DriveConflict),
+        errors=(*WRITE_ERRORS, drive.DriveConflict),
         kind="mutation",
         public_name="presentations.create",
     ),
@@ -305,7 +305,7 @@ ROUTES = (
         "presentation_write",
         body=WriteSlides,
         output=WrittenPresentation,
-        errors=SLIDES_ERRORS,
+        errors=WRITE_ERRORS,
         kind="mutation",
         public_name="presentations.write",
     ),
@@ -315,7 +315,7 @@ ROUTES = (
         "presentation_slide_write",
         body=WriteSlide,
         output=WrittenPresentation,
-        errors=SLIDES_ERRORS,
+        errors=WRITE_ERRORS,
         kind="mutation",
         public_name="presentations.writeSlide",
     ),
