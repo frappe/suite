@@ -384,10 +384,13 @@ class TestDocumentWrites(DriveCallbackCase):
         self.age_copy(node)
         # Converted before the converter fails, so only the copy's render meets it
         body = body_state("Second.")
+        logged = connection_for("Error Log").count("Error Log")
 
         with patch.object(converter, "run", side_effect=RuntimeError("no turn")):
             write_body(node, body, "append")
 
+        # The write landed, so the failure is the sweep's job to report
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
         self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph><paragraph>Second.</paragraph>")
         self.assertNotIn("Second.", self.copy_of(node))
         self.assertEqual(self.swept_renders(node), 1)
@@ -436,6 +439,26 @@ class TestDocumentWrites(DriveCallbackCase):
         # The job is still asked for, as it is what reports a render that fails
         enqueue.assert_called_once()
         self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+
+    def test_a_write_that_lands_while_the_owed_job_renders_is_still_owed(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        doc_id = self.doc_row(node).id
+        third = body_state("Third.")
+        render = converter.run
+
+        def render_as_a_write_lands(legacy: dict):
+            write_body(node, third, "append")
+            return render(legacy)
+
+        with patch.object(converter, "run", side_effect=render_as_a_write_lands):
+            jobs.render_owed(writer_content.APP, doc_id)
+
+        self.assertNotIn("Third.", self.copy_of(node))
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+        jobs.render_owed(writer_content.APP, doc_id)
+        self.assertIn("<p>First.</p><p>Second.</p><p>Third.</p>", self.copy_of(node))
 
     def test_the_owed_job_renders_nothing_once_a_tab_rendered_the_head(self):
         node = self.create("First.")
