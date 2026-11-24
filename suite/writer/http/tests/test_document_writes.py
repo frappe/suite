@@ -388,6 +388,49 @@ class TestDocumentWrites(DriveCallbackCase):
         jobs.render_owed(writer_content.APP, self.doc_row(node).id)
         self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
 
+    def test_an_export_renders_the_copy_a_write_left_behind(self):
+        node = self.create("First.")
+        share_as_writer(node, "$PUBLIC", drive.READ)
+        writer_routes.document_write(node, "Second.", "append")
+        doc_id = self.doc_row(node).id
+        self.assertNotIn("Second.", self.copy_of(node))
+
+        # A guest on the public link reads no older a document than the signed-in reader does
+        frappe.set_user("Guest")
+        with patch.object(scheduling, "enqueue") as enqueue:
+            html = exported(node, "html")
+
+        frappe.set_user(WRITER)
+        self.assertEqual(html, "<p>First.</p><p>Second.</p>")
+        # The export saves nothing, so the job is asked for at once and not at the next sweep
+        self.assertNotIn("Second.", self.copy_of(node))
+        self.assertEqual(
+            [call.args for call in enqueue.call_args_list],
+            [(jobs.RENDER_OWED, f"suite-collab-copy-writer-{doc_id}")],
+        )
+
+        jobs.render_owed(writer_content.APP, doc_id)
+        with patch.object(converter, "run") as run:
+            self.assertEqual(exported(node, "html"), html)
+
+        run.assert_not_called()
+
+    def test_an_export_answers_a_refresh_when_the_owed_copy_cannot_be_rendered(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        logged = connection_for("Error Log").count("Error Log")
+
+        with (
+            patch.object(converter, "run", side_effect=checker.CheckerBusy("another child ran")),
+            patch.object(scheduling, "enqueue") as enqueue,
+            self.assertRaisesRegex(drive.DriveConflict, "Open the document to refresh its export"),
+        ):
+            exported(node, "html")
+
+        # The job is still asked for, as it is what reports a render that fails
+        enqueue.assert_called_once()
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+
     def test_the_owed_job_renders_nothing_once_a_tab_rendered_the_head(self):
         node = self.create("First.")
         writer_routes.document_write(node, "Second.", "append")

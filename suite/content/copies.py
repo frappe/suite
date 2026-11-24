@@ -174,7 +174,7 @@ def follow_write(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, *,
         return
 
     is_rendered = False
-    # A copy under COPY_AGE old waits, so a document written in parts renders once a minute, not once a part
+    # A young copy waits for a reader or the sweep, so writing a document in parts does not render every part
     if is_wanted:
         try:
             install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
@@ -223,6 +223,41 @@ def render_owed(app: str, doc_id: str) -> None:
         frappe.db.rollback()
         frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id).run()
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def is_owed(app: str, doc_id: str) -> bool:
+    """Whether a write on the server owes the document a copy."""
+    doc = Table(table(app, "doc"))
+    owed = (
+        frappe.qb.from_(doc)
+        .select(doc.id)
+        .where(doc.id == doc_id)
+        .where(doc.copy_owed == 1)
+        .where(doc.mode != "purged")
+        .run()
+    )
+    return bool(owed)
+
+
+def owed_html(app: str, doc_id: str) -> str | None:
+    """Render the owed copy for one reader and save nothing; None when no render holds the document."""
+    html_copy = spec_of(app).readable_copy
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return None
+
+    try:
+        # In the reader's transaction, which a Drive callback may not commit: the job is what saves the copy
+        log_read = read(app, doc_id, integrated=True, own_snapshot=False)
+        if log_read is None:
+            return None
+
+        state = state_at(app, log_read, log_read.head_rev)
+        clean, text = cleaned(html_copy.render(state))
+    except Exception:
+        # The reader is told to read again; the job renders once more and reports what fails
+        return None
+
+    return clean if html_copy.is_html_complete(state, clean, text) else None
 
 
 def is_at_head(app: str, doc_id: str) -> bool:

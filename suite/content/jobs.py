@@ -145,6 +145,11 @@ def render_owed(app: str, doc_id: str) -> None:
     copies.render_owed(app, doc_id)
 
 
+def request_owed_copy(app: str, doc_id: str) -> None:
+    """Enqueue the render of the copy a write on the server owed, once."""
+    scheduling.enqueue(RENDER_OWED, f"suite-collab-copy-{app}-{doc_id}", app=app, doc_id=doc_id)
+
+
 def sweep() -> None:
     """Sweep every app's logs for due compactions, touches, staged renders to check and owed copies to render."""
     for app, spec in editors().items():
@@ -157,4 +162,4 @@ def sweep() -> None:
             request_render_check(app, doc_id)
 
         for doc_id in copies.owed_docs(app):
-            scheduling.enqueue(RENDER_OWED, f"suite-collab-copy-{app}-{doc_id}", app=app, doc_id=doc_id)
+            request_owed_copy(app, doc_id)
