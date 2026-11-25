@@ -7,13 +7,13 @@
 -->
 <template>
   <BottomSheet v-model:open="open" :title="__('Reactions')">
-    <div class="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+    <div class="px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
       <template v-if="!readonly">
         <p v-if="refusal" class="text-p-base text-ink-gray-6 px-2 pb-2 text-center">
           {{ refusal }}
         </p>
         <!-- Its first emoji starts where the full list's first one does -->
-        <div v-else class="grid grid-cols-[repeat(5,3rem)] justify-between gap-y-6">
+        <div v-else class="grid grid-cols-[repeat(5,3rem)] justify-between gap-y-3">
           <button
             v-for="emoji in PHONE_REACTIONS"
             :key="emoji"
