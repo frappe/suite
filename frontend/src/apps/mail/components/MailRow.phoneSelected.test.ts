@@ -70,7 +70,8 @@ const shadedUnderFinger = async (selectionMode: boolean) => {
   app.config.globalProperties.__ = (text: string) => text
   app.mount(el)
   mounted.push(app)
-  const rowEl = el.firstElementChild!
+  // The row itself, the last child of the box it swipes in.
+  const rowEl = el.firstElementChild!.lastElementChild!
   rowEl.dispatchEvent(
     Object.assign(new Event('touchstart', { bubbles: true }), {
       touches: [{ clientX: 10, clientY: 10 }],

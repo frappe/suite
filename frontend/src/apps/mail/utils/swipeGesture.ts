@@ -7,7 +7,7 @@
 export const LOCK_AT = 10
 
 /** A page let go past this share of its width goes on to the next. */
-const COMMIT_SHARE = 0.3
+export const COMMIT_SHARE = 0.3
 /** Or let go this fast (px per ms), flung its way, however far it went. */
 const FLING_SPEED = 0.4
 /** The speed is read over the last stretch of the drag, not the whole of it. */

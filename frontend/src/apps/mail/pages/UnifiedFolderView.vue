@@ -349,7 +349,7 @@
     </div>
   </div>
 
-  <Dialog v-model:open="showDelete" v-bind="deleteOptions" />
+  <AdaptiveDialog v-model:open="showDelete" v-bind="deleteOptions" />
   <SnoozeMenu
     v-model:open="showSnooze"
     v-model:picking="pickingSnooze"
@@ -366,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, PageHeader } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
 import { computed, h, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -460,6 +460,7 @@ import {
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
 import { deleteForeverOptions } from '@/apps/mail/utils/useThreadActions'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 
@@ -586,9 +587,10 @@ const {
   },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
-// (Starred) or nothing unread to clear (Sent, Drafts).
+// (Starred), nothing unread to clear (Sent, Drafts), or nothing worth reading (Trash and Junk, on
+// their way out).
 const clearScope = computed(() =>
-  folder === STARRED_FOLDER || isOutgoingFolder.value
+  folder === STARRED_FOLDER || isOutgoingFolder.value || isTrashFolder.value || isJunkFolder.value
     ? undefined
     : listScope(inboxCategory.value, folderLabel.value, filter.value),
 )
