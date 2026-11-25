@@ -1,9 +1,9 @@
 <!--
   A phone's reactions to one message, as a sheet: emoji to react with, then who reacted with each.
   A computer says who in a chip's tooltip, which a touch has no way to reach. The grid starts with
-  the desktop's palette; its last cell swaps the grid for every emoji. A message that can't be
-  reacted to says why in the grid's place, and still lists who reacted. A read-only view lists who
-  reacted alone.
+  the desktop's palette; its last cell swaps the grid and the list for every emoji, at the sheet's
+  full width. A message that can't be reacted to says why in the grid's place, and still lists who
+  reacted. A read-only view lists who reacted alone.
 -->
 <template>
   <BottomSheet v-model:open="open" :title="__('Reactions')">
@@ -12,13 +12,13 @@
         <p v-if="refusal" class="text-p-base text-ink-gray-6 px-2 pb-2 text-center">
           {{ refusal }}
         </p>
-        <EmojiGrid v-else-if="picker" class="mx-auto" :picker :auto-focus="false" @select="pick" />
-        <div v-else class="grid grid-cols-5 gap-1">
+        <EmojiGrid v-else-if="picker" class="!w-full" :picker :auto-focus="false" @select="pick" />
+        <div v-else class="grid grid-cols-[repeat(5,3rem)] justify-between gap-y-1">
           <button
             v-for="emoji in PHONE_REACTIONS"
             :key="emoji"
             type="button"
-            class="active:bg-surface-gray-3 flex h-12 items-center justify-center rounded-full text-2xl transition active:scale-95"
+            class="active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full text-2xl transition active:scale-95"
             :class="{ 'bg-surface-gray-2': mine.has(emojiKey(emoji)) }"
             :aria-pressed="mine.has(emojiKey(emoji))"
             @click="pick(emoji)"
@@ -28,21 +28,30 @@
           <button
             type="button"
             :aria-label="__('More reactions')"
-            class="text-ink-gray-6 active:bg-surface-gray-3 flex h-12 items-center justify-center rounded-full transition active:scale-95"
+            class="text-ink-gray-6 active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition active:scale-95"
             @click="showEvery"
           >
             <Plus class="size-6" />
           </button>
         </div>
       </template>
-      <ul v-if="groups.length" class="space-y-3" :class="{ 'mt-4 border-t pt-4': !readonly }">
-        <li v-for="group in groups" :key="group.emoji" class="flex gap-3">
-          <span class="text-xl leading-6" aria-hidden="true">{{ group.emoji }}</span>
-          <p class="text-p-base text-ink-gray-7 min-w-0">
+      <!-- Each row's emoji and count sit under the grid's first and last columns -->
+      <ul
+        v-if="groups.length && !picker"
+        class="space-y-3"
+        :class="{ 'mt-4 border-t pt-4': !readonly }"
+      >
+        <li v-for="group in groups" :key="group.emoji" class="flex items-baseline">
+          <span class="w-12 shrink-0 text-center text-xl" aria-hidden="true">
+            {{ group.emoji }}
+          </span>
+          <p class="text-p-base text-ink-gray-8 min-w-0 flex-1">
             <span class="sr-only">{{ group.emoji }}</span>
-            <span class="text-ink-gray-5 tabular-nums">({{ group.count }})</span>
             {{ group.who }}
           </p>
+          <span class="text-ink-gray-5 w-12 shrink-0 text-center text-base">
+            {{ group.count }}
+          </span>
         </li>
       </ul>
     </div>
