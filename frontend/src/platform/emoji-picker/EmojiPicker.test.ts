@@ -46,7 +46,7 @@ function render(openOnHover: boolean) {
         {
           openOnHover,
           reaction: shortPalette.value,
-          'onUpdate:reaction': (value: boolean) => (shortPalette.value = value),
+          'onUpdate:reaction': (value?: boolean) => (shortPalette.value = value ?? false),
         },
         {
           default: ({
