@@ -7,21 +7,26 @@ import { api, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
+import { useMeetHomeSnapshot } from '../composables/useMeetHomeSnapshot'
 import { dayLabel } from '../utils/homeDates'
 
 const router = useRouter()
 const session = useSession()
 const rooms = useQuery(api.meet.rooms.mine)
-const rows = computed(() =>
-  (rooms.data ?? []).map((room) => ({
+const roomRows = computed(() =>
+  rooms.data?.map((room) => ({
     name: room.name,
     title: room.title || room.name,
     url: room.url,
     code: room.title ? room.name : '',
     restricted: room.meeting_type === 'restricted',
     cohost: room.owner !== session.user.value?.id,
-    used: dayLabel(room.modified),
+    modified: room.modified,
   })),
+)
+const cachedRooms = useMeetHomeSnapshot('rooms', () => roomRows.value)
+const rows = computed(() =>
+  (cachedRooms.value ?? []).map((room) => ({ ...room, used: dayLabel(room.modified) })),
 )
 
 const copyLink = async (url: string) => {
@@ -41,7 +46,7 @@ const join = (name: string) => router.push({ name: 'meet-meeting', params: { mee
       <h2 class="text-base font-medium text-ink-gray-8">{{ __('Recent meets') }}</h2>
     </div>
     <div
-      v-if="rooms.error"
+      v-if="rooms.error && !rows.length"
       class="flex items-center justify-center gap-2 rounded-7 border border-dashed border-outline-gray-2 px-4 py-6 text-base text-ink-gray-5"
       role="alert"
     >

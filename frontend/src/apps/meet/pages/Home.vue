@@ -26,11 +26,7 @@
             </span>
           </Button>
         </section>
-        <UpcomingMeetings
-          v-if="calendarReady"
-          :key="calendarStore.accountId"
-          ref="upcomingMeetingsRef"
-        />
+        <UpcomingMeetings ref="upcomingMeetingsRef" />
         <div
           class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-x-6 gap-y-8 empty:hidden"
         >
@@ -79,10 +75,9 @@
 
 <script setup lang="ts">
 import { Button, Dialog, PageHeader, PageHeaderTitle, TextInput } from 'frappe-ui'
-import { computed, onMounted, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { useCalendarUserStore } from '@/apps/calendar'
 import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
@@ -97,18 +92,6 @@ import { meetingCodeFrom } from '../utils/meetingCode'
 const router = useRouter()
 const root = useRootStore()
 const { isStartingMeeting, startMeeting } = useStartMeeting()
-const calendarStore = useCalendarUserStore()
-// Resolve the account before mounting the list, so it shows the account's meetings from the start.
-const calendarReady = ref(false)
-onMounted(async () => {
-  try {
-    await calendarStore.loadUser()
-  } catch {
-    // The list owns the account error and retry UI.
-  } finally {
-    calendarReady.value = true
-  }
-})
 const meetingCode = ref('')
 const showJoinDialog = ref(false)
 const showNewMeetDialog = ref(false)
