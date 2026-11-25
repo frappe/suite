@@ -558,11 +558,14 @@ const srcdoc = computed(() => {
 				});
 				normalizeAll();
 				// Only a new width lays the message out again: the frame also resizes each time the
-				// message's height changes, as zooming does at every step.
-				let laidOutWidth = root.clientWidth;
+				// message's height changes, as zooming does at every step. The root's box, not
+				// clientWidth: a collapsed message's frame keeps its window's width, but its root has
+				// no box, so a message first laid out when it is opened is laid out then.
+				let laidOutWidth = root.getBoundingClientRect().width;
 				window.addEventListener('resize', () => {
-					if (root.clientWidth === laidOutWidth) return;
-					laidOutWidth = root.clientWidth;
+					const width = root.getBoundingClientRect().width;
+					if (!width || width === laidOutWidth) return;
+					laidOutWidth = width;
 					normalizeAll();
 				});
 				// An image that fails changes the layout as surely as one that arrives, so both
