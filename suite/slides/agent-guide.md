@@ -36,7 +36,7 @@ Both answer rows, shown here with the fields an agent needs. `name` is the node 
 { "data": { "rows": [{ "name": "84n0kmpagb", "title": "Plans", "kind": "folder", "parent_node": "84kgnp5ehu", "mime": null }], "next_cursor": null } }
 ```
 
-**3. Create a presentation** in a folder. The user needs upload access to it. `slides` is a list of one or more slides, in the order they show. `template` is optional and names the template the layouts come from, `Light` when it is left out.
+**3. Create a presentation** in a folder. The user needs upload access to it. `title` is up to 140 characters. `slides` is a list of one or more slides, in the order they show. `template` is optional and names the template the layouts come from, `Light` when it is left out.
 
 ```sh
 curl -X POST $SITE/api/suite/slides/presentations -H "$AUTH" -H 'Content-Type: application/json' -d '{
@@ -95,6 +95,7 @@ A read gives each item as the editor keeps it, so it can differ from what was wr
 - Text HTML reads as the editor writes it: `line-height` on each paragraph, a `lineheight` on each `<li>`, and a `;` after each style. A table cell gains `colspan="1" rowspan="1"`.
 - Every text, shape and table has `content`. An empty one is `<p style="line-height: 1.5;"></p>`.
 - `editorMetadata.lineHeight` reads as `lineHeight`, and an old shadow in pixels reads as the editor's shadow fields.
+- A picture from layout 7 reads with `useTemplateDimensions`, which marks it as the layout's picture frame, and the frame's border and shadow. `borderStyle` is `none`, `solid`, `dashed` or `dotted`, with `borderWidth` and `borderColor`. `shadowColor` and `shadowOpacity`, `0` to `100`, colour the shadow, `shadowBlur` softens it, and `shadowOffset` and `shadowAngle`, in degrees, place it. Any element may take these fields.
 - A connector end that names an element not on its slide reads as `null`.
 - A text has `transform` and `transformOrigin`. Leave them as they are.
 - An element given a new id, because its id was taken, has a `refId` naming the one it was.
@@ -131,6 +132,14 @@ To add an element, give it a `zIndex` above the others, or it may sit under them
 ```sh
 curl -X PUT $SITE/api/suite/drive/nodes/<node>/grants/<user's email> -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"role": 40}'
+```
+
+**9. Rename it, trash it, or list its versions.** These are Drive's calls, as for any item. Rename and trash need edit access. `{"state": "Active"}` takes it out of the trash. A version's `seq` names it, and `label` says what made it, such as "Before a replace from JSON".
+
+```sh
+curl -X PATCH $SITE/api/suite/drive/nodes/<node> -H "$AUTH" -H 'Content-Type: application/json' -d '{"title": "Plan v2"}'
+curl -X PATCH $SITE/api/suite/drive/nodes/<node> -H "$AUTH" -H 'Content-Type: application/json' -d '{"state": "Trashed"}'
+curl -H "$AUTH" $SITE/api/suite/drive/nodes/<node>/versions
 ```
 
 ## Layouts
@@ -181,6 +190,10 @@ It answers in Frappe's shape, under `message`, shown here with the fields an age
 
 A template's read gives layout 7's picture frame a placeholder path as `src`, and a write refuses that path. So don't send a template's slide back as it is: use the layout form.
 
+A template is a presentation too. A user who can edit it can write to it as above, and a slide made from a layout after that takes the layout as it is then.
+
+A read doesn't name the presentation's template. A presentation takes its layouts from the `template` it was created on, or from the one picked when it was made in a browser.
+
 ## Pictures and videos
 
 A picture or video is named by its id. Upload the file to the presentation first: create the presentation, take `content_docname` from the answer, and send the file. Send `content_docname`, not the presentation's node. A node answers "That presentation is not in Drive yet".
@@ -197,7 +210,7 @@ curl -X POST $SITE/api/method/suite.slides.api.media.add -H "$AUTH" -F docname=<
 - It takes `image/*` and `video/*` files, up to 25 MB, unless the site config sets another `max_file_size`.
 - A PNG or JPEG is stored as WebP.
 - For a picture on a slide that isn't the last one, create the presentation with that slide as layout 7 and no `picture`. Upload the picture, then change that slide as in step 6 with `layout: 7`, its `texts` and the `picture`. The slide keeps its place.
-- A refusal here has Frappe's shape, not the one under [Refusals](#refusals): an `exception` to read, with no `errors`. An unknown `docname`, a missing file and a file that isn't a picture or video answer status 417. A full Drive answers 413 with `DriveOverQuota` in the `exception`.
+- A refusal here has Frappe's shape, not the one under [Refusals](#refusals): an `exception` to read, with no `errors`. An unknown `docname`, a missing file and a file that isn't a picture or video, by its type or by its bytes, answer status 417. A full Drive answers 413 with `DriveOverQuota` in the `exception`.
 - A file over the size limit is refused before it reaches Suite: status 413 and an HTML page, with no `exception`.
 
 A picture or video another presentation holds may be named too, when the user can read it: the write copies it into this presentation, and a read names the copy. A link, or a file kept elsewhere in Drive, is refused: upload it to the presentation.
@@ -234,7 +247,7 @@ Colours are `#RRGGBB` or `#RRGGBBAA`.
 
 **Text.** `lineHeight` is the space between lines, such as `1.5`. `content` is HTML: paragraphs `<p>`, `<strong>`, `<em>`, `<u>`, `<s>`, lists `<ul>` and `<ol>` with `<li>`, line breaks `<br>`, links `<a href="https://…">`, and `<span style="…">` for `color`, `font-size`, `font-family`, `font-weight`, `letter-spacing` and `text-transform`. A paragraph takes `style="text-align: center"`. A text has no `height`: it grows with its lines.
 
-A link's `href` is kept when it starts with `http:`, `https:`, `ftp:`, `ftps:`, `mailto:`, `tel:`, `callto:`, `sms:`, `cid:` or `xmpp:`, or has no scheme, such as `/plans` or `#goals`. A link with any other scheme, such as `javascript:` or `data:`, is dropped and its words are kept, with no refusal. A read gives each link `target="_blank"` and `rel="noopener noreferrer nofollow"`.
+A link's `href` starts with `http:`, `https:`, `ftp:`, `ftps:`, `mailto:`, `tel:`, `callto:`, `sms:`, `cid:` or `xmpp:`, or has no scheme, such as `/plans` or `#goals`. A link with an empty `href`, or any other scheme, such as `javascript:` or `data:`, is refused, and so is an attribute such as `onclick`. An `<a>` with no `href` is not refused: the link is dropped and its words are kept. A read gives each link `target="_blank"` and `rel="noopener noreferrer nofollow"`.
 
 ```json
 { "type": "text", "left": 80, "top": 60, "width": 800, "lineHeight": 1.5,
@@ -257,7 +270,7 @@ A link's `href` is kept when it starts with `http:`, `https:`, `ftp:`, `ftps:`, 
   "connector": { "route": "straight", "start": { "elementId": "box", "anchor": "right" }, "end": { "elementId": "other", "anchor": "left" } } }
 ```
 
-**Table.** `content` is a table's HTML in the form the editor saves. Other forms may be refused. The table's `style` holds its whole width, the sum of its columns' widths, and `<colgroup>` holds one `<col>` per column with that column's width. Each cell's `colwidth` is its column's width, and holds paragraphs. Keep the same number of cells in every row. A `<th>` cell is a heading cell. Copy this form:
+**Table.** `content` is a table's HTML. A plain table is written in the form the editor saves, with its columns sharing the element's whole `width`, the first ones a pixel wider when it doesn't divide evenly. So a plain table without a `width` that is a whole number of 1 or more is refused. Plain means bare `<table>`, `<thead>`, `<tbody>` and `<tfoot>` tags around bare `<tr>` rows, each holding `<th>` and `<td>` cells with no `colspan`, `rowspan` or `colwidth`. Any other table is kept as sent or refused. In the editor's form, the table's `style` holds its whole width, the sum of its columns' widths, and `<colgroup>` holds one `<col>` per column with that column's width. Each cell's `colwidth` is its column's width, and holds paragraphs. A table with no rows, a row of no cells, or rows that hold different numbers of cells is refused. A `<th>` cell is a heading cell. Copy this form:
 
 ```json
 { "type": "table", "left": 80, "top": 120, "width": 400,
@@ -281,10 +294,11 @@ A link's `href` is kept when it starts with `http:`, `https:`, `ftp:`, `ftps:`, 
 
 - It lands as one change by the signed-in user, the same way a tab's edit does. Open tabs get it live.
 - The automatic version follows it.
-- A write keeps all of the slides or refuses all of them. It refuses what the editor would change or leave out, except a link whose `href` the editor can't keep: that link is dropped and its words kept.
-- A write checks the names of fields, each element's `type`, the ids, the pictures, the background and the HTML. It doesn't check the kind of every other value: `"left": true` or `"width": "x"` is kept as sent. So send each value in the kind a read gives it, since a wrong kind may be kept and draw wrong.
+- A write keeps all of the slides or refuses all of them. It refuses what the editor would change or leave out.
+- A write checks the names of fields, each element's `type`, the ids, the pictures, the background and the HTML. It doesn't check the kind of every other value: `"left": true`, or `"width": "x"` on anything but a plain table, is kept as sent. So send each value in the kind a read gives it, since a wrong kind may be kept and draw wrong.
 - `replace` removes every slide and writes the new ones. An edit someone makes at that moment to a removed slide goes with it.
-- `append` leaves every slide there is, with what others edit in it, and adds the new slides after the last one.
+- `append` leaves every slide there is, with what others edit in it, and adds the new slides after the last one. An `append` sent again, as after a lost answer, adds its slides again. Read the presentation first to see whether the first one landed.
+- An empty slide, `{}`, is refused. Send `{"elements": []}` for a blank slide.
 - `append` with a slide as a read gives it, ids and all, adds a copy of it: the copy and its elements get ids of their own, and Magic Move pairs the copy's elements with the ones they copy.
 - A one-slide write makes that slide hold what it sends alone: a field or element it leaves out goes. The slide keeps its place, and an element keeps its id when the slide already holds it. It keeps no version.
 - `replace` first keeps a version of the presentation as it stood, named "Before a replace from JSON". It stays in the presentation's versions until someone deletes it. When no version can be kept, as when the Drive is full, the replace is refused. When the versions are only away for a moment, it answers `WriteBusy`.
@@ -310,14 +324,15 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | --- | --- | --- |
 | `AuthenticationError` | 401 | The API key or secret is wrong |
 | `PermissionError` | 403 | A call has no `Authorization` header |
-| `DriveError` | 400 | A field is missing or wrong, such as an empty title, a `mode` other than `replace` or `append`, or a `role` that is not one of the numbers. The message names it. Nothing was written |
+| `DriveError` | 400 | A field is missing or wrong, such as an empty title or one over 140 characters, a `mode` other than `replace` or `append`, or a `role` that is not one of the numbers. The message names it. Nothing was written |
 | `DriveNotFound` | 404 | The folder, presentation or slide does not exist for this user, the item is not a presentation, or the presentation was deleted during the write |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the presentation, or the presentation is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
-| `DriveOverQuota` | 413 | The Drive has no room for a picture the write copies under the presentation. Nothing was written. Upload less, or free some space |
+| `DriveOverQuota` | 413 | The Drive has no room for a picture the create or write copies under the presentation. Slides with no pictures don't get this. Nothing was made or written. Upload less, or free some space |
+| `DriveStorageUnmeasured` | 413 | The site hasn't measured its storage yet, so a picture the create or write copies can't be checked against the room. Nothing was made or written. Send the same call again later |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a `type` the editor has no place for, a background is not a hex colour, an id is not of the form above, a one-slide write names an `id` other than its path's or sends neither `elements` nor `layout`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a text's HTML holds what the editor can't keep, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, and the element when one is at fault. Nothing was written. The same slides get the same answer, so change them |
+| `SlidesRefused` | 422 | The slides are not a list of slides, a slide or element holds a field or a `type` the editor has no place for, a background is not a hex colour, an id is not of the form above, a one-slide write names an `id` other than its path's or sends neither `elements` nor `layout`, a layout slide names a layout the template doesn't hold, more texts than it holds, a picture it has no frame for, or elements too, `template` names no template the user can use, there is no template to take a layout from, a slide is empty, a text's HTML holds what the editor can't keep, a link the editor drops or an attribute such as `onclick`, a table holds no rows, a table's row holds no cells or its rows hold different numbers of cells, a plain table's `width` is not a whole number of 1 or more, a picture is named by a link or names a file that isn't there, that the user can't read or that no presentation holds, the JSON is over 256 KB, or the converter ran out of time or failed on it. The message names which, with the slide, the element when one is at fault, and the field or tag when it can. Nothing was written. The same slides get the same answer, so change them |
 | `WriteRefused` | 409 | The presentation refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`; or no version could be kept before a replace; or the presentation is a combined one. The same call gets the same answer until that changes. A write to a presentation not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The presentation is busy, a version is being restored into it or was just restored, the versions are away for a moment before a replace, the presentation changed during a read or an append, a read or an append found it not converted yet, a layout's template is not converted yet, or the converter gave no answer: it was busy or was being updated. The slides are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |

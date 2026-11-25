@@ -86,6 +86,7 @@ class TestSystemTemplates(IntegrationTestCase):
     def test_a_deck_made_in_drive_starts_on_the_light_template(self):
         seed_system_templates()
         deck = make_presentation("Deck made in Drive")
+        self.addCleanup(trash_node, deck.node)
 
         frappe.set_user(READER)
         templates = {template["name"]: template for template in get_templates()}
@@ -98,6 +99,7 @@ class TestSystemTemplates(IntegrationTestCase):
         seed_system_templates()
 
         template = make_presentation("Template made in Drive", is_template=True)
+        self.addCleanup(trash_node, template.node)
 
         self.assertFalse(template.theme)
 

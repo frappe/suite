@@ -403,10 +403,11 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
         "WriteBusy",
+        "DriveOverQuota",
+        "DriveStorageUnmeasured",
         "DriveConflict"
       ],
       "entity": null,
@@ -812,10 +813,11 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
-        "WriteBusy"
+        "WriteBusy",
+        "DriveOverQuota",
+        "DriveStorageUnmeasured"
       ],
       "entity": null,
       "nodeParams": [
@@ -1211,10 +1213,11 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
-        "WriteBusy"
+        "WriteBusy",
+        "DriveOverQuota",
+        "DriveStorageUnmeasured"
       ],
       "entity": null,
       "nodeParams": [
@@ -1260,7 +1263,6 @@
         "DriveForbidden",
         "DriveLocked",
         "DriveLinkExpired",
-        "DriveOverQuota",
         "SlidesRefused",
         "WriteRefused",
         "WriteBusy"

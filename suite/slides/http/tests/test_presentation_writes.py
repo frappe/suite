@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import time
 import uuid
 from collections.abc import Iterable
 from unittest.mock import patch
@@ -13,6 +14,8 @@ import frappe
 import pycrdt
 from frappe.app import make_form_dict
 from frappe.handler import execute_cmd
+from frappe.tests.test_api import make_request
+from frappe.utils import get_test_client
 from frappe.utils.synchronization import filelock
 from werkzeug.test import EnvironBuilder
 from werkzeug.wrappers import Request
@@ -30,11 +33,10 @@ from suite.slides.content.tests.support import (
     opened,
     owner_folder,
 )
-from suite.slides.doctype.presentation.presentation import readable_templates
-from suite.slides.drive import DOCTYPE, docname_for_node
+from suite.slides.drive import DOCTYPE, docname_for_node, readable_templates
 from suite.slides.http import routes as slides_routes
 from suite.slides.tests.utils import share, trash_node
-from suite.tests.utils import ensure_user
+from suite.tests.utils import ensure_user, session_for
 
 READER = "slides-agent-reader@example.com"
 OUTSIDER = "slides-agent-outsider@example.com"
@@ -42,6 +44,10 @@ EDITOR = "slides-agent-editor@example.com"
 ATTRIBUTE = re.compile(r' \w+="[^"]*"')
 WORDS = re.compile(r">[^<]*<")
 PLACEHOLDER_WORDS = ("Title", "Subtitle", "Insert first point here")
+# An opening with no end, which a scan from each start to a missing end reads again and again
+UNCLOSED = ("<tr>", "<td>", "<td ", "<p>", "<")
+# Seconds the checks may take on such HTML; a scan from each start takes tens
+CHECK_SECONDS = 2
 
 
 def in_order(items: Iterable[tuple[str, pycrdt.Map]]) -> list[tuple[str, pycrdt.Map]]:
@@ -141,6 +147,20 @@ def every_layout(layouts: list[dict], picture: str) -> list[dict]:
     return slides
 
 
+def long_html_slides(unit: str) -> dict[str, tuple[dict, str]]:
+    # About 250 KB of `unit` in each place an agent can send HTML, and what the element should then hold
+    filler = unit * (250_000 // len(unit))
+    in_row = f"<table><tr>{filler}</tr></table>"
+    table = {"type": "table", "left": 80, "top": 120, "width": 400}
+    text = {"type": "text", "left": 80, "top": 200, "content": filler}
+    return {
+        "a table": ({"elements": [{**table, "content": filler}]}, filler),
+        "a table's row": ({"elements": [{**table, "content": in_row}]}, in_row),
+        "a text": ({"elements": [text]}, filler),
+        "a layout's words": ({"layout": 2, "texts": [filler]}, html.escape(filler, quote=False)),
+    }
+
+
 def words_of(markup: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", markup))
 
@@ -150,6 +170,8 @@ def points_of(markup: str) -> list[str]:
 
 
 class TestPresentationWrites(LoggedDeckCase):
+    CLIENT = get_test_client(use_cookies=False)
+
     def setUp(self):
         super().setUp()
         if not checker.usable_node(convert.NODE_MIN) or not slides_content.CONVERTER_BUILD.is_file():
@@ -225,6 +247,18 @@ class TestPresentationWrites(LoggedDeckCase):
 
     def assert_created_nothing(self, title: str) -> None:
         self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": title}))
+
+    def refusal_sent(self, path: str, body: dict) -> str:
+        # A whole request on its own connection, so the message is the one an agent reads after Frappe cleans it
+        frappe.db.commit()
+        sid = session_for(OWNER)
+        kwargs = {"method": "POST", "headers": {"Cookie": f"sid={sid}"}, "json": body}
+        response = make_request(target=self.CLIENT.open, args=(f"/api/suite/slides/{path}",), kwargs=kwargs)
+        frappe.db.rollback()
+        self.assertEqual(response.status_code, 422, response.get_data(as_text=True))
+        (error,) = response.json["errors"]
+        self.assertEqual(error["type"], "SlidesRefused")
+        return error["message"]
 
     def test_a_new_presentation_holds_the_slides_in_order(self):
         node = self.create([title_slide(), shape_slide()])
@@ -931,7 +965,7 @@ class TestPresentationWrites(LoggedDeckCase):
         odd = {"id": "odd", "type": "text", "content": "<p>x</p><iframe></iframe>"}
         cases = [
             (
-                r"Slide 2 in this call, element 2 \(text, id odd\): its HTML holds what the editor can't keep",
+                r"Slide 2 in this call, element 2 \(text, id odd\): its HTML holds what the editor can't keep: the iframe tag$",
                 [title_slide(), {"elements": [title_slide()["elements"][0], odd]}],
             ),
             (
@@ -939,12 +973,21 @@ class TestPresentationWrites(LoggedDeckCase):
                 [{"elements": [{"type": "chart"}]}],
             ),
             (
-                r"Slide 1 in this call, element 1 \(text\): it holds a field",
+                r"Slide 1 in this call, element 1 \(text\): it holds a field.* no place for: wobble$",
                 [{"elements": [{"type": "text", "content": "<p>x</p>", "wobble": 1}]}],
             ),
             (
                 r"element 1 \(table\): its HTML holds .*Use the table form in the agent guide",
-                [{"elements": [{"type": "table", "content": "<table><tr><td>x</td></tr></table>"}]}],
+                [
+                    {
+                        "elements": [
+                            {
+                                "type": "table",
+                                "content": "<table><caption>x</caption><tr><td>x</td></tr></table>",
+                            }
+                        ]
+                    }
+                ],
             ),
         ]
         for message, slides in cases:
@@ -952,6 +995,306 @@ class TestPresentationWrites(LoggedDeckCase):
                 slides_routes.presentation_create(self.folder, "Agent refused", slides)
 
         self.assert_created_nothing("Agent refused")
+
+    def test_a_refused_tag_is_named_in_the_answer_an_agent_reads(self):
+        for tag in ("script", "iframe"):
+            title = f"Agent {tag} {uuid.uuid4().hex[:8]}"
+            slides = [{"elements": [{"type": "text", "content": f"<p>x</p><{tag}></{tag}>"}]}]
+            with self.subTest(tag):
+                message = self.refusal_sent(
+                    "presentations", {"parent": self.folder, "title": title, "slides": slides}
+                )
+
+                self.assertTrue(
+                    message.endswith(
+                        f"element 1 (text): its HTML holds what the editor can't keep: the {tag} tag"
+                    ),
+                    message,
+                )
+                self.assert_created_nothing(title)
+
+    def test_a_refused_value_names_its_field(self):
+        text = {"type": "text", "content": "<p>x</p>", "lineHeight": 1.5}
+        cases = {
+            "connector": {**text, "connector": "straight"},
+            "editorMetadata": {**text, "editorMetadata": {"wobble": 1}},
+        }
+        for field, element in cases.items():
+            with self.subTest(field), self.assertRaisesRegex(SlidesRefused, f"no place for: {field}$"):
+                slides_routes.presentation_create(self.folder, "Agent refused", [{"elements": [element]}])
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_link_the_editor_drops_or_a_handler_writes_nothing(self):
+        cases = {
+            "javascript": "javascript:alert(1)",
+            "spaced javascript": " java\tscript:alert(1)",
+            "data": "data:text/html,hi",
+            "an unknown scheme": "intent:plans",
+            "an empty href": "",
+            "a href of spaces": " \t",
+        }
+        for case, href in cases.items():
+            slides = [title_slide(f'<a href="{href}">Plans</a>')]
+            with self.subTest(case), self.assertRaisesRegex(SlidesRefused, "holds a link the editor drops"):
+                slides_routes.presentation_create(self.folder, "Agent refused", slides)
+
+        with self.assertRaisesRegex(SlidesRefused, "holds onclick, an attribute the editor leaves out"):
+            slides_routes.presentation_create(
+                self.folder, "Agent refused", [title_slide('<span onclick="steal()">Plans</span>')]
+            )
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_link_the_editor_keeps_is_written(self):
+        node = self.create(
+            [title_slide('<a href="#goals">Goals</a> and <a href="mailto:a@example.com">mail</a>')]
+        )
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (text,) = slide["elements"]
+        self.assertIn('href="#goals"', text["content"])
+        self.assertIn('href="mailto:a@example.com"', text["content"])
+
+    def test_a_plain_table_is_written_in_the_editors_form(self):
+        plain = (
+            "<table><tr><th>Goal</th><th>Owner</th></tr><tr><td>Ship</td><td><p>Aanya</p></td></tr></table>"
+        )
+        node = self.create(
+            [{"elements": [{"type": "table", "left": 80, "top": 120, "width": 400, "content": plain}]}]
+        )
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (table,) = slide["elements"]
+        self.assertIn('<table style="width: 400px', table["content"])
+        self.assertEqual(re.findall(r'colwidth="(\d+)"', table["content"]), ["200"] * 4)
+        self.assertEqual(words_of(table["content"]), "GoalOwnerShipAanya")
+
+    def test_a_plain_table_keeps_the_whole_width_when_it_does_not_divide_evenly(self):
+        cases = [
+            (
+                401,
+                "<table><tr><td>A</td><td>B</td></tr><tr><td>C</td><td>D</td></tr></table>",
+                ["201", "200"],
+            ),
+            (800, "<table><tr><td>A</td><td>B</td><td>C</td></tr></table>", ["267", "267", "266"]),
+        ]
+        for width, plain, columns in cases:
+            element = {"type": "table", "left": 80, "top": 120, "width": width, "content": plain}
+            with self.subTest(width):
+                node = self.create([{"elements": [element]}])
+
+                (slide,) = slides_routes.presentation_read(node)["slides"]
+                (table,) = slide["elements"]
+                self.assertIn(f'<table style="width: {width}px', table["content"])
+                self.assertEqual(re.findall(r'<col style="width: (\d+)px', table["content"]), columns)
+                self.assertEqual(
+                    re.findall(r'colwidth="(\d+)"', table["content"]), columns * (plain.count("<tr>"))
+                )
+
+    def test_a_plain_table_with_a_heading_keeps_its_heading_cells(self):
+        plain = (
+            "<table><thead><tr><th>Goal</th><th>Owner</th></tr></thead>"
+            "<tbody><tr><td>Ship</td><td>Aanya</td></tr></tbody></table>"
+        )
+        node = self.create(
+            [{"elements": [{"type": "table", "left": 80, "top": 120, "width": 300, "content": plain}]}]
+        )
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (table,) = slide["elements"]
+        self.assertEqual(re.findall(r"<(th|td)\b", table["content"]), ["th", "th", "td", "td"])
+        self.assertEqual(re.findall(r'colwidth="(\d+)"', table["content"]), ["150"] * 4)
+
+    def test_a_table_read_and_written_back_reads_the_same(self):
+        plain = "<table><tr><td>Goal</td><td>Owner</td></tr><tr><td>Ship</td><td>Aanya</td></tr></table>"
+        node = self.create(
+            [{"elements": [{"type": "table", "left": 80, "top": 120, "width": 400, "content": plain}]}]
+        )
+        slides = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_write(node, slides, "replace")
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(slide["elements"], slides[0]["elements"])
+
+    def test_a_plain_table_with_no_whole_width_writes_nothing(self):
+        plain = "<table><tr><th>Name</th><th>Score</th></tr><tr><td>Asha</td><td>9</td></tr></table>"
+        widths = {"missing": {}, "0": {"width": 0}, "below 0": {"width": -5}, "a float": {"width": 2.5}}
+        widths |= {"a string": {"width": "400"}, "a bool": {"width": True}}
+        for case, width in widths.items():
+            title = f"Agent width {uuid.uuid4().hex[:8]}"
+            slides = [{"elements": [{"type": "table", "left": 80, "top": 120, **width, "content": plain}]}]
+            with self.subTest(case):
+                message = self.refusal_sent(
+                    "presentations", {"parent": self.folder, "title": title, "slides": slides}
+                )
+
+                self.assertIn(
+                    "Slide 1 in this call, element 1 (table): its width must be a whole number", message
+                )
+                self.assert_created_nothing(title)
+
+    def test_a_table_in_the_editors_form_keeps_a_width_of_any_kind(self):
+        guide_form = (
+            '<table style="width: 400px"><colgroup><col style="width: 200px"><col style="width: 200px"></colgroup>'
+            '<tbody><tr><th colwidth="200"><p>Goal</p></th><th colwidth="200"><p>Owner</p></th></tr>'
+            '<tr><td colwidth="200"><p>Ship</p></td><td colwidth="200"><p>Aanya</p></td></tr></tbody></table>'
+        )
+        element = {"type": "table", "left": 80, "top": 120, "width": 400.5, "content": guide_form}
+        node = self.create([{"elements": [element]}])
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (table,) = slide["elements"]
+        self.assertEqual(table["width"], 400.5)
+        self.assertEqual(words_of(table["content"]), "GoalOwnerShipAanya")
+
+    def test_a_table_with_no_rows_writes_nothing(self):
+        cases = {
+            "bare": ("<table></table>", {"width": 400}),
+            "with its parts": (
+                "<TABLE> <thead></thead><tbody>\n</tbody><tfoot></tfoot></table >",
+                {"width": 400},
+            ),
+            "with no width": ("<table></table>", {}),
+        }
+        for case, (table, width) in cases.items():
+            title = f"Agent rows {uuid.uuid4().hex[:8]}"
+            slides = [{"elements": [{"type": "table", "left": 80, "top": 120, **width, "content": table}]}]
+            with self.subTest(case):
+                message = self.refusal_sent(
+                    "presentations", {"parent": self.folder, "title": title, "slides": slides}
+                )
+
+                self.assertIn("Slide 1 in this call, element 1 (table): its table holds no rows", message)
+                self.assert_created_nothing(title)
+
+    def test_an_empty_table_element_read_and_written_back_reads_the_same(self):
+        empty = {
+            "type": "table",
+            "left": 80,
+            "top": 120,
+            "width": 400,
+            "content": '<p style="line-height: 1.5;"></p>',
+        }
+        node = self.create([{"elements": [empty]}])
+        slides = slides_routes.presentation_read(node)["slides"]
+
+        slides_routes.presentation_write(node, slides, "replace")
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertEqual(slide["elements"], slides[0]["elements"])
+
+    def test_a_table_with_a_caption_writes_nothing(self):
+        table = "<table><caption>Q1</caption><tr><td>Plan</td></tr></table>"
+        element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}
+
+        with self.assertRaisesRegex(SlidesRefused, r"element 1 \(table\)"):
+            slides_routes.presentation_create(self.folder, "Agent refused", [{"elements": [element]}])
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_table_row_with_no_cells_writes_nothing(self):
+        for table in ("<table><tr></tr></table>", "<table><tr><td>Goal</td></tr><tr> </tr></table>"):
+            element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}
+            with (
+                self.subTest(table),
+                self.assertRaisesRegex(
+                    SlidesRefused, r"element 1 \(table\): a row of its table holds no cells"
+                ),
+            ):
+                slides_routes.presentation_create(self.folder, "Agent refused", [{"elements": [element]}])
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_a_table_with_more_than_plain_rows_is_left_for_the_converter(self):
+        cases = {
+            "a nested table": (
+                "<table><tr><td><table><tr><td>A</td></tr></table></td><td>B</td></tr></table>"
+            ),
+            "cells with no end tag": "<table><tr><td>A<td>B</tr></table>",
+            "a row with no end tag": "<table><tr><td>A</td></table>",
+            "a cell with a width": '<table><tr><td colwidth="90">A</td><td>B</td></tr></table>',
+            "a row with attributes": '<table><tr class="first"><td>A</td></tr></table>',
+        }
+        for case, table in cases.items():
+            element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": table}
+            with self.subTest(case):
+                self.assertIs(agent.in_table_form("element 1 (table)", element), element)
+                self.assert_not_rewritten(element)
+
+    def assert_not_rewritten(self, element: dict) -> None:
+        # The converter keeps or refuses the table, but never as the agent's rewrite
+        try:
+            node = self.create([{"elements": [element]}])
+        except SlidesRefused:
+            return
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        self.assertNotIn('style="width: 400px"', slide["elements"][0]["content"])
+
+    def test_long_unclosed_html_is_checked_at_once_and_left_for_the_converter(self):
+        # The checks before the converter, which read the HTML once; the converter's own time is not timed here
+        layouts = self.layouts("Light")
+        answers: dict[str, str] = {}
+        for unit in UNCLOSED:
+            for place, (slide, kept) in long_html_slides(unit).items():
+                answers[f"{unit} in {place}"] = self.checked_answer(slide, kept, layouts)
+
+        self.assertEqual(answers, dict.fromkeys(answers, "kept"))
+
+    def checked_answer(self, slide: dict, kept: str, layouts: list[dict]) -> str:
+        started = time.monotonic()
+        try:
+            rows, _pictures = agent.slide_rows([slide], ["Slide 1"], lambda: layouts)
+        except SlidesRefused:
+            return "refused"
+        finally:
+            took = time.monotonic() - started
+
+        if took >= CHECK_SECONDS:
+            return f"{took:.1f} s"
+
+        markups = [element.get("content") or "" for element in json.loads(rows[0].elements)]
+        return "kept" if any(kept in markup for markup in markups) else "changed"
+
+    def test_a_table_whose_rows_differ_writes_nothing(self):
+        uneven = "<table><tr><td>Goal</td><td>Owner</td></tr><tr><td>Ship</td></tr></table>"
+        guide_form = (
+            '<table style="width: 400px"><colgroup><col style="width: 200px"><col style="width: 200px"></colgroup>'
+            '<tbody><tr><td colwidth="200"><p>Goal</p></td><td colwidth="200"><p>Owner</p></td></tr>'
+            '<tr><td colspan="1" rowspan="1" colwidth="200"><p>Ship</p></td></tr></tbody></table>'
+        )
+        zero_span = '<table><tr><td colspan="0">A</td><td>B</td></tr><tr><td>C</td></tr></table>'
+        cases = {"plain": uneven, "the editor's form": guide_form, "a cell spanning 0 columns": zero_span}
+        for case, markup in cases.items():
+            element = {"type": "table", "left": 80, "top": 120, "width": 400, "content": markup}
+            with (
+                self.subTest(case),
+                self.assertRaisesRegex(
+                    SlidesRefused, r"element 1 \(table\): its rows hold different numbers of cells"
+                ),
+            ):
+                slides_routes.presentation_create(self.folder, "Agent refused", [{"elements": [element]}])
+
+        self.assert_created_nothing("Agent refused")
+
+    def test_an_empty_slide_writes_nothing(self):
+        node = self.create([title_slide("First")])
+
+        with self.assertRaisesRegex(SlidesRefused, r'Slide 1 in this call is empty: send "elements": \[\]'):
+            slides_routes.presentation_write(node, [{}], "append")
+
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"]])
+        slides_routes.presentation_write(node, [{"elements": []}], "append")
+        self.assertEqual(self.texts_of(node), [["<paragraph>First</paragraph>"], []])
+
+    def test_a_title_past_the_drive_limit_names_the_limit(self):
+        with self.assertRaisesRegex(drive.DriveError, "title must be 140 characters or fewer"):
+            slides_routes.presentation_create(self.folder, "x" * 141, [title_slide()])
+
+        self.assert_created_nothing("x" * 141)
+        self.create([title_slide()], "x" * 140)
 
     def test_a_refused_element_in_a_slide_write_is_named_by_the_slides_id(self):
         node = self.create([title_slide("First")])
@@ -1073,6 +1416,19 @@ class TestPresentationWrites(LoggedDeckCase):
         self.assertIn("Light", offered)
         self.assertNotIn(secret, offered)
         self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": folder, "title": "Agent refused"}))
+
+    def test_a_template_the_user_can_edit_takes_a_write_and_gives_its_new_layouts(self):
+        title = f"Template {uuid.uuid4().hex[:8]}"
+        template = drive.create_document(self.folder, title, content_doctype=DOCTYPE, is_template=True)
+        self.addCleanup(trash_node, template)
+        self.addCleanup(delete_log, template)
+
+        slides_routes.presentation_write(template, [title_slide("Cover", background="#123456")], "replace")
+        node = self.create([{"layout": 1, "texts": ["Kickoff"]}], template=title)
+
+        (slide,) = slides_routes.presentation_read(node)["slides"]
+        (text,) = slide["elements"]
+        self.assertEqual((slide["background"], words_of(text["content"])), ("#123456", "Kickoff"))
 
     def test_a_trashed_presentation_takes_no_write(self):
         # Trashed here, so not through `create`, whose cleanup trashes it again

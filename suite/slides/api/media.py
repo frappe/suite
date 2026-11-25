@@ -5,12 +5,16 @@ can read the deck, a link holder included (§6.8). `suite/slides/api/file.py`
 still serves the media older decks name by `/private/files/` URL.
 """
 
+import codecs
+import re
 from io import BytesIO
 from typing import IO
 
 import frappe
 from frappe import _
+from frappe.storage.blob import SNIFF_BYTES, sniff_mime
 from PIL import Image, ImageOps
+from werkzeug.datastructures import FileStorage
 
 from suite import drive
 from suite.slides import drive as slides_drive
@@ -31,6 +35,12 @@ WEBP_SOURCE_MODES = ("1", "L", "LA", "P", "RGB", "RGBA")
 MAX_WEBP_SOURCE_PIXELS = 64_000_000
 JPEG_START_OF_SCAN = 0xDA
 JPEG_END_OF_IMAGE = b"\xff\xd9"
+SVG = "image/svg+xml"
+# What may come before an SVG's root that Frappe's sniff does not skip, each piece and the end it runs to
+DOCTYPE = b"<!doctype"
+SVG_PROLOGUE = {b"<?xml": b"?>", b"<!--": b"-->", DOCTYPE: b">"}
+SVG_ROOT = re.compile(rb"<svg[\s/>]", re.I)
+SPACE = re.compile(rb"\s*")
 
 
 @frappe.whitelist(methods=["POST"])
@@ -45,13 +55,63 @@ def add(docname: str) -> dict:
     upload = frappe.request.files.get("file")
     if not upload or not upload.filename:
         frappe.throw(_("Choose a file to upload"), frappe.ValidationError)
-    if not upload.mimetype.startswith(MEDIA_TYPES):
+
+    # The type sent is the caller's word, and the bytes are what the slide shows
+    sniffed = media_type(upload)
+    if not (upload.mimetype.startswith(MEDIA_TYPES) and sniffed.startswith(MEDIA_TYPES)):
         frappe.throw(_("A slide can show only pictures and videos"), frappe.ValidationError)
     file_name, stream = upload.filename, upload.stream
-    if upload.mimetype in WEBP_SOURCE_TYPES:
+    if sniffed in WEBP_SOURCE_TYPES:
         file_name, stream = as_webp(file_name, stream)
     media = drive.store_file(node, file_name, stream)
     return {"file_url": media, "file_name": file_name}
+
+
+def media_type(upload: FileStorage) -> str:
+    """Answer the type of the upload's bytes, an SVG Frappe's sniff misses after a BOM or prologue included."""
+    sniffed = sniff_mime(upload.stream)
+    named_svg = upload.mimetype == SVG and upload.filename.lower().endswith(".svg")
+    if sniffed != "application/octet-stream" or not named_svg:
+        return sniffed
+
+    head = upload.stream.read(SNIFF_BYTES).removeprefix(codecs.BOM_UTF8)
+    upload.stream.seek(0)
+    return SVG if is_svg(head) else sniffed
+
+
+def is_svg(head: bytes) -> bool:
+    """Answer whether `head` reaches an SVG's root past whitespace, an XML declaration, comments and a DOCTYPE."""
+    # Each step moves forward, so a head of only spaces or comments is read once
+    at: int | None = 0
+    while at is not None:
+        at = SPACE.match(head, at).end()
+        if SVG_ROOT.match(head, at):
+            return True
+
+        at = past_prologue(head, at)
+
+    return False
+
+
+def past_prologue(head: bytes, at: int) -> int | None:
+    """Answer where the prologue piece starting at `at` ends; None when none starts there or it never ends."""
+    for start, end in SVG_PROLOGUE.items():
+        if head[at : at + len(start)].lower() != start:
+            continue
+
+        found = head.find(end, at + len(start))
+        # A DOCTYPE's internal subset, in brackets, holds declarations that end in `>` too
+        subset = head.find(b"[", at, found)
+        if start == DOCTYPE and found >= 0 and subset >= 0:
+            end = b"]>"
+            found = head.find(end, subset)
+
+        if found < 0:
+            return None
+
+        return found + len(end)
+
+    return None
 
 
 def as_webp(file_name: str, stream: IO[bytes]) -> tuple[str, IO[bytes]]:

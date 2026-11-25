@@ -71,10 +71,11 @@ export type PresentationCreateError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
-  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
+  | 'DriveOverQuota'
+  | 'DriveStorageUnmeasured'
   | 'DriveConflict'
 
 const operationPresentationCreate: MutationRef<
@@ -99,10 +100,11 @@ const operationPresentationCreate: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
-    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
+    'DriveOverQuota',
+    'DriveStorageUnmeasured',
     'DriveConflict',
   ],
   loadValidators: async () => (await import('./validators')).operationPresentationCreate,
@@ -177,10 +179,11 @@ export type PresentationWriteError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
-  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
+  | 'DriveOverQuota'
+  | 'DriveStorageUnmeasured'
 
 const operationPresentationWrite: MutationRef<
   PresentationWriteInput,
@@ -204,10 +207,11 @@ const operationPresentationWrite: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
-    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
+    'DriveOverQuota',
+    'DriveStorageUnmeasured',
   ],
   loadValidators: async () => (await import('./validators')).operationPresentationWrite,
 }
@@ -281,10 +285,11 @@ export type PresentationSlideWriteError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
-  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
+  | 'DriveOverQuota'
+  | 'DriveStorageUnmeasured'
 
 const operationPresentationSlideWrite: MutationRef<
   PresentationSlideWriteInput,
@@ -308,10 +313,11 @@ const operationPresentationSlideWrite: MutationRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
-    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
+    'DriveOverQuota',
+    'DriveStorageUnmeasured',
   ],
   loadValidators: async () => (await import('./validators')).operationPresentationSlideWrite,
 }
@@ -327,7 +333,6 @@ export type PresentationReadError =
   | 'DriveForbidden'
   | 'DriveLocked'
   | 'DriveLinkExpired'
-  | 'DriveOverQuota'
   | 'SlidesRefused'
   | 'WriteRefused'
   | 'WriteBusy'
@@ -354,7 +359,6 @@ const operationPresentationRead: QueryRef<
     'DriveForbidden',
     'DriveLocked',
     'DriveLinkExpired',
-    'DriveOverQuota',
     'SlidesRefused',
     'WriteRefused',
     'WriteBusy',
