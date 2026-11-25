@@ -7,15 +7,17 @@ import { gzipSync } from 'node:zlib'
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const outputRoot = path.resolve(appRoot, 'suite/public/frontend')
-const manifestName = '.vite/bundle-budget-manifest.json'
+const manifestName = '.vite/manifest.json'
 const manifestPath = path.join(outputRoot, manifestName)
 const limit = 200 * 1024
 
-const build = spawnSync('pnpm', ['exec', 'vite', 'build', '--manifest', manifestName], {
-  cwd: appRoot,
-  stdio: 'inherit',
-})
-if (build.status !== 0) process.exit(build.status || 1)
+if (!process.argv.includes('--from-build')) {
+  const build = spawnSync('pnpm', ['exec', 'vite', 'build', '--manifest'], {
+    cwd: appRoot,
+    stdio: 'inherit',
+  })
+  if (build.status !== 0) process.exit(build.status || 1)
+}
 if (!fs.existsSync(manifestPath)) {
   console.error(`Vite did not emit ${manifestPath}.`)
   process.exit(1)

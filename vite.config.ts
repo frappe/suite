@@ -130,6 +130,7 @@ export default defineConfig(({ mode }) => ({
         baseUrl: '/assets/suite/frontend/',
         indexHtmlPath: path.resolve(__dirname, 'suite/www/suite.html'),
         emptyOutDir: true,
+        manifest: process.env.SUITE_BUNDLE_BUDGET_MANIFEST === '1',
         sourcemap: true,
       },
     }),

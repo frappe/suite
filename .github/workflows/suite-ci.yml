@@ -79,6 +79,8 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_backend=1
             run_mail_calendar=1
+            run_compaction=1
+            run_min_node_converter=1
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
@@ -96,11 +98,15 @@ jobs:
             # Mail and calendar tests run together whenever either module changes,
             # since the calendar tests build on the mail harness and Stalwart accounts.
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/mail/|suite/calendar/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' && run_mail_calendar=1 || run_mail_calendar=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/content/|suite/(writer|sheets|slides)/|frontend/packages/collab-client/|realtime/|pyproject\.toml$|package\.json$|pnpm-(lock\.yaml|workspace\.yaml)$|\.github/workflows/suite-ci\.yml$)' && run_compaction=1 || run_compaction=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/content/|suite/(writer|sheets|slides)/|frontend/|scripts/|vite[^/]*\.config\.ts$|tsconfig[^/]*\.json$|pyproject\.toml$|package\.json$|pnpm-(lock\.yaml|workspace\.yaml)$|\.github/workflows/suite-ci\.yml$)' && run_min_node_converter=1 || run_min_node_converter=0
           fi
 
           if [ "$run_backend" = 1 ] || [ "$run_mail_calendar" = 1 ]; then run_bench=1; else run_bench=0; fi
           echo "backend=$run_backend" >> $GITHUB_OUTPUT
           echo "mail-calendar=$run_mail_calendar" >> $GITHUB_OUTPUT
+          echo "compaction=$run_compaction" >> $GITHUB_OUTPUT
+          echo "min-node-converter=$run_min_node_converter" >> $GITHUB_OUTPUT
           echo "bench=$run_bench" >> $GITHUB_OUTPUT
           echo "Run backend tests: $run_backend"
           echo "Run mail/calendar tests: $run_mail_calendar"
@@ -244,7 +250,7 @@ jobs:
           TYPE: server
 
       - name: Compare Collab Compaction With Yjs
-        if: always() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success'
+        if: always() && steps.changes.outputs.backend == '1' && steps.changes.outputs.compaction == '1' && steps.install-suite.outcome == 'success'
         working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           ./env/bin/python apps/suite/suite/content/tests/differential/compact.py "$RUNNER_TEMP/compacted.json"
@@ -262,13 +268,13 @@ jobs:
 
       # Last, since it swaps Node for the oldest one the converter supports (suite/content/convert.py NODE_MIN)
       - name: Setup Node 22.13
-        if: always() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success'
+        if: always() && steps.changes.outputs.backend == '1' && steps.changes.outputs.min-node-converter == '1' && steps.install-suite.outcome == 'success'
         uses: actions/setup-node@v7
         with:
           node-version: 22.13.0
 
       - name: Run Converter Tests On Node 22.13
-        if: always() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success'
+        if: always() && steps.changes.outputs.backend == '1' && steps.changes.outputs.min-node-converter == '1' && steps.install-suite.outcome == 'success'
         working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           test "$(node --version)" = v22.13.0
@@ -452,13 +458,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check backend changes
+      - name: Check migration inputs
         id: drive-migration-changes
         run: |
-          # The rehearsal runs against a fresh site whenever the backend changes,
-          # using the same gate as the backend job
+          # Include the apps and shared code whose schema or storage the rehearsal uses.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
-            run_backend=1
+            run_rehearsal=1
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
@@ -469,14 +474,11 @@ jobs:
                 changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
               fi
             fi
-            backend_paths="$(printf '%s\n' "$changed_files" \
-              | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
-              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
-            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/(drive|content|writer|sheets|slides|suite_core|composition|fixtures|utils)/|suite/(hooks\.py|patches\.txt|modules\.txt)$|pyproject\.toml$|package\.json$|pnpm-(lock\.yaml|workspace\.yaml)$|\.github/workflows/suite-ci\.yml$)' && run_rehearsal=1 || run_rehearsal=0
           fi
 
-          echo "run=$run_backend" >> $GITHUB_OUTPUT
-          echo "Run drive migration rehearsal: $run_backend"
+          echo "run=$run_rehearsal" >> $GITHUB_OUTPUT
+          echo "Run drive migration rehearsal: $run_rehearsal"
 
       - name: Setup Python
         if: steps.drive-migration-changes.outputs.run == '1'
@@ -656,13 +658,15 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm typecheck
 
-      - name: Check frontend bundle budget
-        if: steps.frontend-changes.outputs.run == '1'
-        run: pnpm check:bundle-budget
-
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm build
+        env:
+          SUITE_BUNDLE_BUDGET_MANIFEST: "1"
+
+      - name: Check frontend bundle budget
+        if: steps.frontend-changes.outputs.run == '1'
+        run: pnpm check:bundle-budget --from-build
 
       - name: Test
         if: steps.frontend-changes.outputs.run == '1'
