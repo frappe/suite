@@ -6,7 +6,7 @@ import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
 import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
-import { FOLDER_ICON_MAP } from '@/apps/mail/constants'
+import { FOLDER_ICON_CLASS_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import type { ComposeMailData, Mail, MailboxData, Recipient } from '@/apps/mail/types'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
@@ -563,6 +563,11 @@ export const getIcon = (mailbox: {
   if (icon !== undefined) return icon
   return 'folder'
 }
+
+// A folder icon as a class, for where the icon is drawn by class. A folder's own icon, chosen in
+// its settings, is not in the map: its class has a style only if the source spells it out.
+export const getIconClass = (icon: string) =>
+  Object.entries(FOLDER_ICON_CLASS_MAP).find(([name]) => name === icon)?.[1] ?? `lucide-${icon}`
 
 export const getMailboxName = (mailbox: MailboxData) => mailbox._name
 

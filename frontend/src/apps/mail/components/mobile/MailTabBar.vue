@@ -52,10 +52,7 @@
             :label="accountLabel"
             size="sm"
           />
-          <!-- Drawn by name, as the sidebar draws a folder's icon. A `lucide-<name>` class has a
-               style only when that class is written out somewhere in the source, and a folder's
-               icon is a name from data: Spam's had none, so its tab was blank. -->
-          <Icon v-else :name="tab.icon" class="size-5 shrink-0" aria-hidden="true" />
+          <span v-else :class="tab.icon" class="size-5 shrink-0" aria-hidden="true" />
           <span class="max-w-full truncate px-2 text-[11px] !font-semibold">{{ tab.label }}</span>
         </button>
       </nav>
@@ -65,14 +62,13 @@
 
 <script setup lang="ts">
 import { Avatar, Button, usePortalTarget } from 'frappe-ui'
-import { Icon } from 'frappe-ui/experimental'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { liftToastsOver, usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import { userStore } from '@/apps/mail/stores/user'
-import { getIcon } from '@/apps/mail/utils'
+import { getIcon, getIconClass } from '@/apps/mail/utils'
 import { useMobileSearch, useMobileSelection } from '@/apps/mail/utils/composables'
 import {
   INBOX_FOLDER,
@@ -155,14 +151,14 @@ const tabs = computed(() => [
   {
     key: 'folder',
     label: folderLabel.value,
-    icon: folderIcon.value,
+    icon: getIconClass(folderIcon.value),
     active: inFolder.value,
     open: openFolders,
   },
   {
     key: 'search',
     label: __('Search'),
-    icon: 'search',
+    icon: 'lucide-search',
     active: searching.value,
     open: openSearch,
   },

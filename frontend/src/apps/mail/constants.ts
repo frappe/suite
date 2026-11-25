@@ -21,6 +21,22 @@ export const FOLDER_ICON_MAP = {
   snoozed: 'clock',
 }
 
+// The standard folders' icons as classes, each written out whole. A `lucide-<name>` class has a
+// style only when the build finds it spelled out in the source, so one put together from a name
+// while the app runs can come out blank, as Spam's did on the phone's tab bar.
+export const FOLDER_ICON_CLASS_MAP = {
+  inbox: 'lucide-inbox',
+  send: 'lucide-send',
+  'trash-2': 'lucide-trash-2',
+  'mail-warning': 'lucide-mail-warning',
+  'pencil-line': 'lucide-pencil-line',
+  archive: 'lucide-archive',
+  bookmark: 'lucide-bookmark',
+  clock: 'lucide-clock',
+  star: 'lucide-star',
+  folder: 'lucide-folder',
+}
+
 export const FOLDER_ICON_COLOR_MAP = {
   // A gray folder's icon keeps the sidebar's own gray.
   Gray: '',

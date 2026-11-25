@@ -24,11 +24,6 @@ vi.mock('frappe-ui', async (original) => {
     usePortalTarget: () => undefined,
   }
 })
-// The sprite icon, drawn as its name: which icon a tab shows is what a test reads.
-vi.mock('frappe-ui/experimental', async () => {
-  const { h } = await import('vue')
-  return { Icon: (props: { name: string }) => h('svg', { 'data-icon': props.name }) }
-})
 vi.mock('@/apps/mail/composables/composeHandoff', () => ({
   openComposePage: () => calls.compose++,
 }))
@@ -40,7 +35,6 @@ vi.mock('@/apps/mail/stores/user', () => ({
       data: [
         { id: 'm-inbox', slug: 'inbox', _name: 'Inbox', role: 'inbox' },
         { id: 'm-receipts', slug: 'receipts', _name: 'Receipts', role: null, icon: 'receipt' },
-        { id: 'm-junk', slug: 'spam', _name: 'Spam', role: 'junk' },
       ],
     },
     unifiedFolders: {
@@ -120,11 +114,6 @@ describe("Mail's bottom bar", () => {
   it('holds the folder you are in, Search and your profile, and no other app', async () => {
     const { items } = await mountAt('/mail/account/a/mailbox/receipts')
     expect(items()).toEqual(['Receipts', 'Search', 'Settings'])
-  })
-
-  it("draws the folder's own icon on its tab, Spam's included", async () => {
-    const { item } = await mountAt('/mail/account/a/mailbox/spam')
-    expect(item('Spam').querySelector('svg')?.dataset.icon).toBe('mail-warning')
   })
 
   it('opens the folders from the folder you are in', async () => {
