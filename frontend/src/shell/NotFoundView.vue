@@ -1,11 +1,10 @@
 <!-- On a phone, a page of an app of its own (Mail) leads back to that app, not to the Suite. -->
 <template>
   <StatusPage
-    icon="lucide-search-x"
     :title="__('Page not found')"
     :description="__('The link may be wrong, or the page may have moved.')"
   >
-    <Button variant="solid" size="md" :route="home.to">{{ home.label }}</Button>
+    <Button variant="solid" :route="home.to">{{ home.label }}</Button>
   </StatusPage>
 </template>
 

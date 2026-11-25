@@ -7,12 +7,11 @@
 <template>
   <StatusPage
     role="alert"
-    icon="lucide-cloud-off"
     :title="__('This page did not load')"
     :description="__('Check your connection, then reload the page.')"
   >
-    <Button variant="solid" size="md" @click="reload">{{ __('Reload') }}</Button>
-    <Button variant="subtle" size="md" @click="goHome">{{ home.label }}</Button>
+    <Button variant="solid" @click="reload">{{ __('Reload') }}</Button>
+    <Button variant="ghost" @click="goHome">{{ home.label }}</Button>
   </StatusPage>
 </template>
 
