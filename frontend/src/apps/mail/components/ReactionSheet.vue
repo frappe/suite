@@ -52,7 +52,7 @@
       </ul>
     </div>
   </BottomSheet>
-  <BottomSheet v-model:open="everyOpen" :title="__('Emoji')">
+  <BottomSheet v-model:open="everyOpen">
     <div class="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
       <EmojiGrid class="!w-full" :picker :auto-focus="false" @select="pick" />
     </div>
