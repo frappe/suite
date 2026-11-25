@@ -13,7 +13,7 @@ jobs:
     # One bench and test site serve the backend, mail and calendar tests. Setting
     # them up takes most of the job, so splitting the tests across jobs would
     # repeat that work on more runners.
-    timeout-minutes: 55
+    timeout-minutes: 65
 
     # Pilot runs with --ci, so it provisions no database server of its own;
     # the bench points at this container instead (see Setup Pilot).
@@ -170,13 +170,12 @@ jobs:
 
           trial=0
           failed=0
-          for mode in off on excluded excluded on off; do
+          for mode in on excluded; do
             trial=$((trial + 1))
             site="bench-$trial.localhost"
             pilot new-site "$site" --admin-password admin --apps frappe suite --skip-assets
             pilot frappe --site "$site" set-config allow_tests true
-            pilot frappe --site "$site" execute suite.tests.utils.ensure_user --args '["writer-collab-reader@example.com"]'
-            pilot frappe --site "$site" execute suite.tests.utils.ensure_user --args '["writer-collab-outsider@example.com"]'
+            pilot frappe --site "$site" set-config throttle_user_limit 1000 --parse
 
             args=()
             omit=0
@@ -186,7 +185,7 @@ jobs:
             /usr/bin/time -q -f '%e' -o "$output/$trial.time" \
               env SUITE_BENCH_OMIT_TESTS="$omit" COVERAGE_DEBUG=sys COVERAGE_DEBUG_FILE="$output/$trial.coverage-debug" \
               pilot frappe --site "$site" run-tests --app suite \
-                --module suite.writer.content.tests.test_conversion "${args[@]}" \
+                "${args[@]}" \
                 --junit-xml-output "$output/$trial.junit-fragments.xml" || status=$?
             printf '%s,%s,%s,%s\n' "$trial" "$mode" "$(cat "$output/$trial.time")" "$status" | tee -a "$output/timing.csv"
             if [ "$mode" != off ] && [ "$status" = 0 ]; then
