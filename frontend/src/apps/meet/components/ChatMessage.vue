@@ -22,9 +22,6 @@
           :tooltip="emojiLabel(emoji)"
           :aria-pressed="hasReaction(emoji)"
           class="chat-quick-reaction"
-          :class="{
-            '!bg-surface-gray-5 !text-ink-gray-9 hover:!bg-surface-gray-6': hasReaction(emoji),
-          }"
           @click="toggleReaction(emoji)"
         >
           <template #icon>
@@ -196,8 +193,7 @@ function reactionNames(userIds: string[]) {
   -webkit-tap-highlight-color: transparent;
 }
 
-.chat-reaction[aria-pressed='true'],
-.chat-quick-reaction[aria-pressed='true'] {
+.chat-reaction[aria-pressed='true'] {
   --chat-reaction-inset: inset 0 0 0 1px color-mix(in srgb, currentColor 36%, transparent);
   box-shadow: var(--chat-reaction-inset);
 }
