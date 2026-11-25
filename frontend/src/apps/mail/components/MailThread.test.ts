@@ -65,6 +65,8 @@ vi.mock('@/apps/mail/utils', async (original) => ({
 }))
 // The reader's own addresses: their own mail is never held back.
 const own = vi.hoisted(() => ({ identities: new Array<{ email: string }>() }))
+// The account's folders by role, for the tests that open a thread from one.
+const folders = vi.hoisted(() => ({ ids: {} }))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ globalScreenedAddresses: { data: [] } }),
 }))
@@ -74,7 +76,7 @@ vi.mock('@/apps/mail/utils/accountScope', () => ({
     account: ref({}),
     identities: ref({ data: own.identities }),
     screenedAddresses: ref({ data: [] }),
-    mailboxIds: ref({}),
+    mailboxIds: ref(folders.ids),
   }),
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
@@ -109,6 +111,7 @@ afterEach(() => {
   threadReads.length = 0
   platform.mac = false
   own.identities = []
+  folders.ids = {}
 })
 
 // A message as the list and get_thread hand it over: on its own thread, from Bob, unless told.
@@ -134,7 +137,11 @@ const mount = async (draw: (reader: Component) => VNode, path = '/') => {
   window.__ = (text: string) => text
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/:pathMatch(.*)*', name: 'mail-thread', component: { render: () => null } }],
+    routes: [
+      // The list a thread with nothing to show goes back to.
+      { path: '/mailbox/:mailbox', name: 'mail-mailbox', component: { render: () => null } },
+      { path: '/:pathMatch(.*)*', name: 'mail-thread', component: { render: () => null } },
+    ],
   })
   await router.push(path)
   const Reader = { ...MailThread, render: () => null }
@@ -184,6 +191,31 @@ it('names a directly fetched conversation after async arrival and when the reuse
   await nextTick()
   await nextTick()
   expect(document.title).toBe('Mail')
+})
+
+it('opens a thread from Spam whose mail was filed there without the junk mark', async () => {
+  folders.ids = { junk: 'spam', trash: 'bin' }
+  query.current = reactive({ data: undefined, status: 'pending', refetch: async () => {} })
+  const router = await mount((reader) =>
+    h(reader, {
+      mailbox: 'spam',
+      threadID: 'one',
+      threads: [],
+      marksSeen: false,
+      messages: [
+        mail('one', {
+          subject: 'You have won',
+          junk: 0,
+          mailboxes: [fromPartial({ mailbox_id: 'spam' })],
+        }),
+      ],
+    }),
+  )
+  applyRouteMeta({ ...router.currentRoute.value, meta: { title: 'Mail' } })
+  // A bounce to the list is a navigation, which settles after the pane's own updates.
+  await new Promise((resolve) => setTimeout(resolve))
+  expect(router.currentRoute.value.name).toBe('mail-thread')
+  expect(document.title).toBe('You have won | Mail')
 })
 
 describe('a thread the list may not hold', () => {

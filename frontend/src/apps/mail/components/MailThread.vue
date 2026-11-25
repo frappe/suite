@@ -1697,13 +1697,19 @@ const setCollapsedGroup = (data: Mail[]) => (foldedAway.value = foldedNames(data
 const firstMailOfCollapsedGroup = computed(
   () => thread.value?.find((m) => collapsedMailNames.value.has(m.name))?.name ?? null,
 )
+// The messages a mailbox view shows: junked and trashed mail only in its own folder. The list's rows
+// are built by the same rule on the server (`visible_in_mailbox`), so a change here is one there.
+// Junked is in the Junk folder or carrying the junk mark. Either alone counts: another mail client,
+// or a filter, files mail in Junk without marking it, and going by the mark alone left such a thread
+// with nothing to show, so its row could not be opened.
 const filterRelevantMails = (mail: Mail) => {
   if (mailbox === 'search') return true
   const mailboxes = mail.mailboxes.map((m) => m.mailbox_id)
-  const trash = mailboxIds.value.trash
+  const { trash, junk } = mailboxIds.value
+  const junked = !!mail.junk || mailboxes.includes(junk)
   if (mailbox === trash) return mailboxes.includes(trash)
-  if (mailbox === mailboxIds.value.junk) return !!mail.junk
-  return !mailboxes.includes(trash) && !mail.junk
+  if (mailbox === junk) return junked
+  return !mailboxes.includes(trash) && !junked
 }
 
 // Unsubscribing from a list (see useUnsubscribe): offered on mail you received, never in Junk, nor

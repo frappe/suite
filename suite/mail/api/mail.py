@@ -492,19 +492,28 @@ def visible_in_mailbox(
     participants, raising its message count, and lending it its preview and date, all for a message
     the pane then refused to render.
 
+    A message is junked when it is in the Junk folder or carries the junk mark. Either alone counts:
+    another mail client, or a filter, files mail in Junk without marking it, and Junk listed such a
+    thread by its folder while the pane, which went by the mark, had nothing to open.
+
     Falls back to the whole conversation rather than to nothing, so a thread is never a blank row.
+    The pane has no such fallback, so the two differ where it applies: outside Trash and Junk, for
+    a thread whose mail in the folder is all junked or trashed as well.
     """
 
     def is_trashed(message: dict) -> bool:
         return any(mb["mailbox_id"] == trash for mb in message["mailboxes"])
 
+    def is_junked(message: dict) -> bool:
+        return bool(message.get("junk")) or any(mb["mailbox_id"] == junk for mb in message["mailboxes"])
+
     if trash and mailbox == trash:
         return [m for m in messages if is_trashed(m)] or messages
 
     if junk and mailbox == junk:
-        return [m for m in messages if m.get("junk")] or messages
+        return [m for m in messages if is_junked(m)] or messages
 
-    return [m for m in messages if not is_trashed(m) and not m.get("junk")] or messages
+    return [m for m in messages if not is_trashed(m) and not is_junked(m)] or messages
 
 
 # Of a message's copies, the one kept carries these fields of the ones it stands in for — what an
@@ -1985,7 +1994,7 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
         # as every other list does.
         if trash and any(mb["mailbox_id"] == trash for mb in match["mailboxes"]):
             where = trash
-        elif junk and match.get("junk"):
+        elif junk and (match.get("junk") or in_mailbox_view(match, junk)):
             where = junk
         else:
             where = None
