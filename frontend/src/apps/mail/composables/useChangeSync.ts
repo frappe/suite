@@ -10,6 +10,10 @@ const SYNC_INTERVAL = 15_000
 // While the asks keep failing (the mail server down, a state it can no longer answer from), each
 // failure doubles the wait, up to this. The first answer brings it back to the interval.
 const MAX_SYNC_INTERVAL = 5 * 60_000
+// An ask not answered by now is given up, as a failure: one that never answers (a phone left it
+// hanging when it put the app away) would otherwise hold back every ask after it, and a pull to
+// refresh that joins it.
+const SYNC_TIMEOUT = 30_000
 
 /**
  * Keep the open lists up with the mail server, push or no push.
@@ -51,8 +55,10 @@ export function useChangeSync(socket: Socket, serverUnavailable: () => boolean) 
     if (!socket.active) socket.connect()
     // The server announces what it finds while the ask is out: only a socket up for all of it hears.
     const heardLive = socket.connected
+    const timeout = new AbortController()
+    const giveUp = setTimeout(() => timeout.abort(), SYNC_TIMEOUT)
     inFlight = client
-      .mutation(api.mail.changes.sync, undefined, { silent: true })
+      .mutation(api.mail.changes.sync, undefined, { silent: true, signal: timeout.signal })
       .then((found) => {
         // Some account could not be fetched; the others were, and are handed on below.
         failures = found.failed ? failures + 1 : 0
@@ -68,6 +74,7 @@ export function useChangeSync(socket: Socket, serverUnavailable: () => boolean) 
         failures += 1
       })
       .finally(() => {
+        clearTimeout(giveUp)
         inFlight = undefined
         scheduleNext()
       })

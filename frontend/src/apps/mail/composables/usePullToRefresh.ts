@@ -7,17 +7,26 @@ import { createPullGesture, REFRESH_AT } from '@/apps/mail/utils/pullGesture'
 // A refresh that answers at once still shows its spinner this long, so the pull reads as done
 // rather than as a flicker.
 const MIN_SPIN = 500
+// Nothing answered by now, the spinner goes and the list comes back up: a request that never
+// answers (one a phone left hanging when it put the app away) must not hold the list down for good.
+// What is still out lands on the list when it answers.
+const MAX_SPIN = 10_000
+// The list is read again once the mail server's changes are in, or after this, whichever is first:
+// the ask for them waits behind every write still out, and may be one already out that hangs.
+const MAX_SYNC_WAIT = 5_000
 // While it refreshes, the list waits this far down, the spinner in the gap above it.
 const HOLD_AT = 52
 /** How long the list takes to ease back once let go; PullToRefreshIndicator moves with it. */
 export const SETTLE_MS = 250
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
 interface Options {
   /** The list's scroller. */
   scroller: () => HTMLElement | null | undefined
   /** Whether a pull can refresh the list now: on a phone, and not while rows are being selected. */
   enabled: () => boolean
-  /** Read the list again; the spinner stays until it settles. */
+  /** Read the list again; the spinner stays until it settles, for up to `MAX_SPIN`. */
   refresh: () => Promise<unknown>
 }
 
@@ -99,15 +108,14 @@ export function usePullToRefresh({ scroller, enabled, refresh }: Options) {
       pulling.value = false
       refreshing.value = true
       offset.value = HOLD_AT
-      const spun = new Promise((resolve) => setTimeout(resolve, MIN_SPIN))
-      void Promise.all([syncNow().then(refresh), spun])
-        .catch(() => {
-          /* The list's own state holds a refusal. */
-        })
-        .finally(() => {
-          refreshing.value = false
-          settle()
-        })
+      const synced = Promise.race([syncNow(), wait(MAX_SYNC_WAIT)])
+      const read = Promise.all([synced.then(refresh), wait(MIN_SPIN)]).catch(() => {
+        /* The list's own state holds a refusal. */
+      })
+      void Promise.race([read, wait(MAX_SPIN)]).finally(() => {
+        refreshing.value = false
+        settle()
+      })
     },
     { passive: true },
   )
