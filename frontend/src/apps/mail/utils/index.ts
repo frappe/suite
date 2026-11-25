@@ -135,6 +135,38 @@ export const raisePromiseToast = async (
 export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
   void forward.then(undo, () => {})
 
+// The inverse of the last Undo, sent or still waiting on its write: see `undoOnClick`.
+let undoing: Promise<unknown> = Promise.resolve()
+
+/**
+ * The Undo for a write still in flight, in two halves. `restore` puts the screen back on the click.
+ * `inverse` is sent only once the write has landed, as `afterLanding`'s is; `restore` is handed its
+ * promise, which settles once the inverse has, at once and without it if the write was refused (that
+ * left everything as it was), and is rejected if the inverse is. The inverse is sent as it is,
+ * never through `afterUndoing`, which would have it wait for itself.
+ */
+export const undoOnClick =
+  (
+    forward: Promise<unknown>,
+    restore: (inverted: Promise<void>) => void,
+    inverse: () => Promise<unknown>,
+  ) =>
+  () => {
+    const inverted = forward.then(
+      () => inverse().then(() => {}),
+      () => {},
+    )
+    undoing = inverted.catch(() => {})
+    restore(inverted)
+  }
+
+/**
+ * Sends a write once the last Undo's inverse has gone. An Undo puts rows back before that inverse is
+ * sent, so they can be acted on again in the meantime; the new write, sent first, would be
+ * overturned by the inverse landing after it.
+ */
+export const afterUndoing = <T>(send: () => Promise<T>): Promise<T> => undoing.then(send)
+
 /**
  * When an action's toast shows, which its caller says. `onClick`: the screen already shows the change
  * and the message doesn't hang on the answer, so it shows at once, with its Undo, and comes down with

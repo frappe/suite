@@ -407,6 +407,7 @@ import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
+import { useRestoredRows } from '@/apps/mail/composables/useRestoredRows'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { useThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
@@ -414,12 +415,14 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
   afterLanding,
+  afterUndoing,
   commitAfterUndo,
   isMac,
   raiseError,
   raiseOptimisticToast,
   raisePerAccountToast,
   shouldIgnoreKeypress,
+  undoOnClick,
   type ToastTiming,
 } from '@/apps/mail/utils'
 import { useAccountScope } from '@/apps/mail/utils/accountScope'
@@ -618,12 +621,20 @@ const keptRead = useKeptRead({
   scope: () => [folder, filter.value, inboxTab.value],
   key: threadKey,
 })
+// Put back by an Undo before its inverse is sent, the server listing them again only after it.
+const restoredRows = useRestoredRows({
+  key: threadKey,
+  scope: () => [folder, filter.value, inboxTab.value],
+  reread: () => refreshList(),
+})
 const threadRows = computed(() =>
-  keptRead.withKept(
-    threads.rows
-      .map((row) => threadRow(row, store.accountId))
-      .filter((row) => !isDiscardingDraft(row, { inDrafts: folder === 'drafts' }))
-      .map(withoutHeldDrafts),
+  restoredRows.withRestored(
+    keptRead.withKept(
+      threads.rows
+        .map((row) => threadRow(row, store.accountId))
+        .filter((row) => !isDiscardingDraft(row, { inDrafts: folder === 'drafts' }))
+        .map(withoutHeldDrafts),
+    ),
   ),
 )
 watch(threadRows, keptRead.keep)
@@ -1356,11 +1367,7 @@ const fileThreads = (
   const leaves = leavesFolder(action, threads[0], target)
   // The next thread is found on the list as it stands, the conversations still on it. Rows read in
   // the Unread filter go back on that list on Undo, or if the action fails (see useKeptRead).
-  const at = keptRead.current()
-  if (leaves) {
-    goToNextThreadOrClose(threads.map(threadKey))
-    keptRead.release(threads.map(threadKey))
-  }
+  const putBack = leaves ? leaveList(threads) : undefined
   if (action === 'trash' || action === 'junk') closeComposeWindowFor(copyIds(threads))
   const one = threads.length === 1
   const folderOfTarget = target ? folderName(target) : undefined
@@ -1431,7 +1438,7 @@ const fileThreads = (
       // back in Junk.
       undoScreen:
         screenAction === 'Accepted' ? 'Spam' : screenAction === 'Spam' ? 'Accepted' : null,
-      putBack: leaves ? (rows) => keptRead.restore(rows, at) : undefined,
+      putBack,
     },
   )
 }
@@ -1454,11 +1461,17 @@ const askSnooze = (threads: Thread[], own = false) => {
   if (own) pickingSnooze.value = true
   else showSnooze.value = true
 }
+// Takes the rows off the list, the open one's pane going on to the next, and returns how to put them
+// back: held until the Undo's inverse lands, where one is given, and read in the Unread filter.
 const leaveList = (threads: Thread[]) => {
   const at = keptRead.current()
+  restoredRows.leaving(threads, threadRows.value)
   goToNextThreadOrClose(threads.map(threadKey))
   keptRead.release(threads.map(threadKey))
-  return (rows: Thread[]) => keptRead.restore(rows, at)
+  return (rows: Thread[], inverted?: Promise<unknown>) => {
+    keptRead.restore(rows, at)
+    if (inverted) restoredRows.hold(rows, inverted)
+  }
 }
 const snoozeTo = (threads: Thread[], until: string) => {
   const leaves = folder !== SNOOZED_FOLDER
@@ -1548,34 +1561,48 @@ const actPerAccount = (
     /** The sender verdict Undo gives, taking back the action's. */
     undoScreen?: string | null
     /** Puts back on the list the given rows the action took off it, which the server won't list
-     * again: an account's whose action was undone, or refused. */
-    putBack?: (rows: Thread[]) => void
+     * again: the action's on Undo, held until its inverse lands, or an account's whose action was
+     * refused. */
+    putBack?: (rows: Thread[], inverted?: Promise<unknown>) => void
     /** Undoes it in an account, where putting its mail back as it was would not. */
     restore?: (account: string) => Promise<unknown>
   } = {},
 ) => {
   const groups = byAccount(threads)
   const snapshots = groups.map(([account, rows]) => [account, copySnapshot(rows)] as const)
-  const settled = Promise.allSettled(groups.map(([account, rows]) => request(account, rows)))
+  // Behind any Undo's inverse still to be sent (see afterUndoing).
+  const settled = afterUndoing(() =>
+    Promise.allSettled(groups.map(([account, rows]) => request(account, rows))),
+  )
   const landed = settled.then((results) =>
     groups.filter((_, i) => results[i].status === 'fulfilled').map(([account]) => account),
   )
-  const undoAction = () =>
-    void landed.then((accounts) => {
-      const restoring = snapshots.filter(([account]) => accounts.includes(account))
-      if (!restoring.length) return
-      putBack?.(
-        groups.filter(([account]) => accounts.includes(account)).flatMap(([, rows]) => rows),
-      )
-      raiseOptimisticToast(
-        Promise.all(
-          restoring.map(([account, mails]) =>
-            restore ? restore(account) : restoreMails(account, mails, undoScreen),
+  let undone = false
+  // The rows come back on the click. The mail is put back once every account has answered, and only
+  // where the action went through: a refused account's is already as it was.
+  const undoAction = undoOnClick(
+    landed,
+    (inverted) => {
+      undone = true
+      putBack?.(threads, inverted)
+      raiseOptimisticToast(inverted, undoSuccess)
+    },
+    () =>
+      landed
+        .then((accounts) =>
+          Promise.all(
+            snapshots
+              .filter(([account]) => accounts.includes(account))
+              .map(([account, mails]) =>
+                restore ? restore(account) : restoreMails(account, mails, undoScreen),
+              ),
           ),
-        ).then(() => refreshThreads()),
-        undoSuccess,
-      )
-    })
+        )
+        // Rows that stayed on the list are read again for their folders; rows put back, by the hold.
+        .then(() => {
+          if (!putBack) return refreshThreads()
+        }),
+  )
   setUndoAction(undoAction)
   void settled.then((results) => {
     refreshCounts()
@@ -1583,7 +1610,7 @@ const actPerAccount = (
     // put back as it was, since its Undo is gone.
     const refused = snapshots.filter((_, i) => results[i].status === 'rejected')
     refused.forEach(([account, mails]) => void restoreMails(account, mails).catch(() => {}))
-    if (!refused.length) return
+    if (!refused.length || undone) return
     putBack?.(groups.filter((_, i) => results[i].status === 'rejected').flatMap(([, rows]) => rows))
     refreshThreads()
   })

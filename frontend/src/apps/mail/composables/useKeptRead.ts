@@ -2,6 +2,12 @@ import { shallowRef, watch, type WatchSource } from 'vue'
 
 import type { Thread } from '@/apps/mail/types'
 
+/** Puts `row` into `rows`, newest first as a list is: before the first row older than it. */
+export const insertByDate = (rows: Thread[], row: Thread) => {
+  const at = rows.findIndex((other) => other.received_at < row.received_at)
+  rows.splice(at === -1 ? rows.length : at, 0, row)
+}
+
 /**
  * In a list filtered to unread mail, a conversation read there — opened, or marked read — stays on it,
  * shown as read, until the list, its filter or its tab changes, as Gmail keeps it. The list asks the
@@ -87,12 +93,8 @@ export function useKeptRead({
     const present = new Set(rows.map(key))
     const missing = [...kept.value.values()].filter((row) => !present.has(key(row)))
     if (!missing.length) return rows
-    // Newest first, as the list is: each kept row goes back before the first row older than it.
     const merged = [...rows]
-    for (const row of missing) {
-      const at = merged.findIndex((other) => other.received_at < row.received_at)
-      merged.splice(at === -1 ? merged.length : at, 0, row)
-    }
+    for (const row of missing) insertByDate(merged, row)
     return merged
   }
 

@@ -11,10 +11,12 @@ import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailCopy, Thread } from '@/apps/mail/types'
 import {
   afterLanding,
+  afterUndoing,
   commitAfterUndo,
   getIcon,
   raiseOptimisticToast,
   raisePromiseToast,
+  undoOnClick,
   type ToastTiming,
 } from '@/apps/mail/utils'
 import { useDiscardingDrafts, useUndo } from '@/apps/mail/utils/composables'
@@ -92,8 +94,10 @@ export function useThreadActions(deps: {
   syncAfterAction: () => void
   // Drop the given threads from the loaded list optimistically; returns the removed rows for undo.
   removeThreadsFromList: (threadIds: string[]) => Thread[]
-  // Re-insert threads at their sorted position (undo of a move/junk) without jumping to top.
-  restoreThreadsToList: (threads: Thread[]) => void
+  // Re-insert threads at their sorted position (undo of a move/junk) without jumping to top. Given the
+  // Undo's inverse, the rows are held on the list until it lands and the list is read again: they
+  // come back on the click, before the server lists them.
+  restoreThreadsToList: (threads: Thread[], inverted?: Promise<unknown>) => void
   // Refetch the first window if an optimistic removal emptied the list while more threads exist. Call
   // only after the server mutation lands, or the refetch returns the not-yet-removed rows.
   refillIfEmpty: () => void
@@ -181,8 +185,12 @@ export function useThreadActions(deps: {
   const fileMails = useMutation(api.mail.messages.file)
   const snoozeMails = useMutation(api.mail.messages.snooze)
   const unsnoozeMails = useMutation(api.mail.messages.unsnooze)
-  const fileMailsSubmit = (input: Omit<InputOf<typeof api.mail.messages.file>, 'account'>) =>
-    fileMails.run({ account: store.accountId, ...input })
+  // Behind any Undo's inverse still to be sent (see afterUndoing), as is every write here that files
+  // mail; an inverse is sent straight.
+  const fileMailsSubmit = (input: Omit<InputOf<typeof api.mail.messages.file>, 'account'>) => {
+    const account = store.accountId
+    return afterUndoing(() => fileMails.run({ account, ...input }))
+  }
 
   // Where the selection can go, read off the selection itself rather than off the open mailbox —
   // so the menu is just as answerable in Search and Starred, which are queries and not mailboxes.
@@ -214,7 +222,7 @@ export function useThreadActions(deps: {
       ids,
       mailbox_id,
     }
-    await addMails.run(input)
+    await afterUndoing(() => addMails.run(input))
   }
   const removeMails = useMutation(api.mail.messages.removeFromFolder)
   async function removeMailsSubmit({ ids, mailbox_id }: { ids: string[]; mailbox_id: string }) {
@@ -223,7 +231,7 @@ export function useThreadActions(deps: {
       ids,
       mailbox_id,
     }
-    await removeMails.run(input)
+    await afterUndoing(() => removeMails.run(input))
   }
 
   // Restores each mail to an exact snapshot (mailbox set + junk) — used to undo a move precisely.
@@ -495,7 +503,7 @@ export function useThreadActions(deps: {
     const input: InputOf<typeof api.mail.messages.delete> = {
       names,
     }
-    await bulkDelete.run(input)
+    await afterUndoing(() => bulkDelete.run(input))
   }
 
   // Removes the given threads from the loaded list and returns them (so an undo can re-insert the exact
@@ -660,18 +668,18 @@ export function useThreadActions(deps: {
     // thread, so a move to Trash removes the row optimistically below.
     const reconcileView = !keptInList && mailbox.value === 'search'
     // One filing per target: the server decides what each message does (sent mail keeps Sent, a draft
-    // stays in Drafts, Junk and Trash are their own rules).
-    const forward = Object.entries(threadIDs).map(
-      ([target, tids]) =>
-        () =>
-          fileMailsSubmit({
-            ids: threadMails(tids).map((m) => m.id),
-            action: 'move',
-            mailbox: target,
-            leaves: keptInList || reconcileView ? null : mailbox.value,
-            shows: keptInList ? expectedFolders('move', tids, target) : null,
-          }),
-    )
+    // stays in Drafts, Junk and Trash are their own rules). Read off the rows now, before they leave
+    // the list.
+    const forward = Object.entries(threadIDs).map(([target, tids]) => {
+      const input = {
+        ids: threadMails(tids).map((m) => m.id),
+        action: 'move' as const,
+        mailbox: target,
+        leaves: keptInList || reconcileView ? null : mailbox.value,
+        shows: keptInList ? expectedFolders('move', tids, target) : null,
+      }
+      return () => fileMailsSubmit(input)
+    })
 
     // Optimistic (plain mailbox, or a Starred thread leaving via Trash): drop the rows now, before any
     // request fires. Captured so a failure can restore them in place, and so undo can re-insert them.
@@ -692,15 +700,17 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     if (!keptInList && !reconcileView) {
       // Optimistic path: confirm immediately, arm undo now, fire the request in the background.
+      let undone = false
       const forwardPromise = (async () => {
         try {
           for (const op of forward) await op()
           mailboxes.refetch().catch(() => {})
           refillIfEmpty()
         } catch (error) {
-          // Roll back the optimistic UI now, and undo any partial server move in the background
-          // (the snapshot restores the exact pre-move state) so the error toast isn't delayed.
-          restoreThreadsToList(removedThreads)
+          // Roll back the optimistic UI now (unless Undo already put the rows back), and undo any
+          // partial server move in the background (the snapshot restores the exact pre-move state)
+          // so the error toast isn't delayed.
+          if (!undone) restoreThreadsToList(removedThreads)
           setMailsMailboxesSubmit({
             mails: snapshot,
           }).catch(() => {})
@@ -709,19 +719,24 @@ export function useThreadActions(deps: {
         }
       })()
       setUndoAction(
-        afterLanding(forwardPromise, () => {
-          restoreThreadsToList(removedThreads)
-          setUndoAction(undefined)
-          const restore = setMailsMailboxesSubmit({
-            mails: snapshot,
-          })
-            .then(() => mailboxes.refetch().catch(() => {}))
-            .catch((error) => {
-              removeThreadsFromList(removedThreads.map((t) => t.thread_id))
-              throw error
+        undoOnClick(
+          forwardPromise,
+          (inverted) => {
+            undone = true
+            restoreThreadsToList(removedThreads, inverted)
+            setUndoAction(undefined)
+            raiseOptimisticToast(inverted, { onClick: movedBack })
+          },
+          () =>
+            setMailsMailboxesSubmit({
+              mails: snapshot,
             })
-          raiseOptimisticToast(restore, { onClick: movedBack })
-        }),
+              .then(() => mailboxes.refetch().catch(() => {}))
+              .catch((error) => {
+                removeThreadsFromList(removedThreads.map((t) => t.thread_id))
+                throw error
+              }),
+        ),
       )
       raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
       return forwardPromise.then(
@@ -875,14 +890,17 @@ export function useThreadActions(deps: {
     const account = store.accountId
     const ids = mails.map((m) => m.id)
     const leaving = leaves ? mailbox.value : null
+    let undone = false
     const forward = (
       action === 'snooze'
-        ? snoozeMails.run({ account: store.accountId, ids, until: until!, leaves: leaving })
+        ? afterUndoing(() => snoozeMails.run({ account, ids, until: until!, leaves: leaving }))
         : action === 'wake'
-          ? unsnoozeMails.run({ account, ids, leaves: leaving }).then((answer) => {
-              waited = answer.waited
-              return answer
-            })
+          ? afterUndoing(() => unsnoozeMails.run({ account, ids, leaves: leaving })).then(
+              (answer) => {
+                waited = answer.waited
+                return answer
+              },
+            )
           : fileMailsSubmit({
               ids,
               action,
@@ -905,29 +923,33 @@ export function useThreadActions(deps: {
         // The server may have filed some messages before refusing the rest: they are put back as
         // they were, or they would stay filed with no Undo left to take them back.
         void setMailsMailboxesSubmit({ mails: snapshot }).catch(() => {})
-        restoreThreadsToList(removed)
+        if (!undone) restoreThreadsToList(removed)
         setUndoAction(undefined)
         throw error
       },
     )
     setUndoAction(
-      afterLanding(forward, () => {
-        restoreThreadsToList(removed)
-        setUndoAction(undefined)
+      undoOnClick(
+        forward,
+        (inverted) => {
+          undone = true
+          restoreThreadsToList(removed, inverted)
+          setUndoAction(undefined)
+          // Rows that left come back on the click; rows that stayed change back once it lands.
+          const movedBack =
+            threadIds.length > 1 ? __('Conversations moved back') : __('Conversation moved back')
+          raiseOptimisticToast(inverted, leaves ? { onClick: movedBack } : { onAnswer: movedBack })
+        },
         // Unsnoozing ended its wait: only snoozing again has it come back at its time.
-        const restore = (
-          action === 'wake'
+        () =>
+          (action === 'wake'
             ? resnooze(account, waited)
             : setMailsMailboxesSubmit({ mails: snapshot })
-        ).then(() => {
-          mailboxes.refetch().catch(() => {})
-          if (mailbox.value === 'search') resetThreads()
-        })
-        // Rows that left come back on the click; rows that stayed change back once it lands.
-        const movedBack =
-          threadIds.length > 1 ? __('Conversations moved back') : __('Conversation moved back')
-        raiseOptimisticToast(restore, leaves ? { onClick: movedBack } : { onAnswer: movedBack })
-      }),
+          ).then(() => {
+            mailboxes.refetch().catch(() => {})
+            if (mailbox.value === 'search') resetThreads()
+          }),
+      ),
     )
     raiseOptimisticToast(forward, told, undo)
     return forward.then(
@@ -1042,6 +1064,7 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     if (!reconcileView) {
       // Optimistic path: confirm immediately, arm undo now, fire in the background.
+      let undone = false
       const forwardPromise = (async () => {
         try {
           await forward()
@@ -1049,23 +1072,28 @@ export function useThreadActions(deps: {
           refillIfEmpty()
         } catch (error) {
           // Single request: the server is unchanged on failure, so just restore the UI.
-          restoreThreadsToList(removedThreads)
+          if (!undone) restoreThreadsToList(removedThreads)
           setUndoAction(undefined)
           throw error
         }
       })()
       setUndoAction(
-        afterLanding(forwardPromise, () => {
-          restoreThreadsToList(removedThreads)
-          setUndoAction(undefined)
-          const undoReq = setMailsMailboxesSubmit(restore)
-            .then(() => mailboxes.refetch().catch(() => {}))
-            .catch((error) => {
-              removeThreadsFromList(removedThreads.map((t) => t.thread_id))
-              throw error
-            })
-          raiseOptimisticToast(undoReq, { onClick: restored })
-        }),
+        undoOnClick(
+          forwardPromise,
+          (inverted) => {
+            undone = true
+            restoreThreadsToList(removedThreads, inverted)
+            setUndoAction(undefined)
+            raiseOptimisticToast(inverted, { onClick: restored })
+          },
+          () =>
+            setMailsMailboxesSubmit(restore)
+              .then(() => mailboxes.refetch().catch(() => {}))
+              .catch((error) => {
+                removeThreadsFromList(removedThreads.map((t) => t.thread_id))
+                throw error
+              }),
+        ),
       )
       return raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
     }
