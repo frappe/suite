@@ -52,7 +52,10 @@
             :label="accountLabel"
             size="sm"
           />
-          <span v-else :class="tab.icon" class="size-5 shrink-0" aria-hidden="true" />
+          <!-- Drawn by name, as the sidebar draws a folder's icon. A `lucide-<name>` class has a
+               style only when that class is written out somewhere in the source, and a folder's
+               icon is a name from data: Spam's had none, so its tab was blank. -->
+          <Icon v-else :name="tab.icon" class="size-5 shrink-0" aria-hidden="true" />
           <span class="max-w-full truncate px-2 text-[11px] !font-semibold">{{ tab.label }}</span>
         </button>
       </nav>
@@ -62,6 +65,7 @@
 
 <script setup lang="ts">
 import { Avatar, Button, usePortalTarget } from 'frappe-ui'
+import { Icon } from 'frappe-ui/experimental'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -151,14 +155,14 @@ const tabs = computed(() => [
   {
     key: 'folder',
     label: folderLabel.value,
-    icon: `lucide-${folderIcon.value}`,
+    icon: folderIcon.value,
     active: inFolder.value,
     open: openFolders,
   },
   {
     key: 'search',
     label: __('Search'),
-    icon: 'lucide-search',
+    icon: 'search',
     active: searching.value,
     open: openSearch,
   },
