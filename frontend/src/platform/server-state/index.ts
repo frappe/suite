@@ -183,10 +183,7 @@ export function createApiClient(
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
     writesSettled: writes.settled.bind(writes),
-    resetIdentity: () => {
-      reads.clearReloadCache()
-      reads.switchPartition()
-    },
+    resetIdentity: () => reads.switchPartition(),
     invalidate: reads.invalidate.bind(reads),
     dispose() {
       for (const stop of cleanup) stop()

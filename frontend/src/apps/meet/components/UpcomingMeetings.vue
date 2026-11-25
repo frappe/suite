@@ -13,6 +13,7 @@ import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 
 const accountError = ref(false)
+const accountReady = ref(false)
 
 interface CalendarEventParticipant {
   email: string
@@ -86,10 +87,16 @@ const fromDate = computed(() => eventWindow.value.from.toISOString())
 const toDate = computed(() => eventWindow.value.to.toISOString())
 const timeZone = userTimeZone()
 
+const accountId = computed(
+  () =>
+    calendarStore.accountId ||
+    (!accountReady.value && session.user.value?.id && calendarStore.preferredAccountId()),
+)
+
 const upcomingEvents = useQuery(api.calendar.events.window, () =>
-  calendarStore.accountId
+  accountId.value
     ? {
-        account: calendarStore.accountId,
+        account: accountId.value,
         from_date: fromDate.value,
         to_date: toDate.value,
         time_zone: timeZone,
@@ -218,6 +225,7 @@ const joinRow = (row: UpcomingEventRow) => {
 const reload = async () => {
   try {
     await calendarStore.loadUser()
+    accountReady.value = true
     accountError.value = false
     if (calendarStore.accountId) await upcomingEvents.refetch()
   } catch (error) {

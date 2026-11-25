@@ -15,7 +15,8 @@ import {
 import { Entities, isRecord } from './entities'
 import type { Effects, Policy, ReadOptions } from './types'
 
-const RELOAD_CACHE_PREFIX = 'suite-query-v1:'
+const RELOAD_CACHE_KEY = 'suite-query-results-v1'
+const RELOAD_CACHE_LIMIT = 12
 const isAccessRefusal = (error: unknown) =>
   error instanceof TransportError && (error.status === 401 || error.status === 403)
 
@@ -72,6 +73,7 @@ export class Reads {
     if (timeout) clearTimeout(timeout)
     this.gc.delete(record.key)
     record.observers.add(observer)
+    void this.restore(record)
     if (!this.realtime || this.rooms.has(record.key) || !record.reference.entity) return
     const entity = record.reference.entity
     const doctype = entity.doctype ?? entity.tag.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -193,29 +195,25 @@ export class Reads {
     return record
   }
 
-  async restore(record: ReadRecord, signal: AbortSignal): Promise<void> {
+  private async restore(record: ReadRecord): Promise<void> {
     if (!record.reloadCacheKey || record.value !== undefined) return
     try {
-      const raw = sessionStorage.getItem(this.reloadCacheSlot(record))
-      if (!raw) return
-      const entries: unknown = JSON.parse(raw)
-      const saved = Array.isArray(entries)
-        ? entries.find((entry: unknown) => isRecord(entry) && entry.key === record.reloadCacheKey)
-        : undefined
-      if (!isRecord(saved)) return
+      const saved = this.reloadCache()[record.reloadCacheKey]
+      if (saved === undefined) return
       const validate: ((value: unknown) => void) | undefined =
         (await record.reference.loadValidators?.())?.validateOutput ??
         record.reference.validateOutput
       if (
         !validate ||
-        signal.aborted ||
+        !record.observers.size ||
+        record.partition !== this.access(record.policy, record.input, record.context) ||
         record.value !== undefined ||
         record.minRevision ||
         isAccessRefusal(record.error)
       )
         return
-      validate(saved.value)
-      const value = this.entities.normalize(saved.value, null, record.partition, 0)
+      validate(saved)
+      const value = this.entities.normalize(saved, null, record.partition, 0)
       this.setValue(record, value, [value])
       if (record.status === 'pending') record.status = 'success'
     } catch {
@@ -223,19 +221,31 @@ export class Reads {
     }
   }
 
-  private reloadCacheSlot(record: ReadRecord): string {
-    return RELOAD_CACHE_PREFIX + record.reference.owner + ':' + record.reference.id
+  private reloadCache(): Record<string, unknown> {
+    const entries: unknown = JSON.parse(sessionStorage.getItem(RELOAD_CACHE_KEY) ?? '{}')
+    return isRecord(entries) ? entries : {}
+  }
+
+  private saveReloadResult(key: string, value?: unknown): void {
+    try {
+      const cache = this.reloadCache()
+      delete cache[key]
+      if (value !== undefined) cache[key] = value
+      sessionStorage.setItem(
+        RELOAD_CACHE_KEY,
+        JSON.stringify(Object.fromEntries(Object.entries(cache).slice(-RELOAD_CACHE_LIMIT))),
+      )
+    } catch {
+      // Storage is optional.
+    }
   }
 
   clearReloadCache(): void {
     if (!this.reloadCacheIdentity) return
     try {
-      for (let i = sessionStorage.length - 1; i >= 0; i--) {
-        const key = sessionStorage.key(i)
-        if (key?.startsWith(RELOAD_CACHE_PREFIX)) sessionStorage.removeItem(key)
-      }
+      sessionStorage.removeItem(RELOAD_CACHE_KEY)
     } catch {
-      // Storage may be disabled.
+      // Storage is optional.
     }
   }
 
@@ -319,36 +329,14 @@ export class Reads {
       record.status = 'success'
       record.stale = false
       record.updatedAt = Date.now()
-      if (record.reloadCacheKey && record.observers.size) {
-        try {
-          const slot = this.reloadCacheSlot(record)
-          const entries: unknown = JSON.parse(sessionStorage.getItem(slot) ?? '[]')
-          const previous = Array.isArray(entries)
-            ? entries.filter(
-                (entry: unknown) => isRecord(entry) && entry.key !== record.reloadCacheKey,
-              )
-            : []
-          sessionStorage.setItem(
-            slot,
-            JSON.stringify([
-              { key: record.reloadCacheKey, value: outcome.output },
-              ...previous.slice(0, 3),
-            ]),
-          )
-        } catch {
-          // The in-memory result remains available if storage is unavailable.
-        }
-      }
+      if (record.reloadCacheKey && record.observers.size)
+        this.saveReloadResult(record.reloadCacheKey, outcome.output)
       return outcome.output
     } catch (cause) {
       if (!isAbort(cause)) {
         if (record.reloadCacheKey && isAccessRefusal(cause)) {
           this.setValue(record, undefined, [])
-          try {
-            sessionStorage.removeItem(this.reloadCacheSlot(record))
-          } catch {
-            // Storage may be disabled.
-          }
+          this.saveReloadResult(record.reloadCacheKey)
         }
         record.error = asError(cause)
         if (next) record.nextError = record.error
@@ -477,7 +465,8 @@ export class Reads {
     }
   }
 
-  switchPartition(): void {
+  switchPartition(clearSavedResults = true): void {
+    if (clearSavedResults) this.clearReloadCache()
     for (const leave of this.rooms.values()) leave()
     for (const timeout of this.gc.values()) clearTimeout(timeout)
     this.rooms.clear()
@@ -493,7 +482,7 @@ export class Reads {
   }
 
   dispose(): void {
-    this.switchPartition()
+    this.switchPartition(false)
   }
 
   private collect(record: ReadRecord): void {

@@ -8,6 +8,7 @@ import RecentRooms from './RecentRooms.vue'
 const state = vi.hoisted(() => ({
   push: vi.fn(),
   request: vi.fn(),
+  resetIdentity: vi.fn(),
   writeText: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   rooms: new Array<unknown>(),
@@ -43,6 +44,7 @@ vi.mock('@/api', async () => {
     },
     { transport: { request: state.request } },
   )
+  state.resetIdentity.mockImplementation(engine.resetIdentity)
   return { api, useMutation: engine.useMutation, useQuery: engine.useQuery }
 })
 vi.mock('frappe-ui', () => ({
@@ -68,6 +70,7 @@ vi.mock('frappe-ui', () => ({
 
 let cleanup: (() => void) | undefined
 beforeEach(() => {
+  state.resetIdentity()
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date(2026, 10, 19, 15, 0))
   state.push.mockClear()
