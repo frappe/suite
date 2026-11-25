@@ -196,6 +196,14 @@
             </template>
           </MailListToolbar>
 
+          <!-- The gap a pull to refresh opens above the list. -->
+          <PullToRefreshIndicator
+            v-if="isMobile"
+            :offset="pull.offset"
+            :progress="pull.progress"
+            :pulling="pull.pulling"
+            :refreshing="pull.refreshing"
+          />
           <!-- Loading: the list's rows in outline, under the frame the rows will sit under. Each
                state starts with the top of the list (`listTop`), where a phone draws the cards and
                chips, so they sit in the same place whether the list is loading, empty or there. -->
@@ -209,6 +217,7 @@
             v-else-if="threadRows.length"
             ref="mailList"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
+            :style="pull.listStyle"
             @focusin="onListFocusIn"
           >
             <div ref="listTop" />
@@ -310,8 +319,9 @@
 						     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
 						     a group can't disable it. -->
             <div ref="loadMoreSentinel" class="h-px" />
-            <div v-if="loadingMore" class="flex justify-center py-3">
-              <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+            <!-- On a phone, the pull to refresh spinner's size and band (PullToRefreshIndicator). -->
+            <div v-if="loadingMore" class="flex justify-center py-4 sm:py-3">
+              <LoaderCircle class="text-ink-gray-5 size-5 animate-spin sm:size-4" />
             </div>
           </div>
           <div v-else class="flex h-full flex-col">
@@ -460,7 +470,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, h, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -483,6 +493,7 @@ import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.v
 import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
 import PhoneSearchBar from '@/apps/mail/components/mobile/PhoneSearchBar.vue'
 import PhoneSearchRecents from '@/apps/mail/components/mobile/PhoneSearchRecents.vue'
+import PullToRefreshIndicator from '@/apps/mail/components/PullToRefreshIndicator.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
@@ -496,6 +507,7 @@ import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
@@ -693,6 +705,16 @@ const {
   keys: () => threadIDs.value,
   groupKeys: (dateKey) => getGroupThreads(dateKey),
 })
+
+// A pull down from the top of the list, on a phone, refreshes it (see usePullToRefresh). Not while
+// rows are ticked, where the toolbar's refresh steps aside too.
+const pull = reactive(
+  usePullToRefresh({
+    scroller: () => mailListRef.value,
+    enabled: () => isMobile.value && !mobileSelectionMode.value,
+    refresh: () => refreshThreads(),
+  }),
+)
 
 // The folder menus join the phone selection bar's More sheet, each opening as a sheet of its own.
 const folderSelectionOptions = computed(() => [
@@ -1184,10 +1206,8 @@ watch(screener.version, () => refreshThreads(false))
 // Check for new mail without losing the reader's place: refetch the newest window and prepend only the
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
-const refreshThreads = (reloadMailboxes = true) => {
-  refreshList()
-  if (reloadMailboxes) void store.refreshCounts()
-}
+const refreshThreads = (reloadMailboxes = true) =>
+  Promise.all([refreshList(), reloadMailboxes && store.refreshCounts()])
 
 // Ask again for a list that failed to load, settling its drafts like any other read.
 const retryList = () => void refetchThreads()
