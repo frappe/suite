@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick } from 'vue'
+import { createApp, defineComponent, h, nextTick, type SetupContext } from 'vue'
 
 import { requireTestElement } from '@/platform/testing/dom'
 
@@ -35,9 +35,14 @@ vi.mock('@/apps/mail/components/Modals/FolderModal.vue', () => ({
 vi.mock('@/apps/mail/components/Modals/DeleteFolderModal.vue', () => ({
   default: { render: () => null },
 }))
-vi.mock('@/platform/settings/SettingsDialogActions.vue', () => ({
-  default: { render: () => null },
+// The tab's frame, which shows what it holds
+const frame = vi.hoisted(() => ({
+  setup:
+    (_: unknown, { slots }: SetupContext) =>
+    () =>
+      h('div', slots.default?.()),
 }))
+vi.mock('@/platform/settings/SettingsPage.vue', () => ({ default: frame }))
 interface Option {
   label: string
   condition?: () => boolean

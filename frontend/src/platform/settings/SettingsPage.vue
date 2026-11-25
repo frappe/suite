@@ -1,7 +1,7 @@
 <!--
-  A Drive settings tab: frappe-ui's header and body in the Settings dialog, or
-  plain page flow on a phone settings page. The shell provides the string key
-  and the actions target, so Drive needs no shell import.
+  A product's settings tab: frappe-ui's header and body in the Settings dialog,
+  or plain page flow on a phone settings page. The shell provides the string key
+  and the actions target, so a product needs no shell import.
 -->
 <template>
   <template v-if="phonePage">

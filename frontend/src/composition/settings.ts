@@ -1,22 +1,58 @@
-import { loadCalendarSettings } from '@/apps/calendar'
-import { loadDriveSettings } from '@/apps/drive'
-import { loadMailSettings } from '@/apps/mail'
-import { loadAccountSettings } from '@/shell/settings/accountSettings'
-import type { SettingsGroupLoader, SettingsSectionIdsOf } from '@/shell/settings/settings'
+import { calendarSettings } from '@/apps/calendar'
+import { driveSettings } from '@/apps/drive'
+import { mailSettings } from '@/apps/mail'
+import { translate as __ } from '@/platform/translation'
+import { accountSettings } from '@/shell/settings/accountSettings'
+import type { SettingsGroup, SettingsSectionIdsOf } from '@/shell/settings/settings'
 
 /**
- * The one Settings list, in heading order. Each loader imports its group
- * module when Settings opens [T016].
+ * Account, with Mail's own locale and time zone in Preferences, and Storage last: what Drive and Mail each hold against their own quota, in one tab
+ * because a person asks how full they are, not which app is.
+ */
+const [profile, preferences] = accountSettings.tabs
+// The tabs are taken by place: this fails to build if Preferences moves from second
+preferences.id satisfies 'account.preferences'
+const account = {
+  ...accountSettings,
+  tabs: [
+    profile,
+    {
+      ...preferences,
+      body: () => import('@/composition/PreferencesSettings.vue'),
+      sections: [
+        ...preferences.sections,
+        { id: 'mail-locale', label: () => __('Mail locale') },
+        { id: 'mail-time-zone', label: () => __('Mail time zone') },
+      ],
+    },
+    {
+      id: 'account.storage',
+      label: () => __('Storage'),
+      icon: 'lucide-chart-pie',
+      keywords: () => __('quota, space, disk'),
+      body: () => import('@/composition/StorageSettings.vue'),
+      sections: [
+        { id: 'drive', label: () => __('Drive storage') },
+        { id: 'mail', label: () => __('Mail storage') },
+      ],
+    },
+  ],
+} as const
+
+/**
+ * The one Settings list, in heading order. It is part of the app rather than
+ * a download of its own, so Settings shows its rows at once; each tab's page
+ * still loads when it opens.
  *
  * Meet is absent: its settings only mean anything inside a call, so the
  * in-call dialog owns them (`apps/meet/settings`).
  */
 export const settingsGroups = [
-  loadAccountSettings,
-  loadDriveSettings,
-  loadMailSettings,
-  loadCalendarSettings,
-] as const satisfies readonly SettingsGroupLoader[]
+  account,
+  driveSettings,
+  mailSettings,
+  calendarSettings,
+] as const satisfies readonly SettingsGroup[]
 
 type CompositionSectionIds = SettingsSectionIdsOf<(typeof settingsGroups)[number]>
 

@@ -1,5 +1,5 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     v-model:open="show"
     v-bind="{
       title: isNew ? __('New Folder') : __('Folder Settings'),
@@ -16,7 +16,9 @@
     }"
   >
     <template #default>
-      <Tabs v-model="tab" :tabs="TABS">
+      <!-- One height for both tabs, so the dialog doesn't jump as they are switched; a longer
+           Automation tab scrolls inside it. -->
+      <Tabs v-model="tab" :tabs="TABS" class="h-96">
         <!-- Tabs renders a panel per tab and shows the selected one, so the body
 				     keys off the panel's own tab rather than the model. -->
         <template #tab-panel="{ tab: panel }">
@@ -134,7 +136,7 @@
       <!-- Under both tabs, as either one's fields can be what was refused -->
       <ErrorMessage :message="saveError" class="mt-4" />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 
   <SetSieveScriptStateModal
     v-model="showEnableFolderAutomation"
@@ -144,16 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  Alert,
-  Button,
-  Dialog,
-  ErrorMessage,
-  FormControl,
-  SettingsRow,
-  Switch,
-  Tabs,
-} from 'frappe-ui'
+import { Alert, Button, ErrorMessage, FormControl, SettingsRow, Switch, Tabs } from 'frappe-ui'
 import { IconPicker } from 'frappe-ui/experimental'
 import { Settings, Zap } from 'lucide-vue-next'
 import { computed, reactive, ref, watch } from 'vue'
@@ -165,6 +158,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()

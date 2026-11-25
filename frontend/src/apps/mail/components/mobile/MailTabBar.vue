@@ -11,10 +11,15 @@
        (`phoneBarsAway`). -->
   <Teleport :to="overlayLayer ?? 'body'">
     <div
-      ref="bar"
       v-if="!isMobileSelectionActive"
-      :class="{ 'invisible translate-y-full': away }"
-      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col [view-transition-name:mail-tab-bar] transition-[transform,visibility] duration-200 ease-out items-end gap-3 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
+      ref="bar"
+      :class="{
+        'invisible translate-y-full': away,
+        // Held still through a page's slide, but not one into Settings, which covers it: drawn
+        // apart, it would ride over the page sliding in.
+        '[view-transition-name:mail-tab-bar]': !showSettings,
+      }"
+      class="pointer-events-none fixed inset-x-0 bottom-0 z-20 flex flex-col transition-[transform,visibility] duration-200 ease-out items-end gap-3 px-3.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"
     >
       <!-- Not where composing is not the task: search results and the profile page. -->
       <Button
@@ -78,6 +83,7 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import { openAreaSidebar } from '@/platform/area-sidebar'
 import { useSession } from '@/platform/session'
+import { showSettings } from '@/platform/settings'
 
 const route = useRoute()
 const router = useRouter()
@@ -150,6 +156,6 @@ const tabs = computed(() => [
     active: searching.value,
     open: openSearch,
   },
-  { key: 'profile', label: __('Profile'), icon: '', active: onProfile.value, open: openProfile },
+  { key: 'profile', label: __('Settings'), icon: '', active: onProfile.value, open: openProfile },
 ])
 </script>

@@ -265,7 +265,9 @@ describe('a thread opened in an "All accounts" folder whose list is on its way',
     const { element, errors } = await open('/mail/all/inbox/account/acc/t1')
 
     await vi.waitFor(() =>
-      expect(element.querySelector('[role="status"][aria-label="Loading thread"]')).not.toBeNull(),
+      expect(
+        element.querySelector('[role="status"][aria-label="Loading conversation"]'),
+      ).not.toBeNull(),
     )
     // Above it, the thread's toolbar with its buttons in outline: the list has none of its own.
     expect(element.querySelector('[data-outline="thread-actions"]')).not.toBeNull()

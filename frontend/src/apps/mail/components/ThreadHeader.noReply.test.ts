@@ -338,7 +338,7 @@ describe('the toolbar', () => {
     await show(THEIR_LAST_WORD, false)
     expect(names()).not.toContain(null)
     expect(names()).toEqual(
-      expect.arrayContaining(['Back', 'Move To', 'Previous Thread', 'Next Thread']),
+      expect.arrayContaining(['Back', 'Move To', 'Previous Conversation', 'Next Conversation']),
     )
   })
 
@@ -396,7 +396,7 @@ describe('a thread on its way', () => {
     await show([], false)
 
     expect(outline()).not.toBeNull()
-    expect(tooltips()).toEqual(['Previous Thread (↑/K)', 'Next Thread (↓/J)'])
+    expect(tooltips()).toEqual(['Previous Conversation (↑/K)', 'Next Conversation (↓/J)'])
   })
 
   const steps = () => root.querySelector('[data-outline="thread-steps"]')

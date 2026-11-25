@@ -1496,7 +1496,7 @@ const rowArchive = (mail: Thread) => {
       mail,
       mail.archive,
       __('Archiving…'),
-      __('Thread archived'),
+      __('Conversation archived'),
       __('No Archive folder for this account'),
     )
   return handleArchiveThreads([mail.thread_id])
@@ -1508,7 +1508,7 @@ const rowTrash = (mail: Thread) => {
       mail,
       mail.trash,
       __('Moving to Trash…'),
-      __('Thread moved to Trash'),
+      __('Conversation moved to Trash'),
       __('No Trash folder for this account'),
     )
   return handleMoveThreads({ [store.mailboxIds.trash]: [mail.thread_id] })
@@ -1589,10 +1589,7 @@ usePageTitle(() =>
   threadID ? '' : appDocumentTitle(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail'),
 )
 const title = computed(() => {
-  if (selections.value.length)
-    return selections.value.length === 1
-      ? __('1 item selected')
-      : __('{0} items selected', [String(selections.value.length)])
+  if (selections.value.length) return __('{0} selected', [String(selections.value.length)])
   if (mailbox === 'search') return searchResultsLabel.value
   return filterTitle.value
 })

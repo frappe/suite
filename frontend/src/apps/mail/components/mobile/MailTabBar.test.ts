@@ -113,7 +113,7 @@ async function mountAt(path: string) {
 describe("Mail's bottom bar", () => {
   it('holds the folder you are in, Search and your profile, and no other app', async () => {
     const { items } = await mountAt('/mail/account/a/mailbox/receipts')
-    expect(items()).toEqual(['Receipts', 'Search', 'Profile'])
+    expect(items()).toEqual(['Receipts', 'Search', 'Settings'])
   })
 
   it('opens the folders from the folder you are in', async () => {
@@ -155,7 +155,7 @@ describe("Mail's bottom bar", () => {
 
   it("opens Mail's profile page from Profile, and goes back to the Inbox from there", async () => {
     const { item, router } = await mountAt('/mail/account/a/mailbox/inbox')
-    item('Profile').click()
+    item('Settings').click()
     await vi.waitFor(() =>
       expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/profile'),
     )

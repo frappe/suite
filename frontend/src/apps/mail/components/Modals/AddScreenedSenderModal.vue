@@ -1,5 +1,5 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     v-model:open="show"
     v-bind="{
       title: __('Screen a sender'),
@@ -34,11 +34,11 @@
         />
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
-import { Dialog, FormControl } from 'frappe-ui'
+import { FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
@@ -46,6 +46,7 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { ScreenedAddress, ScreeningAction } from '@/apps/mail/types'
 import { isEmailOrDomain, raiseToast } from '@/apps/mail/utils'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()

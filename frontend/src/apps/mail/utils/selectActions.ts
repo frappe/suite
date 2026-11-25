@@ -192,7 +192,7 @@ export const selectActions = (
     },
     {
       group: 'act',
-      label: __('Delete Threads (Shift+Delete)'),
+      label: __('Delete Conversations (Shift+Delete)'),
       shortLabel: __('Delete'),
       onClick: run.delete,
       icon: Trash2,
