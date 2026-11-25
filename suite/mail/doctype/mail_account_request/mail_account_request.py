@@ -530,7 +530,6 @@ def create_user(
     user.last_name = last_name
     user.username = email
     user.email = email
-    user.owner = email
     user.send_welcome_email = 0
     if roles:
         user.append_roles(*roles)
