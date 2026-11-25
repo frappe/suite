@@ -605,11 +605,22 @@ const srcdoc = computed(() => {
 				};
 				// Collapsed, the message is not laid out and has no height: the frame keeps the one
 				// it had, and hears again when the message is opened.
+				// Zoomed, the message is as tall as it is at its own size, times the zoom. Measuring that
+				// can walk every element, so it is measured once and kept for as long as the message
+				// stays as it is, not at each step of a pinch.
+				let natural;
+				const measureNatural = unscaled(() => {
+					natural = messageHeight();
+				});
+				const scaledHeight = () => Math.ceil(natural * scale);
 				let reported;
-				const reportHeight = () => {
+				// The frame resizes at each step of a zoom, to the height posted for it: what is drawn
+				// below the root's box can only have moved when the message is at its own size.
+				const reportHeight = (remeasure = true) => {
 					// Not clientWidth: a hidden frame keeps its window's width, but its root has no box.
 					if (!root.getBoundingClientRect().width) return;
-					const height = messageHeight();
+					if (remeasure || natural === undefined) measureNatural();
+					const height = scaledHeight();
 					if (height === reported) return;
 					reported = height;
 					window.parent.postMessage({ type: 'height', height }, '*');
@@ -617,12 +628,13 @@ const srcdoc = computed(() => {
 				// Whatever changes the root's box is seen here: an image or a font arriving, the
 				// quoted trail opening, the pane changing width. What is drawn below the box can
 				// change without it, when an image there arrives or the frame is resized.
-				new ResizeObserver(reportHeight).observe(root);
-				window.addEventListener('resize', reportHeight);
-				window.addEventListener('load', reportHeight);
+				const remeasureHeight = () => reportHeight();
+				new ResizeObserver(remeasureHeight).observe(root);
+				window.addEventListener('resize', () => reportHeight(scale === 1));
+				window.addEventListener('load', remeasureHeight);
 				document.querySelectorAll('img').forEach((img) => {
-					img.addEventListener('load', reportHeight);
-					img.addEventListener('error', reportHeight);
+					img.addEventListener('load', remeasureHeight);
+					img.addEventListener('error', remeasureHeight);
 				});
 
 				// Forward keyboard events to parent
@@ -796,7 +808,8 @@ const srcdoc = computed(() => {
 					applyScale();
 					const ratio = scale / before;
 					window.scrollTo(pageX * ratio - x - panX, window.scrollY);
-					const height = messageHeight();
+					if (natural === undefined) measureNatural();
+					const height = scaledHeight();
 					reported = height;
 					window.parent.postMessage({ type: 'zoom', height, shift: pageY * ratio - pageY - panY }, '*');
 					return ratio;
