@@ -1,4 +1,4 @@
-import { shallowRef } from 'vue'
+import { effectScope, shallowRef } from 'vue'
 
 import { api, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
@@ -7,9 +7,10 @@ import { locationLabel } from '../../internal/locations'
 
 // Held for the session: the group condition and the External access body
 // read the same answer. Made the first time Settings opens, not as the app
-// starts, since this list is part of the app.
+// starts, since this list is part of the app. In a scope of its own, so it outlives the page
+// that first opened Settings.
 const webdavAnswer = shallowRef<ReturnType<typeof askWebdav>>()
-const askWebdav = () => useQuery(api.drive.webdav.get, {})
+const askWebdav = () => effectScope(true).run(() => useQuery(api.drive.webdav.get, {}))!
 
 export const driveSettings = {
   label: () => __('Drive'),

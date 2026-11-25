@@ -128,8 +128,10 @@ function openTab(tab: SettingsTab) {
 
 function openPending() {
   const tab = findTab(pendingTab)
+  // One not shown yet, as its condition waits on the server, is opened once it shows
+  if (!tab) return
   pendingTab = undefined
-  if (tab) openTab(tab)
+  openTab(tab)
 }
 
 function back() {

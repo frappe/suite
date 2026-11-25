@@ -62,7 +62,7 @@ const setDragChip = (e: DragEvent, count: number) => {
 
   // Names the act, not just the cargo: the chip appears the moment the drag starts,
   // before any folder is chosen, and "Moving" is what tells you the drop will move
-  // rather than copy. "Thread" is the word the toast that follows uses.
+  // rather than copy. "Conversation" is the word the toast that follows uses.
   const label = document.createElement('span')
   label.textContent =
     count === 1 ? __('Moving 1 conversation') : __('Moving {0} conversations', [String(count)])

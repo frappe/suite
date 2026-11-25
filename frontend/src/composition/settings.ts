@@ -10,6 +10,8 @@ import type { SettingsGroup, SettingsSectionIdsOf } from '@/shell/settings/setti
  * because a person asks how full they are, not which app is.
  */
 const [profile, preferences] = accountSettings.tabs
+// The tabs are taken by place: this fails to build if Preferences moves from second
+preferences.id satisfies 'account.preferences'
 const account = {
   ...accountSettings,
   tabs: [
@@ -28,8 +30,6 @@ const account = {
       label: () => __('Storage'),
       icon: 'lucide-chart-pie',
       keywords: () => __('quota, space, disk'),
-      // A phone shows Mail's storage on its Settings page, outside the list.
-      onPhone: false,
       body: () => import('@/composition/StorageSettings.vue'),
       sections: [
         { id: 'drive', label: () => __('Drive storage') },

@@ -96,6 +96,8 @@ export function settingsPageShown(): void {
 export function openSettingsPage<Tab extends SettingsTabId>(tab: Tab): Promise<void> {
   return slideChange('forward', async () => {
     const shown = new Promise<void>((done) => {
+      // An earlier opening still waiting goes on without its page
+      pageShown?.()
       pageShown = done
       // A page that never says so (a tab that failed to load) goes without waiting.
       setTimeout(done, 400)

@@ -103,7 +103,7 @@
 			     only the account's tabs and this app's. A row opens its tab in Settings. -->
       <SettingsList
         :groups="ownGroups"
-        :exclude="['account.profile']"
+        :exclude="excluded"
         flat
         @open="(tab) => openSettingsPage(tab.id as SettingsTabId)"
       />
@@ -160,7 +160,7 @@
 <script setup lang="ts">
 import { Avatar, BottomSheet, Switch } from 'frappe-ui'
 import { ArrowLeftRight, Bell, Check, ChevronRight, LogOut } from 'lucide-vue-next'
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, onMounted, ref, useSlots } from 'vue'
 
 // The two shells are mail's: a settings card and its rows. They carry no mail in them.
 import MobileSettingsCard from '@/apps/mail/components/mobile/MobileSettingsCard.vue'
@@ -210,6 +210,13 @@ const orderedAccounts = computed(() =>
 )
 
 // A group's tabs share its app's prefix (`mail.inbox`, `account.profile`)
+// The identity card stands for Profile; an app that shows its own storage on the page (Mail) leaves
+// out the Storage tab that would say it again.
+const slots = useSlots()
+const excluded = computed(() =>
+  slots.account ? ['account.profile', 'account.storage'] : ['account.profile'],
+)
+
 const ownGroups = computed(() => {
   const groups = settings.groups.value
   if (!props.app) return groups
