@@ -101,7 +101,7 @@
 					autocomplete="username"
 					tabindex="-1"
 					aria-hidden="true"
-					:value="userId || ''"
+					:value="user.doc?.email || ''"
 					readonly
 					class="pointer-events-none absolute h-0 w-0 opacity-0"
 				/>
