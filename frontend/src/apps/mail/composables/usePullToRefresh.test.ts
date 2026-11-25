@@ -60,7 +60,7 @@ describe('usePullToRefresh', () => {
     const pull = await pullDown(never)
     expect(pull.refreshing.value).toBe(true)
 
-    await vi.advanceTimersByTimeAsync(15_000)
+    await vi.advanceTimersByTimeAsync(20_000)
 
     expect(pull.refreshing.value).toBe(false)
     expect(pull.offset.value).toBe(0)

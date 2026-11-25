@@ -10,7 +10,7 @@ const MIN_SPIN = 500
 // Nothing answered by now, the spinner goes and the list comes back up: a request that never
 // answers (one a phone left hanging when it put the app away) must not hold the list down for good.
 // What is still out lands on the list when it answers.
-const MAX_SPIN = 10_000
+const MAX_SPIN = 15_000
 // The list is read again once the mail server's changes are in, or after this, whichever is first:
 // the ask for them waits behind every write still out, and may be one already out that hangs.
 const MAX_SYNC_WAIT = 5_000
