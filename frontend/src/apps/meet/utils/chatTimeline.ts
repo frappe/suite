@@ -1,12 +1,5 @@
+import type { ChatMessage } from '../composables/useChatStore'
 import type { PollPayloadFE } from '../types'
-
-interface TimelineMessage {
-  id: string | number
-  user_id: string
-  user_name: string
-  message: string
-  timestamp: string
-}
 
 interface MessageGroup {
   id: string | number
@@ -14,7 +7,7 @@ interface MessageGroup {
   user_name: string
   timestamp: string
   isOwn: boolean
-  messages: TimelineMessage[]
+  messages: ChatMessage[]
 }
 
 type ChatItem =
@@ -33,12 +26,12 @@ type ChatItem =
 
 type TimelineEntry =
   | { type: 'poll'; timestamp: string; poll: PollPayloadFE }
-  | { type: 'message'; timestamp: string; message: TimelineMessage }
+  | { type: 'message'; timestamp: string; message: ChatMessage }
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000
 
 export function buildChatTimeline(
-  messages: TimelineMessage[],
+  messages: ChatMessage[],
   polls: PollPayloadFE[],
   currentUserId?: string,
 ): ChatItem[] {

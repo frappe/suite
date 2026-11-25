@@ -12,6 +12,12 @@ const EMOJIS: EmojiSuggestion[] = gemoji.flatMap((entry) =>
   entry.names.map((name) => ({ name, emoji: entry.emoji })),
 )
 
+const EMOJI_LABELS = new Map(gemoji.map(({ emoji, description }) => [emoji, description]))
+
+export function emojiLabel(emoji: string): string {
+  return EMOJI_LABELS.get(emoji) ?? emoji
+}
+
 const RECENT_STORAGE_KEY = 'meet-chat-recent-emojis'
 const RECENT_LIMIT = 5
 

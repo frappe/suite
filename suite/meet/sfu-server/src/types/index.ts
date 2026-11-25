@@ -1,4 +1,9 @@
 import type {
+	ChatReactionRequest,
+	ChatReactionsUpdated,
+	ChatSnapshot,
+} from '../../../types/chatReactions';
+import type {
 	AppData,
 	AudioLevelObserver,
 	Consumer,
@@ -130,7 +135,10 @@ export interface ServerToClientEvents {
 	host_control_update: (data: HostControlUpdateEvent) => void;
 	screen_share_started: (data: ScreenShareStartedEvent) => void;
 	screen_share_stopped: (data: ScreenShareStoppedEvent) => void;
+	'chat:snapshot': (data: ChatSnapshot) => void;
+	'chat:message_evicted': (data: { messageId: string }) => void;
 	'chat:message': (data: ChatMessage) => void;
+	'chat:reactions_updated': (data: ChatReactionsUpdated) => void;
 	'chat:restriction_updated': (data: { enabled: boolean }) => void;
 	'chat:pin_updated': (data: { pinned: PinnedChatMessage | null }) => void;
 	existing_pinned_message: (data: { pinned: PinnedChatMessage | null }) => void;
@@ -261,6 +269,10 @@ export interface ClientToServerEvents {
 		callback?: (
 			response: SFUResponse & { timestamp?: string; messageId?: string },
 		) => void,
+	) => void;
+	'chat:react': (
+		data: ChatReactionRequest,
+		callback?: (response: SFUResponse) => void,
 	) => void;
 	'chat:toggle_restriction': (data: { enabled: boolean }) => void;
 	'chat:pin': (

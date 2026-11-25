@@ -1,10 +1,12 @@
+import { webcrypto } from 'node:crypto'
 import { fromPartial } from '@total-typescript/shoehorn'
 import { toast } from 'frappe-ui'
+import { createPinia } from 'pinia'
 import { describe, expect, it, vi } from 'vitest'
 
 import { E2EEMeeting } from '../../utils/media/E2EEMeeting'
 import { useChat } from '../useChat'
-import type { ChatMessage, ChatStore } from '../useChatStore'
+import { useChatStore, type ChatMessage, type ChatStore } from '../useChatStore'
 
 vi.mock('frappe-ui', () => ({
   toast: { error: vi.fn() },
@@ -45,10 +47,14 @@ function makeSFUClient(
     on: vi.fn((event: string, handler: (data: unknown) => void) => {
       handlers.set(event, handler)
     }),
+    off: vi.fn((event: string, handler: (data: unknown) => void) => {
+      if (handlers.get(event) === handler) handlers.delete(event)
+    }),
     isConnected: vi.fn(() => true),
     isE2EERequired: vi.fn(() => true),
     sendChatMessage: vi.fn(),
     sendChatPin: vi.fn(),
+    emitSnapshot: (data: unknown) => handlers.get('chat:snapshot')?.(data),
     emitChatMessage: (data: unknown) => handlers.get('chat:message')?.(data),
     emitPinUpdated: (data: unknown) => handlers.get('chat:pin_updated')?.(data),
     emitExistingPinned: (data: unknown) => handlers.get('existing_pinned_message')?.(data),
@@ -66,7 +72,208 @@ const currentUser = {
   },
 }
 
+async function cipher(key: CryptoKey, text: string) {
+  const iv = webcrypto.getRandomValues(new Uint8Array(12))
+  const encrypted = await webcrypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(text),
+  )
+  return 'e2ee:' + Buffer.concat([iv, Buffer.from(encrypted)]).toString('base64')
+}
+
+describe('useChat reconnect', () => {
+  it('restores missed chat and replaces stale reaction counts without notifying or duplicating messages', async () => {
+    E2EEMeeting.instance = new E2EEMeeting()
+    const chatStore = useChatStore(createPinia())
+    const sfuClient = makeSFUClient({ isE2EERequired: () => false })
+    const notify = vi.fn()
+    useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    }).setupChatEvents(notify)
+
+    const original = { messageId: 'm1', message: 'Original', fromUser: 'bob', fromName: 'Bob' }
+    chatStore.addMessage({
+      id: 1,
+      messageId: 'm1',
+      message: 'Original',
+      user_id: 'bob',
+      user_name: 'Bob',
+      timestamp: '2026-11-24T12:00:00Z',
+    })
+    chatStore.setReactions({ messageId: 'm1', reactions: [{ emoji: '👍', userIds: ['alice'] }] })
+    sfuClient.emitSnapshot({
+      messages: [
+        original,
+        {
+          messageId: 'm2',
+          message: 'Reply while you were away',
+          fromUser: 'bob',
+          fromName: 'Bob',
+          replyTo: original,
+        },
+      ],
+      reactions: [{ messageId: 'm2', reactions: [{ emoji: '❤️', userIds: ['bob'] }] }],
+      pinnedId: null,
+      pinnedRetained: false,
+      hostOnlyChat: true,
+    })
+
+    await vi.waitFor(() =>
+      expect(chatStore.chatMessages.map(({ messageId }) => messageId)).toEqual(['m1', 'm2']),
+    )
+    expect(chatStore.chatMessages[1]?.replyTo?.message).toBe('Original')
+    expect(chatStore.reactionsByMessage).toEqual({ m2: [{ emoji: '❤️', userIds: ['bob'] }] })
+    expect(chatStore.hostOnlyChat).toBe(true)
+    expect(notify).not.toHaveBeenCalled()
+  })
+
+  it('restores only readable encrypted history and retries when the meeting key becomes available', async () => {
+    const oldKey = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ])
+    const currentKey = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ])
+
+    const oldMessage = await cipher(oldKey, 'Older private message')
+    const newMessage = await cipher(currentKey, 'Readable reply')
+    E2EEMeeting.instance = new E2EEMeeting()
+    let key: CryptoKey | null = null
+    vi.spyOn(E2EEMeeting.instance, 'getE2EEChatKey').mockImplementation(async () => key)
+    const chatStore = useChatStore(createPinia())
+    const sfuClient = makeSFUClient()
+    const dispose = useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    }).setupChatEvents(vi.fn())
+
+    vi.stubGlobal('crypto', webcrypto)
+    try {
+      sfuClient.emitChatMessage({ messageId: 'm2', fromUser: 'bob', message: newMessage })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(chatStore.chatMessages).toEqual([])
+      sfuClient.emitSnapshot({
+        messages: [
+          { messageId: 'm1', fromUser: 'bob', message: oldMessage },
+          {
+            messageId: 'm2',
+            fromUser: 'bob',
+            message: newMessage,
+            replyTo: { messageId: 'm1', fromName: 'Bob', message: oldMessage },
+          },
+        ],
+        reactions: [],
+      })
+      key = currentKey
+      document.dispatchEvent(new Event('meet:e2ee-context-ready'))
+      await vi.waitFor(() =>
+        expect(chatStore.chatMessages.map(({ message }) => message)).toEqual(['Readable reply']),
+      )
+      expect(chatStore.hasUnavailableEncryptedHistory).toBe(true)
+      expect(chatStore.chatMessages[0]?.replyTo?.message).toBe(
+        'Earlier encrypted message unavailable',
+      )
+    } finally {
+      dispose()
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('discards pending history when the meeting is disposed', async () => {
+    const key = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ])
+    const encrypted = await cipher(key, 'Previous meeting')
+    const deferred = Promise.withResolvers<CryptoKey | null>()
+    E2EEMeeting.instance = new E2EEMeeting()
+    vi.spyOn(E2EEMeeting.instance, 'getE2EEChatKey').mockReturnValue(deferred.promise)
+    const chatStore = useChatStore(createPinia())
+    const sfuClient = makeSFUClient()
+    const dispose = useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    }).setupChatEvents(vi.fn())
+
+    vi.stubGlobal('crypto', webcrypto)
+    try {
+      sfuClient.emitSnapshot({
+        messages: [{ messageId: 'old', fromUser: 'bob', message: encrypted }],
+        reactions: [],
+      })
+      dispose()
+      chatStore.$reset()
+      deferred.resolve(key)
+      document.dispatchEvent(new Event('meet:e2ee-context-ready'))
+      sfuClient.emitSnapshot({
+        messages: [{ messageId: 'old', fromUser: 'bob', message: encrypted }],
+        reactions: [],
+      })
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      expect(chatStore.chatMessages).toEqual([])
+      expect(chatStore.hasUnavailableEncryptedHistory).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+})
+
 describe('useChat E2EE gating', () => {
+  it('uses a readable local original for a live quote after rotation', async () => {
+    const oldKey = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ])
+    const currentKey = await webcrypto.subtle.generateKey({ name: 'AES-GCM', length: 256 }, false, [
+      'encrypt',
+      'decrypt',
+    ])
+    const oldMessage = await cipher(oldKey, 'Before rotation')
+    const reply = await cipher(currentKey, 'After rotation')
+    E2EEMeeting.instance = new E2EEMeeting()
+    let key = oldKey
+    vi.spyOn(E2EEMeeting.instance, 'getE2EEChatKey').mockImplementation(async () => key)
+    const chatStore = useChatStore(createPinia())
+    const sfuClient = makeSFUClient()
+    const dispose = useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    }).setupChatEvents(vi.fn())
+
+    vi.stubGlobal('crypto', webcrypto)
+    try {
+      sfuClient.emitChatMessage({ messageId: 'old', fromUser: 'bob', message: oldMessage })
+      await vi.waitFor(() => expect(chatStore.chatMessages[0]?.message).toBe('Before rotation'))
+
+      key = currentKey
+      sfuClient.emitChatMessage({
+        messageId: 'new',
+        fromUser: 'bob',
+        message: reply,
+        replyTo: { messageId: 'old', fromName: 'Bob', message: oldMessage },
+      })
+
+      await vi.waitFor(() =>
+        expect(chatStore.chatMessages[1]).toMatchObject({
+          message: 'After rotation',
+          replyTo: { messageId: 'old', message: 'Before rotation' },
+        }),
+      )
+    } finally {
+      dispose()
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('does not send plaintext chat while E2EE is required but not ready', async () => {
     E2EEMeeting.instance = new E2EEMeeting()
     const chatStore = makeChatStore()
@@ -102,6 +309,33 @@ describe('useChat E2EE gating', () => {
     await Promise.resolve()
 
     expect(chatStore.chatMessages.at(-1)?.message).toBe('[Unencrypted message blocked]')
+  })
+
+  it('applies the encrypted-room plaintext gate to quoted content', async () => {
+    E2EEMeeting.instance = new E2EEMeeting()
+    const chatStore = makeChatStore()
+    const sfuClient = makeSFUClient()
+    const chat = useChat({
+      chatStore,
+      currentUser: fromPartial(currentUser),
+      sfuClient: fromPartial(sfuClient),
+    })
+    chat.setupChatEvents(vi.fn())
+
+    sfuClient.emitChatMessage({
+      fromUser: 'bob@example.com',
+      fromName: 'Bob',
+      message: 'Reply',
+      replyTo: { messageId: 'original-1', fromName: 'Alice', message: 'Unencrypted quote' },
+    })
+
+    await vi.waitFor(() => {
+      expect(chatStore.chatMessages.at(-1)?.replyTo).toEqual({
+        messageId: 'original-1',
+        fromName: 'Alice',
+        message: '[Unencrypted message blocked]',
+      })
+    })
   })
 
   it('notifies for inbound messages while chat is closed', async () => {
