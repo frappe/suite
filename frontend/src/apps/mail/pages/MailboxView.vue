@@ -712,6 +712,7 @@ const pull = reactive(
     scroller: () => mailListRef.value,
     enabled: () => isMobile.value && !mobileSelectionMode.value,
     refresh: () => refreshThreads(),
+    screen: () => route.fullPath,
   }),
 )
 
