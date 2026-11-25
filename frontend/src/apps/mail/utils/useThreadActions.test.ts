@@ -202,7 +202,7 @@ it('discarding a reply draft from the list holds only the draft, not the mail it
   expect(mocks.holdDraft.mock.calls.map(([id]) => id)).toEqual(['reply'])
 })
 
-const archiveFrom = (mailbox: string) => {
+const archiveFrom = (mailbox: string, restoreThreadsToList = vi.fn()) => {
   const message = { id: 'm1', name: 'm1', draft: 0, junk: 0, mailboxes: [{ mailbox_id: mailbox }] }
   const conversation = { ...message, thread_id: 't1', messages: [message] }
   return scope.run(() =>
@@ -215,7 +215,7 @@ const archiveFrom = (mailbox: string) => {
       resetThreads: vi.fn(),
       syncAfterAction: vi.fn(),
       removeThreadsFromList: () => [fromPartial<Thread>(conversation)],
-      restoreThreadsToList: vi.fn(),
+      restoreThreadsToList,
       refillIfEmpty: vi.fn(),
       goToMailbox: vi.fn(),
       goToNextThreadOrMailbox: vi.fn(),
@@ -250,6 +250,67 @@ it('waits for the answer to say an archive from a list the row stays on', async 
   await vi.waitFor(() =>
     expect(mocks.toast.success).toHaveBeenCalledWith('Added to Archive', expect.anything()),
   )
+})
+
+it('puts an archived row back on Undo at once, and takes the archive back only once it lands', async () => {
+  let land: ((response: Response) => void) | undefined
+  fetcher.mockReturnValueOnce(
+    new Promise((resolve) => {
+      land = resolve
+    }),
+  )
+  fetcher.mockResolvedValue(new Response(JSON.stringify({ message: null })))
+  const restoreThreadsToList = vi.fn()
+  archiveFrom('inbox', restoreThreadsToList).handleArchiveThreads(['t1'])
+  await vi.waitFor(() => expect(land).toBeDefined())
+
+  mocks.setUndoAction.mock.calls.findLast(([action]) => action)![0]()
+  // Back on the click, held until the undo lands; the archive is still on its way.
+  expect(restoreThreadsToList).toHaveBeenCalledOnce()
+  expect(restoreThreadsToList.mock.calls[0][0]).toMatchObject([{ thread_id: 't1' }])
+  expect(restoreThreadsToList.mock.calls[0][1]).toBeInstanceOf(Promise)
+  await new Promise((resolve) => setTimeout(resolve))
+  expect(fetcher).toHaveBeenCalledOnce()
+
+  land?.(answer({ updated: ['m1'], left_inbox: true }))
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+  expect(JSON.parse(String(fetcher.mock.calls[1][1]?.body))).toMatchObject({
+    mails: [{ id: 'm1', mailbox_ids: ['inbox'], junk: 0 }],
+  })
+  expect(restoreThreadsToList).toHaveBeenCalledOnce()
+})
+
+it('moves the mail of a row that has already left the list', async () => {
+  const message = { id: 'm1', name: 'm1', draft: 0, junk: 0, mailboxes: [{ mailbox_id: 'inbox' }] }
+  const conversation = fromPartial<Thread>({ ...message, thread_id: 't1', messages: [message] })
+  const rows = ref([conversation])
+  fetcher.mockResolvedValue(answer({ updated: ['m1'], left_inbox: true }))
+  const actions = scope.run(() =>
+    useThreadActions({
+      rows: computed(() => rows.value),
+      mailbox: computed(() => 'inbox'),
+      threadID: computed(() => undefined),
+      selections: ref([]),
+      mailThreadRef: ref(null),
+      resetThreads: vi.fn(),
+      syncAfterAction: vi.fn(),
+      removeThreadsFromList: () => {
+        rows.value = []
+        return [conversation]
+      },
+      restoreThreadsToList: vi.fn(),
+      refillIfEmpty: vi.fn(),
+      goToMailbox: vi.fn(),
+      goToNextThreadOrMailbox: vi.fn(),
+    }),
+  )!
+
+  actions.handleMoveThreads({ trash: ['t1'] })
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalled())
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+    ids: ['m1'],
+    mailbox: 'trash',
+  })
 })
 
 describe('the confirmation for deleting conversations forever', () => {

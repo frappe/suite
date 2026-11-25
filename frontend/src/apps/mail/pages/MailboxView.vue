@@ -505,6 +505,7 @@ import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
+import { useRestoredRows } from '@/apps/mail/composables/useRestoredRows'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
@@ -1130,14 +1131,22 @@ const keptRead = useKeptRead({
   scope: () => [mailbox, accountId, filter.value, inboxTab.value],
   key: (thread) => thread.thread_id,
 })
+// Put back by an Undo before its inverse is sent, the server listing them again only after it.
+const restoredRows = useRestoredRows({
+  key: (thread) => thread.thread_id,
+  scope: () => [mailbox, accountId, filter.value, inboxTab.value],
+  reread: () => refreshList(),
+})
 const threadRows = computed(() =>
-  keptRead.withKept(
-    activeThreads.value.rows
-      // On the page only so that paging by row count holds (see get_threads).
-      .filter((row) => !('reaction_only' in row && row.reaction_only))
-      .map((row) => threadRow(row, store.accountId))
-      .filter((row) => !isDiscarding(row, { inDrafts: mailbox === store.mailboxIds.drafts }))
-      .map(withoutHeldDrafts),
+  restoredRows.withRestored(
+    keptRead.withKept(
+      activeThreads.value.rows
+        // On the page only so that paging by row count holds (see get_threads).
+        .filter((row) => !('reaction_only' in row && row.reaction_only))
+        .map((row) => threadRow(row, store.accountId))
+        .filter((row) => !isDiscarding(row, { inDrafts: mailbox === store.mailboxIds.drafts }))
+        .map(withoutHeldDrafts),
+    ),
   ),
 )
 watch(threadRows, keptRead.keep)
@@ -1233,21 +1242,24 @@ const syncAfterAction = () => {
 const removedFrom = new WeakMap<Thread, number>()
 const removeThreadsFromList = (ids: string[]): Thread[] => {
   // Taken before letting go of them, while the rows read here are still on the list.
-  const removed = threadRows.value.filter((row) => ids.includes(row.thread_id))
+  const list = threadRows.value
+  const removed = list.filter((row) => ids.includes(row.thread_id))
   const at = keptRead.current()
   removed.forEach((row) => removedFrom.set(row, at))
   keptRead.release(ids)
+  restoredRows.leaving(removed, list)
   return removed
 }
 const refillIfEmpty = () => {
   refillPending.value = false
 }
-const restoreThreadsToList = (rows: Thread[]) => {
+const restoreThreadsToList = (rows: Thread[], inverted?: Promise<unknown>) => {
   for (const row of rows) {
     const at = removedFrom.get(row)
     if (at !== undefined) keptRead.restore([row], at)
   }
-  void refetchThreads()
+  if (inverted) restoredRows.hold(rows, inverted)
+  else void refetchThreads()
 }
 watch(
   () => [mailbox, accountId],
