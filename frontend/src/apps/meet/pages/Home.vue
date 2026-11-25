@@ -1,7 +1,7 @@
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base">
     <PageHeader>
-      <PageHeaderTitle :title="__('Meet')" />
+      <PageHeaderTitle class="md:-ms-1" :title="__('Meet')" />
     </PageHeader>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
