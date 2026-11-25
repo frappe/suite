@@ -13,51 +13,46 @@
           {{ refusal }}
         </p>
         <EmojiGrid v-else-if="picker" class="!w-full" :picker :auto-focus="false" @select="pick" />
-        <!-- Square cells, so the rows sit as far apart as the columns at any width. A whole cell
-             takes the tap; the circle in it shows the press and a reaction of yours. -->
-        <div v-else class="grid grid-cols-5">
+        <!-- Its first emoji starts where the full list's first one does -->
+        <div v-else class="grid grid-cols-[repeat(5,3.5rem)] justify-between gap-y-4">
           <button
             v-for="emoji in PHONE_REACTIONS"
             :key="emoji"
             type="button"
-            class="group flex aspect-square items-center justify-center text-2xl"
+            class="active:bg-surface-gray-3 flex size-14 items-center justify-center rounded-full text-4xl transition active:scale-95"
+            :class="{ 'bg-surface-gray-2': mine.has(emojiKey(emoji)) }"
             :aria-pressed="mine.has(emojiKey(emoji))"
             @click="pick(emoji)"
           >
-            <span
-              class="group-active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition group-active:scale-95"
-              :class="{ 'bg-surface-gray-2': mine.has(emojiKey(emoji)) }"
-            >
-              {{ emoji }}
-            </span>
+            {{ emoji }}
           </button>
           <button
             type="button"
             :aria-label="__('More reactions')"
-            class="group text-ink-gray-6 flex aspect-square items-center justify-center"
+            class="text-ink-gray-6 active:bg-surface-gray-3 flex size-14 items-center justify-center rounded-full transition active:scale-95"
             @click="showEvery"
           >
-            <span
-              class="group-active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition group-active:scale-95"
-            >
-              <Plus class="size-6" />
-            </span>
+            <Plus class="size-6" />
           </button>
         </div>
       </template>
-      <!-- On the grid's columns: the emoji under the first, the count under the last -->
+      <!-- Each row's emoji and count sit under the grid's first and last columns -->
       <ul
         v-if="groups.length && !picker"
         class="space-y-3"
-        :class="{ 'mt-2 border-t pt-4': !readonly }"
+        :class="{ 'mt-4 border-t pt-4': !readonly }"
       >
-        <li v-for="group in groups" :key="group.emoji" class="grid grid-cols-5 items-baseline">
-          <span class="text-center text-xl" aria-hidden="true">{{ group.emoji }}</span>
-          <p class="text-p-base text-ink-gray-8 col-span-3 min-w-0">
+        <li v-for="group in groups" :key="group.emoji" class="flex items-baseline">
+          <span class="w-14 shrink-0 text-center text-xl" aria-hidden="true">
+            {{ group.emoji }}
+          </span>
+          <p class="text-p-base text-ink-gray-8 min-w-0 flex-1">
             <span class="sr-only">{{ group.emoji }}</span>
             {{ group.who }}
           </p>
-          <span class="text-ink-gray-5 text-center text-base">{{ group.count }}</span>
+          <span class="text-ink-gray-5 w-14 shrink-0 text-center text-base">
+            {{ group.count }}
+          </span>
         </li>
       </ul>
     </div>
@@ -84,11 +79,8 @@ const { groups, readonly, refusal } = defineProps<{
 }>()
 const emit = defineEmits<{ pick: [emoji: string] }>()
 
-// Four rows of five, the last cell More
-const PHONE_REACTIONS = [
-  ...QUICK_REACTIONS,
-  ...['👎', '🔥', '🎉', '👏', '😍', '🤔', '😊', '💯', '✅', '👀', '🙌', '😅', '🚀'],
-]
+// Two rows of five, the last cell More
+const PHONE_REACTIONS = [...QUICK_REACTIONS, '🎉', '🔥', '👏']
 
 const mine = computed(() => new Set(groups.filter((g) => g.mine).map((g) => emojiKey(g.emoji))))
 
