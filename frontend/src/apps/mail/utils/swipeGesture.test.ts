@@ -2,103 +2,77 @@ import { describe, expect, it } from 'vitest'
 
 import { createSwipeGesture } from './swipeGesture'
 
+// A phone's width: a drag commits past 30% of it, 120px.
+const WIDTH = 400
+
 describe('createSwipeGesture', () => {
-  it('pages on a decisively horizontal swipe', () => {
+  it('drags the page with the finger once it has gone sideways', () => {
     const gesture = createSwipeGesture()
+    gesture.start(300, 400, 0)
 
-    gesture.start(280, 400)
-    gesture.move(220, 404)
-    gesture.move(160, 408)
-
-    expect(gesture.end(150, 410)).toBe(1)
+    expect(gesture.move(296, 401, 10)).toEqual({ phase: 'pending', dx: 0 })
+    expect(gesture.move(260, 402, 50)).toEqual({ phase: 'drag', dx: -40 })
   })
 
-  it('pages the other way on a swipe to the right', () => {
+  it('goes on to the next thread when let go past a third of the way, slowly', () => {
     const gesture = createSwipeGesture()
+    gesture.start(300, 400, 0)
+    gesture.move(250, 402, 100)
+    gesture.move(150, 404, 400)
 
-    gesture.start(100, 400)
-    gesture.move(180, 402)
-
-    expect(gesture.end(200, 404)).toBe(-1)
+    expect(gesture.end(150, 600, WIDTH)).toBe(1)
   })
 
-  // The reported bug: scrolling a message paged to the next thread. A scroll wanders
-  // back towards the height it began at, so the two endpoints alone say "100px
-  // sideways, no vertical drift" — a swipe, by the old rule.
-  it('ignores a scroll that ends back at the height it began', () => {
+  it('settles back when let go short of that, slowly', () => {
     const gesture = createSwipeGesture()
+    gesture.start(300, 400, 0)
+    gesture.move(260, 401, 200)
 
-    gesture.start(200, 400)
-    gesture.move(210, 250)
-    gesture.move(240, 330)
-    gesture.move(262, 396)
-
-    expect(gesture.end(300, 400)).toBeNull()
+    expect(gesture.end(260, 500, WIDTH)).toBeNull()
   })
 
-  it('holds the scroll verdict even when the finger then travels sideways', () => {
+  it('goes on to the previous thread on a short fast fling to the right', () => {
     const gesture = createSwipeGesture()
+    gesture.start(100, 400, 0)
+    gesture.move(120, 401, 20)
+    gesture.move(140, 401, 40)
 
-    gesture.start(300, 400)
-    gesture.move(300, 300)
-    gesture.move(120, 300)
-
-    expect(gesture.end(100, 300)).toBeNull()
+    expect(gesture.end(150, 50, WIDTH)).toBe(-1)
   })
 
-  it('lets a swipe through a drift smaller than the scroll lock', () => {
+  it('settles back when thrown back the way it came, however far it went', () => {
     const gesture = createSwipeGesture()
+    gesture.start(380, 400, 0)
+    gesture.move(100, 400, 300)
+    gesture.move(140, 400, 320)
+    gesture.move(180, 400, 340)
 
-    gesture.start(300, 400)
-    gesture.move(240, 420)
-    gesture.move(180, 418)
-
-    expect(gesture.end(170, 416)).toBe(1)
+    expect(gesture.end(200, 350, WIDTH)).toBeNull()
   })
 
-  it('refuses a sideways drag that is too short', () => {
+  it('stays a scroll once it began as one, even when the finger then goes sideways', () => {
     const gesture = createSwipeGesture()
+    gesture.start(300, 400, 0)
+    gesture.move(300, 380, 50)
 
-    gesture.start(200, 400)
-    gesture.move(170, 402)
-
-    expect(gesture.end(160, 402)).toBeNull()
-  })
-
-  it('refuses a diagonal that never dominates its own vertical travel', () => {
-    const gesture = createSwipeGesture()
-
-    gesture.start(300, 400)
-
-    expect(gesture.end(200, 340)).toBeNull()
+    expect(gesture.move(100, 380, 200)).toEqual({ phase: 'scroll', dx: 0 })
+    expect(gesture.end(100, 400, WIDTH)).toBeNull()
   })
 
   it('ignores a two-finger gesture', () => {
     const gesture = createSwipeGesture()
+    gesture.start(300, 400, 0, 2)
 
-    gesture.start(200, 400, 2)
-
-    expect(gesture.end(100, 400)).toBeNull()
+    expect(gesture.move(100, 400, 100).phase).toBe('scroll')
+    expect(gesture.end(100, 400, WIDTH)).toBeNull()
   })
 
   it('forgets a cancelled gesture', () => {
     const gesture = createSwipeGesture()
-
-    gesture.start(280, 400)
+    gesture.start(300, 400, 0)
+    gesture.move(150, 400, 300)
     gesture.cancel()
 
-    expect(gesture.end(150, 400)).toBeNull()
-  })
-
-  it('starts each gesture clean after a scroll', () => {
-    const gesture = createSwipeGesture()
-
-    gesture.start(200, 400)
-    gesture.move(210, 250)
-    expect(gesture.end(264, 400)).toBeNull()
-
-    gesture.start(280, 400)
-    gesture.move(160, 404)
-    expect(gesture.end(150, 406)).toBe(1)
+    expect(gesture.end(100, 600, WIDTH)).toBeNull()
   })
 })

@@ -65,6 +65,7 @@
         @touch-start="onThreadTouchStart"
         @touch-move="onThreadTouchMove"
         @touch-end="onThreadTouchEnd"
+        @touch-cancel="onThreadTouchCancel"
       >
         <template #list>
           <!-- The search view's own header: the query (click to edit) + removable filter pills, above
@@ -362,7 +363,7 @@
 
         <MailThread
           ref="mailThread"
-          :slide="threadSlide"
+          :swipe="threadSwipe"
           :mailbox
           :thread-i-d
           :threads="threadIDs"
@@ -374,7 +375,6 @@
           :no-reply="!!currentThread?.no_reply"
           :snoozed-at="currentThread?.snoozed_at"
           :returned-at="currentThread?.returned_at"
-          @slide-done="threadSlide = ''"
           @reload-mails="resetThreads"
           @set-seen="
             (seen: boolean, ids: string[]) =>
@@ -494,6 +494,7 @@ import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePag
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { useThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
 import { useMailSocket } from '@/apps/mail/socket'
 import { takesPins, userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
@@ -511,7 +512,6 @@ import {
   useMobileSearch,
   useReadingPane,
   useScreenSize,
-  useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
@@ -575,6 +575,7 @@ const {
   canGoNext,
   threadIDs,
   threadByOffset,
+  peekByOffset,
   loadMoreThenOpenEdge,
   topUpIfShort,
 } = usePaginatedThreads({
@@ -1297,9 +1298,8 @@ const goToMailbox = () =>
   })
 
 const goToThread = (threadID: string) => {
-  threadSlide.value = pendingThreadSlide
   if (threadID)
-    router.push({
+    return router.push({
       name: 'mail-mail',
       params: { accountId, mailbox: mailboxInUrl(), threadID },
       query: route.query,
@@ -1313,24 +1313,16 @@ const goToThreadByOffset = (offset: number) => {
 
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
+  swipe: threadSwipe,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
-} = useSwipeNav(
-  () => isMobile.value && !!threadID,
-  (offset) => {
-    // Arms the paging animation for this navigation only — goToThread consumes it, so
-    // taps/arrows (which never set it) keep swapping instantly.
-    pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
-    goToThreadByOffset(offset)
-    pendingThreadSlide = ''
-  },
-)
-
-// MailThread's slide name while a swipe navigation renders; cleared on its slide-done
-// (and left empty for every other thread change, which should swap instantly).
-const threadSlide = ref('')
-let pendingThreadSlide = ''
+  onTouchCancel: onThreadTouchCancel,
+} = useThreadSwipe({
+  enabled: () => isMobile.value && !!threadID,
+  peek: peekByOffset,
+  step: goToThreadByOffset,
+})
 
 // Down the list first, then up: triaging from the oldest mail lives at the bottom, where there is
 // never anything below (see neighbourAfterRemoval). Only an emptied list falls back to the mailbox.

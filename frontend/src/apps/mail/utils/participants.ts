@@ -1,4 +1,5 @@
 import type { Mail, Recipient, ThreadParticipant } from '@/apps/mail/types'
+import { translate as __ } from '@/platform/translation'
 
 // Past this many names the middle of the list is dropped for an ellipsis, keeping the
 // thread's first sender and its two most recent — the ends identify a conversation.
@@ -174,3 +175,19 @@ export const threadDisplayName = (
   participants: ThreadParticipant[],
   fallback: { from_name?: string; from_email?: string },
 ) => formatThreadParticipants(participants) || fallback.from_name || fallback.from_email
+
+/**
+ * Who an open message went to, in a line: two names carry it, the rest fold into "and x others".
+ * The To recipients come first. Empty where it went to nobody yet (a draft not yet addressed).
+ */
+export const recipientsSummary = (mail: { recipients: Recipient[] }) => {
+  const ordered = [...mail.recipients].sort(
+    (a, b) => Number(b.type === 'To') - Number(a.type === 'To'),
+  )
+  const names = ordered.map((r) => (r.display_name || r.email).split(' ')[0])
+  if (!names.length) return ''
+  if (names.length === 1) return __('to {0}', [names[0]])
+  if (names.length === 2) return __('to {0} and {1}', [names[0], names[1]])
+  if (names.length === 3) return __('to {0}, {1} and {2}', names)
+  return __('to {0}, {1} and {2} others', [names[0], names[1], String(names.length - 2)])
+}

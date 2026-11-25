@@ -69,6 +69,7 @@
         @touch-start="onThreadTouchStart"
         @touch-move="onThreadTouchMove"
         @touch-end="onThreadTouchEnd"
+        @touch-cancel="onThreadTouchCancel"
       >
         <template #list>
           <!-- On a phone these scroll with the list, at its top. -->
@@ -261,7 +262,7 @@
         <MailThread
           v-if="openRow || !threadID"
           ref="mailThread"
-          :slide="threadSlide"
+          :swipe="threadSwipe"
           :account="openRow?.account"
           :mailbox="openRow?.view_mailbox || ''"
           :thread-i-d="threadID"
@@ -272,7 +273,6 @@
           :no-reply="!!openRow?.no_reply"
           :snoozed-at="openRow?.snoozed_at"
           :returned-at="openRow?.returned_at"
-          @slide-done="threadSlide = ''"
           @reload-mails="reloadPaneThread()"
           @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
           @set-flagged="
@@ -395,6 +395,7 @@ import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { useThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
@@ -413,7 +414,6 @@ import {
   useListReload,
   useReadingPane,
   useScreenSize,
-  useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
@@ -516,6 +516,7 @@ const {
   canGoNext,
   threadIDs,
   threadByOffset,
+  peekByOffset,
   loadMoreThenOpenEdge,
   topUpIfShort,
 } = usePaginatedThreads({
@@ -732,25 +733,18 @@ const openRow = computed(() =>
     : undefined,
 )
 
-// MailThread's slide name while a swipe navigation renders; cleared on its slide-done, and left
-// empty for every other thread change so taps and arrows keep swapping instantly.
-const threadSlide = ref('')
-let pendingThreadSlide = ''
-
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
+  swipe: threadSwipe,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
-} = useSwipeNav(
-  () => isMobile.value && !!threadID,
-  (offset) => {
-    // Arms the paging animation for this navigation only — openThread consumes it.
-    pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
-    stepOpenThread(offset)
-    pendingThreadSlide = ''
-  },
-)
+  onTouchCancel: onThreadTouchCancel,
+} = useThreadSwipe({
+  enabled: () => isMobile.value && !!threadID,
+  peek: peekByOffset,
+  step: (offset) => stepOpenThread(offset),
+})
 const stepOpenThread = (offset: number) => {
   const next = threadByOffset(offset)
   if (next) return openThread(next)
@@ -920,10 +914,9 @@ const goToEdge = (index: number) => {
   focusRow(navigableRows.value.at(index))
 }
 const openThread = (key: string) => {
-  threadSlide.value = pendingThreadSlide
   const row = (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key)
   if (!row) return
-  router.push({
+  return router.push({
     name: UNIFIED_THREAD_ROUTE,
     // The row's own ids, which is what the key was made of — and what the pane, its actions and
     // the URL all need in their plain form.

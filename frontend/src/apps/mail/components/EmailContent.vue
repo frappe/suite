@@ -82,10 +82,19 @@ const handleMessage = (event: MessageEvent) => {
       height.value = reported
     return
   }
-  // Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
-  // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
-  if (event.data?.type === 'swipe') {
-    window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+  // Each touch point over the message, passed on for the thread's swipe-to-page (useThreadSwipe):
+  // touches never leave the frame, so the pane cannot see them. Only this message's own frame's,
+  // or every expanded message would pass on every frame's.
+  if (event.data?.type === 'swipe-point') {
+    if (event.source !== frame.value?.contentWindow) return
+    const { phase, x, y, count } = event.data
+    if (!['start', 'move', 'end', 'cancel'].includes(phase)) return
+    if (typeof x !== 'number' || typeof y !== 'number') return
+    window.dispatchEvent(
+      new CustomEvent('email-swipe-point', {
+        detail: { phase, x, y, count: typeof count === 'number' ? count : 1 },
+      }),
+    )
     return
   }
   // A date in the message the reader picked (see markMailDates), by its place in this render's list.
@@ -655,10 +664,12 @@ const srcdoc = computed(() => {
 					if (!moved(e, mark) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
-				// Forward horizontal swipes to the parent — touches never leave the iframe, so
-				// the thread pane's swipe navigation can't see them otherwise. A gesture that
-				// starts on horizontally scrollable content (incl. an overflowing body) means
-				// scroll, not navigate.
+				// Every touch point goes up to the page, which pulls the thread sideways under the finger
+				// (useThreadSwipe): touches never leave the frame, so the page cannot see them otherwise.
+				// Screen coordinates, as the page reads its own: the frame moves with the thread it is
+				// in, so a point inside it would shift under the finger. A gesture that starts on
+				// horizontally scrollable content (an overflowing body included) means scroll, and is
+				// not sent.
 				const inHorizontalScroller = (el) => {
 					const doc = document.documentElement;
 					if (doc.scrollWidth > doc.clientWidth + 1) return true;
@@ -670,36 +681,36 @@ const srcdoc = computed(() => {
 					}
 					return false;
 				};
-				// Same rule as useSwipeNav in the parent, and for the same reason: a gesture
-				// that has scrolled 24px vertically is a scroll and stays one, however it
-				// ends. Reading a message is mostly scrolling, so endpoint-only judgement
-				// paged the thread out from under the reader.
+				const sendPoint = (phase, touch, count) => window.parent.postMessage(
+					{ type: 'swipe-point', phase, x: touch.screenX, y: touch.screenY, count }, '*');
+				// The page decides what the gesture is by the same rule (LOCK_AT in swipeGesture.ts):
+				// this copy only knows when to stop the frame scrolling under a drag.
 				let swipeOrigin = null;
-				let swipeScrolling = false;
+				let swipeLock = null;
 				document.addEventListener('touchstart', (e) => {
-					swipeScrolling = false;
-					swipeOrigin = e.touches.length === 1 && !inHorizontalScroller(e.target)
-						? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-						: null;
+					swipeLock = null;
+					swipeOrigin = !inHorizontalScroller(e.target) ? e.touches[0] : null;
+					if (swipeOrigin) sendPoint('start', swipeOrigin, e.touches.length);
 				}, { passive: true });
 				document.addEventListener('touchmove', (e) => {
-					if (!swipeOrigin || swipeScrolling) return;
 					const touch = e.touches[0];
-					if (!touch) return;
-					const dy = touch.clientY - swipeOrigin.y;
-					if (Math.abs(dy) > 24 && Math.abs(dy) > Math.abs(touch.clientX - swipeOrigin.x))
-						swipeScrolling = true;
-				}, { passive: true });
+					if (!swipeOrigin || !touch) return;
+					const dx = touch.screenX - swipeOrigin.screenX;
+					const dy = touch.screenY - swipeOrigin.screenY;
+					if (!swipeLock && Math.hypot(dx, dy) >= 10)
+						swipeLock = Math.abs(dx) > Math.abs(dy) ? 'drag' : 'scroll';
+					if (swipeLock === 'drag' && e.cancelable) e.preventDefault();
+					sendPoint('move', touch);
+				}, { passive: false });
 				document.addEventListener('touchend', (e) => {
 					if (!swipeOrigin) return;
-					const dx = e.changedTouches[0].clientX - swipeOrigin.x;
-					const dy = e.changedTouches[0].clientY - swipeOrigin.y;
-					const wasScrolling = swipeScrolling;
 					swipeOrigin = null;
-					swipeScrolling = false;
-					if (wasScrolling) return;
-					if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 2) return;
-					window.parent.postMessage({ type: 'swipe', direction: dx < 0 ? 'left' : 'right' }, '*');
+					sendPoint('end', e.changedTouches[0]);
+				}, { passive: true });
+				document.addEventListener('touchcancel', (e) => {
+					if (!swipeOrigin) return;
+					swipeOrigin = null;
+					sendPoint('cancel', e.changedTouches[0]);
 				}, { passive: true });
 			<\/script>
 		</body>

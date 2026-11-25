@@ -1,5 +1,5 @@
 import { toast } from 'frappe-ui'
-import { computed, onMounted, onUnmounted, readonly, ref } from 'vue'
+import { computed, readonly, ref } from 'vue'
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 
 import { api, client } from '@/api'
@@ -7,7 +7,6 @@ import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, Identity, Thread } from '@/apps/mail/types'
-import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import {
   INBOX_FOLDER,
   isUnifiedRoute,
@@ -127,46 +126,6 @@ export const useAccountSwitch = () => {
   }
 
   return { switchAccount, switchToAll }
-}
-
-// Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener
-// preview: left → onSwipe(1) (next), right → onSwipe(-1). The rule itself lives in
-// createSwipeGesture; this binds it to the touch events and to the view. Judged on
-// touchend (passive) so vertical scrolling is never delayed. Swipes over an email body
-// never reach the pane: EmailContent detects them inside its iframe and re-broadcasts
-// them as `email-swipe` window events, which this subscribes to as well. The time guard
-// dedupes those (every mounted EmailContent re-dispatches the same message) and paces
-// direct swipes alike.
-export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) => void) => {
-  const gesture = createSwipeGesture()
-  let lastSwipeAt = 0
-  const swipe = (offset: 1 | -1) => {
-    if (!enabled()) return
-    const now = Date.now()
-    if (now - lastSwipeAt < 250) return
-    lastSwipeAt = now
-    onSwipe(offset)
-  }
-  const onTouchStart = (e: TouchEvent) => {
-    if (!enabled()) return gesture.cancel()
-    gesture.start(e.touches[0].clientX, e.touches[0].clientY, e.touches.length)
-  }
-  const onTouchMove = (e: TouchEvent) => {
-    const touch = e.touches[0]
-    if (touch) gesture.move(touch.clientX, touch.clientY)
-  }
-  const onTouchEnd = (e: TouchEvent) => {
-    const offset = gesture.end(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
-    if (offset) swipe(offset)
-  }
-  const onEmailSwipe = (e: Event) => swipe('detail' in e && e.detail === 'left' ? 1 : -1)
-  onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
-  onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
-  return {
-    onTouchStart,
-    onTouchMove,
-    onTouchEnd,
-  }
 }
 
 // The search page's address — the one place that knows it is the mailbox route with the virtual
