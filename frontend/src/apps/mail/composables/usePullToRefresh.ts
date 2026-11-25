@@ -28,6 +28,11 @@ interface Options {
   enabled: () => boolean
   /** Read the list again; the spinner stays until it settles, for up to `MAX_SPIN`. */
   refresh: () => Promise<unknown>
+  /**
+   * Which screen the list is on, such as the route. Another screen, which may be this view again
+   * (Search, an open thread), lets the spinner go: it was the old list's.
+   */
+  screen: () => unknown
 }
 
 /**
@@ -38,7 +43,7 @@ interface Options {
  * spinning spinner till it is in. Bind `listStyle` to the scroller, and the rest to
  * PullToRefreshIndicator, just before it.
  */
-export function usePullToRefresh({ scroller, enabled, refresh }: Options) {
+export function usePullToRefresh({ scroller, enabled, refresh, screen }: Options) {
   const syncNow = useSyncNow()
   const gesture = createPullGesture()
   /** How far down the list is drawn, in pixels: the gap the spinner sits in. */
@@ -49,6 +54,8 @@ export function usePullToRefresh({ scroller, enabled, refresh }: Options) {
   // Easing back to the top after a pull, when the list still needs its transform to get there.
   const easing = ref(false)
   let easingTimer: ReturnType<typeof setTimeout> | undefined
+  // Counts refreshes, so one let go of (see `screen`) and still out can't end a later one's spinner.
+  let pulls = 0
   const target = computed(() => (enabled() ? scroller() : null))
 
   const settle = () => {
@@ -64,6 +71,14 @@ export function usePullToRefresh({ scroller, enabled, refresh }: Options) {
   // refreshing: its touchend will not come here.
   watch(target, () => {
     if (refreshing.value) return
+    gesture.cancel()
+    settle()
+  })
+
+  // What is still out lands on the list when it answers.
+  watch(screen, () => {
+    pulls += 1
+    refreshing.value = false
     gesture.cancel()
     settle()
   })
@@ -108,11 +123,13 @@ export function usePullToRefresh({ scroller, enabled, refresh }: Options) {
       pulling.value = false
       refreshing.value = true
       offset.value = HOLD_AT
+      const pull = ++pulls
       const synced = Promise.race([syncNow(), wait(MAX_SYNC_WAIT)])
       const read = Promise.all([synced.then(refresh), wait(MIN_SPIN)]).catch(() => {
         /* The list's own state holds a refusal. */
       })
       void Promise.race([read, wait(MAX_SPIN)]).finally(() => {
+        if (pull !== pulls) return
         refreshing.value = false
         settle()
       })

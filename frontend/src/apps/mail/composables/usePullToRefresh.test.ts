@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { effectScope, nextTick } from 'vue'
+import { effectScope, nextTick, ref } from 'vue'
 
 import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
 
@@ -30,17 +30,25 @@ const touch = (list: HTMLElement, type: string, y?: number) => {
   list.dispatchEvent(event)
 }
 
-// A list at its top, pulled well past the mark and let go.
-const pullDown = async (refresh: () => Promise<unknown>) => {
+// A list at its top, on the screen `screen` names; `again()` pulls it well past the mark and lets go.
+const pullDown = async (refresh: () => Promise<unknown>, screen = ref('/inbox')) => {
   const list = document.createElement('div')
   const pull = scope.run(() =>
-    usePullToRefresh({ scroller: () => list, enabled: () => true, refresh }),
+    usePullToRefresh({
+      scroller: () => list,
+      enabled: () => true,
+      refresh,
+      screen: () => screen.value,
+    }),
   )!
   await nextTick()
-  touch(list, 'touchstart', 100)
-  for (let y = 110; y <= 400; y += 10) touch(list, 'touchmove', y)
-  touch(list, 'touchend')
-  return pull
+  const again = () => {
+    touch(list, 'touchstart', 100)
+    for (let y = 110; y <= 400; y += 10) touch(list, 'touchmove', y)
+    touch(list, 'touchend')
+  }
+  again()
+  return Object.assign(pull, { again })
 }
 
 describe('usePullToRefresh', () => {
@@ -64,5 +72,23 @@ describe('usePullToRefresh', () => {
 
     expect(pull.refreshing.value).toBe(false)
     expect(pull.offset.value).toBe(0)
+  })
+
+  it("lets the spinner go on another screen, and a later pull's spinner stays", async () => {
+    // A phone on a poor line: the Inbox's read is still out when Search opens in the same view.
+    const screen = ref('/inbox')
+    const pull = await pullDown(never, screen)
+
+    screen.value = '/search'
+    await nextTick()
+    expect(pull.refreshing.value).toBe(false)
+    expect(pull.offset.value).toBe(0)
+
+    await vi.advanceTimersByTimeAsync(10_000)
+    pull.again()
+    // The Inbox's read gives up now; Search's own goes on.
+    await vi.advanceTimersByTimeAsync(6_000)
+
+    expect(pull.refreshing.value).toBe(true)
   })
 })
