@@ -4,10 +4,20 @@ import { reactive, shallowRef, type ShallowRef } from 'vue'
 
 import { randomId } from '@/platform/random-id'
 import type { Realtime } from '@/platform/realtime'
-import type { EntityDeclaration, Operation, RequestContext, Transport } from '@/platform/transport'
+import {
+  TransportError,
+  type EntityDeclaration,
+  type Operation,
+  type RequestContext,
+  type Transport,
+} from '@/platform/transport'
 
 import { Entities, isRecord } from './entities'
 import type { Effects, Policy, ReadOptions } from './types'
+
+const RELOAD_CACHE_PREFIX = 'suite-query-v1:'
+const isAccessRefusal = (error: unknown) =>
+  error instanceof TransportError && (error.status === 401 || error.status === 403)
 
 export interface ReadRecord {
   key: string
@@ -16,6 +26,7 @@ export interface ReadRecord {
   partition: string
   policy: Policy
   context?: RequestContext
+  reloadCacheKey?: string
   value: unknown
   pages: unknown[]
   status: 'pending' | 'success' | 'error'
@@ -53,6 +64,7 @@ export class Reads {
     private readonly transport: Transport,
     readonly entities: Entities,
     private readonly realtime?: Realtime | false,
+    private readonly reloadCacheIdentity?: () => string | undefined,
   ) {}
 
   retain(record: ReadRecord, observer: () => void, paging: boolean): void {
@@ -143,6 +155,7 @@ export class Reads {
     const key = this.key(reference, input, partition) + (pages ? ':pages' : '')
     let record = this.records.get(key)
     if (!record) {
+      const identity = this.reloadCacheIdentity?.()
       record = reactive<ReadRecord>({
         key,
         // SAFETY: the heterogeneous cache erases I/O but keeps this operation, canonical input and policy together under one key.
@@ -152,6 +165,17 @@ export class Reads {
         // SAFETY: callbacks receive the input retained with this same reference; the cache never pairs a policy with another operation.
         policy: policy as Policy,
         context,
+        reloadCacheKey:
+          identity &&
+          policy.cacheOnReload &&
+          !pages &&
+          !context &&
+          !policy.partition &&
+          !policy.operation &&
+          !reference.entity &&
+          reference.kind === 'query'
+            ? this.key(reference, input, identity)
+            : undefined,
         value: undefined,
         pages: [],
         status: 'pending',
@@ -167,6 +191,52 @@ export class Reads {
       this.records.set(key, record)
     }
     return record
+  }
+
+  async restore(record: ReadRecord, signal: AbortSignal): Promise<void> {
+    if (!record.reloadCacheKey || record.value !== undefined) return
+    try {
+      const raw = sessionStorage.getItem(this.reloadCacheSlot(record))
+      if (!raw) return
+      const entries: unknown = JSON.parse(raw)
+      const saved = Array.isArray(entries)
+        ? entries.find((entry: unknown) => isRecord(entry) && entry.key === record.reloadCacheKey)
+        : undefined
+      if (!isRecord(saved)) return
+      const validate: ((value: unknown) => void) | undefined =
+        (await record.reference.loadValidators?.())?.validateOutput ??
+        record.reference.validateOutput
+      if (
+        !validate ||
+        signal.aborted ||
+        record.value !== undefined ||
+        record.minRevision ||
+        isAccessRefusal(record.error)
+      )
+        return
+      validate(saved.value)
+      const value = this.entities.normalize(saved.value, null, record.partition, 0)
+      this.setValue(record, value, [value])
+      if (record.status === 'pending') record.status = 'success'
+    } catch {
+      // A storage failure or obsolete response must not prevent the request.
+    }
+  }
+
+  private reloadCacheSlot(record: ReadRecord): string {
+    return RELOAD_CACHE_PREFIX + record.reference.owner + ':' + record.reference.id
+  }
+
+  clearReloadCache(): void {
+    if (!this.reloadCacheIdentity) return
+    try {
+      for (let i = sessionStorage.length - 1; i >= 0; i--) {
+        const key = sessionStorage.key(i)
+        if (key?.startsWith(RELOAD_CACHE_PREFIX)) sessionStorage.removeItem(key)
+      }
+    } catch {
+      // Storage may be disabled.
+    }
   }
 
   async fetch(
@@ -249,9 +319,37 @@ export class Reads {
       record.status = 'success'
       record.stale = false
       record.updatedAt = Date.now()
+      if (record.reloadCacheKey && record.observers.size) {
+        try {
+          const slot = this.reloadCacheSlot(record)
+          const entries: unknown = JSON.parse(sessionStorage.getItem(slot) ?? '[]')
+          const previous = Array.isArray(entries)
+            ? entries.filter(
+                (entry: unknown) => isRecord(entry) && entry.key !== record.reloadCacheKey,
+              )
+            : []
+          sessionStorage.setItem(
+            slot,
+            JSON.stringify([
+              { key: record.reloadCacheKey, value: outcome.output },
+              ...previous.slice(0, 3),
+            ]),
+          )
+        } catch {
+          // The in-memory result remains available if storage is unavailable.
+        }
+      }
       return outcome.output
     } catch (cause) {
       if (!isAbort(cause)) {
+        if (record.reloadCacheKey && isAccessRefusal(cause)) {
+          this.setValue(record, undefined, [])
+          try {
+            sessionStorage.removeItem(this.reloadCacheSlot(record))
+          } catch {
+            // Storage may be disabled.
+          }
+        }
         record.error = asError(cause)
         if (next) record.nextError = record.error
         record.status = 'error'

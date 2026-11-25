@@ -5,34 +5,27 @@ import { computed } from 'vue'
 import { api, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
-import { useMeetHomeSnapshot } from '../composables/useMeetHomeSnapshot'
 import { dayLabel, durationLabel } from '../utils/homeDates'
 
 const recordings = useQuery(api.meet.recordings.list)
-const recordingRows = computed(() =>
-  recordings.data?.slice(0, 3).map((recording) => ({
-    name: recording.name,
-    title: recording.room_title || recording.meet_room,
-    startedAt: recording.started_at,
-    duration: recording.artifact_duration,
-    partial: recording.status === 'Partial',
-    artifact: recording.artifact,
-  })),
-)
-const cachedRecordings = useMeetHomeSnapshot('recordings', () => recordingRows.value)
-const rows = computed(() => cachedRecordings.value ?? [])
-
-const newest = computed(() => rows.value[0]?.artifact)
+const newest = computed(() => recordings.data?.[0]?.artifact)
 const newestNode = useQuery(api.drive.nodes.get, () =>
   newest.value ? { node: newest.value } : false,
 )
-const cachedFolder = useMeetHomeSnapshot(
-  'recording-folder',
-  () => newestNode.data?.parent_node ?? (newestNode.data ? '' : undefined),
-  () => newest.value ?? '',
-)
 const folderRoute = computed(() =>
-  newest.value && cachedFolder.value ? `/drive/f/${cachedFolder.value}` : undefined,
+  newestNode.data?.parent_node ? `/drive/f/${newestNode.data.parent_node}` : undefined,
+)
+
+const rows = computed(() =>
+  (recordings.data ?? []).slice(0, 3).map((recording) => ({
+    name: recording.name,
+    title: recording.room_title || recording.meet_room,
+    detail: [dayLabel(recording.started_at), durationLabel(recording.artifact_duration)]
+      .filter(Boolean)
+      .join(' ・ '),
+    partial: recording.status === 'Partial',
+    route: `/d/${recording.artifact}`,
+  })),
 )
 </script>
 
@@ -54,7 +47,7 @@ const folderRoute = computed(() =>
         :key="recording.name"
         class="recording-row"
         variant="ghost"
-        :route="`/d/${recording.artifact}`"
+        :route="recording.route"
         :aria-label="
           recording.partial
             ? __('Open partial recording of {0}', [recording.title])
@@ -81,9 +74,7 @@ const folderRoute = computed(() =>
               </Tooltip>
             </span>
             <span class="mt-1.5 block truncate text-sm text-ink-gray-6">{{
-              [dayLabel(recording.startedAt), durationLabel(recording.duration)]
-                .filter(Boolean)
-                .join(' ・ ')
+              recording.detail
             }}</span>
           </span>
         </span>

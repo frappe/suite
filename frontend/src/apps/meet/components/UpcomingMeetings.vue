@@ -12,10 +12,7 @@ import { useSession } from '@/platform/session'
 import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 
-import { useMeetHomeSnapshot } from '../composables/useMeetHomeSnapshot'
-
 const accountError = ref(false)
-const accountResolved = ref(false)
 
 interface CalendarEventParticipant {
   email: string
@@ -104,15 +101,9 @@ const upcomingEvents = useQuery(api.calendar.events.window, () =>
 const eventStart = (event: CalendarEvent) =>
   event.time_zone ? dayjs.tz(event.start, event.time_zone).local() : dayjs(event.start)
 
-const upcomingSnapshot = computed(() => {
-  const saved = cachedUpcoming.value
-  if (!saved || (!calendarStore.accountId && !accountResolved.value)) return saved
-  return saved.account === calendarStore.accountId ? saved : undefined
-})
-
 const meetings = computed(() => {
   const currentTime = dayjs(now.value)
-  const data = upcomingSnapshot.value?.events
+  const data: unknown = upcomingEvents.data
   const events = Array.isArray(data) ? data.filter(isCalendarEvent) : []
   return events
     .filter((event) => {
@@ -199,38 +190,6 @@ const getTrustedMeetUrl = (url?: string | null) => {
 const meetingIdFromPath = (path: string) =>
   path.match(/^\/meet\/(?!(?:scheduled|recordings)\/?$)([a-z0-9-]+)\/?$/i)?.[1] ?? ''
 
-const cachedUpcoming = useMeetHomeSnapshot(
-  'upcoming',
-  () => {
-    const data: unknown = upcomingEvents.data
-    if (!Array.isArray(data) || !calendarStore.accountId) return undefined
-    return {
-      account: calendarStore.accountId,
-      events: data.filter(isCalendarEvent).flatMap((event) => {
-        const href = getMeetingUrl(event)
-        if (!href) return []
-        return [
-          {
-            id: event.id,
-            title: event.title,
-            start: event.start,
-            time_zone: event.time_zone,
-            duration: event.duration,
-            show_without_time: event.show_without_time,
-            participants: event.participants?.map(({ email, _name, user_image }) => ({
-              email,
-              _name,
-              user_image,
-            })),
-            links: [{ href }],
-          },
-        ]
-      }),
-    }
-  },
-  () => JSON.stringify([fromDate.value, toDate.value, timeZone]),
-)
-
 const joinMeeting = (event: CalendarEvent) => {
   const url = getMeetingUrl(event)
   if (!url || url.startsWith('http')) return
@@ -259,7 +218,6 @@ const joinRow = (row: UpcomingEventRow) => {
 const reload = async () => {
   try {
     await calendarStore.loadUser()
-    accountResolved.value = true
     accountError.value = false
     if (calendarStore.accountId) await upcomingEvents.refetch()
   } catch (error) {
@@ -275,7 +233,7 @@ defineExpose({ reload })
 
 <template>
   <section
-    v-if="meetings.length || accountError || upcomingEvents.error || upcomingSnapshot"
+    v-if="meetings.length || accountError || upcomingEvents.error || upcomingEvents.data"
     :aria-label="__('Scheduled meetings')"
   >
     <div class="mb-3 flex h-7 items-center justify-between">
@@ -293,7 +251,7 @@ defineExpose({ reload })
       role="alert"
     >
       {{ __('Could not load meetings.') }}
-      <Button variant="outline" :label="__('Retry')" @click="reload()" />
+      <Button variant="outline" :label="__('Retry')" @click="reload" />
     </div>
     <p v-else-if="!meetings.length" class="text-base text-ink-gray-5">
       {{ __('No upcoming meetings') }}

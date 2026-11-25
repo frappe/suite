@@ -7,26 +7,21 @@ import { api, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
-import { useMeetHomeSnapshot } from '../composables/useMeetHomeSnapshot'
 import { dayLabel } from '../utils/homeDates'
 
 const router = useRouter()
 const session = useSession()
 const rooms = useQuery(api.meet.rooms.mine)
-const roomRows = computed(() =>
-  rooms.data?.map((room) => ({
+const rows = computed(() =>
+  (rooms.data ?? []).map((room) => ({
     name: room.name,
     title: room.title || room.name,
     url: room.url,
     code: room.title ? room.name : '',
     restricted: room.meeting_type === 'restricted',
     cohost: room.owner !== session.user.value?.id,
-    modified: room.modified,
+    used: dayLabel(room.modified),
   })),
-)
-const cachedRooms = useMeetHomeSnapshot('rooms', () => roomRows.value)
-const rows = computed(() =>
-  (cachedRooms.value ?? []).map((room) => ({ ...room, used: dayLabel(room.modified) })),
 )
 
 const copyLink = async (url: string) => {

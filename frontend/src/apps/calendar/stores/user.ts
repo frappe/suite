@@ -1,6 +1,6 @@
-import { until, useStorage } from '@vueuse/core'
+import { until, useSessionStorage, useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue'
 
 import { api, useQuery, type OutputOf } from '@/api'
 import {
@@ -16,9 +16,28 @@ const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 // How long a form opened outside Calendar waits for what it reads before it opens on what has come.
 const FORM_LOAD_WAIT_MS = 10_000
 export const userStore = defineStore('calendar-user', () => {
+  const session = useSession()
+  const lastAccount = useSessionStorage('suite-calendar-account-v1', { user: '', account: '' })
   const accountId = ref('')
+  onScopeDispose(
+    session.onLogout(() => {
+      lastAccount.value = { user: '', account: '' }
+    }),
+  )
+  watch(
+    () => session.user.value?.id,
+    (user) => {
+      accountId.value =
+        user &&
+        lastAccount.value.user === user &&
+        lastAccount.value.account === localStorage.getItem(ACCOUNT_STORAGE_KEY)
+          ? lastAccount.value.account
+          : ''
+    },
+    { immediate: true, flush: 'sync' },
+  )
   const resolveAccount = (accounts?: readonly UserAccount[], routeAccountId?: string) => {
-    if (!accounts?.length) return
+    if (!accounts) return
 
     // 1. Route param
     if (routeAccountId && accounts.some((a) => a.id === routeAccountId)) {
@@ -34,13 +53,19 @@ export const userStore = defineStore('calendar-user', () => {
     }
 
     // 3. Personal account fallback
-    if (accountId.value) return
+    if (accounts.some((a) => a.id === accountId.value)) return
     const personalId = accounts.find((a) => a.is_personal)?.id
     if (personalId) setAccount(personalId)
+    else {
+      accountId.value = ''
+      lastAccount.value = { user: '', account: '' }
+    }
   }
   const setAccount = (id: string) => {
     accountId.value = id
     localStorage.setItem(ACCOUNT_STORAGE_KEY, id)
+    const user = session.user.value?.id
+    if (user) lastAccount.value = { user, account: id }
   }
   const account = () =>
     accountId.value
@@ -48,7 +73,7 @@ export const userStore = defineStore('calendar-user', () => {
           account: accountId.value,
         }
       : false
-  const userQuery = useQuery(api.mail.account.get, () => (useSession().user.value ? {} : false))
+  const userQuery = useQuery(api.mail.account.get, () => (session.user.value ? {} : false))
   const userData = computed(() => {
     const data = userQuery.data
     return data

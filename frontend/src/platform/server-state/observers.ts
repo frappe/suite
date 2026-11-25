@@ -73,6 +73,7 @@ export function observe<I, O>(
     current.value = record
     controller = new AbortController()
     reads.retain(record, revalidate, paging)
+    if (!paging) void reads.restore(record, controller.signal)
     void (
       paging
         ? reads.refreshPages(record, controller.signal)

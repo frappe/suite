@@ -79,6 +79,7 @@ export interface Policy<I = unknown, O = unknown> {
   operation?: (reference: Operation<I, O>, input: I) => Operation<I, O>
   partition?: (input: I) => string
   staleTime?: number
+  cacheOnReload?: boolean
   refetchInterval?: number
   member?: (row: Record<string, unknown>, input: I) => boolean
   effects?: Effects<I> | 'none'

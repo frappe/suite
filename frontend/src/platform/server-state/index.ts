@@ -44,6 +44,7 @@ export interface ClientOptions {
   transport?: Transport
   realtime?: Realtime | false
   feedback?: (error: Error) => void
+  reloadCacheIdentity?: () => string | undefined
 }
 
 export function createApiClient(
@@ -54,7 +55,7 @@ export function createApiClient(
   const transport = options.transport ?? defaultTransport
   deleteRetiredEntityStore()
   const entities = new Entities()
-  const reads = new Reads(transport, entities, options.realtime)
+  const reads = new Reads(transport, entities, options.realtime, options.reloadCacheIdentity)
   const writes = new Writes(transport, reads, options.feedback ?? reportError)
   const owners = new Map<string, Promise<OwnerRegistration>>()
   const cleanup: Array<() => void> = []
@@ -182,7 +183,10 @@ export function createApiClient(
     onTouch: writes.onTouch.bind(writes),
     onChallenge: writes.onChallenge.bind(writes),
     writesSettled: writes.settled.bind(writes),
-    resetIdentity: () => reads.switchPartition(),
+    resetIdentity: () => {
+      reads.clearReloadCache()
+      reads.switchPartition()
+    },
     invalidate: reads.invalidate.bind(reads),
     dispose() {
       for (const stop of cleanup) stop()
