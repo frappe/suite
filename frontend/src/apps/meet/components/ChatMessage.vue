@@ -179,11 +179,6 @@ function reactionNames(userIds: string[]) {
 </script>
 
 <style scoped>
-.chat-message:focus')) void scrollToBottom()
-})
-</script>
-
-<style scoped>
 .chat-message:focus {
   outline: none;
 }
