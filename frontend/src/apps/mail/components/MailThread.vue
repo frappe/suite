@@ -221,8 +221,8 @@
                     'pb-4': isMobile && thread.length === 1 && !mail.draft,
                     'py-2.5': isMobile && isCollapsed(mail),
                     // A phone's draft card opens at a tap anywhere, and answers it as a list row
-                    // does. A press on one of its buttons (⋯) is the button's, not the card's.
-                    '[&:active:not(:has(button:active))]:bg-surface-gray-2': isMobile && mail.draft,
+                    // does (see pressDraft).
+                    'bg-surface-gray-2': pressedDraft === mail.name,
                     'sm:rounded-7': thread.length > 1 || mail.draft,
                     // A collapsed row only holds one line — reading-card padding
                     // around it is what made the thread feel loose. A draft's card
@@ -238,6 +238,10 @@
                     'sm:flex sm:min-h-0 sm:flex-1 sm:flex-col': isDraftAlone,
                   }"
                   @click="mail.collapsed = false"
+                  @pointerdown="pressDraft($event, mail.name, !!mail.draft)"
+                  @pointerup="pressedDraft = null"
+                  @pointercancel="pressedDraft = null"
+                  @pointerleave="pressedDraft = null"
                 >
                   <ComposeMailEditor
                     v-if="mail.draft && !isMobile"
@@ -1131,6 +1135,15 @@ const emit = defineEmits([
   'deleteMail',
 ])
 const { isMobile } = useScreenSize()
+
+// The phone's draft card being pressed. A press on one of its own buttons (⋯) is the button's, so
+// the card stays as it is. Set from the pointer: `:active:not(:has(button:active))` still shaded
+// the card for a press on ⋯ on a phone.
+const pressedDraft = ref<string | null>(null)
+const pressDraft = (event: PointerEvent, name: string, isDraft: boolean) => {
+  const onButton = event.target instanceof Element && !!event.target.closest('button')
+  if (isMobile.value && isDraft && !onButton) pressedDraft.value = name
+}
 // The open thread sits at 0 and the next a page to its right, all moved as far as the finger has
 // taken them; let go, they glide the rest of the way.
 const trackStyle = computed(() => {

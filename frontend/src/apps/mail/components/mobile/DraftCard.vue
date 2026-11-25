@@ -79,14 +79,9 @@ const { mail, body, signature } = defineProps<{
 const emit = defineEmits<{ open: []; discard: [] }>()
 
 const written = computed(() => writtenText(body, signature))
-// Discard apart and in red, as it throws the draft away.
+// Discard in red, as it throws the draft away. Two rows need no line between them.
 const options = [
   { label: __('Edit draft'), icon: SquarePen, onClick: () => emit('open') },
-  {
-    group: '',
-    options: [
-      { label: __('Discard'), icon: Trash2, theme: 'red' as const, onClick: () => emit('discard') },
-    ],
-  },
+  { label: __('Discard'), icon: Trash2, theme: 'red' as const, onClick: () => emit('discard') },
 ]
 </script>
