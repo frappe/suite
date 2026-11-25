@@ -462,6 +462,9 @@ importers:
         specifier: ^13.6.30
         version: 13.6.31
     devDependencies:
+      '@babel/parser':
+        specifier: ^7.29.9
+        version: 7.29.9
       '@ianvs/prettier-plugin-sort-imports':
         specifier: ^4.7.1
         version: 4.7.1(@vue/compiler-sfc@3.5.42)(prettier@3.9.9)(supports-color@11.0.0)
@@ -537,6 +540,9 @@ importers:
       oxlint-tsgolint:
         specifier: ^7.0.2003
         version: 7.0.2006
+      parse5:
+        specifier: ^8.0.1
+        version: 8.0.1
       postcss:
         specifier: ^8.5.14
         version: 8.5.28

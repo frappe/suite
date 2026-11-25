@@ -61,7 +61,6 @@ def handle(ctx: DavContext) -> Response:
     response.headers["Last-Modified"] = rfc1123(content_time(row))
     response.headers["Cache-Control"] = "private, no-cache"
     if "Accept-Ranges" not in response.headers:
-        # werkzeug advertises ranges only on an actual 206
         response.headers["Accept-Ranges"] = "bytes"
     return response
 
@@ -69,7 +68,6 @@ def handle(ctx: DavContext) -> Response:
 def _collection_response(ctx: DavContext, spa_url: str) -> Response:
     if ctx.request.method == "HEAD":
         return Response(status=200)
-    # a browser landing on a collection URL gets the real UI
     return redirect(spa_url, code=302)
 
 

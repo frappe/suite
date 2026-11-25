@@ -57,7 +57,6 @@ def is_not_modified(request: Request, row: frappe._dict) -> bool:
 
 
 def _strong_etags(header: str) -> set[str]:
-    # weak validators never satisfy state-changing comparison (RFC 7232 §2.3.2)
     return {tag for tag in _split(header) if not tag.startswith("W/")}
 
 

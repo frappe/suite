@@ -31,6 +31,7 @@
     "format:check": "prettier --check frontend scripts baselines '*.{js,ts}' 'tsconfig*.json' package.json .oxlintrc.json",
     "lint": "oxlint --quiet . && node scripts/lint.mjs && pnpm check:meet-types",
     "lint:fix": "oxlint --quiet --fix . && node scripts/lint.mjs --fix && pnpm check:meet-types",
+    "check:comments": "node .github/scripts/comment-policy.mjs check",
     "check:contract": "node scripts/generate-contract.mjs --check",
     "check:untranslated": "node scripts/check-untranslated.mjs",
     "check:import-boundaries": "node scripts/check-import-boundaries.mjs",
@@ -143,6 +144,7 @@
     "yjs": "^13.6.30"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.9",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
     "@oxlint/plugins": "1.91.0",
     "@sentry/core": "10.67.0",
@@ -168,6 +170,7 @@
     "knip": "^6.4.1",
     "oxlint": "1.91.0",
     "oxlint-tsgolint": "^7.0.2003",
+    "parse5": "^8.0.1",
     "postcss": "^8.5.14",
     "prettier": "^3.9.9",
     "tailwindcss": "^3.4.19",

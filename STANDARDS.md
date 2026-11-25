@@ -14,7 +14,7 @@ Related documents, each with one job:
 - `suite/<product>/CONTEXT.md` and [`CONTEXT-MAP.md`](./CONTEXT-MAP.md) own
   each product's vocabulary. Names in code come from there.
 - `specs/`, `wayfinder/` and `suite/<product>/docs/adr/` own behaviour and
-  decisions. Code comments cite them by section (`§11.2`).
+  decisions.
 
 A rule marked **Target** is one the repository does not meet everywhere yet.
 Each names the check that tracks the gap. New code meets the target; do not add
@@ -43,11 +43,10 @@ to a baseline.
 5. **YAGNI.** No seam without two real adapters. No helper for one caller. No
    `utils`, `common`, `helpers` or `shared` module as a home for code without
    an owner. Similar code stays duplicated when the domain rules differ.
-6. **Comments say why.** A file or module starts with a short statement of its
-   job and the rules that hold across it. A comment explains a decision, a
-   constraint or a framework quirk and cites the spec section; it does not
-   restate the code. Update or delete a comment when the code it describes
-   changes. No commented-out code.
+6. **Keep rationale in ADRs.** CI rejects new comments in Python, JavaScript,
+   TypeScript, Vue, HTML, and CSS. Existing comments can be removed
+   incrementally. Interpreter shebangs and TypeScript `SAFETY:` comments
+   required by the type-assertion lint rule are allowed.
 7. **The server decides.** Permissions, quota and validation are enforced in a
    workflow on the server. The client hides what the server would refuse, and
    nothing more.

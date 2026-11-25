@@ -1,7 +1,6 @@
 const send_reply = require("./acknowledge");
 
 const suite_handlers = (socket) => {
-	// guest specific rooms
 	socket.on("guest_subscribe", async (payload, untrustedAcknowledge) => {
 		function acknowledge(reply) {
 			send_reply(untrustedAcknowledge, reply);

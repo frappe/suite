@@ -5,8 +5,6 @@ import { transitionKey as getTransitionKey } from '@/apps/slides/utils/transitio
 
 import { editElementCommand, editSlideCommand } from './commands'
 
-// a blank line carries a ZWSP placeholder only once something has edited it, so
-// comparing it would stop two identical lines from pairing
 const blockText = (block) => block.textContent.replaceAll(ZWSP, '')
 
 const canCreateTextConnection = (currentContent, nextContent) => {
@@ -89,7 +87,6 @@ const getConnectionCommands = (currSlideId, nextSlideId, currElement, refElement
     }),
   ]
 
-  // update refs till magic move series ends on both sides
   commands = commands.concat(getCommandsForRefIdSeries(index, currElement, refId, false) || [])
   commands = commands.concat(getCommandsForRefIdSeries(index, currElement, refId, true) || [])
 
@@ -97,7 +94,6 @@ const getConnectionCommands = (currSlideId, nextSlideId, currElement, refElement
 }
 
 const getCommandsToAddMagicMove = (index) => {
-  // adding magic move to last slide changes nothing
   if (index == slides.value.length - 1) return
 
   let commands = []
@@ -129,7 +125,6 @@ const getCommandToClearRefId = (slide, elementId, oldValue) => {
 }
 
 const getCommandsToRemoveMagicMove = (index) => {
-  // removing magic move from last slide changes nothing
   if (index == slides.value.length - 1) return
 
   const commands = []
@@ -158,7 +153,6 @@ const isAffectedByMagicMove = (slideIndex) => {
 }
 
 const getCommandsToUpdateElementRefId = (element, index = slideIndex.value) => {
-  // TODO: add refId handling for shape elements
   if (element.type == 'shape') return []
   if (element.type == 'table') return []
   const commands = []
@@ -195,7 +189,6 @@ const getCommandsToUpdateElementRefId = (element, index = slideIndex.value) => {
       )
     }
 
-    // update refs till magic move series ends on both sides
     const forwardCommands = getCommandsForRefIdSeries(index, element, refId, onPrev)
     const backwardCommands = getCommandsForRefIdSeries(index, element, refId, !onPrev)
 
@@ -223,15 +216,12 @@ const isSrcSlideInMagicMove = (srcSlide) => {
     : currentSlide.value?.transition === 'Magic Move'
 }
 
-// a table's columns are pinned in pixels, so it cannot follow a frame that tweens.
-// Without a refId it cuts with the slide instead of half-morphing
 const getCommandsToInitElementRefId = (newElement, src, srcSlide) => {
   const commands = []
   if (newElement.type == 'table') return commands
 
   const index = slideIndex.value
 
-  // only init refs when src is adjacent (prev or next)
   if (srcSlide !== index - 1 && srcSlide !== index + 1) return commands
 
   const srcElement = slides.value[srcSlide].elements.find((el) => el.id == src.id)
@@ -244,7 +234,6 @@ const getCommandsToInitElementRefId = (newElement, src, srcSlide) => {
   const currentSlideObj = slides.value[index]
   const srcSlideObj = slides.value[srcSlide]
 
-  // command to set refId on the new element (current slide)
   commands.push(
     editElementCommand({
       slideId: currentSlideObj.clientId,
@@ -255,7 +244,6 @@ const getCommandsToInitElementRefId = (newElement, src, srcSlide) => {
     }),
   )
 
-  // command to set refId on the source element (src slide)
   commands.push(
     editElementCommand({
       slideId: srcSlideObj.clientId,
@@ -266,7 +254,6 @@ const getCommandsToInitElementRefId = (newElement, src, srcSlide) => {
     }),
   )
 
-  // gather global ref id commands in both directions
   const isForward = srcSlide < index
   const forwardCommands = getCommandsForRefIdSeries(index, newElement, refId, isForward)
   const backwardCommands = getCommandsForRefIdSeries(index, newElement, refId, !isForward)

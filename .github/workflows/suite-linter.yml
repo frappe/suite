@@ -12,6 +12,18 @@ on:
       - "*.ts"
       - "tsconfig*.json"
       - "e2e/**"
+      - "**/*.js"
+      - "**/*.jsx"
+      - "**/*.mjs"
+      - "**/*.cjs"
+      - "**/*.ts"
+      - "**/*.tsx"
+      - "**/*.mts"
+      - "**/*.cts"
+      - "**/*.py"
+      - "**/*.vue"
+      - "**/*.html"
+      - "**/*.css"
       - "package.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -96,6 +108,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
 
       - uses: pnpm/action-setup@v6
 
@@ -106,6 +124,15 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Test comment lint
+        run: node --test .github/scripts/comment-policy.test.mjs
+
+      - name: Reject new code comments
+        if: github.event_name == 'pull_request'
+        env:
+          COMMENT_BASE: ${{ github.event.pull_request.base.sha }}
+        run: pnpm check:comments "$COMMENT_BASE"
 
       # Unused files, dependencies, unresolved imports and duplicate exports fail.
       # Phase 2 of the tooling work fixes the current findings and removes
