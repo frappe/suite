@@ -134,7 +134,7 @@
       <MobileSettingsCard>
         <MobileSettingsRow
           :icon="LogOut"
-          :label="__('Log Out')"
+          :label="__('Log out')"
           theme="red"
           :chevron="false"
           @click="showLogoutConfirm = true"
@@ -147,11 +147,10 @@
     <AdaptiveDialog
       v-model:open="showLogoutConfirm"
       v-bind="{
-        title: __('Log Out'),
-        message: __('Are you sure you want to log out?'),
+        title: __('Log out of your account?'),
         icon: 'lucide-alert-triangle',
         theme: 'amber',
-        actions: [{ label: __('Log Out'), theme: 'red', onClick: logout.submit }],
+        actions: [{ label: __('Log out'), theme: 'red', onClick: logout.submit }],
       }"
     />
   </div>

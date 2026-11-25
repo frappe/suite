@@ -78,33 +78,29 @@
         />
       </div>
 
-      <SettingsRow :title="__('Password')" :description="__('Manage password and account access.')">
-        <Button :label="__('Change password')" @click="showPasswordDialog = true" />
-      </SettingsRow>
+      <SettingsDialogRow
+        :title="__('Password')"
+        :description="__('Manage password and account access.')"
+        :action="__('Change password')"
+        section="account.profile.password"
+      >
+        <template #default="{ close }">
+          <ChangePasswordForm @saved="close" />
+        </template>
+      </SettingsDialogRow>
     </div>
   </SettingsTabContent>
-
-  <ChangePasswordDialog v-model:open="showPasswordDialog" />
 </template>
 
 <script setup lang="ts">
-import {
-  Avatar,
-  Button,
-  Dropdown,
-  ErrorMessage,
-  FileUploader,
-  FormControl,
-  SettingsRow,
-  toast,
-} from 'frappe-ui'
-import { computed, reactive, ref, watch } from 'vue'
+import { Avatar, Dropdown, ErrorMessage, FileUploader, FormControl, toast } from 'frappe-ui'
+import { computed, reactive, watch } from 'vue'
 
 import { api, client, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
-import { onSettingsSectionAsked } from '@/platform/settings'
+import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import { translate as __ } from '@/platform/translation'
-import ChangePasswordDialog from '@/shell/settings/ChangePasswordDialog.vue'
+import ChangePasswordForm from '@/shell/settings/ChangePasswordForm.vue'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
 import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
 
@@ -127,12 +123,6 @@ watch(
     }
   },
   { immediate: true },
-)
-
-const showPasswordDialog = ref(false)
-onSettingsSectionAsked(
-  () => 'account.profile.password',
-  () => (showPasswordDialog.value = true),
 )
 
 const displayName = computed(() => {
