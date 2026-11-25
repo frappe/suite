@@ -62,7 +62,7 @@
 
 <script setup lang="ts">
 import { Avatar, Button, usePortalTarget } from 'frappe-ui'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
@@ -82,6 +82,7 @@ import {
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
 import { openAreaSidebar } from '@/platform/area-sidebar'
+import { whenIdle } from '@/platform/idle'
 import { useSession } from '@/platform/session'
 import { showSettings } from '@/platform/settings'
 
@@ -104,6 +105,11 @@ const onProfile = computed(() => route.name === 'mail-profile')
 const inFolder = computed(() => !searching.value && !onProfile.value)
 const openProfile = () =>
   void router.push({ name: 'mail-profile', params: { accountId: store.accountId } })
+// The Settings tab's page loads while Mail is idle, so the tab opens without waiting for its code.
+// The route loads the same module, so it is fetched once. A failed load is tried again on the tap.
+onMounted(() =>
+  whenIdle(() => void import('@/apps/mail/pages/ProfileView.vue').catch(() => undefined), 3000),
+)
 // The folder the list shows: the tab takes its icon and name, as develop's did.
 const current = computed(() => {
   const param = route.params.mailbox

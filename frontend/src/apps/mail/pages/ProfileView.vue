@@ -29,8 +29,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
+import { api, client } from '@/api'
 import MailStorageCard from '@/apps/mail/components/mobile/MailStorageCard.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import { sessionStore } from '@/apps/mail/stores/session'
@@ -38,9 +39,25 @@ import { userStore } from '@/apps/mail/stores/user'
 import { useAccountSwitch } from '@/apps/mail/utils/composables'
 import { prefersUnified } from '@/apps/mail/utils/unifiedFolders'
 import MobileProfilePage from '@/components/MobileProfilePage.vue'
+import { whenIdle } from '@/platform/idle'
 
 const store = userStore()
 const { logout } = sessionStore()
+
+// What the Incoming and Outgoing pages open on, read while this page is idle: they open with their
+// switches and rows set, not filled in once the page is up. A read that fails is read again there.
+onMounted(() =>
+  whenIdle(() => {
+    const account = store.accountId
+    if (!account) return
+    for (const read of [
+      client.query(api.mail.settings.account, { account }),
+      client.query(api.mail.vacation.get, { account }),
+      client.query(api.mail.signatures.list),
+    ])
+      read.catch(() => undefined)
+  }),
+)
 
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])
 // What is unread in each account's Inbox, and across them all. A system folder's slug is its role.

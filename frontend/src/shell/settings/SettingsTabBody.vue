@@ -12,6 +12,7 @@ import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 import type { SettingsTab } from '@/shell/settings/settings'
+import { loadTabBody } from '@/shell/settings/tabBodies'
 
 const Loading = defineComponent({
   name: 'SettingsTabLoading',
@@ -42,14 +43,14 @@ const Failed = defineComponent({
 })
 
 // One async component per tab for the whole session: a second open reuses
-// the loaded chunk and shows no loading state.
+// the loaded chunk and shows no loading state. A list loads its tabs' chunks early (tabBodies).
 const bodies = new Map<string, Component>()
 
 function bodyOf(tab: SettingsTab): Component {
   const loaded = bodies.get(tab.id)
   if (loaded) return loaded
   const body = defineAsyncComponent({
-    loader: tab.body,
+    loader: () => loadTabBody(tab),
     loadingComponent: Loading,
     errorComponent: Failed,
     delay: 0,
