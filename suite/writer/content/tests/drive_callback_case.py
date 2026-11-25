@@ -16,6 +16,7 @@ import suite.drive._core as drive_core
 from suite import drive
 from suite.content import touches
 from suite.content.http import routes
+from suite.drive.framework import principals_for_request
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
 from suite.writer.content.tests.support import (
@@ -39,14 +40,8 @@ def move_as_writer(node: str, folder: str) -> None:
 
 
 def exported(node: str, file_format: str) -> str:
-    # Drive's export for the session's user, so the app's callback runs inside Drive's guard as a GET's does
-    user = frappe.session.user
-    own: tuple[str, ...] = ()
-    if user != "Guest":
-        own = (user, "$GENERAL")
-
-    reader = drive_core.principals.Principals(user, own, ("$PUBLIC",))
-    stream, _mime, _filename = drive_core.content.export_document(reader, node, file_format)
+    # Drive's export for the reader its GET route finds, so the app's callback runs inside Drive's own guard
+    stream, _mime, _filename = drive_core.content.export_document(principals_for_request(), node, file_format)
     return stream.read().decode()
 
 

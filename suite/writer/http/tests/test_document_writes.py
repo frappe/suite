@@ -14,16 +14,17 @@ import frappe
 import pycrdt
 from bs4 import BeautifulSoup
 from frappe.utils import now_datetime
+from frappe.utils.logging import connection_for
 from frappe.utils.synchronization import filelock
 
 from suite import content, drive
-from suite.content import capacity, checker, convert, scheduling, steps
+from suite.content import capacity, checker, convert, copies, jobs, scheduling, steps
 from suite.content.http import routes
 from suite.tests.utils import ensure_user
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
 from suite.writer.content import converter
-from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused
+from suite.writer.content.markdown import MarkdownRefused, WriteBusy, WriteRefused, body_state, write_body
 from suite.writer.content.tests.drive_callback_case import (
     DriveCallbackCase,
     embed,
@@ -131,6 +132,25 @@ class TestDocumentWrites(DriveCallbackCase):
         # A minute's count outlives the test, and one an earlier run left would cut this one short
         frappe.cache.delete_keys("rl:suite.writer")
         self.addCleanup(frappe.cache.delete_keys, "rl:suite.writer")
+
+    def copy_of(self, node: str) -> str:
+        return frappe.db.get_value("Writer Document", {"node": node}, "html") or ""
+
+    def age_copy(self, node: str) -> None:
+        # As a minute after the copy was written
+        frappe.db.sql(
+            "UPDATE `__writer_content_projection` SET `updated` = %s WHERE `doc_id` = %s",
+            (now_datetime() - timedelta(seconds=61), self.doc_row(node).id),
+        )
+        frappe.db.commit()
+
+    def swept_renders(self, node: str) -> int:
+        # The copy jobs one sweep queues for the document
+        with patch.object(scheduling, "enqueue") as enqueue:
+            jobs.sweep()
+
+        job = (jobs.RENDER_OWED, f"suite-collab-copy-writer-{self.doc_row(node).id}")
+        return [call.args for call in enqueue.call_args_list].count(job)
 
     def failing_converter(self, script: str):
         # A bundle whose child fails as a real one does
@@ -250,6 +270,33 @@ class TestDocumentWrites(DriveCallbackCase):
             self.version_blocks(node, kept["seq"]), "<paragraph>First. Typed by hand.</paragraph>"
         )
 
+    def test_a_replace_asked_again_after_a_refusal_keeps_one_version_of_the_head(self):
+        node = self.create("First.")
+        room = self.doc_row(node).state_bytes
+        self.set_doc(node, state_bytes=capacity.STATE_MAX)
+
+        for _attempt in range(2):
+            with (
+                patch.object(drive, "read_version") as read_version,
+                self.assertRaisesRegex(WriteRefused, "doc_full"),
+            ):
+                writer_routes.document_write(node, "Only this.", "replace")
+
+            # A version's file may be large or gone, so no replace reads one to know what it holds
+            read_version.assert_not_called()
+
+        self.assertEqual(len(self.kept_versions(node)), 1)
+
+        # A head that moved is kept again
+        self.set_doc(node, state_bytes=room)
+        self.push_edit(node, lambda body: body.children[0].children[0].insert(6, " Typed by hand."))
+        writer_routes.document_write(node, "Only this.", "replace")
+
+        newest, _first = self.kept_versions(node)
+        self.assertEqual(
+            self.version_blocks(node, newest["seq"]), "<paragraph>First. Typed by hand.</paragraph>"
+        )
+
     def test_a_replace_that_can_keep_no_version_writes_nothing(self):
         node = self.create("First.")
         full = drive.DriveOverQuota("The drive is full")
@@ -304,11 +351,258 @@ class TestDocumentWrites(DriveCallbackCase):
 
     def test_the_readable_copy_follows_a_write(self):
         node = self.create("First.")
+        self.age_copy(node)
 
         writer_routes.document_write(node, "Second.", "append")
 
         html = writer_routes.document(self.docname_of(node))["html"]
         self.assertIn("<p>First.</p><p>Second.</p>", html)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_writes_inside_a_minute_of_the_copy_leave_it_to_the_sweep(self):
+        node = self.create("First.")
+
+        writer_routes.document_write(node, "Second.", "append")
+        writer_routes.document_write(node, "Third.", "append")
+
+        self.assertIn("<p>First.</p>", self.copy_of(node))
+        self.assertNotIn("Second.", self.copy_of(node))
+        # Not before the copy is a minute old
+        self.assertEqual(self.swept_renders(node), 0)
+
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+        jobs.render_owed(writer_content.APP, self.doc_row(node).id)
+
+        self.assertIn("<p>First.</p><p>Second.</p><p>Third.</p>", self.copy_of(node))
+        self.assertEqual(exported(node, "html"), self.copy_of(node))
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_a_render_that_fails_at_the_write_is_left_to_the_sweep(self):
+        node = self.create("First.")
+        self.age_copy(node)
+        # Converted before the converter fails, so only the copy's render meets it
+        body = body_state("Second.")
+        logged = connection_for("Error Log").count("Error Log")
+
+        with patch.object(converter, "run", side_effect=RuntimeError("no turn")):
+            write_body(node, body, "append")
+
+        # The write landed, so the failure is the sweep's job to report
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph><paragraph>Second.</paragraph>")
+        self.assertNotIn("Second.", self.copy_of(node))
+        self.assertEqual(self.swept_renders(node), 1)
+        jobs.render_owed(writer_content.APP, self.doc_row(node).id)
+        self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
+
+    def test_an_export_renders_the_copy_a_write_left_behind(self):
+        node = self.create("First.")
+        share_as_writer(node, "$PUBLIC", drive.READ)
+        writer_routes.document_write(node, "Second.", "append")
+        doc_id = self.doc_row(node).id
+        self.assertNotIn("Second.", self.copy_of(node))
+
+        # A guest on the public link reads no older a document than the signed-in reader does
+        frappe.set_user("Guest")
+        with patch.object(scheduling, "enqueue") as enqueue:
+            html = exported(node, "html")
+
+        frappe.set_user(WRITER)
+        self.assertEqual(html, "<p>First.</p><p>Second.</p>")
+        # The export saves nothing, so the job is asked for at once and not at the next sweep
+        self.assertNotIn("Second.", self.copy_of(node))
+        self.assertEqual(
+            [call.args for call in enqueue.call_args_list],
+            [(jobs.RENDER_OWED, f"suite-collab-copy-writer-{doc_id}")],
+        )
+
+        jobs.render_owed(writer_content.APP, doc_id)
+        with patch.object(converter, "run") as run:
+            self.assertEqual(exported(node, "html"), html)
+
+        run.assert_not_called()
+
+    def test_an_export_while_the_write_renders_its_copy_answers_the_write(self):
+        node = self.create("First.")
+        self.age_copy(node)
+        body = body_state("Second.")
+        render = converter.run
+        exports: list[str] = []
+
+        def export_while_rendering(legacy: dict):
+            with patch.object(converter, "run", render), patch.object(scheduling, "enqueue"):
+                exports.append(exported(node, "html"))
+
+            return render(legacy)
+
+        with patch.object(converter, "run", side_effect=export_while_rendering):
+            write_body(node, body, "append")
+
+        self.assertEqual(exports, ["<p>First.</p><p>Second.</p>"])
+        self.assertIn("<p>First.</p><p>Second.</p>", self.copy_of(node))
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_exports_answer_and_log_once_while_the_queue_is_down(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        failed = {"method": "Collab readable copy: render request failed"}
+        logged = connection_for("Error Log").count("Error Log", failed)
+        tried: list[str] = []
+
+        def queue_down(method, **kwargs):
+            tried.append(kwargs["job_id"])
+            raise ConnectionError("no queue")
+
+        with patch.object(frappe, "enqueue", queue_down):
+            answers = [exported(node, "html"), exported(node, "html")]
+
+        self.assertEqual(answers, ["<p>First.</p><p>Second.</p>"] * 2)
+        self.assertEqual(tried, [f"suite-collab-copy-writer-{self.doc_row(node).id}"])
+        self.assertEqual(connection_for("Error Log").count("Error Log", failed), logged + 1)
+        # Once the queue's rest ends, the sweep asks for the copy again
+        self.age_copy(node)
+        rest = scheduling.QUEUE_PAUSE.total_seconds() + 1
+        clock = scheduling.time.monotonic
+        with patch.object(scheduling.time, "monotonic", lambda: clock() + rest):
+            self.assertEqual(self.swept_renders(node), 1)
+
+    def test_an_export_answers_a_refresh_when_the_owed_copy_cannot_be_rendered(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        logged = connection_for("Error Log").count("Error Log")
+
+        with (
+            patch.object(converter, "run", side_effect=checker.CheckerBusy("another child ran")),
+            patch.object(scheduling, "enqueue") as enqueue,
+            self.assertRaisesRegex(drive.DriveConflict, "Open the document to refresh its export"),
+        ):
+            exported(node, "html")
+
+        # The job is still asked for, as it is what reports a render that fails
+        enqueue.assert_called_once()
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+
+    def test_a_write_that_lands_while_the_owed_job_renders_is_still_owed(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        doc_id = self.doc_row(node).id
+        third = body_state("Third.")
+        render = converter.run
+
+        def render_as_a_write_lands(legacy: dict):
+            write_body(node, third, "append")
+            return render(legacy)
+
+        with patch.object(converter, "run", side_effect=render_as_a_write_lands):
+            jobs.render_owed(writer_content.APP, doc_id)
+
+        self.assertNotIn("Third.", self.copy_of(node))
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+        jobs.render_owed(writer_content.APP, doc_id)
+        self.assertIn("<p>First.</p><p>Second.</p><p>Third.</p>", self.copy_of(node))
+
+    def test_the_owed_job_renders_nothing_once_a_tab_rendered_the_head(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        doc = self.doc_row(node)
+        tab_render = "<p>First.</p><p>Second.</p>"
+        self.assertEqual(
+            copies.install(
+                writer_content.APP,
+                doc.id,
+                doc.head_rev,
+                doc.lineage,
+                doc.q_epoch,
+                lambda _state: tab_render,
+                writer_content.EDITOR.readable_copy,
+            ),
+            "installed",
+        )
+
+        with patch.object(converter, "run") as run:
+            jobs.render_owed(writer_content.APP, doc.id)
+
+        run.assert_not_called()
+        self.assertEqual(self.copy_of(node), tab_render)
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_the_owed_job_is_swept_again_only_when_the_converter_gave_no_answer(self):
+        node = self.create("First.")
+        writer_routes.document_write(node, "Second.", "append")
+        doc_id = self.doc_row(node).id
+        logged = connection_for("Error Log").count("Error Log")
+
+        with patch.object(converter, "run", side_effect=checker.CheckerBusy("another child ran")):
+            jobs.render_owed(writer_content.APP, doc_id)
+
+        self.assertEqual(connection_for("Error Log").count("Error Log"), logged)
+        self.age_copy(node)
+        self.assertEqual(self.swept_renders(node), 1)
+
+        # A child that crashes or runs out of time may do so on every render, so it is not tried again
+        with (
+            patch.object(converter, "run", return_value=convert.Refused("child_crash")),
+            self.assertRaisesRegex(RuntimeError, "rendered no copy: child_crash"),
+        ):
+            jobs.render_owed(writer_content.APP, doc_id)
+
+        self.assertEqual(self.swept_renders(node), 0)
+
+    def test_a_write_keeps_what_it_owes_when_its_request_fails_later(self):
+        node = self.create("First.")
+
+        write_body(node, body_state("Second."), "append")
+        frappe.db.rollback()
+
+        self.assertEqual(self.doc_row(node).copy_owed, 1)
+
+    def test_a_write_answers_its_rev_when_the_copy_cannot_be_marked_as_owed(self):
+        node = self.create("First.")
+        doc = self.doc_row(node)
+        body = body_state("Second.")
+        site = frappe.local.site
+        locked = threading.Event()
+        written = threading.Event()
+
+        def hold_row():
+            frappe.init(site=site)
+            frappe.connect()
+            try:
+                frappe.db.sql("SELECT `id` FROM `__writer_content_doc` WHERE `id` = %s FOR UPDATE", doc.id)
+                locked.set()
+                written.wait(30)
+            finally:
+                frappe.destroy()
+
+        holder = threading.Thread(target=hold_row)
+        push = steps.push_and_follow
+
+        def push_then_lose_the_row(*args, **kwargs):
+            answer = push(*args, **kwargs)
+            holder.start()
+            locked.wait(30)
+            return answer
+
+        frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")
+        self.addCleanup(frappe.db.sql, "SET SESSION innodb_lock_wait_timeout = DEFAULT")
+        unmarked = {"method": "Collab readable copy: not marked as owed"}
+        logged = connection_for("Error Log").count("Error Log", unmarked)
+
+        try:
+            with patch.object(steps, "push_and_follow", side_effect=push_then_lose_the_row):
+                rev = write_body(node, body, "append")
+        finally:
+            written.set()
+            holder.join()
+
+        self.assertEqual(rev, doc.head_rev + 1)
+        self.assertEqual(self.blocks_of(node), "<paragraph>First.</paragraph><paragraph>Second.</paragraph>")
+        self.assertEqual(connection_for("Error Log").count("Error Log", unmarked), logged + 1)
 
     def test_a_mode_other_than_replace_or_append_writes_nothing(self):
         node = self.create("First.")
@@ -630,13 +924,16 @@ class TestDocumentWrites(DriveCallbackCase):
         with self.assertRaises(frappe.RateLimitExceededError):
             self.as_request(lambda: self.markdown_of(node))
 
-    def test_a_guest_on_a_public_link_cannot_read_markdown(self):
+    def test_a_guest_on_a_public_link_reads_the_copy_and_no_markdown(self):
         node = self.create("Hello")
         share_as_writer(node, "$PUBLIC", drive.READ)
         frappe.set_user("Guest")
 
         with self.assertRaises(drive.DriveForbidden):
             self.markdown_of(node)
+
+        # The link still reads the document, as its copy
+        self.assertEqual(exported(node, "html"), "<p>Hello</p>")
 
     def test_a_converter_of_another_version_answers_busy_and_creates_nothing(self):
         another_version = """process.stdout.write('{"version": "0"}')"""

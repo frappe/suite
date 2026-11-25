@@ -132,6 +132,11 @@ def html(app: str, node: str) -> str | None:
         return None
 
     readable_copy = copies.readable_copy(app, doc.id)
+    if readable_copy is None and copies.is_owed(app, doc.id):
+        # A write on the server left the copy behind, and no reader should wait a sweep for it
+        readable_copy = copies.owed_html(app, doc.id)
+        jobs.request_owed_copy(app, doc.id)
+
     if readable_copy is None:
         raise NotReady()
 

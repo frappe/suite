@@ -26,7 +26,7 @@ from suite.content import (
     suspect,
     touches,
 )
-from suite.content.editors import HtmlCopy, spec_of
+from suite.content.editors import spec_of
 from suite.content.pushes import push, put_piece
 from suite.content.snapshot import Snapshot, read, rows_after, with_tombstones
 from suite.content.tables import table
@@ -152,8 +152,9 @@ def write(app: str, node: str, change: Callable[[pycrdt.Doc], None]) -> int:
         restore=None,
         expected_user=None,
     )
-    rev = int(push_and_follow(app, doc, header, payload)["rev"])
-    rebuild_copy(app, doc.id, rev, log_read.lineage, log_read.q_epoch)
+    answer = push_and_follow(app, doc, header, payload)
+    rev = int(answer["rev"])
+    copies.follow_write(app, doc.id, rev, log_read.lineage, log_read.q_epoch, is_wanted=answer["copy"])
     return rev
 
 
@@ -176,21 +177,6 @@ def own_update(log_read: Snapshot, client_id: int, change: Callable[[pycrdt.Doc]
         raise log.Refusal(400, "malformed")
 
     return updates[0]
-
-
-def rebuild_copy(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int) -> None:
-    """Make the app's render of the document at `rev` the readable copy, as no tab is here to render it."""
-    html_copy = spec_of(app).readable_copy
-    # A copy of another kind, or one only a tab can render, waits for the next tab to open the document
-    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
-        return
-
-    try:
-        copies.install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
-    except Exception:
-        frappe.db.rollback()
-        # The row is committed; the next tab to open the document renders the copy
-        frappe.log_error(title="Collab write: copy not rebuilt", message=f"{app} document {doc_id}")
 
 
 def push_and_follow(app: str, doc: frappe._dict, header: PushHeader, payload: bytes) -> dict:

@@ -157,6 +157,19 @@ def header_fields(app: str, doc_id: str) -> dict:
     return fields
 
 
+def has_milestone(app: str, doc_id: str, head_chain: bytes) -> bool:
+    """Whether a version was recorded as holding this head."""
+    doc = Table(table(app, "doc"))
+    found = (
+        frappe.qb.from_(doc)
+        .select(doc.id)
+        .where(doc.id == doc_id)
+        .where(doc.milestone_chain == Unhex(head_chain.hex()))
+        .run()
+    )
+    return bool(found)
+
+
 def milestone_taken(app: str, doc_id: str, head_chain: bytes) -> None:
     """Record that a version holds this head, so a restore begun again with no edits takes none."""
     doc = Table(table(app, "doc"))

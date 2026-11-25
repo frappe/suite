@@ -130,6 +130,8 @@ BASELINE_DEBT = {
             # trash, purge and restore a version as its writer; none of these
             # is a public call yet
             "suite/writer/content/tests/drive_callback_case.py|import|suite.drive._core",
+            # An export reads as the reader Drive's GET route finds; exporting is not a public call yet
+            "suite/writer/content/tests/drive_callback_case.py|import|suite.drive.framework",
             "suite/writer/content/tests/test_document_row.py|import|suite.drive._core",
             "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.access",
             "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.principals",

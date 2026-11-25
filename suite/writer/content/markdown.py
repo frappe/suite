@@ -14,7 +14,7 @@ from frappe import _
 from frappe.utils import md_to_html
 
 from suite import content, drive
-from suite.content import checker, compaction, convert, jobs
+from suite.content import checker, compaction, convert, jobs, restores
 from suite.writer.content import APP, EDITOR, converter
 from suite.writer.content.files import BODY_FRAGMENT
 
@@ -70,15 +70,21 @@ def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> int:
         raise drive.DriveNotFound(_("That document was not found"))
 
     body = body_state(markdown)
-    # A document with no log refuses the write below, so it keeps no version
-    if mode == "replace" and content.find(APP, node):
-        keep_version(node)
+    if mode == "replace":
+        doc = content.find(APP, node)
+        # A document with no log refuses the write below, so it keeps no version
+        if doc:
+            keep_version(node, doc.id, bytes(doc.head_chain))
 
     return write_body(node, body, mode)
 
 
-def keep_version(node: str) -> None:
+def keep_version(node: str, doc_id: str, head_chain: bytes) -> None:
     """Nothing is replaced without a version of the head first, as nothing is restored without one."""
+    # A replace refused after its version is asked again, and the head it kept has not moved
+    if restores.has_milestone(APP, doc_id, head_chain):
+        return
+
     try:
         # A milestone, as a restore's: an automatic version thins with age, and a named one is a person's
         drive.take_version(node, kind="milestone", label=_("Before a replace from Markdown"))
@@ -88,6 +94,7 @@ def keep_version(node: str) -> None:
     except drive.DriveError as error:
         raise WriteRefused(_("No version could be kept before the replace: {0}").format(error)) from None
 
+    restores.milestone_taken(APP, doc_id, head_chain)
     # The write reads in a transaction of its own, so the version is saved before the body goes
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
 

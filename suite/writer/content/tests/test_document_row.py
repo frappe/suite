@@ -97,6 +97,33 @@ class TestWriterDocumentRow(DriveCallbackCase):
         with self.assertRaisesRegex(drive.DriveConflict, refresh):
             writer_drive.SPEC.export(self.docname_of(node), "html")
 
+    def test_drive_answers_a_refresh_for_a_document_nobody_edited(self):
+        node = self.new_document()
+        doc = self.doc_row(node)
+        refresh = "Open the document to refresh its export"
+
+        with self.assertRaisesRegex(drive.DriveConflict, refresh):
+            writer_drive.SPEC.export(self.docname_of(node), "html")
+
+        # A render of the blank head is no newer than no copy, and leaves no row for the export to read
+        installed = copies.install(
+            writer_content.APP,
+            doc.id,
+            0,
+            doc.lineage,
+            doc.q_epoch,
+            lambda _state: "<p></p>",
+            writer_content.EDITOR.readable_copy,
+        )
+        self.assertEqual(installed, "stale")
+        with self.assertRaisesRegex(drive.DriveConflict, refresh):
+            writer_drive.SPEC.export(self.docname_of(node), "html")
+
+        # A projection row left at rev 0 holds no hash to read the copy against
+        frappe.db.sql("INSERT INTO `__writer_content_projection` (`doc_id`) VALUES (%s)", doc.id)
+        with self.assertRaisesRegex(drive.DriveConflict, refresh):
+            writer_drive.SPEC.export(self.docname_of(node), "html")
+
     def test_drive_never_exports_a_copy_something_else_wrote_and_keeps_it_once(self):
         node = self.new_document()
         self.type_into(node, ["one"])

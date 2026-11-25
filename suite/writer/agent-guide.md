@@ -74,7 +74,8 @@ curl -X PUT $SITE/api/suite/drive/nodes/<node>/grants/<user's email> -H "$AUTH" 
 ## What a write does
 
 - It lands as one change by the signed-in user, the same way a tab's edit does. Open tabs get it live.
-- The automatic version and the readable copy follow it.
+- The automatic version follows it.
+- A read as HTML (`format=html`, or no `format`) shows it at once, for a guest on a public link too. Writer saves the HTML with the document a little later, within about five minutes.
 - `append` adds the Markdown after the body. Text someone is typing at that moment stays.
 - `replace` removes every block the body had and writes the Markdown. Text typed at that moment into a removed block goes with it. A block added at that moment stays.
 - `replace` first keeps a version of the document as it stood, named "Before a replace from Markdown". It stays in the document's versions until someone deletes it. When no version can be kept, as when the Drive is full, the replace is refused. When the versions are only away for a moment, it answers `WriteBusy`.
@@ -120,8 +121,19 @@ A refusal answers its class and a message:
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the document, the document is in the trash, or a guest asks for Markdown |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
-| `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: the document is not converted yet, the document changed during the read, or the item is a folder. A read of a document not converted yet asks for its conversion, so read again in a minute. After a change during the read, read again |
+| `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder. On a read: the document is not converted yet, the document changed during the read, the HTML is behind the document, or the item is a folder. A read of a document not converted yet asks for its conversion, so read again in a minute. After a change during the read, read again. The HTML is behind while someone types in a tab, or when the converter was busy after a write. That read says `Open the document to refresh its export`. Read again in a moment, or read Markdown, which is always the document as it stands |
 | `MarkdownRefused` | 422 | The document can't keep part of the Markdown, the Markdown is over 128 KB, an `append` shows nothing, or the converter ran out of time or failed on the Markdown. Nothing was written. The same Markdown gets the same answer, so change it or write it in smaller parts |
 | `WriteRefused` | 409 | The document refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`, or no version could be kept before a replace. The same call gets the same answer until that changes. A write to a document not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The document is busy, a version is being restored into it or was just restored, the document's versions are away for a moment before a replace, or the converter gave no answer: it was busy or was being updated. The Markdown is not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end. Or, on a read, the converter gave no answer: it was busy, ran out of time or failed. Read again in a moment |
+| `RuntimeError` | 500 | The site can't run the converter: Node or the converter's built bundle is missing. A create, a write or a Markdown read gets this, and nothing was written. The call is not at fault and gets the same answer until the site is fixed, so tell whoever runs the site. An HTML read that is behind answers `DriveConflict` then, and reading again won't help. Once the site is fixed, it may stay behind until the next write to the document or until a tab opens it |
+
+## A document that never converts
+
+A document from before live editing is converted before it can be read as Markdown or written. A read, a write or a tab that opens it asks for the conversion, and it most often lands within a minute. Until then a read answers `DriveConflict` with "This document is not converted yet", and a write answers `WriteRefused` with `unconverted`.
+
+When both still answer that after a few tries a minute apart, stop asking. Either the document can't be converted, and it stays read-only, or the site converts nothing right now. More calls change neither.
+
+- Its HTML still reads. Ask step 4 for `format=html`, and the answer is the body as it was last saved.
+- Tell the user. Someone who opens the document in Writer sees which of the two it is, and a System Manager also sees the reason.
+- To go on meanwhile, write into a new document, as in step 3, and leave the old one as it is.
