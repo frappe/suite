@@ -175,13 +175,15 @@ jobs:
             site="bench-$trial.localhost"
             pilot new-site "$site" --admin-password admin --apps frappe suite --skip-assets
             pilot frappe --site "$site" set-config allow_tests true
+            pilot frappe --site "$site" execute suite.tests.utils.ensure_user --args '["writer-collab-reader@example.com"]'
+            pilot frappe --site "$site" execute suite.tests.utils.ensure_user --args '["writer-collab-outsider@example.com"]'
 
             args=()
             omit=0
             if [ "$mode" != off ]; then args+=(--coverage); fi
             if [ "$mode" = excluded ]; then omit=1; fi
             status=0
-            /usr/bin/time -f '%e' -o "$output/$trial.time" \
+            /usr/bin/time -q -f '%e' -o "$output/$trial.time" \
               env SUITE_BENCH_OMIT_TESTS="$omit" COVERAGE_DEBUG=sys COVERAGE_DEBUG_FILE="$output/$trial.coverage-debug" \
               pilot frappe --site "$site" run-tests --app suite \
                 --module suite.writer.content.tests.test_conversion "${args[@]}" \
