@@ -2,7 +2,7 @@
   <EmojiPicker side="top" align="end" @select="selectReaction">
     <Button
       variant="ghost"
-      size="xs"
+      :size
       icon="lucide-smile-plus"
       :label="__('Add reaction')"
       :tooltip="__('Add reaction')"
@@ -18,6 +18,7 @@ import { translate as __ } from '@/platform/translation'
 
 import { isChatReaction } from '../../../../../suite/meet/types/chatReactions'
 
+const { size = 'xs' } = defineProps<{ size?: 'xs' | 'md' }>()
 const emit = defineEmits<{ select: [emoji: string] }>()
 
 function selectReaction(emoji: string) {

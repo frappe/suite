@@ -17,7 +17,7 @@
           v-for="emoji in expired ? [] : quickReactions"
           :key="emoji"
           variant="ghost"
-          size="xs"
+          size="md"
           :label="emojiLabel(emoji)"
           :tooltip="emojiLabel(emoji)"
           :aria-pressed="hasReaction(emoji)"
@@ -26,12 +26,15 @@
             '!bg-surface-gray-5 !text-ink-gray-9 hover:!bg-surface-gray-6': hasReaction(emoji),
           }"
           @click="toggleReaction(emoji)"
-          >{{ emoji }}</Button
         >
-        <ChatReactionPicker v-if="!expired" @select="toggleReaction($event)" />
+          <template #icon>
+            <span class="text-lg leading-none" aria-hidden="true">{{ emoji }}</span>
+          </template>
+        </Button>
+        <ChatReactionPicker v-if="!expired" size="md" @select="toggleReaction($event)" />
         <Button
           variant="ghost"
-          size="xs"
+          size="md"
           icon="lucide-reply"
           :label="__('Reply')"
           :tooltip="__('Reply')"
@@ -41,7 +44,7 @@
       <Button
         v-if="canPin"
         variant="ghost"
-        size="xs"
+        size="md"
         :icon="pinned ? 'lucide-pin-off' : 'lucide-pin'"
         :label="pinned ? __('Unpin message') : __('Pin message')"
         :tooltip="pinned ? __('Unpin message') : __('Pin message')"
@@ -227,7 +230,7 @@ function reactionNames(userIds: string[]) {
 @media (hover: hover) and (pointer: fine) {
   .chat-message-actions {
     position: absolute;
-    top: -0.75rem;
+    top: -1rem;
     margin-bottom: 0;
     opacity: 0;
     pointer-events: none;
