@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Button, Dialog, Switch, TextInput, toast } from 'frappe-ui'
+import { Button, Dialog, Switch, TextInput } from 'frappe-ui'
 import { computed, ref, useId, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -96,7 +96,7 @@ const statusLabel = computed(() => {
 })
 const disabled = computed(() => saving.value || (custom.value && status.value !== 'available'))
 
-const submit = async (action: 'copy' | 'start') => {
+const submit = async () => {
   if (disabled.value) return
   saving.value = true
   const link = slug.value
@@ -115,20 +115,11 @@ const submit = async (action: 'copy' | 'start') => {
     }
 
     open.value = false
-    if (action === 'copy') {
-      try {
-        await navigator.clipboard.writeText(meet.url)
-        toast.success(__('Link copied'))
-      } catch {
-        toast.error(__('Could not copy the link'))
-      }
-    } else {
-      connection.justCreated = true
-      await router.push({
-        name: 'meet-meeting',
-        params: { meetingId: hasCustomLink ? link : meet.code },
-      })
-    }
+    connection.justCreated = true
+    await router.push({
+      name: 'meet-meeting',
+      params: { meetingId: hasCustomLink ? link : meet.code },
+    })
   } finally {
     saving.value = false
   }
@@ -142,7 +133,7 @@ const submit = async (action: 'copy' | 'start') => {
     :dismissible="!saving"
     :show-close-button="!saving"
   >
-    <form class="flex flex-col" @submit.prevent="submit('start')">
+    <form class="flex flex-col" @submit.prevent="submit">
       <TextInput
         v-model="title"
         size="md"
@@ -207,19 +198,8 @@ const submit = async (action: 'copy' | 'start') => {
       <button type="submit" class="hidden" :disabled="disabled" />
     </form>
     <template #actions>
-      <div class="flex justify-end gap-2">
-        <Button
-          :label="__('Copy link')"
-          icon-left="lucide-copy"
-          :disabled="disabled"
-          @click="submit('copy')"
-        />
-        <Button
-          variant="solid"
-          :label="__('Start')"
-          :disabled="disabled"
-          @click="submit('start')"
-        />
+      <div class="flex justify-end">
+        <Button variant="solid" :label="__('Start')" :disabled="disabled" @click="submit" />
       </div>
     </template>
   </Dialog>

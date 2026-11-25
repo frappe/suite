@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Badge, Button } from 'frappe-ui'
+import { Button, Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
@@ -50,7 +50,11 @@ const rows = computed(() =>
         class="recording-row"
         variant="ghost"
         :route="recording.route"
-        :aria-label="__('Open recording of {0}', [recording.title])"
+        :aria-label="
+          recording.partial
+            ? __('Open partial recording of {0}', [recording.title])
+            : __('Open recording of {0}', [recording.title])
+        "
       >
         <span class="flex w-full min-w-0 items-center gap-2.5">
           <span
@@ -64,7 +68,12 @@ const rows = computed(() =>
               <span class="truncate text-sm font-medium text-ink-gray-8">{{
                 recording.title
               }}</span>
-              <Badge v-if="recording.partial" :label="__('Partial')" theme="amber" size="sm" />
+              <Tooltip v-if="recording.partial" :text="__('Partial recording')">
+                <span
+                  class="lucide-circle-dashed size-3.5 shrink-0 text-ink-gray-6"
+                  aria-hidden="true"
+                />
+              </Tooltip>
             </span>
             <span class="mt-1.5 block truncate text-sm text-ink-gray-6">{{
               recording.detail

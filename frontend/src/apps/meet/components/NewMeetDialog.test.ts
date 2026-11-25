@@ -7,8 +7,6 @@ const state = vi.hoisted(() => ({
   query: vi.fn(),
   create: vi.fn(),
   push: vi.fn(),
-  writeText: vi.fn(),
-  success: vi.fn(),
 }))
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: state.push }) }))
@@ -25,7 +23,6 @@ vi.mock('@/api', () => ({
   useMutation: () => ({ run: state.create }),
 }))
 vi.mock('frappe-ui', () => ({
-  toast: { success: state.success, error: vi.fn() },
   Dialog: defineComponent({
     props: ['open', 'title'],
     setup:
@@ -81,16 +78,12 @@ beforeEach(() => {
   state.query.mockResolvedValue({ status: 'available' })
   state.create.mockResolvedValue({
     code: 'abcd-efgh-ijkl',
-    url: 'https://suite.example/meet/sales-team',
   })
-  state.writeText.mockResolvedValue(undefined)
-  vi.stubGlobal('navigator', { clipboard: { writeText: state.writeText } })
 })
 
 afterEach(() => {
   cleanup?.()
   vi.useRealTimers()
-  vi.unstubAllGlobals()
 })
 
 function mount() {
@@ -144,13 +137,16 @@ describe('New meet', () => {
     expect(input('Custom link')).toBeNull()
   })
 
-  it('copies a custom URL, closes and stays on the Meet home', async () => {
+  it('starts a restricted meet at its custom address and closes the dialog', async () => {
     const { root, button, enter } = mount()
     await enter('Meet title', 'Sales team')
     button('Restricted').click()
     button('Custom link').click()
     await vi.advanceTimersByTimeAsync(300)
-    button('Copy link').click()
+
+    expect(button('Copy link')).toBeUndefined()
+    expect(state.create).not.toHaveBeenCalled()
+    button('Start').click()
     await nextTick()
     await nextTick()
 
@@ -159,35 +155,20 @@ describe('New meet', () => {
       title: 'Sales team',
       link: 'sales-team',
     })
-    expect(state.writeText).toHaveBeenCalledWith('https://suite.example/meet/sales-team')
-    expect(state.success).toHaveBeenCalledWith('Link copied')
-    expect(state.push).not.toHaveBeenCalled()
-    expect(root.querySelector('section')).toBeNull()
-  })
-
-  it('starts a meet at its custom address', async () => {
-    const { button, enter } = mount()
-    await enter('Meet title', 'Sales team')
-    button('Custom link').click()
-    await vi.advanceTimersByTimeAsync(300)
-    button('Start').click()
-    await nextTick()
-
     expect(state.push).toHaveBeenCalledWith({
       name: 'meet-meeting',
       params: { meetingId: 'sales-team' },
     })
-    expect(state.writeText).not.toHaveBeenCalled()
+    expect(root.querySelector('section')).toBeNull()
   })
 
-  it('blocks both actions for an invalid or already taken link', async () => {
+  it('blocks Start for an invalid or already taken link', async () => {
     state.query.mockResolvedValue({ status: 'taken' })
     const { root, button, enter } = mount()
     button('Custom link').click()
     await nextTick()
     await enter('Custom link', 'a!')
     expect(root.textContent).toContain('Use 3–40 lowercase letters, numbers or hyphens')
-    expect(button('Copy link').disabled).toBe(true)
     expect(button('Start').disabled).toBe(true)
     await vi.advanceTimersByTimeAsync(300)
     expect(state.query).not.toHaveBeenCalled()
@@ -196,7 +177,6 @@ describe('New meet', () => {
     expect(button('Start').disabled).toBe(true)
     await vi.advanceTimersByTimeAsync(300)
     expect(root.textContent).toContain('Already taken')
-    button('Copy link').click()
     button('Start').click()
     expect(state.create).not.toHaveBeenCalled()
   })
