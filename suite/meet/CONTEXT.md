@@ -147,6 +147,10 @@ _Avoid_: Server-side Encryption
 - An **End-to-End Encryption** Meet Room cannot start a Recording Session.
 - **End-to-End Encryption** cannot be enabled during an active **Recording Session**; the session must be stopped first.
 
+## Call layout
+
+Meet keeps participant video references stable across layout changes to avoid detaching and reattaching active video. Tiles hidden by the grid stay mounted so they can animate smoothly when they become visible again.
+
 ## Example Dialogue
 
 > **Dev:** "If a co-host starts recording and stops it ten minutes later, who owns the video?"
