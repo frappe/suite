@@ -197,6 +197,7 @@
                     :drafts="folder === 'drafts'"
                     :threads="row.threads"
                     :expanded="row.expanded"
+                    :selection-mode="mobileSelectionMode"
                     :is-selected="isStackSelected(row.threads.map(threadKey))"
                     :hide-avatar="!isMobile"
                     :account-label="shortAccountLabel(row.threads[0].account_name)"

@@ -1,7 +1,9 @@
 <template>
   <AppSettingsHeader :title="__('Incoming')" />
   <AppSettingsBody>
-    <div class="flex flex-col gap-10">
+    <!-- Shown once the preferences are read, so the row that needs them comes with the rest. Hidden,
+         not left out, so every part starts reading as the page opens. -->
+    <div v-show="settled" class="flex flex-col gap-10">
       <InboxCategorySettings />
       <!-- Who may reach the Inbox and what they may load as you read: the Screener's senders, and
            remote images, which trusted senders' mail shows. -->
@@ -32,6 +34,6 @@ import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
-const { preferences, flag } = useAccountPreferences()
+const { preferences, settled, flag } = useAccountPreferences()
 const blockRemoteImages = flag('block_remote_images')
 </script>
