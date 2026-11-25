@@ -52,3 +52,36 @@ it('keeps the sender in view on a phone, ticking the avatar of a selected row', 
   expect(row(true)).toEqual({ avatarShown: true, ticked: true })
   expect(row(false)).toEqual({ avatarShown: true, ticked: false })
 })
+
+// A finger landing on an unpicked phone row, while rows are being picked or not: whether the row is
+// shaded under it.
+const shadedUnderFinger = async (selectionMode: boolean) => {
+  const el = document.createElement('div')
+  const app = createApp({
+    render: () =>
+      h(MailRow, {
+        isSelected: false,
+        selectionMode,
+        avatarLabel: 'Dana',
+        datetime: '2026-11-06T10:00:00Z',
+      }),
+  })
+  app.provide('$user', { data: { show_reading_pane: false } })
+  app.config.globalProperties.__ = (text: string) => text
+  app.mount(el)
+  mounted.push(app)
+  const rowEl = el.firstElementChild!
+  rowEl.dispatchEvent(
+    Object.assign(new Event('touchstart', { bubbles: true }), {
+      touches: [{ clientX: 10, clientY: 10 }],
+    }),
+  )
+  await Promise.resolve()
+  return rowEl.classList.contains('!bg-surface-gray-1')
+}
+
+it('shades a row under the finger as a long press’s hint, but not while a tap already picks it', async () => {
+  expect(await shadedUnderFinger(false)).toBe(true)
+  // Shaded, it blinked: off as the finger lifted, on again as the tap picked it
+  expect(await shadedUnderFinger(true)).toBe(false)
+})

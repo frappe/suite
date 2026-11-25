@@ -55,6 +55,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
 import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { useQuota } from '@/apps/mail/composables/useQuota'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, MailRecipient } from '@/apps/mail/types'
@@ -73,6 +74,9 @@ const store = userStore()
 const { userResource } = store
 
 const { isMobile } = useScreenSize()
+// Read from the start, as the sidebar's meter reads it on a computer: a phone shows storage only on
+// its Settings page, which would otherwise ask once it opens and draw the card after the rest.
+useQuota()
 const { requestListReload } = useListReload()
 const { holdDraft, releaseDraft } = useDiscardingDrafts()
 // Removals a closed page left inside their Undo window: the window is over, so they go now.

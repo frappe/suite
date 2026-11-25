@@ -8,7 +8,10 @@
     :class="[
       ROW_BOX_CLASS,
       {
-        '!bg-surface-gray-1': isSelected || isTouching,
+        // The grey under a finger says a long press will pick the row. Picking is a tap already
+        // while selecting, and the grey there blinked: on as the finger landed, off as it lifted,
+        // then on again as the tap picked the row.
+        '!bg-surface-gray-1': isSelected || (isTouching && !pressBeganSelecting),
         // A press while selecting toggles the row, and the row's own grey says which way it went; the
         // press grey on top of that flashed a deselected row darker than it ends up. Taken from when
         // the press began: deselecting the last row ends selecting while the finger is still down.
