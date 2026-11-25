@@ -158,6 +158,38 @@ describe('useTileAdaptiveStreaming', () => {
     expect(IntersectionObserverStub.instances[0]?.disconnect).toHaveBeenCalledOnce()
   })
 
+  it('sends tile dimensions to a replacement consumer without a resize or visibility change', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('requestAnimationFrame', vi.fn())
+    const manager = createManager('initial-camera')
+    const { app, registerTile } = mountComposable(ref(manager))
+    try {
+      registerTile('participant-1', visibleVideoElement())
+      await nextTick()
+      expect(manager.updateConsumerStreamPreferences).toHaveBeenCalledWith('initial-camera', {
+        visible: true,
+        width: 640,
+        height: 360,
+      })
+
+      manager.getVideoConsumerId.mockReturnValue('resumed-camera')
+      manager.getListener()?.(
+        new CustomEvent('consumerReady', {
+          detail: { participantId: 'participant-1', consumerId: 'resumed-camera' },
+        }),
+      )
+      await vi.advanceTimersByTimeAsync(300)
+      expect(manager.updateConsumerStreamPreferences).toHaveBeenLastCalledWith('resumed-camera', {
+        visible: true,
+        width: 640,
+        height: 360,
+      })
+    } finally {
+      app.unmount()
+      vi.useRealTimers()
+    }
+  })
+
   it('resumes a tile that animates into view through less than ten percent visibility', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('requestAnimationFrame', vi.fn())

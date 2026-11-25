@@ -181,6 +181,53 @@ describe('SFUMeetingManager PiP camera demand', () => {
       expect.objectContaining({ producerId: 'camera-alice' }),
     )
   })
+  it('stops receiving a paused camera even when PiP requests it, then subscribes again on resume', async () => {
+    const { manager, internal, handlers } = setup()
+    const subscribe = vi
+      .spyOn(internal.mediaManager, 'subscribeToRemoteProducer')
+      .mockResolvedValue(undefined)
+    const unsubscribe = vi
+      .spyOn(internal.mediaManager, 'unsubscribeFromRemoteProducer')
+      .mockResolvedValue(undefined)
+    vi.spyOn(internal.connectionManager.expectedMedia, 'waitForHealthy').mockResolvedValue()
+    vi.spyOn(internal.transportManager, 'isDeviceLoaded').mockReturnValue(true)
+    internal.participantManager.addParticipant({
+      participantId: 'alice',
+      userData: { name: 'Alice' },
+    })
+    await internal.connectionManager.connect('token')
+    await manager.setVisibleRemoteVideoParticipants(['alice'])
+    for (const producer of [
+      { producerId: 'camera', kind: 'video' },
+      { producerId: 'microphone', kind: 'audio' },
+      { producerId: 'presentation', kind: 'video', isScreen: true },
+    ]) {
+      await handlers.get('producer_created')!({ participantId: 'alice', ...producer })
+    }
+    for (const [producerId, isScreen] of [
+      ['camera', false],
+      ['microphone', false],
+      ['presentation', true],
+    ]) {
+      expect(subscribe).toHaveBeenCalledWith({ participantId: 'alice', producerId, isScreen })
+    }
+
+    subscribe.mockClear()
+    await manager.setVisibleRemoteVideoParticipants(['alice'], ['alice'])
+    expect(unsubscribe).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ producerId: 'camera' }),
+    )
+    manager.setPictureInPictureParticipant('alice')
+    await settle()
+    expect(subscribe).not.toHaveBeenCalled()
+
+    await manager.setVisibleRemoteVideoParticipants(['alice'], [])
+    expect(subscribe).toHaveBeenCalledExactlyOnceWith({
+      participantId: 'alice',
+      producerId: 'camera',
+      isScreen: false,
+    })
+  })
   it('refreshes PiP demand after a consumer is replaced for the same participant', async () => {
     const { manager, internal, camera, client } = setup()
     const first = camera('alice')
