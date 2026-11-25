@@ -33,7 +33,10 @@ const listOnServer = () => {
   return { query, answer }
 }
 
-const mountList = (server: ReturnType<typeof listOnServer>) => {
+const mountList = (
+  server: ReturnType<typeof listOnServer>,
+  { open, onEdgeThread = () => {} }: { open?: string; onEdgeThread?: (id: string) => void } = {},
+) => {
   let list!: ReturnType<typeof usePaginatedThreads>
   const app = createApp(
     defineComponent({
@@ -41,8 +44,8 @@ const mountList = (server: ReturnType<typeof listOnServer>) => {
         list = usePaginatedThreads({
           query: () => fromPartial(server.query),
           rows: () => server.query.rows,
-          openThreadID: () => undefined,
-          onEdgeThread: () => {},
+          openThreadID: () => open,
+          onEdgeThread,
         })
         return () => null
       },
@@ -91,6 +94,41 @@ describe('usePaginatedThreads reads the list again', () => {
     await server.answer([row(['m1'])])
 
     expect(draftInList('acc', row(['m1']))).toBeUndefined()
+    unmount()
+  })
+})
+
+describe('usePaginatedThreads at the end of what is loaded', () => {
+  it('opens the next thread once the window on its way lands, when Next is asked for meanwhile', async () => {
+    const server = listOnServer()
+    const thread = (id: string) => fromPartial<Thread>({ thread_id: id, messages: [] })
+    server.query.rows = [thread('t1'), thread('t2')]
+    server.query.hasNext = true
+    let land!: () => void
+    server.query.fetchNext = () => {
+      server.query.isFetching = true
+      return new Promise<void>((resolve) => {
+        land = () => {
+          server.query.rows = [...server.query.rows, thread('t3')]
+          server.query.isFetching = false
+          resolve()
+        }
+      })
+    }
+    const opened: string[] = []
+    // The last loaded thread is open, so the next window is already on its way
+    const { list, unmount } = mountList(server, {
+      open: 't2',
+      onEdgeThread: (id) => opened.push(id),
+    })
+    await nextTick()
+
+    const next = list.loadMoreThenOpenEdge(1, 'open')
+    await nextTick()
+    land()
+    await next
+
+    expect(opened).toEqual(['t3'])
     unmount()
   })
 })
