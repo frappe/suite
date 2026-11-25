@@ -474,7 +474,7 @@ jobs:
                 changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
               fi
             fi
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/(drive|content|writer|sheets|slides|suite_core|composition|fixtures|utils)/|suite/(hooks\.py|patches\.txt|modules\.txt)$|pyproject\.toml$|package\.json$|pnpm-(lock\.yaml|workspace\.yaml)$|\.github/workflows/suite-ci\.yml$)' && run_rehearsal=1 || run_rehearsal=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/(drive|content|writer|sheets|slides|draw|suite_core|composition|fixtures|utils)/|suite/(hooks\.py|patches\.txt|modules\.txt)$|pyproject\.toml$|package\.json$|pnpm-(lock\.yaml|workspace\.yaml)$|\.github/workflows/suite-ci\.yml$)' && run_rehearsal=1 || run_rehearsal=0
           fi
 
           echo "run=$run_rehearsal" >> $GITHUB_OUTPUT
