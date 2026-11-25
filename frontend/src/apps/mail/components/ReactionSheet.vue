@@ -43,7 +43,7 @@
         :class="{ 'mt-4 border-t pt-4': !readonly }"
       >
         <li v-for="group in groups" :key="group.emoji" class="flex items-baseline">
-          <span class="w-14 shrink-0 text-center text-xl" aria-hidden="true">
+          <span class="w-14 shrink-0 text-center text-4xl" aria-hidden="true">
             {{ group.emoji }}
           </span>
           <p class="text-p-base text-ink-gray-8 min-w-0 flex-1">
