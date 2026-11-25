@@ -59,6 +59,8 @@
   <div
     class="bg-surface-base sticky top-0 flex items-center px-3.5 py-2.5 max-sm:min-h-14 max-sm:py-0 sm:border-b"
   >
+    <!-- The arrow alone, on a phone too: the subject below names the thread, and a list's own
+         title is a back arrow and its name, which a named Back here would repeat. -->
     <Button
       variant="ghost"
       class="mr-2 shrink-0 max-sm:-ml-2 max-sm:!h-8 max-sm:!w-8 touch-target"
@@ -71,7 +73,9 @@
     </Button>
     <!-- Only actions up here, on a phone as on a desktop: the subject heads the thread below,
 	     where it can wrap. -->
-    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:gap-3">
+    <!-- On a phone the actions stand at the far end, away from Back, and More keeps the 8px the
+         actions keep between them. -->
+    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:justify-end max-sm:gap-2">
       <template v-if="thread?.length">
         <!-- Three groups, apart a step more than their buttons, with a line halfway: what is done to
              it, read or taken away; where it is filed; what holds it for later, the order of a row's
@@ -81,8 +85,9 @@
           <div v-if="visibleActions.length" class="flex items-center space-x-2">
             <ReuseAction v-for="action in visibleActions" :key="action.label" :action />
           </div>
-          <Divider v-if="visibleActions.length && !inDrafts" v-bind="GROUP_LINE" />
-          <div v-if="!inDrafts" class="flex items-center space-x-2">
+          <!-- On a phone where it is filed is changed from the More sheet. -->
+          <Divider v-if="visibleActions.length && !inDrafts && !isMobile" v-bind="GROUP_LINE" />
+          <div v-if="!inDrafts && !isMobile" class="flex items-center space-x-2">
             <AdaptiveDropdown :options="moveToOptions" :title="__('Move To')">
               <Button
                 variant="ghost"
@@ -138,14 +143,23 @@
                row's flow. -->
           <div v-if="isMobile" class="absolute">
             <ReuseLater />
+            <AdaptiveDropdown
+              v-if="!inDrafts"
+              v-model:open="moveToOpen"
+              :options="moveToOptions"
+              :title="__('Move To')"
+            />
+            <AdaptiveDropdown
+              v-if="!inDrafts && folderOptions.length"
+              v-model:open="foldersOpen"
+              :options="folderOptions"
+              :title="__('Folders')"
+            />
           </div>
         </div>
-        <!-- A phone's toolbar is full: what is left goes in a sheet. -->
-        <AdaptiveDropdown
-          v-if="isMobile && laterOptions.length"
-          :options="laterOptions"
-          :title="__('More')"
-        >
+        <!-- A phone's toolbar keeps the first group: what is left goes in a sheet, untitled, its
+             rows say enough. -->
+        <AdaptiveDropdown v-if="isMobile && moreSheetOptions.length" :options="moreSheetOptions">
           <Button
             variant="ghost"
             class="max-sm:!h-8 max-sm:!w-8 touch-target"
@@ -158,15 +172,15 @@
         </AdaptiveDropdown>
       </template>
       <!-- A thread on its way: its buttons in outline. Nothing to press yet: what a button does
-           depends on where the thread's mail is filed. -->
-      <ThreadActionsOutline v-else class="animate-pulse" :drafts="inDrafts" />
+           depends on where the thread's mail is filed. None once it has failed to load. -->
+      <ThreadActionsOutline v-else-if="!failed" class="animate-pulse" :drafts="inDrafts" />
       <!-- Prev/next thread arrows are a desktop affordance (↑/K, ↓/J). They don't wait for the
            thread: the reader can step on past one that is slow to load. -->
       <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
         <Button
           variant="ghost"
-          :tooltip="__('Previous Thread (↑/K)')"
-          :aria-label="__('Previous Thread')"
+          :tooltip="__('Previous Conversation (↑/K)')"
+          :aria-label="__('Previous Conversation')"
           aria-keyshortcuts="ArrowUp K"
           :disabled="threadID === threads[0]"
           @click="emit('prevThread')"
@@ -178,8 +192,8 @@
 
         <Button
           variant="ghost"
-          :tooltip="__('Next Thread (↓/J)')"
-          :aria-label="__('Next Thread')"
+          :tooltip="__('Next Conversation (↓/J)')"
+          :aria-label="__('Next Conversation')"
           aria-keyshortcuts="ArrowDown J"
           :disabled="threadID === threads.at(-1) && !canGoNext"
           @click="emit('nextThread')"
@@ -251,7 +265,7 @@ import {
   UNIFIED_ROUTE,
   UNIFIED_THREAD_ROUTE,
 } from '@/apps/mail/utils/unifiedFolders'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 
 const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   thread: Mail[]
@@ -261,6 +275,8 @@ const { thread, threads, threadsLoading, canGoNext, remindable } = defineProps<{
   canGoNext?: boolean
   // The last word is yours and nothing is set to chase it (see useReplyReminder).
   remindable?: boolean
+  // The thread couldn't be loaded: there is nothing on its way to outline.
+  failed?: boolean
 }>()
 const emit = defineEmits([
   'setSeen',
@@ -374,6 +390,35 @@ const laterLabel = computed(() => {
   return remindOnly.value ? __('Remind me if no reply') : __('Snooze')
 })
 
+const moveToOpen = ref(false)
+const foldersOpen = ref(false)
+
+// The phone's More sheet: where it is filed, then the later group, apart.
+const moreSheetOptions = computed(() => {
+  const filing = inDrafts.value
+    ? []
+    : [
+        {
+          label: __('Move To'),
+          icon: FolderInput,
+          onClick: () => (moveToOpen.value = true),
+          drillsIn: true,
+        },
+        ...(folderOptions.value.length
+          ? [
+              {
+                label: __('Folders'),
+                icon: Folders,
+                onClick: () => (foldersOpen.value = true),
+                drillsIn: true,
+              },
+            ]
+          : []),
+      ]
+  const later = laterOptions.value
+  return [...filing, ...(later.length ? [{ group: '', options: later }] : [])]
+})
+
 const laterOptions = computed(() => [
   ...(snoozable.value || inSnoozed.value || remindOnly.value
     ? [
@@ -381,6 +426,7 @@ const laterOptions = computed(() => [
           label: laterLabel.value,
           icon: remindOnly.value ? BellPlus : Clock,
           onClick: () => (laterOpen.value = true),
+          drillsIn: true,
         },
       ]
     : []),
@@ -466,7 +512,7 @@ const moreActions = computed((): Action[] => [
     condition: () => inDrafts.value,
   },
   {
-    label: __('Delete Thread (Shift+Delete)'),
+    label: __('Delete Conversation (Shift+Delete)'),
     onClick: () => emit('deleteThread'),
     icon: Trash2,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),

@@ -55,7 +55,7 @@ class AccountChanges(TypedDict, total=False):
     destroy_email_after_submit: Flag
     destroy_newsletter_after_submit: Flag
     keep_forwarded_email_in_thread: Flag
-    enable_screening: Flag
+    # No enable_screening: a personal account is always screened, and a shared one is set up in Desk.
     block_remote_images: Flag
     on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None

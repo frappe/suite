@@ -55,6 +55,12 @@ vi.mock('@/api', async () => {
 async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 0))
 }
+// Who is signed in: the platform session's user, which another sign-in replaces.
+const signedIn = vi.hoisted(() => ({ id: 'ada@example.com' }))
+vi.mock('@/platform/session', async (original) => ({
+  ...(await original<object>()),
+  useSession: () => ({ user: { value: { id: signedIn.id } }, onLogout: () => () => {} }),
+}))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     userResource: { data: { accounts: accounts.value } },
@@ -694,17 +700,17 @@ describe('recent searches', () => {
   })
 
   it('is kept under the user, not the browser', async () => {
-    document.cookie = 'user_id=alice@example.com'
+    signedIn.id = 'alice@example.com'
     const alice = openSearch()
     alice.query.value = 'budget'
     alice.rememberSearch()
     await nextTick()
 
-    document.cookie = 'user_id=bob@example.com'
+    signedIn.id = 'bob@example.com'
     const bob = openSearch()
     expect(bob.recentSearches.value).toEqual([])
     expect(localStorage.getItem('mail-recent-searches:alice@example.com')).toContain('budget')
-    document.cookie = 'user_id=; expires=Thu, 01 Jan 1970 00:00:00 GMT'
+    signedIn.id = 'ada@example.com'
   })
 
   it('forgets one and clears all', () => {

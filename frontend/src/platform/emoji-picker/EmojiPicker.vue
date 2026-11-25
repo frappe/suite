@@ -52,6 +52,7 @@ import { onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 
 import EmojiGrid from './EmojiGrid.vue'
 import { prepareEmojiPicker } from './prepareEmojiPicker'
+import { QUICK_REACTIONS } from './reactionEmojis'
 
 const { openOnHover = false } = defineProps<{
   openOnHover?: boolean
@@ -106,7 +107,7 @@ watch(isOpen, (open) => {
   if (open && openOnHover) reaction.value = true
 })
 
-const reactionEmojis = ref(['👍', '❤️', '😂', '😮', '😢', '🙏'])
+const reactionEmojis = QUICK_REACTIONS
 
 function selectEmoji(value: string) {
   emoji.value = value

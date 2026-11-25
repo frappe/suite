@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="tile"
     class="participant-tile group relative rounded-7 overflow-hidden min-h-0"
     :class="tileBackgroundClass"
     :data-testid="`participant-tile-${participant.user_id}`"
@@ -14,7 +15,11 @@
       :ref="videoRef"
       :data-participant-id="participant.user_id"
       class="block w-full h-full remote-video"
-      :class="[videoObjectFitClass, videoBackgroundClass]"
+      :class="[
+        videoFit === 'fit' ? 'object-contain' : 'object-cover',
+        videoBackgroundClass,
+        { invisible: isVideoPaused },
+      ]"
       :style="{
         transform: isLocal ? 'scaleX(-1) translateZ(0)' : 'translateZ(0)',
       }"
@@ -29,7 +34,7 @@
     />
 
     <div
-      v-if="showAvatar && !isVideoEnabled && !participant.isLocalScreenShare"
+      v-if="showAvatar && (!isVideoEnabled || isVideoPaused) && !participant.isLocalScreenShare"
       class="absolute inset-0 flex items-center justify-center pointer-events-none"
       :class="avatarBackgroundClass"
     >
@@ -43,6 +48,9 @@
     </div>
 
     <NamePill :name="resolvedDisplayName" :size="labelSize" :position="labelPosition">
+      <span v-if="isVideoPaused" role="img" :aria-label="__('Video paused')" class="shrink-0">
+        <lucide-pause class="block size-3" aria-hidden="true" />
+      </span>
       <template v-if="showAudioState">
         <AudioIndicator
           v-if="isAudioEnabled && audioStream"
@@ -92,7 +100,8 @@
     <!-- Participant action toolbar -->
     <div
       v-if="showActionToolbar"
-      class="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-gray-700 p-0.5 text-white opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity ring-1 ring-gray-800"
+      class="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-gray-700 p-0.5 text-white opacity-100 [@media(hover:hover)]:opacity-0 group-hover:opacity-70 has-[:focus-visible]:!opacity-100 hover:!opacity-100 transition-opacity ring-1 ring-gray-800"
+      :class="{ '!opacity-100': isTileMenuOpen }"
       @click.stop
     >
       <Button
@@ -111,6 +120,15 @@
           <lucide-pin v-else class="w-3.5 h-3.5" />
         </template>
       </Button>
+      <Button
+        v-if="canResumeVideo"
+        variant="ghost"
+        size="xs"
+        icon="lucide-play"
+        class="!rounded-full !text-white hover:!bg-gray-600"
+        :aria-label="__('Resume video')"
+        @click="emit('toggle-video-pause')"
+      />
       <Button
         v-if="canShowHostControls && isAudioEnabled"
         variant="ghost"
@@ -135,18 +153,43 @@
           <lucide-user-x class="w-3.5 h-3.5" />
         </template>
       </Button>
+      <Dropdown
+        v-if="tileActions.length"
+        v-model:open="isTileMenuOpen"
+        :options="tileActions"
+        side="top"
+        align="end"
+      >
+        <Button
+          variant="ghost"
+          size="xs"
+          icon="lucide-ellipsis"
+          class="!rounded-full !text-white hover:!bg-gray-600"
+          :aria-label="__('Tile options for {0}', [resolvedDisplayName])"
+        />
+      </Dropdown>
     </div>
+    <Button
+      v-if="isFullscreen"
+      class="exit-tile-fullscreen absolute right-3 top-3"
+      icon="lucide-minimize"
+      :aria-label="__('Exit full screen')"
+      :tooltip="__('Exit full screen')"
+      @click="exitFullscreen"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
+import { useEventListener } from '@vueuse/core'
+import { Button, Dropdown, toast, type DropdownActionOption } from 'frappe-ui'
 import { computed, inject, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
+import { defaultVideoFit, type VideoFit } from '../data/mediaPreferences'
 import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
@@ -162,6 +205,8 @@ interface Props {
   participant: Participant
   isLocal?: boolean
   isVideoEnabled?: boolean
+  isVideoPaused?: boolean
+  interactive?: boolean
   isAudioEnabled?: boolean
   isActiveSpeaker?: boolean
   videoRef: (el: unknown) => void
@@ -178,7 +223,6 @@ interface Props {
   showNetworkState?: boolean
   tileBackgroundClass?: string
   avatarBackgroundClass?: string
-  videoObjectFitClass?: string
   videoBackgroundClass?: string
   displayName?: string
 }
@@ -186,6 +230,8 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   isLocal: false,
   isVideoEnabled: true,
+  isVideoPaused: false,
+  interactive: false,
   isAudioEnabled: true,
   isActiveSpeaker: false,
   labelSize: 'md',
@@ -201,10 +247,92 @@ const props = withDefaults(defineProps<Props>(), {
   showNetworkState: true,
   tileBackgroundClass: 'bg-surface-gray-3',
   avatarBackgroundClass: 'bg-surface-gray-3',
-  videoObjectFitClass: 'object-cover',
   videoBackgroundClass: '',
   displayName: '',
 })
+
+const emit = defineEmits<{
+  'toggle-video-pause': []
+}>()
+const tile = ref<HTMLElement | null>(null)
+const videoFitOverride = ref<VideoFit>()
+const videoFit = computed(
+  () =>
+    videoFitOverride.value ??
+    (props.interactive ? defaultVideoFit.value : undefined) ??
+    (props.pinType === 'screenshare' ? 'fit' : 'fill'),
+)
+const isFullscreen = ref(false)
+const isTileMenuOpen = ref(false)
+
+useEventListener(document, 'fullscreenchange', () => {
+  isFullscreen.value = !!tile.value && document.fullscreenElement === tile.value
+})
+
+async function enterFullscreen() {
+  try {
+    await tile.value?.requestFullscreen()
+  } catch {
+    toast.error(__('Could not enter full screen'))
+  }
+}
+
+async function exitFullscreen() {
+  if (document.fullscreenElement !== tile.value) return
+  try {
+    await document.exitFullscreen()
+  } catch {
+    toast.error(__('Could not exit full screen'))
+  }
+}
+
+const tileActions = computed(() => {
+  const actions: DropdownActionOption[] = []
+  if (!props.interactive) return actions
+
+  if (
+    props.isVideoEnabled &&
+    !props.isVideoPaused &&
+    !props.participant.isLocalScreenShare &&
+    document.fullscreenEnabled
+  ) {
+    actions.push({
+      label: __('Enter full screen'),
+      icon: 'lucide-maximize',
+      onClick: enterFullscreen,
+    })
+  }
+  if (props.pinType === 'participant' && props.isVideoEnabled && !props.isVideoPaused) {
+    actions.push({
+      label: videoFit.value === 'fit' ? __('Fill tile') : __('Fit video to tile'),
+      icon: 'lucide-square-dimensions',
+      onClick: () => (videoFitOverride.value = videoFit.value === 'fit' ? 'fill' : 'fit'),
+    })
+  }
+  if (
+    props.pinType === 'participant' &&
+    !props.isLocal &&
+    props.isVideoEnabled &&
+    !props.isVideoPaused
+  ) {
+    actions.push({
+      label: __('Pause video'),
+      icon: 'lucide-pause',
+      onClick: () => {
+        isTileMenuOpen.value = false
+        emit('toggle-video-pause')
+      },
+    })
+  }
+  return actions
+})
+
+watch(
+  () => tileActions.value.length,
+  (length) => {
+    if (length === 0) isTileMenuOpen.value = false
+  },
+)
 
 const meetingCtx = useMeetingContext()
 const isCurrentUserHost = inject<Ref<boolean> | ComputedRef<boolean>>(
@@ -283,9 +411,15 @@ const canShowHostControls = computed(() => {
   return !props.isLocal && isCurrentUserHost.value && !!hostControls
 })
 
-const showActionToolbar = computed(() => {
-  return canShowPinButton.value || canShowHostControls.value
-})
+const canResumeVideo = computed(() => props.interactive && props.isVideoPaused)
+
+const showActionToolbar = computed(
+  () =>
+    canShowPinButton.value ||
+    canResumeVideo.value ||
+    canShowHostControls.value ||
+    tileActions.value.length > 0,
+)
 
 const handleMute = () => {
   hostControls?.muteParticipant(props.participant.user_id)
@@ -304,6 +438,25 @@ const confirmRemove = () =>
    where a 3xl avatar alone in the middle read as a loading dot. */
 .participant-tile {
   container: meet-tile / inline-size;
+}
+
+.participant-tile:fullscreen {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  opacity: 1;
+  pointer-events: auto;
+  border-radius: 0;
+  background: black;
+}
+
+.participant-tile:fullscreen > video {
+  object-fit: contain;
+}
+
+.participant-tile:fullscreen > :not(video, .exit-tile-fullscreen) {
+  display: none;
 }
 @container meet-tile (min-width: 480px) {
   .participant-avatar {

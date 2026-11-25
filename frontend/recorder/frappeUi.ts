@@ -12,6 +12,8 @@ const passthrough = (tag = 'div') =>
 export const useKeyboardShortcut = () => {}
 
 export const Button = passthrough('button')
+export const Dropdown = passthrough()
+export const toast = { error: (message: string) => console.error(message) }
 /** The trigger alone: the bubble is frappe-ui's to draw. */
 export const Tooltip = defineComponent({
   setup:

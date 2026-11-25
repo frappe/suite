@@ -1,6 +1,6 @@
 import { translate as __ } from '@/platform/translation'
 
-const account = {
+export const accountSettings = {
   label: () => __('Account'),
   tabs: [
     {
@@ -50,5 +50,3 @@ const account = {
     },
   ],
 } as const
-
-export const loadAccountSettings = async () => account

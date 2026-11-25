@@ -300,15 +300,23 @@ function isRecord<Value>(value: Value): value is Value & Record<string, unknown>
 }
 
 // A write names its account, or a `folder` across every account (clearing an All accounts folder):
-// that one reaches every account's reads, not none of them. A write naming neither (a delete by
-// account-qualified names) still reaches no account's reads, so it can't touch another account's.
+// that one reaches every account's reads, not none of them. A delete names no account of its own,
+// only its messages as `account|id`: it reaches the reads of the accounts those name, and no other.
 function matchingAccount(input: unknown, queryInput: unknown): boolean {
   return (
     !isRecord(input) ||
     !isRecord(queryInput) ||
     !('account' in queryInput) ||
     (!input.account && typeof input.folder === 'string') ||
-    input.account === queryInput.account
+    input.account === queryInput.account ||
+    (!input.account && namedAccounts(input).includes(queryInput.account))
+  )
+}
+
+function namedAccounts(input: Record<string, unknown>): unknown[] {
+  if (!Array.isArray(input.names)) return []
+  return input.names.flatMap((name) =>
+    typeof name === 'string' && name.includes('|') ? [name.split('|')[0]] : [],
   )
 }
 

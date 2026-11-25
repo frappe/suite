@@ -1,7 +1,14 @@
 <template>
   <!-- Asked after a block when the senders still have mail in the Inbox, and the account's setting
 	     says to ask. Remembering the answer saves it as that setting (Settings → Account). -->
-  <Dialog v-model:open="open" :title="__('Move old mail to Junk?')">
+  <AdaptiveDialog
+    v-model:open="open"
+    :title="__('Move old mail to Junk?')"
+    :actions="[
+      { label: __('Keep in Inbox'), variant: 'outline', onClick: () => answer('Keep') },
+      { label: __('Move to Junk'), variant: 'solid', onClick: () => answer('Move to Junk') },
+    ]"
+  >
     <template #default>
       <div class="space-y-4">
         <p class="text-p-base text-ink-gray-7">
@@ -15,20 +22,15 @@
         <FormControl v-model="remember" type="checkbox" :label="__('Remember my choice')" />
       </div>
     </template>
-    <template #actions>
-      <div class="flex justify-end gap-2">
-        <Button variant="outline" :label="__('Keep in Inbox')" @click="answer('Keep')" />
-        <Button variant="solid" :label="__('Move to Junk')" @click="answer('Move to Junk')" />
-      </div>
-    </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, FormControl } from 'frappe-ui'
+import { FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { useScreener } from '@/apps/mail/composables/useScreener'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 
 const { oldMailPrompt: prompt, junkOldMail, rememberOldMailChoice } = useScreener()
 

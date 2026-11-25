@@ -1,7 +1,7 @@
 <template>
   <div class="flex min-h-0 min-w-0 flex-1 flex-col bg-surface-base">
     <PageHeader>
-      <PageHeaderTitle :title="__('Meet')" />
+      <PageHeaderTitle class="md:-ms-1" :title="__('Meet')" />
     </PageHeader>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
@@ -26,11 +26,13 @@
             </span>
           </Button>
         </section>
-        <UpcomingMeetings
-          v-if="calendarReady"
-          :key="calendarStore.accountId"
-          ref="upcomingMeetingsRef"
-        />
+        <UpcomingMeetings ref="upcomingMeetingsRef" />
+        <div
+          class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-x-6 gap-y-8 empty:hidden"
+        >
+          <RecentRooms />
+          <RecentRecordings />
+        </div>
       </div>
     </div>
 
@@ -66,19 +68,22 @@
       </template>
     </Dialog>
 
+    <NewMeetDialog v-model:open="showNewMeetDialog" />
     <ScheduleMeetingDialog ref="scheduleDialog" @scheduled="upcomingMeetingsRef?.reload()" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { Button, Dialog, PageHeader, PageHeaderTitle, TextInput } from 'frappe-ui'
-import { computed, onMounted, onScopeDispose, ref } from 'vue'
+import { computed, onScopeDispose, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
-import { useCalendarUserStore } from '@/apps/calendar'
 import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
+import NewMeetDialog from '../components/NewMeetDialog.vue'
+import RecentRecordings from '../components/RecentRecordings.vue'
+import RecentRooms from '../components/RecentRooms.vue'
 import ScheduleMeetingDialog from '../components/ScheduleMeetingDialog.vue'
 import UpcomingMeetings from '../components/UpcomingMeetings.vue'
 import { useStartMeeting } from '../composables/useStartMeeting'
@@ -87,34 +92,23 @@ import { meetingCodeFrom } from '../utils/meetingCode'
 const router = useRouter()
 const root = useRootStore()
 const { isStartingMeeting, startMeeting } = useStartMeeting()
-const calendarStore = useCalendarUserStore()
-// Resolve the account before mounting the list, so it shows the account's meetings from the start.
-const calendarReady = ref(false)
-onMounted(async () => {
-  try {
-    await calendarStore.loadUser()
-  } catch {
-    // The list owns the account error and retry UI.
-  } finally {
-    calendarReady.value = true
-  }
-})
 const meetingCode = ref('')
 const showJoinDialog = ref(false)
+const showNewMeetDialog = ref(false)
 const meetingCodeError = ref('')
 const parsedMeetingCode = computed(() => meetingCodeFrom(meetingCode.value, window.location.origin))
 const scheduleDialog = ref<InstanceType<typeof ScheduleMeetingDialog> | null>(null)
 const upcomingMeetingsRef = ref<{ reload: () => void } | null>(null)
 
 const startInstantMeeting = () => startMeeting('open')
-const startRestrictedMeeting = () => startMeeting('restricted')
+const openNewMeetDialog = () => (showNewMeetDialog.value = true)
 const meetingActions = computed(() => [
   { label: __('Instant meet'), icon: 'lucide-zap', startsMeeting: true, run: startInstantMeeting },
   {
-    label: __('Restricted meet'),
-    icon: 'lucide-lock',
-    startsMeeting: true,
-    run: startRestrictedMeeting,
+    label: __('New meet'),
+    icon: 'lucide-video',
+    startsMeeting: false,
+    run: openNewMeetDialog,
   },
   {
     label: __('Schedule meet'),
@@ -133,7 +127,7 @@ const openScheduleDialog = () => scheduleDialog.value?.show()
 const joinWithCode = () => {
   meetingCodeError.value = ''
   if (!parsedMeetingCode.value) {
-    meetingCodeError.value = __('Please enter a valid meeting code (format: xxxx-xxxx-xxxx)')
+    meetingCodeError.value = __('Please enter a valid meeting code or link')
     return
   }
   showJoinDialog.value = false
@@ -153,13 +147,12 @@ const unregisterPaletteGroups = root.registerPaletteGroups('meet-home', () => [
         run: startInstantMeeting,
       },
       {
-        id: 'meet-start-restricted',
-        label: __('Start restricted meet'),
-        enterHint: __('start restricted meet'),
-        icon: 'lucide-lock',
-        keywords: ['new', 'private', 'room'],
-        disabled: isStartingMeeting.value,
-        run: startRestrictedMeeting,
+        id: 'meet-new',
+        label: __('New meet'),
+        enterHint: __('new meet'),
+        icon: 'lucide-video',
+        keywords: ['custom link', 'private', 'restricted'],
+        run: openNewMeetDialog,
       },
       {
         id: 'meet-join-code',

@@ -1,5 +1,6 @@
 <template>
-  <div class="w-full">
+  <!-- Typing, selecting and scrolling here is the field's own, so a sheet it sits in does not take a swipe on it for a close -->
+  <div class="w-full" data-no-sheet-drag>
     <Editor
       :model-value="html"
       :extensions

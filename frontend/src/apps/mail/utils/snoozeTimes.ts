@@ -75,7 +75,9 @@ export const returnedStrip = (
  * changed time: either way the threads now wait till then. */
 export const snoozedMessage = (count: number, until: string) => {
   const at = formatDateTime(until, 'ddd, MMM D, h:mm A')
-  return count > 1 ? __('Threads snoozed until {0}', [at]) : __('Thread snoozed until {0}', [at])
+  return count > 1
+    ? __('Conversations snoozed until {0}', [at])
+    : __('Conversation snoozed until {0}', [at])
 }
 
 const morningOf = (day: Dayjs) => day.hour(MORNING).minute(0).second(0)

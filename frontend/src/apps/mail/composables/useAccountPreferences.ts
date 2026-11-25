@@ -52,5 +52,8 @@ export function useAccountPreferences() {
     })
   }
 
-  return { preferences, change, flag }
+  // Read, or refused: a page waits for this to draw its rows at once rather than one part after another
+  const settled = computed(() => saved.status !== 'pending')
+
+  return { preferences, settled, change, flag }
 }

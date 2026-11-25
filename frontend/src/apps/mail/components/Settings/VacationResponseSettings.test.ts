@@ -20,6 +20,7 @@ vi.mock('frappe-ui', async () => {
   })
   return {
     Button: passthrough,
+    FormLabel: passthrough,
     ErrorMessage: defineComponent({
       props: { message: { type: String, default: undefined } },
       setup(props) {
@@ -92,13 +93,18 @@ function shown(message: string, named: unknown[] = []) {
 const LONG_AGO = { from: '2020-06-01T09:00:00Z', to: '2020-06-14T09:00:00Z' }
 const AHEAD = { from: '2099-06-01T09:00:00Z', to: '2099-06-14T09:00:00Z' }
 
-const mount = async (enabled: 0 | 1, dates: { from: string; to: string }) => {
+const mount = async (
+  enabled: 0 | 1,
+  dates: { from: string; to: string },
+  words: { subject?: string; html_body?: string } = {},
+) => {
   saved.value = {
     enabled,
     from_date: dates.from,
     to_date: dates.to,
     subject: 'Away on a trip',
     html_body: '<p>Back soon</p>',
+    ...words,
   }
   const root = document.createElement('div')
   const app = createApp(VacationResponseSettings)
@@ -129,7 +135,7 @@ it('starts from no dates once an absence is off and over, keeping its words', as
   const { field, turnOn } = await mount(0, LONG_AGO)
   await turnOn()
   expect(field('Starts')!.value).toBe('')
-  expect(field('Ends (optional)')!.value).toBe('')
+  expect(field('Ends')!.value).toBe('')
   expect(field('Subject')!.value).toBe('Away on a trip')
 })
 
@@ -137,12 +143,12 @@ it('keeps the dates of an absence still to come, though the responder is off', a
   const { field, turnOn } = await mount(0, AHEAD)
   await turnOn()
   expect(field('Starts')!.value).toContain('2099-06')
-  expect(field('Ends (optional)')!.value).toContain('2099-06')
+  expect(field('Ends')!.value).toContain('2099-06')
 })
 
 it('keeps the dates while the responder is on, over or not', async () => {
   const { field } = await mount(1, LONG_AGO)
-  expect(field('Ends (optional)')!.value).toContain('2020-06')
+  expect(field('Ends')!.value).toContain('2020-06')
 })
 
 it('keeps the dates, subject and message in place, disabled, while the responder is off', async () => {
@@ -152,7 +158,7 @@ it('keeps the dates, subject and message in place, disabled, while the responder
   }
 
   expect(field('Starts')!.disabled).toBe(true)
-  expect(field('Ends (optional)')!.disabled).toBe(true)
+  expect(field('Ends')!.disabled).toBe(true)
   expect(field('Subject')!.disabled).toBe(true)
   expect(message().dataset.disabled).toBe('true')
 
@@ -196,4 +202,19 @@ it('saves a picked time as UTC, and a date left alone as it was read', async () 
 it('reads a saved time to the minute, as the picker hands times back', async () => {
   const { field } = await mount(1, { from: '2099-06-01T09:00:45Z', to: AHEAD.to })
   expect(field('Starts')!.value).toBe('2099-06-01 14:30:00')
+})
+it('keeps Save off while a reply turned on has nothing to say', async () => {
+  const { root, turnOn } = await mount(0, AHEAD, { html_body: '<p> </p>' })
+  await turnOn()
+  expect(root.querySelector('[label="Save"]')?.getAttribute('disabled')).toBe('true')
+})
+it('sends the reply as Out of office when its subject is left empty', async () => {
+  const { root, field } = await mount(1, AHEAD, { subject: '' })
+  const starts = requireTestElement(field('Starts'), HTMLInputElement)
+  starts.value = '2099-07-01 09:00:00'
+  starts.dispatchEvent(new Event('input'))
+  await nextTick()
+  root.querySelector<HTMLElement>('[label="Save"]')!.click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(run).toHaveBeenCalledWith(expect.objectContaining({ subject: 'Out of office' }))
 })

@@ -9,9 +9,15 @@
   >
     <AppSidebar />
     <div class="isolate flex min-h-0 flex-1 text-base">
+      <!-- Mail's bottom bar floats over the page (MailTabBar): a page stops short of it, but a list
+           runs on under it and leaves room at its own end. -->
       <div
         id="scrollContainer"
         class="w-full overflow-auto max-sm:flex max-sm:flex-col max-sm:overflow-hidden"
+        :class="{
+          'pb-[calc(5rem+env(safe-area-inset-bottom))]':
+            shellChrome && !route.meta.scrollsUnderPhoneBar,
+        }"
       >
         <slot />
       </div>
@@ -37,26 +43,9 @@
       <!-- Mail's composer: the window over the page on a desktop, the compose page on a phone. -->
       <ComposeHost />
     </div>
-
-    <!-- Compose, floating above the shell's bottom nav in the right thumb zone.
-		     It steps aside with the nav while a thread is open, and in the lists
-		     where composing is not the task: search results, selection mode, the
-		     screener and the profile page. -->
-    <Button
-      v-if="isMobile && showComposeButton"
-      variant="solid"
-      class="fixed bottom-[calc(var(--suite-phone-nav-height,4rem+env(safe-area-inset-bottom))+1rem)] right-4 z-10 !h-14 !w-14 !rounded-full shadow-lg"
-      :aria-label="__('Compose')"
-      @click="openComposePage(router, store.accountId)"
-    >
-      <template #icon>
-        <span class="lucide-square-pen size-6" aria-hidden="true" />
-      </template>
-    </Button>
   </div>
 </template>
 <script setup lang="ts">
-import { Button } from 'frappe-ui'
 import { computed, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -66,6 +55,7 @@ import dayjs from '@/apps/calendar/utils/dayjs'
 import AppSidebar from '@/apps/mail/components/AppSidebar.vue'
 import ComposeHost from '@/apps/mail/components/ComposeHost.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
+import { useQuota } from '@/apps/mail/composables/useQuota'
 import { eventDayRoute, useUpcomingEvents } from '@/apps/mail/composables/useUpcomingEvents'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, MailRecipient } from '@/apps/mail/types'
@@ -75,7 +65,6 @@ import {
   useKeyboardOpen,
   useListReload,
   useMobileSearch,
-  useMobileSelection,
   useScreenSize,
 } from '@/apps/mail/utils/composables'
 import { resumeRemovals } from '@/apps/mail/utils/pendingRemovals'
@@ -85,6 +74,9 @@ const store = userStore()
 const { userResource } = store
 
 const { isMobile } = useScreenSize()
+// Read from the start, as the sidebar's meter reads it on a computer: a phone shows storage only on
+// its Settings page, which would otherwise ask once it opens and draw the card after the rest.
+useQuota()
 const { requestListReload } = useListReload()
 const { holdDraft, releaseDraft } = useDiscardingDrafts()
 // Removals a closed page left inside their Undo window: the window is over, so they go now.
@@ -105,15 +97,6 @@ const shellChrome = computed(() => isMobile.value && !isThreadOpen.value && !key
 useShellPhoneChrome(shellChrome)
 
 const { isSearchRoute, paletteOpen } = useMobileSearch()
-const { isMobileSelectionActive } = useMobileSelection()
-const showComposeButton = computed(
-  () =>
-    shellChrome.value &&
-    !isMobileSelectionActive.value &&
-    !isSearchRoute.value &&
-    !paletteOpen.value &&
-    route.name !== 'mail-profile',
-)
 
 // Leaving the search route (Back, or a folder chosen in the sheet) closes the palette it was
 // raised behind.
@@ -175,3 +158,13 @@ watch(
   { immediate: true },
 )
 </script>
+
+<style>
+/* On a phone the toasts sit above Mail's floating bar (`liftToastsOver`), not under it. */
+html.mail-phone-bar [data-sonner-toaster][data-y-position='bottom'] {
+  bottom: calc(var(--mail-phone-bar) + 0.75rem) !important;
+}
+[data-sonner-toaster][data-y-position='bottom'] {
+  transition: bottom 200ms ease-out;
+}
+</style>

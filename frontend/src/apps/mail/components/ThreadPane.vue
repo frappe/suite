@@ -9,6 +9,10 @@
     class="sticky top-16 flex flex-col"
     :class="[
       split ? SPLIT_LIST_CLASS : 'w-full',
+      // On a phone the list gives way a little to the left as the thread slides over it, and comes
+      // back as it goes: the same push a category makes over Primary (see platform/page-slide).
+      isMobile && 'transition-transform duration-300 ease-[var(--page-slide-ease)]',
+      { '-translate-x-1/4': isMobile && threadOpen },
       // A width saved on a wider window still leaves the pane what a drag would.
       { 'max-w-[calc(100%-25rem)] lg:max-w-[calc(100%-30rem)]': split && listWidth },
     ]"
@@ -46,7 +50,8 @@
 	     flips only after the slide-out ends, keeping the offscreen pane out of the focus order.
 	     Teleported to Mail's overlay layer on mobile (like the selection bar): inside the layout's isolate
 	     stacking context the remounting bottom nav paints over the pane during the slide-out,
-	     whatever the pane's own z-index says. -->
+	     whatever the pane's own z-index says. Over the floating bars there (z-20), which come
+	     back as the pane leaves and must not paint over it as it goes. -->
   <Teleport :to="overlayLayer ?? 'body'" :disabled="!isMobile">
     <div
       class="bg-surface-base"
@@ -54,19 +59,20 @@
         'overflow-hidden': isMobile,
         [SPLIT_PANE_CLASS]: split,
         'absolute bottom-0 left-0 right-0 top-0': !isMobile && !showReadingPane,
-        'fixed inset-0 z-20 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]':
+        'fixed inset-0 z-30 pt-[env(safe-area-inset-top)] transition-[transform,visibility] duration-300 ease-[var(--page-slide-ease)]':
           isMobile,
         'invisible translate-x-full': isMobile && !threadOpen,
         hidden: !isMobile && !showReadingPane && !threadOpen,
       }"
       @touchstart.passive="emit('touchStart', $event)"
-      @touchmove.passive="emit('touchMove', $event)"
+      @touchmove="emit('touchMove', $event)"
       @touchend.passive="emit('touchEnd', $event)"
+      @touchcancel.passive="emit('touchCancel', $event)"
     >
-      <!-- The swipe slide lives inside MailThread (its toolbar must not move), armed via
-			     `slide` per swipe and cleared on slide-done. The scroll wrapper must be h-full on
-			     desktop too, or the empty state's h-full collapses. -->
-      <div class="h-full overflow-y-auto">
+      <!-- A swipe moves the thread inside MailThread, whose toolbar must not move. The scroll
+			     wrapper must be h-full on desktop too, or the empty state's h-full collapses. It holds
+			     the threads beside the open one (see ThreadSlot), over it, below the phone's inset. -->
+      <div class="relative h-full overflow-y-auto">
         <slot />
       </div>
     </div>
@@ -100,11 +106,12 @@ const { threadOpen } = defineProps<{
 }>()
 
 // Swipe-to-page on the open thread is per-view (what "next thread" means differs), so the pane only
-// forwards the touches. `.passive` stays on the listener here, where the native event is bound.
+// forwards the touches. Its touchmove is not passive: a sideways drag stops the page scrolling.
 const emit = defineEmits<{
   touchStart: [TouchEvent]
   touchMove: [TouchEvent]
   touchEnd: [TouchEvent]
+  touchCancel: [TouchEvent]
 }>()
 
 const { isMobile } = useScreenSize()

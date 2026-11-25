@@ -106,8 +106,13 @@ const framed = (root: HTMLElement, pane: Pane) => {
       Object.defineProperty(
         window.Element.prototype,
         'scrollWidth',
+        // Not laid out, nothing in the message overflows its root.
         measure(() =>
-          typeof pane.content === 'number' ? pane.content : pane.content(bodyWidth()),
+          pane.laidOut === false
+            ? 0
+            : typeof pane.content === 'number'
+              ? pane.content
+              : pane.content(bodyWidth()),
         ),
       )
       Object.defineProperty(window.HTMLBodyElement.prototype, 'getBoundingClientRect', {
@@ -671,6 +676,22 @@ describe('EmailContent renders mail as it was sent', () => {
     expect(body.style.maxWidth).toBe('600px')
     expect(body.style.width).toBe('')
     expect(body.style.zoom).toBe('')
+  })
+
+  // An earlier message of a thread mounts collapsed, with nothing laid out to fit; opened, its
+  // frame grows to the message and the window resizes, at the width it always had.
+  it('scales a collapsed message down to the pane once it is opened', async () => {
+    const root = mount(fixture('bordered-table-in-quote'))
+    await nextTick()
+
+    const pane: Pane = { width: 360, content: 540, laidOut: false }
+    const { window } = framed(root, pane)
+    const { body } = window.document
+    expect(body.style.zoom).toBe('')
+
+    Object.assign(pane, { laidOut: true })
+    window.dispatchEvent(new window.Event('resize'))
+    expect(Number(body.style.zoom)).toBeCloseTo(360 / 540)
   })
 
   it('leaves a message that fits the pane at full size', async () => {

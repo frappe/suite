@@ -21,6 +21,14 @@
             ],
             "title": "Type",
             "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "link": {
+            "title": "Link",
+            "type": "string"
           }
         },
         "required": [
@@ -48,7 +56,58 @@
         "type": "object"
       },
       "errors": [
-        "BadRequest"
+        "BadRequest",
+        "LinkError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "room_link_availability",
+      "kind": "query",
+      "publicName": "rooms.linkAvailability",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "rooms/link-availability",
+      "pathParams": [],
+      "query": {
+        "properties": {
+          "link": {
+            "title": "Link",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link"
+        ],
+        "title": "LinkRef",
+        "type": "object"
+      },
+      "body": null,
+      "output": {
+        "properties": {
+          "status": {
+            "enum": [
+              "available",
+              "invalid",
+              "reserved",
+              "taken"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "LinkAvailability",
+        "type": "object"
+      },
+      "errors": [
+        "RateLimitExceededError"
       ],
       "entity": null,
       "nodeParams": [],
@@ -1364,6 +1423,210 @@
         },
         "items": {
           "$ref": "#/$defs/RecordingSummary"
+        },
+        "type": "array"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "default_invite_room",
+      "kind": "query",
+      "publicName": "rooms.defaultInvite",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "rooms/default-invite",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "InviteRoom": {
+            "properties": {
+              "room": {
+                "title": "Room",
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Title"
+              },
+              "meeting_url": {
+                "title": "Meeting Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "room",
+              "title",
+              "meeting_url"
+            ],
+            "title": "InviteRoom",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "meeting_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meeting Url"
+          },
+          "rooms": {
+            "items": {
+              "$ref": "#/$defs/InviteRoom"
+            },
+            "title": "Rooms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "room",
+          "meeting_url",
+          "rooms"
+        ],
+        "title": "DefaultInviteRoom",
+        "type": "object"
+      },
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "set_default_invite_room",
+      "kind": "mutation",
+      "publicName": "rooms.setDefaultInvite",
+      "page": null,
+      "envelope": "data",
+      "method": "POST",
+      "path": "rooms/default-invite",
+      "pathParams": [],
+      "query": null,
+      "body": {
+        "properties": {
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          }
+        },
+        "required": [
+          "room"
+        ],
+        "title": "SetDefaultInviteRoom",
+        "type": "object"
+      },
+      "output": {
+        "type": "null"
+      },
+      "errors": [
+        "PermissionError"
+      ],
+      "entity": null,
+      "nodeParams": [],
+      "stream": false,
+      "bytes": false
+    },
+    {
+      "id": "my_rooms",
+      "kind": "query",
+      "publicName": "rooms.mine",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "rooms/mine",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "MyRoom": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Title"
+              },
+              "meeting_type": {
+                "enum": [
+                  "open",
+                  "restricted"
+                ],
+                "title": "Meeting Type",
+                "type": "string"
+              },
+              "owner": {
+                "title": "Owner",
+                "type": "string"
+              },
+              "modified": {
+                "title": "Modified",
+                "type": "string"
+              },
+              "url": {
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "title",
+              "meeting_type",
+              "owner",
+              "modified",
+              "url"
+            ],
+            "title": "MyRoom",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/MyRoom"
         },
         "type": "array"
       },

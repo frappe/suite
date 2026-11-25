@@ -17,6 +17,7 @@ import { registerThemePreferences } from '@/platform/theme'
 import { api as suite } from '@/platform/transport/api'
 
 export const api = { suite, drive, draw, mail, meet, calendar, writer, sheets, slides } as const
+const session = useSession()
 export const engine = createApiClient(
   {
     draw: () => import('@/apps/draw/client/policy').then((module) => module.registration),
@@ -31,12 +32,12 @@ export const engine = createApiClient(
   },
   {
     realtime: import.meta.env.MODE === 'test' ? false : realtime,
+    reloadCacheIdentity: () => session.user.value?.id,
   },
 )
 
 if (import.meta.env.MODE !== 'test') subscribeDriveChanges(realtime, engine.invalidate)
 
-const session = useSession()
 watch(
   () => session.user.value?.id ?? null,
   () => engine.resetIdentity(),

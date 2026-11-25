@@ -230,7 +230,7 @@ it('says an archive out of the Inbox on the click, before the server answers', (
   fetcher.mockReturnValue(new Promise(() => {}))
   archiveFrom('inbox').handleArchiveThreads(['t1'])
 
-  expect(mocks.toast.success).toHaveBeenCalledWith('Thread archived', {
+  expect(mocks.toast.success).toHaveBeenCalledWith('Conversation archived', {
     action: { label: 'Undo', onClick: expect.any(Function) },
   })
 })

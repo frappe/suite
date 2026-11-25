@@ -14,19 +14,11 @@ export const useStartMeeting = () => {
   const connectionState = useConnectionState()
   const createMeeting = useMutation(api.meet.rooms.create, { silent: true })
 
-  const copyMeetingLink = (meetingCode: string) => {
-    const path = router.resolve({
-      name: 'meet-meeting',
-      params: { meetingId: meetingCode },
-    }).href
-    navigator.clipboard.writeText(new URL(path, window.location.origin).href)
-  }
-
   const startMeeting = async (meetingType: MeetingType) => {
     const creatingToastId = toast.loading(__('Creating meeting…'))
-    let meetingCode: string
+    let meet: Awaited<ReturnType<typeof createMeeting.run>>
     try {
-      ;({ code: meetingCode } = await createMeeting.run({ type: meetingType }))
+      meet = await createMeeting.run({ type: meetingType })
     } catch (error) {
       toast.dismiss(creatingToastId)
       console.error('Error creating meeting:', error)
@@ -39,7 +31,7 @@ export const useStartMeeting = () => {
     try {
       await router.push({
         name: 'meet-meeting',
-        params: { meetingId: meetingCode },
+        params: { meetingId: meet.code },
       })
     } catch (error) {
       console.error('Error opening meeting:', error)
@@ -47,7 +39,7 @@ export const useStartMeeting = () => {
         duration: 8000,
         action: {
           label: __('Copy link'),
-          onClick: () => copyMeetingLink(meetingCode),
+          onClick: () => navigator.clipboard.writeText(meet.url),
         },
       })
       return
@@ -57,7 +49,7 @@ export const useStartMeeting = () => {
       duration: 8000,
       action: {
         label: __('Copy link'),
-        onClick: () => copyMeetingLink(meetingCode),
+        onClick: () => navigator.clipboard.writeText(meet.url),
       },
     })
   }

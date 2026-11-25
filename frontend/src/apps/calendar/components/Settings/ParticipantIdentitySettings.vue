@@ -106,7 +106,7 @@
     />
   </div>
   <!-- Outside the pages above: the list and an open address both ask it -->
-  <Dialog
+  <AdaptiveDialog
     v-model:open="showDeleteDialog"
     v-bind="{
       title: __('Delete this invite address?'),
@@ -125,15 +125,16 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Badge, Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
 import { api, useMutation, type OutputOf } from '@/api'
 import { userStore } from '@/apps/calendar/stores/user'
 import { isEmail, raiseToast } from '@/apps/calendar/utils'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'

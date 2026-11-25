@@ -2,6 +2,7 @@ import MeetIcon from '@/apps/meet/AreaIcon.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
+export { default as MeetIcon } from './AreaIcon.vue'
 export { default as ScheduleMeetingDialog } from './components/ScheduleMeetingDialog.vue'
 
 export type {

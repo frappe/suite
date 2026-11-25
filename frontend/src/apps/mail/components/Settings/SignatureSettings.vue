@@ -1,35 +1,52 @@
 <template>
-  <!-- One signature, written in place of the list: the arrow goes back to it -->
-  <div v-if="draft" class="flex flex-col gap-4">
-    <SettingsDialogBack :title="formTitle" :label="__('Back to signatures')" @back="showList" />
-    <FormControl
-      v-model="draft.signature_name"
-      :label="__('Name')"
-      :placeholder="__('Work signature')"
-      variant="outline"
-    />
-    <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">{{ __('Signature') }}</label>
-      <MailRichTextField v-model="draft.html_body" :placeholder="__('Write your signature here')" />
-    </div>
-    <ErrorMessage :message="saveError" />
-    <SettingsDialogActions>
-      <Button
-        variant="solid"
-        :label="__('Save')"
-        :size="buttonSize"
-        :disabled="isSaveBlocked"
-        :loading="isSaving"
-        @click="save"
+  <!-- One signature, written in place of the list on a computer, where the arrow goes back to it;
+       on a phone, in a sheet over the list, as the other forms that open from a settings page are. -->
+  <component
+    :is="isMobile ? AdaptiveDialog : 'div'"
+    v-if="draft"
+    v-bind="isMobile ? draftSheet : {}"
+  >
+    <div class="flex flex-col gap-4">
+      <SettingsDialogBack
+        v-if="!isMobile"
+        :title="formTitle"
+        :label="__('Back to signatures')"
+        @back="showList"
       />
-    </SettingsDialogActions>
-  </div>
-  <div v-else class="flex flex-col gap-3">
-    <SettingsDialogActions>
+      <FormControl
+        v-model="draft.signature_name"
+        :label="__('Name')"
+        :placeholder="__('Work signature')"
+        variant="outline"
+      />
+      <div class="space-y-1.5">
+        <FormLabel :label="__('Signature')" />
+        <MailRichTextField
+          v-model="draft.html_body"
+          :placeholder="__('Write your signature here')"
+        />
+      </div>
+      <ErrorMessage :message="saveError" />
+      <SettingsDialogActions v-if="!isMobile">
+        <Button
+          variant="solid"
+          :label="__('Save')"
+          :size="buttonSize"
+          :disabled="isSaveBlocked"
+          :loading="isSaving"
+          @click="save"
+        />
+      </SettingsDialogActions>
+    </div>
+  </component>
+  <!-- On a phone the list stays under a signature's sheet -->
+  <div v-if="isMobile || !draft" class="flex flex-col gap-3">
+    <SettingsDialogActions bar>
       <Button
-        variant="solid"
         icon-left="lucide-plus"
-        :label="__('New signature')"
+        :label="__('New')"
+        :aria-label="__('New signature')"
+        :variant="isMobile ? 'ghost' : 'subtle'"
         :size="buttonSize"
         @click="addSignature"
       />
@@ -38,13 +55,12 @@
       <div
         v-for="signature in signatures?.data"
         :key="signature.name"
-        class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-2"
+        class="hover:bg-surface-gray-1 -mx-2 flex cursor-pointer items-center justify-between rounded-4 px-3 py-1 max-sm:-mx-4 max-sm:px-4 max-sm:py-1.5"
         @click="editSignature(signature)"
       >
-        <span class="text-base">{{ signature.signature_name }}</span>
-        <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens
-				     via the click bubbling to its own span, so stopping on the Button
-				     itself would keep the sheet from opening. -->
+        <span class="text-ink-gray-8 truncate text-base">{{ signature.signature_name }}</span>
+        <!-- .stop lives on the wrapper: AdaptiveDropdown's trigger opens via the click bubbling to
+             its own span, so stopping on the Button itself would keep its menu from opening. -->
         <div class="flex max-sm:-mr-1.5" @click.stop>
           <AdaptiveDropdown
             :options="signatureOptions(signature)"
@@ -71,7 +87,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl, FormLabel } from 'frappe-ui'
 import { Edit2, Ellipsis, Trash2 } from 'lucide-vue-next'
 import { computed, ref } from 'vue'
 
@@ -79,8 +95,9 @@ import { api, useMutation, useQuery, type OutputOf } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
 import { raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
 import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
@@ -112,6 +129,7 @@ const isSaveBlocked = computed(() => !draft.value?.signature_name || !draft.valu
 
 function addSignature() {
   draft.value = { signature_name: '', html_body: '' }
+  isSheetOpen.value = true
 }
 
 function editSignature(signature: Signature) {
@@ -120,7 +138,35 @@ function editSignature(signature: Signature) {
     signature_name: signature.signature_name,
     html_body: signature.html_body ?? '',
   }
+  isSheetOpen.value = true
 }
+
+// A phone's sheet slides away before its form goes: the form is cleared once it is out of sight
+const isSheetOpen = ref(false)
+function closeForm() {
+  if (isMobile.value) {
+    isSheetOpen.value = false
+  } else {
+    showList()
+  }
+}
+
+// A phone's sheet: Save under the fields, the width of the sheet
+const draftSheet = computed(() => ({
+  open: isSheetOpen.value,
+  title: formTitle.value,
+  'onUpdate:open': (open: boolean) => !open && closeForm(),
+  onAfterLeave: showList,
+  actions: [
+    {
+      label: __('Save'),
+      variant: 'solid' as const,
+      disabled: isSaveBlocked.value,
+      loading: isSaving.value,
+      onClick: () => save(),
+    },
+  ],
+}))
 
 function showList() {
   draft.value = undefined
@@ -146,7 +192,7 @@ async function save() {
 
   // A slow save can end after another signature was opened, and that one stays
   if (draft.value === form) {
-    showList()
+    closeForm()
   }
 }
 

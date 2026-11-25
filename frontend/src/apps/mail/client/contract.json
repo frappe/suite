@@ -1216,14 +1216,6 @@
                 "title": "Keep Forwarded Email In Thread",
                 "type": "integer"
               },
-              "enable_screening": {
-                "enum": [
-                  0,
-                  1
-                ],
-                "title": "Enable Screening",
-                "type": "integer"
-              },
               "block_remote_images": {
                 "enum": [
                   0,

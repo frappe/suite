@@ -82,7 +82,7 @@ async function mountAt(path: string) {
 describe("Calendar's bottom bar", () => {
   it('holds the view you are on, Search and your profile, and no other app', async () => {
     const { items } = await mountAt('/calendar/account/a/week')
-    expect(items()).toEqual(['Week', 'Search', 'Profile'])
+    expect(items()).toEqual(['Week', 'Search', 'Settings'])
   })
 
   it('opens the views and calendars from the view you are on', async () => {
@@ -98,7 +98,7 @@ describe("Calendar's bottom bar", () => {
     await vi.waitFor(() =>
       expect(router.currentRoute.value.fullPath).toBe('/calendar/account/a/search'),
     )
-    item('Profile').click()
+    item('Settings').click()
     await vi.waitFor(() =>
       expect(router.currentRoute.value.fullPath).toBe('/calendar/account/a/profile'),
     )

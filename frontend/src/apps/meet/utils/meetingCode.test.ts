@@ -13,6 +13,10 @@ describe('joining a Meet room', () => {
     expect(meetingCodeFrom(value, origin)).toBe('abcd-efgh-ijkl')
   })
 
+  it('accepts a same-site custom link', () => {
+    expect(meetingCodeFrom('https://suite.example.com/meet/sales-team', origin)).toBe('sales-team')
+  })
+
   it.each([
     '',
     'not-a-code',

@@ -28,6 +28,17 @@ describe('a reply drafted inside a conversation, on its list row', () => {
     expect(draftInList('acc', row(['m1']))?.preview).toBe('Sounds good, see you then.')
   })
 
+  it('keeps a space where a line or a paragraph ends, as the list will once it reads the draft', () => {
+    showDraftInList(
+      'acc',
+      't1',
+      'd1',
+      '<p>On my way</p><div><br></div><div class="frappe_mail_signature"><p>Best,<br>Maya</p></div>',
+    )
+
+    expect(draftInList('acc', row(['m1']))?.preview).toBe('On my way Best, Maya')
+  })
+
   it('gives way once the row holds the draft as last saved', () => {
     showDraftInList('acc', 't1', 'd2', '<p>Second save</p>')
 

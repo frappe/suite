@@ -2,19 +2,26 @@
   <!-- Mobile title header. The toolbar below carries the bottom border, matching the
 	     mailbox structure. -->
   <!-- In a category other than Primary the title names it and leads back to Primary. -->
+  <!-- A merged folder is named as one account's is: Inbox, Sent. -->
   <MobileTitleHeader
-    v-if="isMobile && inboxTab && inboxTab !== 'primary'"
-    with-back
-    :title="tabName(inboxTab)"
+    v-if="isMobile"
+    :with-back="!!inboxTab && inboxTab !== 'primary'"
+    :with-menu="!inboxTab || inboxTab === 'primary'"
+    :title="inboxTab && inboxTab !== 'primary' ? tabName(inboxTab) : folderLabel"
     @back="router.push(routeForTab('primary'))"
-  />
-  <!-- Every account's Inbox is named so, since nothing else on a phone's list says the accounts
-       are merged; another merged folder keeps its own name. -->
-  <MobileTitleHeader
-    v-else-if="isMobile"
-    with-menu
-    :title="folder === INBOX_FOLDER ? __('All Inboxes') : folderLabel"
-  />
+  >
+    <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
+    <template v-if="clearScope" #actions>
+      <div class="mr-2.5 flex items-center">
+        <ClearListMenu
+          :scope="clearScope"
+          :empty="listState === 'empty'"
+          :target="{ folder }"
+          :inbox="folder === INBOX_FOLDER && (!inboxTab || inboxTab === 'primary')"
+        />
+      </div>
+    </template>
+  </MobileTitleHeader>
 
   <!-- Header -->
   <!-- hidden on mobile: the title row carries the folder name, and the header's
@@ -36,7 +43,7 @@
       <InboxHeaderTabs
         v-else
         class="-my-2.5 min-w-0 self-stretch"
-        :tabs="inboxTabs"
+        :tabs="byLatestMail(inboxTabs, categoryCards)"
         :active="inboxTab"
         :route-for="routeForTab"
       />
@@ -55,75 +62,77 @@
         @touch-start="onThreadTouchStart"
         @touch-move="onThreadTouchMove"
         @touch-end="onThreadTouchEnd"
+        @touch-cancel="onThreadTouchCancel"
       >
         <template #list>
-          <!-- The toolbar itself carries the bottom border here: unlike the mailbox
-					     list, the merged one has no header block above the row for it to sit
-					     under (its mobile title header is a sibling of ThreadPane). -->
-          <InboxTabs
-            v-if="isMobile && inboxTab"
-            :tabs="inboxTabs"
-            :active="inboxTab"
-            :route-for="routeForTab"
-          />
-
-          <div v-if="isMobile && selections.length" class="border-b">
-            <MobileSelectionHeader
-              :count="selections.length"
-              :all-selected="isAllSelected"
-              @toggle-all="toggleSelectAll"
+          <!-- On a phone these scroll with the list, at its top. -->
+          <PhoneListHead :into="listTop">
+            <CategoryCards
+              v-if="isMobile && inboxTab === 'primary'"
+              :cards="categoryCards"
+              :ready="categoryCardsReady"
+              :route-for="routeForTab"
             />
-          </div>
-          <MailListToolbar
-            v-else
-            class="border-b"
-            :title="title"
-            :filter-options="FILTER_OPTIONS"
-            :show-filter="!selections.length"
-            :show-actions="!selections.length"
-            :fetching="isFetching"
-            @refresh="refreshThreads()"
-          >
-            <template v-if="!isMobile" #lead>
-              <div class="mr-5">
-                <SelectAllCheckbox
-                  :selected="isAllSelected"
-                  :some="selections.length > 0"
-                  @toggle="toggleSelectAll"
-                />
-              </div>
-            </template>
-            <!-- The filters as chips, where the selector would go. -->
-            <template v-if="!isMobile && !selections.length" #filter>
-              <ListFilterChips
-                :filter-options="FILTER_OPTIONS"
-                :filter="filter"
-                :clear="clearFilter"
-              />
-            </template>
-            <template #actions>
-              <ClearListMenu
-                v-if="clearScope && !selections.length"
-                :scope="clearScope"
-                :target="{ folder }"
-              />
-              <SelectActionButtons
-                v-if="selections.length"
-                :actions="selectActions"
-                :collapsed="showReadingPane"
-              />
-            </template>
-            <template v-if="clearScope" #mobile-actions>
-              <ClearListMenu :scope="clearScope" :target="{ folder }" />
-            </template>
-          </MailListToolbar>
 
+            <MailListToolbar
+              :title="title"
+              :filter-options="FILTER_OPTIONS"
+              :show-filter="!selections.length"
+              :show-actions="!selections.length"
+              :fetching="isFetching"
+              @refresh="refreshThreads()"
+            >
+              <template v-if="!isMobile" #lead>
+                <div class="mr-5">
+                  <SelectAllCheckbox
+                    :selected="isAllSelected"
+                    :some="selections.length > 0"
+                    @toggle="toggleSelectAll"
+                  />
+                </div>
+              </template>
+              <!-- The filters as chips, where the selector would go. -->
+              <!-- On a phone the chips stay while selecting: the selection bar floats at the bottom
+                 (MobileSelectionBar), so the list below doesn't move. -->
+              <template v-if="isMobile || !selections.length" #filter>
+                <ListFilterChips
+                  :filter-options="FILTER_OPTIONS"
+                  :filter="filter"
+                  :clear="clearFilter"
+                  :outline="isMobile && inboxTab === 'primary' && !categoryCardsReady"
+                />
+              </template>
+              <template #actions>
+                <ClearListMenu
+                  v-if="clearScope && !selections.length && listState !== 'empty'"
+                  :scope="clearScope"
+                  :target="{ folder }"
+                />
+                <SelectActionButtons
+                  v-if="selections.length"
+                  :actions="selectActions"
+                  :collapsed="showReadingPane"
+                />
+              </template>
+            </MailListToolbar>
+          </PhoneListHead>
+
+          <!-- The gap a pull to refresh opens above the list. -->
+          <PullToRefreshIndicator
+            v-if="isMobile"
+            :offset="pull.offset"
+            :progress="pull.progress"
+            :pulling="pull.pulling"
+            :refreshing="pull.refreshing"
+          />
           <!-- Mail list -->
           <div
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
+            :style="pull.listStyle"
             @focusin="onListFocusIn"
           >
+            <div ref="listTop" />
             <!-- An empty tab keeps its tabs, and an empty filtered list its filter, to leave it by.
                  While the list loads, its rows stand here in outline. -->
             <MailListSkeleton
@@ -137,16 +146,20 @@
               :error="threads.error"
               @retry="retryList"
             />
-            <p
+            <div
               v-else-if="listState === 'empty'"
-              class="text-ink-gray-5 px-3 py-10 text-center text-p-sm sm:px-5"
+              class="text-ink-gray-5 flex flex-col items-center px-3 py-10 text-center text-p-sm sm:px-5"
             >
-              {{
-                filter
-                  ? __('No mails found for the selected filter.')
-                  : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : folderLabel])
-              }}
-            </p>
+              <!-- Not in Split View, whose reading pane beside the list already shows it. -->
+              <NoMails v-if="isMobile || !showReadingPane" class="text-ink-gray-2 mb-2 size-16" />
+              <p>
+                {{
+                  filter
+                    ? __('No mails found for the selected filter.')
+                    : __('No mails in {0}.', [inboxCategory ? tabName(inboxCategory) : folderLabel])
+                }}
+              </p>
+            </div>
             <div v-for="(rows, key) in groupedRows" :key="key">
               <MailGroupHeader
                 v-if="headersVisible"
@@ -184,6 +197,7 @@
                     :drafts="folder === 'drafts'"
                     :threads="row.threads"
                     :expanded="row.expanded"
+                    :selection-mode="mobileSelectionMode"
                     :is-selected="isStackSelected(row.threads.map(threadKey))"
                     :hide-avatar="!isMobile"
                     :account-label="shortAccountLabel(row.threads[0].account_name)"
@@ -235,8 +249,9 @@
             <!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
 						     batch (appended, never refetching loaded rows). Sits after all groups. -->
             <div ref="loadMoreSentinel" class="h-px" />
-            <div v-if="loadingMore" class="flex justify-center py-3">
-              <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+            <!-- On a phone, the pull to refresh spinner's size and band (PullToRefreshIndicator). -->
+            <div v-if="loadingMore" class="flex justify-center py-4 sm:py-3">
+              <LoaderCircle class="text-ink-gray-5 size-5 animate-spin sm:size-4" />
             </div>
           </div>
         </template>
@@ -248,49 +263,56 @@
 				     opening a cross-account thread does NOT switch the active account.
 				     set-seen passes `seen` as `silent` too: the pane only marks read silently
 				     (on open), while its explicit action is Mark as Unread — as in MailboxView. -->
-        <MailThread
-          v-if="openRow || !threadID"
-          ref="mailThread"
-          :slide="threadSlide"
-          :account="openRow?.account"
-          :mailbox="openRow?.view_mailbox || ''"
-          :thread-i-d="threadID"
-          :threads="headerThreadIDs"
-          :can-go-next="canGoNext"
-          :messages="openRow?.messages"
-          :returned="!!openRow?.returned"
-          :no-reply="!!openRow?.no_reply"
-          :snoozed-at="openRow?.snoozed_at"
-          :returned-at="openRow?.returned_at"
-          @slide-done="threadSlide = ''"
-          @reload-mails="reloadPaneThread()"
-          @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
-          @set-flagged="
-            (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
-          "
-          @set-pinned="
-            (ids: string[], pinned: boolean, folder: string) =>
-              pinMails(openRow!.account!, ids, pinned, folder)
-          "
-          @snooze-thread="(until: string) => snoozeTo([openRow!], until)"
-          @unsnooze-thread="unsnoozeThreads([openRow!])"
-          @clear-returned="clearReturned([openRow!])"
-          @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-          @delete-thread="
-            isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
-          "
-          @archive-thread="handleArchive(openRow!)"
-          @unarchive-thread="handleUnarchive(openRow!)"
-          @sync-unseen="handleSyncUnseen"
-          @add-thread-to-mailbox="handleAddToMailbox"
-          @remove-thread-from-mailbox="handleRemoveFromMailbox"
-          @set-spam-status="handleSetSpamStatus"
-          @move-mail="handleMailMove"
-          @mark-mail-spam="handleMailSpam"
-          @delete-mail="handleMailDelete"
-          @prev-thread="stepOpenThread(-1)"
-          @next-thread="stepOpenThread(1)"
-        />
+        <!-- On a phone, the threads either side of the open one too, ready for a swipe (see
+             ThreadSlot). Only the open one acts, so its handlers are the open row's. -->
+        <template v-if="openRow || !threadID">
+          <MailThread
+            v-for="pane in threadPanes"
+            :key="pane.key"
+            :ref="holdThreadPane(pane)"
+            :swipe="threadSwipe"
+            :beside="pane.beside"
+            :account="pane.row?.account"
+            :mailbox="pane.row?.view_mailbox || ''"
+            :thread-i-d="pane.row?.thread_id ?? threadID"
+            :threads="headerThreadIDs"
+            :can-go-next="canGoNext"
+            :messages="pane.row?.messages"
+            :returned="!!pane.row?.returned"
+            :no-reply="!!pane.row?.no_reply"
+            :snoozed-at="pane.row?.snoozed_at"
+            :returned-at="pane.row?.returned_at"
+            @reload-mails="reloadPaneThread()"
+            @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
+            @set-flagged="
+              (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
+            "
+            @set-pinned="
+              (ids: string[], pinned: boolean, folder: string) =>
+                pinMails(openRow!.account!, ids, pinned, folder)
+            "
+            @snooze-thread="(until: string) => snoozeTo([openRow!], until)"
+            @unsnooze-thread="unsnoozeThreads([openRow!])"
+            @clear-returned="clearReturned([openRow!])"
+            @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
+            @delete-thread="
+              isTrashFolder || folder === 'drafts'
+                ? confirmDelete([openRow!])
+                : handleTrash(openRow!)
+            "
+            @archive-thread="handleArchive(openRow!)"
+            @unarchive-thread="handleUnarchive(openRow!)"
+            @sync-unseen="handleSyncUnseen"
+            @add-thread-to-mailbox="handleAddToMailbox"
+            @remove-thread-from-mailbox="handleRemoveFromMailbox"
+            @set-spam-status="handleSetSpamStatus"
+            @move-mail="handleMailMove"
+            @mark-mail-spam="handleMailSpam"
+            @delete-mail="handleMailDelete"
+            @prev-thread="stepOpenThread(-1)"
+            @next-thread="stepOpenThread(1)"
+          />
+        </template>
         <!-- The open thread's row is on its way with the list: the pane stands in outline until
              it lands, not a blank half. Its toolbar is the thread's own, which outlines its buttons
              while it has no thread. -->
@@ -327,20 +349,26 @@
     </div>
   </div>
 
-  <Dialog v-model:open="showDelete" v-bind="deleteOptions" />
+  <AdaptiveDialog v-model:open="showDelete" v-bind="deleteOptions" />
   <SnoozeMenu
     v-model:open="showSnooze"
     v-model:picking="pickingSnooze"
     :current="snoozedUntilOf(snoozing)"
     @pick="(until: string) => snoozeTo(snoozing, until)"
   />
-  <MobileSelectionBar :open="mobileSelectionMode" :actions="selectActions" />
+  <MobileSelectionBar
+    :open="mobileSelectionMode"
+    :actions="selectActions"
+    :count="selections.length"
+    :all-selected="isAllSelected"
+    @toggle-all="toggleSelectAll"
+  />
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, PageHeader } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
-import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery } from '@/api'
@@ -348,10 +376,8 @@ import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
-import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
-import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import LoadError from '@/apps/mail/components/LoadError.vue'
@@ -361,11 +387,16 @@ import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
 import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
+import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
+import PullToRefreshIndicator from '@/apps/mail/components/PullToRefreshIndicator.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
+import { byLatestMail, useCategoryCards } from '@/apps/mail/composables/useCategoryCards'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { closeComposeWindowFor } from '@/apps/mail/composables/useComposeWindow'
@@ -375,8 +406,10 @@ import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { useThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
@@ -395,7 +428,6 @@ import {
   useListReload,
   useReadingPane,
   useScreenSize,
-  useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
@@ -428,11 +460,12 @@ import {
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
 import { deleteForeverOptions } from '@/apps/mail/utils/useThreadActions'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 
 const { isMobile } = useScreenSize()
-const { listReloadRequest } = useListReload()
+const { listReloadRequest, rowReloadRequest } = useListReload()
 const showReadingPane = useReadingPane()
 
 // Mail from a sender nobody has decided on yet is marked in the list, as in a single account's.
@@ -513,6 +546,10 @@ const {
   // Deferred reads too, as in the mailbox list.
   framed: () => !!inboxTab.value || !!filter.value || filterChanged.value,
 })
+// The phone's floating bars step aside while the list scrolls down.
+hidePhoneBarsOnScroll(mailListRef)
+// Where the category cards and the filter chips move into on a phone (see PhoneListHead).
+const listTop = ref<HTMLElement | null>(null)
 
 // The list's filters, their menu, and its title (see useListFilter) — all shared with the mailbox
 // list.
@@ -529,6 +566,7 @@ const {
   // The merged Inbox, when any of the accounts screens new senders.
   screenable: () =>
     folder === INBOX_FOLDER && !!store.userResource.data?.accounts?.some((a) => a.enable_screening),
+  drafts: () => folder === 'drafts',
 })
 
 // The Inbox's category tabs, across every account; `inboxTab` is the open one, and undefined in any
@@ -542,12 +580,17 @@ const {
 } = useInboxTabs(
   () => folder === INBOX_FOLDER && 'unified',
   () => unifiedFolderRoute(folder),
-  () => resetThreads(),
+  // Another category is another list: it opens unfiltered, as another folder does.
+  () => {
+    reloadFilter()
+    resetThreads()
+  },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
-// (Starred) or nothing unread to clear (Sent, Drafts).
+// (Starred), nothing unread to clear (Sent, Drafts), or nothing worth reading (Trash and Junk, on
+// their way out).
 const clearScope = computed(() =>
-  folder === STARRED_FOLDER || isOutgoingFolder.value
+  folder === STARRED_FOLDER || isOutgoingFolder.value || isTrashFolder.value || isJunkFolder.value
     ? undefined
     : listScope(inboxCategory.value, folderLabel.value, filter.value),
 )
@@ -609,10 +652,8 @@ const resetThreads = () => {
 }
 
 // Refresh the loaded windows without changing the reader's selection.
-const refreshThreads = (reloadCounts = true) => {
-  refreshList()
-  if (reloadCounts) refreshCounts()
-}
+const refreshThreads = (reloadCounts = true) =>
+  Promise.all([refreshList(), reloadCounts && store.refreshCounts()])
 
 // A verdict on a sender, from the pane or anywhere else, changes which rows are waiting: the
 // "Unknown sender" filter drops the ones decided.
@@ -621,6 +662,10 @@ watch(useScreener().version, () => refreshThreads(false))
 // The layout's composer, announcing that it sent something (see useListReload). A refresh rather
 // than a reset, so the reader keeps their place in a list that spans every account.
 watch(listReloadRequest, () => refreshThreads())
+// A reply saved in a conversation the reader has left, when its row is here.
+watch(rowReloadRequest, (request) => {
+  if (threadRows.value.some((row) => row.thread_id === request?.threadId)) refreshThreads()
+})
 
 // The pane asked for a reload (a reply was sent, a message deleted, …). The list refresh keeps
 // already-loaded rows to hold the reader's place (see usePaginatedThreads), so it never updates the
@@ -684,6 +729,16 @@ const {
   keys: () => threadIDs.value,
   groupKeys: (dateKey) => getGroupThreads(dateKey),
 })
+
+// A pull down from the top of the list, on a phone, refreshes it (see usePullToRefresh). Not while
+// rows are ticked, where the toolbar's refresh steps aside too.
+const pull = reactive(
+  usePullToRefresh({
+    scroller: () => mailListRef.value,
+    enabled: () => isMobile.value && !mobileSelectionMode.value,
+    refresh: () => refreshThreads(),
+  }),
+)
 const selectedRows = computed(() =>
   (threadRows.value ?? []).filter((t: Thread) => selections.value.includes(threadKey(t))),
 )
@@ -695,31 +750,27 @@ const headerThreadIDs = computed(() => (threadRows.value ?? []).map((t: Thread) 
 
 // The loaded row the open thread belongs to. Every mutation reads its account/archive/trash
 // off the row, so the pane acts on the owning account without consulting the active one.
-const openRow = computed(() =>
-  openKey.value
-    ? (threadRows.value ?? []).find((t: Thread) => threadKey(t) === openKey.value)
-    : undefined,
-)
-
-// MailThread's slide name while a swipe navigation renders; cleared on its slide-done, and left
-// empty for every other thread change so taps and arrows keep swapping instantly.
-const threadSlide = ref('')
-let pendingThreadSlide = ''
+const rowByKey = (key?: string) =>
+  key ? (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key) : undefined
+const openRow = computed(() => rowByKey(openKey.value))
 
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
+  swipe: threadSwipe,
+  slots: threadPanes,
+  holdPane: holdThreadPane,
+  openPane: mailThread,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
-} = useSwipeNav(
-  () => isMobile.value && !!threadID,
-  (offset) => {
-    // Arms the paging animation for this navigation only — openThread consumes it.
-    pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
-    stepOpenThread(offset)
-    pendingThreadSlide = ''
-  },
-)
+  onTouchCancel: onThreadTouchCancel,
+} = useThreadSwipe<InstanceType<typeof MailThread>, Thread>({
+  enabled: () => isMobile.value && !!threadID,
+  open: () => openKey.value,
+  byOffset: threadByOffset,
+  rowOf: rowByKey,
+  step: (offset) => stepOpenThread(offset),
+})
 const stepOpenThread = (offset: number) => {
   const next = threadByOffset(offset)
   if (next) return openThread(next)
@@ -889,10 +940,9 @@ const goToEdge = (index: number) => {
   focusRow(navigableRows.value.at(index))
 }
 const openThread = (key: string) => {
-  threadSlide.value = pendingThreadSlide
   const row = (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key)
   if (!row) return
-  router.push({
+  return router.push({
     name: UNIFIED_THREAD_ROUTE,
     // The row's own ids, which is what the key was made of — and what the pane, its actions and
     // the URL all need in their plain form.
@@ -945,7 +995,7 @@ type PaneCommand =
 
 function runPaneCommand(command: PaneCommand, account?: string) {
   const acting = account ?? openRow.value?.account
-  if (!acting) return Promise.reject(new Error(__('Thread is no longer in the list.')))
+  if (!acting) return Promise.reject(new Error(__('Conversation is no longer in the list.')))
   switch (command.kind) {
     case 'add':
       return client.mutation(api.mail.messages.addToFolder, {
@@ -975,14 +1025,6 @@ const handleSyncUnseen = (ids: string[]) => {
   if (changed) thread.seen = 0
   refreshCounts()
 }
-const mailThread = useTemplateRef<{
-  syncFlagged: (ids: string[], flagged: boolean) => void
-  syncMailboxMembership: (mailboxId: string, add: boolean) => void
-  removeMailFromView: (mailId: string) => {
-    emptied: boolean
-    rollback: () => void
-  }
-}>('mailThread')
 
 // Folder membership shows as tags on the row and in the pane. Neither refetches, so both have to be
 // told — mirroring syncListMailboxMembership plus MailThread's own syncMailboxMembership.
@@ -1044,13 +1086,19 @@ const handleAddToMailbox = (mailboxId: string) => {
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, false)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), {
-      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+      onClick: folder
+        ? __('Conversation removed from {0}', [folder])
+        : __('Conversation removed from folder'),
     })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
-    { onClick: folder ? __('Thread added to {0}', [folder]) : __('Thread added to folder') },
+    {
+      onClick: folder
+        ? __('Conversation added to {0}', [folder])
+        : __('Conversation added to folder'),
+    },
     undoAction,
   )
 }
@@ -1078,14 +1126,16 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, true)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), {
-      onClick: __('Thread added back'),
+      onClick: __('Conversation added back'),
     })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
     {
-      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+      onClick: folder
+        ? __('Conversation removed from {0}', [folder])
+        : __('Conversation removed from folder'),
     },
     undoAction,
   )
@@ -1142,7 +1192,7 @@ const fileMail = (mail: Mail, account: string | undefined, action: Filing, targe
         mailbox: target ?? null,
         screen_action: action === 'not_junk' ? 'Accepted' : null,
       })
-    : Promise.reject(new Error(__('Thread is no longer in the list.')))
+    : Promise.reject(new Error(__('Conversation is no longer in the list.')))
 const handleMailMove = (mail: Mail, target: string) => {
   const account = openRow.value?.account
   const folder = folderName(target)
@@ -1199,7 +1249,7 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
   // The auto mark-as-read on opening a thread is silent (no toast); still roll back on failure.
   if (silent) return void request.catch(() => {})
   raiseOptimisticToast(request, {
-    onClick: __('Thread marked as {0}', [seen ? __('read') : __('unread')]),
+    onClick: __('Conversation marked as {0}', [seen ? __('read') : __('unread')]),
   })
 }
 
@@ -1315,18 +1365,23 @@ const fileThreads = (
   const one = threads.length === 1
   const folderOfTarget = target ? folderName(target) : undefined
   const said = () => {
-    if (action === 'archive') return one ? __('Thread archived') : __('Threads archived')
-    if (action === 'unarchive') return one ? __('Thread unarchived') : __('Threads unarchived')
-    if (action === 'trash') return one ? __('Thread moved to Trash') : __('Threads moved to Trash')
+    if (action === 'archive')
+      return one ? __('Conversation archived') : __('Conversations archived')
+    if (action === 'unarchive')
+      return one ? __('Conversation unarchived') : __('Conversations unarchived')
+    if (action === 'trash')
+      return one ? __('Conversation moved to Trash') : __('Conversations moved to Trash')
     if (action === 'junk' || action === 'not_junk') {
       const state = action === 'junk' ? __('Junk') : __('Not Junk')
-      return one ? __('Thread marked as {0}', [state]) : __('Threads marked as {0}', [state])
+      return one
+        ? __('Conversation marked as {0}', [state])
+        : __('Conversations marked as {0}', [state])
     }
     return folderOfTarget
       ? one
-        ? __('Thread moved to {0}', [folderOfTarget])
-        : __('Threads moved to {0}', [folderOfTarget])
-      : __('Thread moved')
+        ? __('Conversation moved to {0}', [folderOfTarget])
+        : __('Conversations moved to {0}', [folderOfTarget])
+      : __('Conversation moved')
   }
   // Said on the click, but for an archive from a list the rows stay on: only the answer says whether
   // it left the Inbox or was only added to Archive.
@@ -1342,15 +1397,15 @@ const fileThreads = (
   const undone =
     action === 'junk'
       ? one
-        ? __('Thread marked as Not Junk')
-        : __('Threads marked as Not Junk')
+        ? __('Conversation marked as Not Junk')
+        : __('Conversations marked as Not Junk')
       : action === 'not_junk'
         ? one
-          ? __('Thread marked as Junk')
-          : __('Threads marked as Junk')
+          ? __('Conversation marked as Junk')
+          : __('Conversations marked as Junk')
         : one
-          ? __('Thread moved back')
-          : __('Threads moved back')
+          ? __('Conversation moved back')
+          : __('Conversations moved back')
   actPerAccount(
     threads,
     (account, rows) =>
@@ -1420,8 +1475,14 @@ const snoozeTo = (threads: Thread[], until: string) => {
     { onClick: snoozedMessage(threads.length, until) },
     // Rows that left come back on the Undo's click; a list that kept them reads them again.
     leaves
-      ? { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') }
-      : { onAnswer: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
+      ? {
+          onClick:
+            threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+        }
+      : {
+          onAnswer:
+            threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+        },
     { putBack },
   )
 }
@@ -1435,8 +1496,13 @@ const unsnoozeThreads = (threads: Thread[]) => {
       client
         .mutation(api.mail.messages.unsnooze, { account, ids: copyIds(rows), leaves: folder })
         .then((answer) => waited.set(account, answer.waited)),
-    { onClick: threads.length === 1 ? __('Thread unsnoozed') : __('Threads unsnoozed') },
-    { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
+    {
+      onClick: threads.length === 1 ? __('Conversation unsnoozed') : __('Conversations unsnoozed'),
+    },
+    {
+      onClick:
+        threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+    },
     { putBack, restore: (account) => resnooze(account, waited.get(account) ?? []) },
   )
 }
@@ -1542,7 +1608,7 @@ const setThreadsSeen = (threads: Thread[], seen: boolean) => {
         applySeen(seen ? 0 : 1) // revert the optimistic update
         throw error
       }),
-    { onClick: __('Threads marked as {0}', [seen ? __('read') : __('unread')]) },
+    { onClick: __('Conversations marked as {0}', [seen ? __('read') : __('unread')]) },
   )
 }
 
@@ -1694,7 +1760,7 @@ const handleDelete = (rows: Thread[]) => {
       refreshThreads()
       throw error
     }),
-    { onClick: rows.length === 1 ? __('Thread deleted') : __('Threads deleted') },
+    { onClick: rows.length === 1 ? __('Conversation deleted') : __('Conversations deleted') },
   )
 }
 
@@ -1739,6 +1805,12 @@ onUnmounted(() => {
   socket.off('mail_changed', onNewMail)
   window.removeEventListener('keydown', handleKeyDown)
 })
+
+// The categories other than Primary, the newest mail first: a phone's cards, and a desktop's tab order.
+const { cards: categoryCards, ready: categoryCardsReady } = useCategoryCards(
+  () => folder === INBOX_FOLDER && 'unified',
+  () => inboxTabs.value,
+)
 </script>
 
 <style scoped></style>

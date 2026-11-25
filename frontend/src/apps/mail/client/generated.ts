@@ -445,7 +445,6 @@ export type UpdateAccountPreferencesInputAccountChanges = {
   destroy_email_after_submit?: 0 | 1
   destroy_newsletter_after_submit?: 0 | 1
   keep_forwarded_email_in_thread?: 0 | 1
-  enable_screening?: 0 | 1
   block_remote_images?: 0 | 1
   on_block_old_mail?: 'Ask' | 'Move to Junk' | 'Keep'
   default_outgoing_email?: string | null

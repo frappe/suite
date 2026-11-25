@@ -1,10 +1,10 @@
 <template>
-  <!-- Shared mobile title row (mailbox / all inboxes / screener / profile): 2xl
-	     semibold title, an optional back button, and the actions slot on the right. In a
-	     folder (`withMenu`) the ☰, the folder's name and a chevron are one button that opens
-	     the folders, as the folder tab in Mail's bottom bar (MailTabBar) does. Without a
-	     leading button the title gets pl-4 (4px row + 16px = 20px) to sit on the px-5 axis of
-	     the list content below it; with one, the button's own inset provides the offset. -->
+  <!-- Shared mobile title row (mailbox / all inboxes / screener / profile): a semibold
+	     title, an optional back button, and the actions slot on the right. In a folder
+	     (`withMenu`) the folder's name and a chevron are one button that opens the folders, as
+	     the folder tab in Mail's bottom bar (MailTabBar) does; the name starts 16px in, over the
+	     filter chips. Without a leading button the title gets pl-3 (4px row + 12px) to start
+	     16px in as well; with one, the button's own inset provides the offset. -->
   <!-- A flat h-14 (56px), not a min-height and no vertical padding: the row is the same
 	     height in every view and `items-center` centres against the whole of it. Anything
 	     taller than 56px in the actions slot would overflow rather than grow the row —
@@ -14,32 +14,32 @@
       <button
         type="button"
         aria-haspopup="dialog"
-        class="flex h-10 min-w-0 items-center rounded-full pr-2"
+        class="touch-target ml-3 flex h-10 min-w-0 items-center gap-1 pr-2 transition-opacity active:opacity-60"
         @click="openAreaSidebar('mail')"
       >
-        <!-- 20px at the 1.5 the app draws its icons at: the title's own size. Sized by
-				     class: lucide-vue-next's `lucide-<name>` class collides with frappe-ui's mask
-				     rule, which overrides the size prop. -->
-        <span :class="ICON_SLOT"><Menu class="size-5" /></span>
-        <span :class="TITLE">{{ title }}</span>
-        <ChevronDown class="text-ink-gray-5 ml-1 size-4 shrink-0" />
+        <span :class="[TITLE, 'text-3xl']">{{ title }}</span>
+        <!-- Sized by class: lucide-vue-next's `lucide-<name>` class collides with frappe-ui's
+             mask rule, which overrides the size prop. -->
+        <ChevronDown class="text-ink-gray-5 size-5 shrink-0" />
       </button>
       <div class="flex-1" />
     </template>
-    <!-- The back arrow stands where the ☰ does, at its size, and the title starts where the
-         folder's name does: a category and its Inbox read as the same row. -->
-    <div v-else class="flex min-w-0 flex-1 items-center" :class="{ 'pl-4': !withBack }">
+    <!-- The back arrow stands where the ☰ does, at its size. The title is the page's, at the
+         folder name's size, so a category reads as a page like its Inbox and not as the small
+         back link a thread opens under. `compact` is for a bar whose title only names where
+         back leads. -->
+    <div v-else class="flex min-w-0 flex-1 items-center" :class="{ 'pl-3': !withBack }">
       <button v-if="withBack" :aria-label="__('Back')" :class="ICON_SLOT" @click="emit('back')">
         <ChevronLeft class="size-5" />
       </button>
-      <span :class="TITLE">{{ title }}</span>
+      <span :class="[TITLE, compact ? 'text-xl' : 'text-3xl']">{{ title }}</span>
     </div>
     <slot name="actions" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ChevronDown, ChevronLeft, Menu } from 'lucide-vue-next'
+import { ChevronDown, ChevronLeft } from 'lucide-vue-next'
 
 import { openAreaSidebar } from '@/platform/area-sidebar'
 
@@ -47,12 +47,13 @@ defineProps<{
   title: string
   withMenu?: boolean
   withBack?: boolean
+  compact?: boolean
 }>()
 
 const emit = defineEmits<{ back: [] }>()
 
 /** The round 40px hit area of the row's leading icon. */
 const ICON_SLOT =
-  'touch-target text-ink-gray-6 flex h-10 w-10 shrink-0 items-center justify-center rounded-full'
-const TITLE = 'text-ink-gray-8 truncate text-xl !font-semibold tracking-[-0.01em]'
+  'touch-target text-ink-gray-6 active:bg-surface-gray-2 flex h-10 w-10 shrink-0 items-center justify-center rounded-full'
+const TITLE = 'text-ink-gray-8 truncate !font-semibold tracking-[-0.01em]'
 </script>

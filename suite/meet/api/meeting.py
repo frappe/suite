@@ -203,24 +203,44 @@ def _build_guest_connection_details(
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
-def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
-    """Create a new meeting with specified type"""
+def create(
+    meeting_type: str = "open",
+    allow_guest: bool = True,
+    title: str | None = None,
+    link: str | None = None,
+) -> str:
+    from suite.meet.links import link_status, refuse_link
+
+    if link is not None:
+        status = link_status(link)
+        if status != "available":
+            refuse_link(status)
+
     global_settings = frappe.get_cached_doc("Meet Settings")
     if not global_settings.allow_guest:
         allow_guest = False
 
-    meeting: MeetRoom = frappe.get_doc(
-        {
-            "doctype": "Meet Room",
-            "title": title,
-            "meeting_type": meeting_type,
-            "allow_guest": allow_guest,
-        }
-    ).insert()
-
-    return meeting.name
+    frappe.db.savepoint("meet_create")
+    try:
+        meeting: MeetRoom = frappe.get_doc(
+            {
+                "doctype": "Meet Room",
+                "title": title,
+                "meeting_type": meeting_type,
+                "allow_guest": allow_guest,
+            }
+        ).insert(set_name=link)
+        return meeting.name
+    except frappe.DuplicateEntryError:
+        frappe.db.rollback(save_point="meet_create")
+        if link is not None:
+            refuse_link("taken")
+        raise
+    except Exception:
+        frappe.db.rollback(save_point="meet_create")
+        raise
 
 
 @frappe.whitelist(allow_guest=True)

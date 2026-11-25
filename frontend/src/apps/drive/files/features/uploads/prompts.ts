@@ -53,7 +53,7 @@ async function quota({ total, free, fitting, count }: Parameters<UploadPrompts['
   if (!fitting) {
     toast.error(__('Not enough space'), {
       description: __('Needs {0}, only {1} free', sizes),
-      action: { label: __('Storage'), onClick: () => openSettings('drive.statistics') },
+      action: { label: __('Storage'), onClick: () => openSettings('account.storage') },
     })
     return 'cancel'
   }

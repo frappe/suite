@@ -4,6 +4,11 @@ import { nextTick, reactive } from 'vue'
 import { listScope, useClearList } from './useClearList'
 import { useInboxTabs, useTabChoice, useTabChoiceMenu, type InboxCategory } from './useInboxTabs'
 
+type RouteGuard = (
+  to: { path: string; query: object },
+  from: { path: string; query: object },
+) => unknown
+
 type Counts = { category: InboxCategory; unread_threads: number }[]
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
@@ -27,10 +32,19 @@ type InboxTabsStore = {
 
 const state = vi.hoisted(() => ({
   route: fromPartial<{ query: Record<string, string> }>({ query: {} }),
+  // The route changes the tabs hold for, and how each went.
+  guards: new Array<RouteGuard>(),
+  slides: new Array<string>(),
   store: fromPartial<InboxTabsStore>({}),
 }))
-vi.mock('vue-router', () => ({ useRoute: () => state.route }))
-const screen = vi.hoisted(() => ({ isMobile: { value: false } }))
+vi.mock('vue-router', () => ({
+  useRoute: () => state.route,
+  useRouter: () => ({}),
+  onBeforeRouteUpdate: (guard: RouteGuard) => state.guards.push(guard),
+}))
+vi.mock('@/platform/page-slide', () => ({
+  slideRouteChange: (_router: unknown, direction: string) => state.slides.push(direction),
+}))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))
 const saved = vi.hoisted(() => fromPartial<unknown[]>([]))
 const toasts = vi.hoisted(() => fromPartial<string[]>([]))
@@ -72,6 +86,7 @@ vi.mock('@/apps/mail/utils', () => ({
 }))
 // Mail's one undo slot, as the toast's Undo and Cmd/Ctrl+Z both reach it.
 const undoSlot = vi.hoisted(() => ({ action: fromPartial<(() => unknown) | undefined>(undefined) }))
+const screen = vi.hoisted(() => ({ isMobile: { value: false } }))
 vi.mock('@/apps/mail/utils/composables', () => ({
   useScreenSize: () => screen,
   useSettings: () => ({ openSettings: () => {} }),
@@ -97,10 +112,12 @@ describe('the Inbox tabs', () => {
     answers.clear()
     undoSlot.action = undefined
     state.route = reactive({ query: {} })
-    screen.isMobile.value = false
     saved.length = 0
     toasts.length = 0
     localStorage.clear()
+    screen.isMobile.value = false
+    state.slides = []
+    state.guards = []
     state.store = reactive({
       userResource: {
         data: {
@@ -168,6 +185,34 @@ describe('the Inbox tabs', () => {
 
     state.route.query = { category: 'all' }
     expect([active.value, category.value]).toEqual(['all', undefined])
+  })
+
+  it('open on Primary on a phone, not the category last open', async () => {
+    screen.isMobile.value = true
+    state.route.query = { category: 'updates' }
+    const { active } = tabsFor('account')
+    await nextTick()
+
+    state.route.query = {}
+    expect(active.value).toBe('primary')
+  })
+
+  it('slide a category in over Primary on a phone, and back off it, and change in place on a desktop', () => {
+    tabsFor('account')
+    const inbox = (category?: string) => ({
+      path: '/mail/account/a/mailbox/inbox',
+      query: category ? { category } : {},
+    })
+
+    screen.isMobile.value = true
+    state.guards.at(-1)?.(inbox('promotions'), inbox())
+    state.guards.at(-1)?.(inbox('primary'), inbox('promotions'))
+    // Another of Primary's own lists is not a page of its own.
+    state.guards.at(-1)?.({ ...inbox(), query: { isRead: 'false' } }, inbox())
+    screen.isMobile.value = false
+    state.guards.at(-1)?.(inbox('updates'), inbox('primary'))
+
+    expect(state.slides).toEqual(['forward', 'back'])
   })
 
   it('refetch the list when All mail opens, as any other tab does', async () => {
@@ -287,18 +332,6 @@ describe('the Inbox tabs', () => {
     options.at(-1)?.onClick(false)
     await nextTick()
     expect(saved).toEqual([{ all_mail_tab: 0 }])
-  })
-
-  it('are absent on a phone, whose Inbox is one list of every category', () => {
-    screen.isMobile.value = true
-    state.route.query = { category: 'updates' }
-
-    for (const scope of ['account', 'unified'] as const) {
-      const { tabs, active } = tabsFor(scope)
-      expect(tabs.value).toEqual([])
-      // No category is asked for, so the list is the whole Inbox, not Primary or Updates alone.
-      expect(active.value).toBeUndefined()
-    }
   })
 
   it('are absent from any other list, and from an Inbox that is not split', () => {

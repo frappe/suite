@@ -76,17 +76,17 @@ describe('clearing rows back from waiting', () => {
   it('says the rows left Reminders on the click, and that they are back once they are', async () => {
     held.on = true
     useClearReturned().clearReturned([back('t1', 'a')])
-    expect(toast.success).toHaveBeenCalledWith('Thread removed from Reminders', {
+    expect(toast.success).toHaveBeenCalledWith('Conversation removed from Reminders', {
       action: { label: 'Undo', onClick: expect.any(Function) },
     })
 
     offeredUndo()?.()
     await vi.waitFor(() => expect(held.release).toHaveLength(1))
-    expect(toast.success).not.toHaveBeenCalledWith('Thread moved back', undefined)
+    expect(toast.success).not.toHaveBeenCalledWith('Conversation moved back', undefined)
 
     held.release[0]()
     await vi.waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith('Thread moved back', undefined),
+      expect(toast.success).toHaveBeenCalledWith('Conversation moved back', undefined),
     )
   })
 

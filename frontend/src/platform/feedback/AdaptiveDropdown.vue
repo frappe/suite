@@ -1,0 +1,161 @@
+<template>
+  <Dropdown v-if="!isMobile" v-model:open="open" :options="options" v-bind="$attrs">
+    <slot />
+  </Dropdown>
+  <template v-else>
+    <!-- inline-flex (not `contents`): display:contents elements ignore margins,
+		     which broke parents' space-x-* spacing between triggers. Skipped entirely
+		     for trigger-less (v-model:open only) usage — even an empty span adds a
+		     line box to the parent. -->
+    <span v-if="$slots.default" class="inline-flex" @click="open = true"><slot /></span>
+    <BottomSheet v-model:open="open" :title="title">
+      <div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+        <template v-for="(group, gi) in groups" :key="gi">
+          <!-- Mirror the desktop Dropdown's separators between label-less groups, where there
+               are rows enough for one to sort: between two rows a line only adds weight. -->
+          <div v-if="gi && !group.label && rowCount > 2" class="mx-3 my-2 border-t" />
+          <div v-if="group.label" class="text-ink-gray-5 px-3 pb-1 pt-3 text-sm">
+            {{ group.label }}
+          </div>
+          <button
+            v-for="item in group.items"
+            :key="item.label"
+            class="active:bg-surface-gray-1 disabled:text-ink-gray-4 flex w-full items-center gap-3 rounded-6 px-3 py-2.5 text-base"
+            :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
+            :disabled="item.disabled"
+            :role="item.switch ? 'switch' : undefined"
+            :aria-checked="item.switch ? !!item.switchValue : undefined"
+            @click="run(item)"
+          >
+            <!-- A row's own prefix (a checkbox, say) stands where its icon would. -->
+            <component :is="item.slots.prefix" v-if="item.slots?.prefix" />
+            <component
+              :is="iconOf(item.icon)"
+              v-else-if="item.icon"
+              class="h-[18px] w-[18px] shrink-0"
+              :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-6'"
+            />
+            <span class="flex-1 truncate text-left">{{ sheetLabel(item.label) }}</span>
+            <component :is="item.slots.suffix" v-if="item.slots?.suffix" />
+            <ChevronRight v-if="item.drillsIn" class="text-ink-gray-5 h-4 w-4 shrink-0" />
+            <!-- The row is the switch: the whole row flips it, as a desktop menu's switch row does. -->
+            <Switch
+              v-if="item.switch"
+              :model-value="!!item.switchValue"
+              class="pointer-events-none shrink-0"
+              tabindex="-1"
+              aria-hidden="true"
+            />
+            <!-- Which one you're already on. Desktop takes this from the Menu's own
+						     selected styling; a sheet row has no such state, so it shows a tick. -->
+            <Check v-if="item.selected" class="text-ink-gray-6 h-4 w-4 shrink-0" />
+          </button>
+        </template>
+      </div>
+    </BottomSheet>
+  </template>
+</template>
+
+<script setup lang="ts">
+import { BottomSheet, Switch } from 'frappe-ui'
+import { Icon as FeatherIcon } from 'frappe-ui/experimental'
+import { Check, ChevronRight } from 'lucide-vue-next'
+import { computed, h, isVNode, type Component, type VNode } from 'vue'
+
+import { useScreenSize } from '@/composables/useScreenSize'
+import { Dropdown } from '@/platform/feedback'
+import { stripShortcutHint } from '@/utils/actionLabel'
+
+// Drop-in Dropdown replacement: desktop renders the shared Dropdown,
+// mobile renders the same options as a bottom sheet (popup menus at the bottom
+// edge are thumb-hostile). Supports flat and grouped option arrays.
+//
+// Shared rather than mail's own: the calendar's phone form asks the same question of
+// a row whose value is one of a few — alert, visibility, availability — and a second
+// sheet built to look like this one is a second sheet to keep looking like it.
+
+interface BaseItem {
+  label: string
+  icon?: string | Component | VNode
+  condition?: () => boolean
+  /**
+   * The option currently in effect. Same field frappe-ui's Menu reads on desktop (it
+   * coerces with `Boolean()`, so this must stay a plain boolean — pass a computed
+   * options array rather than a getter here).
+   */
+  selected?: boolean
+  theme?: 'gray' | 'red'
+  /** Shown but not to be tapped, as frappe-ui's Menu greys a disabled row on desktop. */
+  disabled?: boolean
+  /** Replace the icon, and fill the row's far end, as frappe-ui's Menu reads them on desktop. */
+  slots?: { prefix?: () => VNode; suffix?: () => VNode }
+  /** Leaves the sheet open after the row is tapped, for rows ticked several in a row. */
+  keepOpen?: boolean
+  /** Opens a sheet of its own (Move To's folders, say): a chevron at the row's far end says so. */
+  drillsIn?: boolean
+}
+
+type OptionItem = BaseItem &
+  (
+    | { switch?: never; switchValue?: never; onClick?: (event?: Event) => void }
+    // A row that flips a setting on and off, as frappe-ui's Menu draws one: it is given the new
+    // value, and leaves the sheet open.
+    | { switch: true; switchValue?: boolean; onClick?: (on: boolean) => void }
+  )
+
+type Options = (OptionItem | { group: string; options: OptionItem[] })[]
+
+defineOptions({ inheritAttrs: false })
+
+const { options, title } = defineProps<{
+  options: Options
+  title?: string
+}>()
+
+const { isMobile } = useScreenSize()
+// Optional v-model:open for programmatic opening (e.g. chained from another
+// sheet), and to know when the menu is open on either; works standalone via
+// defineModel's local fallback otherwise.
+const open = defineModel<boolean>('open', { default: false })
+
+const visible = (items: OptionItem[]) =>
+  items.filter((item) => (item.condition ? item.condition() : true))
+
+const groups = computed(() => {
+  const flat: OptionItem[] = []
+  const grouped: { label: string; items: OptionItem[] }[] = []
+  for (const entry of options ?? []) {
+    if (entry && 'options' in entry) {
+      const items = visible(entry.options ?? [])
+      if (items.length) grouped.push({ label: entry.group, items })
+    } else if (entry) {
+      flat.push(entry)
+    }
+  }
+  const flatVisible = visible(flat)
+  return [...(flatVisible.length ? [{ label: '', items: flatVisible }] : []), ...grouped]
+})
+const rowCount = computed(() =>
+  groups.value.reduce((count, group) => count + group.items.length, 0),
+)
+
+// Dropdown option icons come in three shapes across the app: a feather name
+// string, a component, or a prebuilt vnode (h(Icon, ...)). Normalize all three
+// into something <component :is> accepts.
+const iconOf = (icon: OptionItem['icon']) => {
+  // A lucide icon by its class name, as frappe-ui's Menu takes one.
+  if (typeof icon === 'string' && icon.startsWith('lucide-'))
+    return h('span', { class: icon, 'aria-hidden': 'true' })
+  if (typeof icon === 'string') return h(FeatherIcon, { name: icon })
+  if (isVNode(icon)) return () => icon
+  return icon
+}
+
+const run = (item: OptionItem) => {
+  if (item.switch) return item.onClick?.(!item.switchValue)
+  if (!item.keepOpen) open.value = false
+  return item.onClick?.()
+}
+
+const sheetLabel = stripShortcutHint
+</script>

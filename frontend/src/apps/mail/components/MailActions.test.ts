@@ -7,6 +7,7 @@ import type { BodyView, Mail } from '@/apps/mail/types'
 
 // Every label the menu is handed, whether or not it would show for this message.
 const handed = vi.hoisted(() => new Array<string>())
+const screen = vi.hoisted(() => ({ phone: false }))
 
 // The menu, drawn as one button per item it would show: a Dropdown leaves out an item whose
 // condition says no.
@@ -32,8 +33,18 @@ vi.mock('@/platform/feedback', async () => {
   }
 })
 vi.mock('frappe-ui', async () => {
-  const { defineComponent } = await import('vue')
-  return { Button: defineComponent({ setup: () => () => null }), toast: {} }
+  const { defineComponent, h } = await import('vue')
+  // A button beside the star, named as it is to a screen reader.
+  return {
+    Button: defineComponent({
+      inheritAttrs: false,
+      setup:
+        (_props, { attrs }) =>
+        () =>
+          h('button', { 'aria-label': attrs['aria-label'] }),
+    }),
+    toast: {},
+  }
 })
 vi.mock('@/apps/mail/utils/unifiedFolders', () => ({}))
 vi.mock('vue-router', () => ({ useRoute: () => ({}), useRouter: () => ({}) }))
@@ -49,7 +60,7 @@ vi.mock('@/apps/mail/utils/accountScope', () => ({
   }),
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
-  useScreenSize: () => ({ isMobile: ref(false) }),
+  useScreenSize: () => ({ isMobile: ref(screen.phone) }),
   useUndo: () => ({}),
   useFilterBySender: () => ({}),
 }))
@@ -69,9 +80,10 @@ let app: App | undefined
 afterEach(() => {
   app?.unmount()
   handed.length = 0
+  screen.phone = false
 })
 
-const menuFor = (bodyView?: BodyView) => {
+const menuFor = (bodyView?: BodyView, thread: Mail[] = [mail]) => {
   const onToggleAsSent = vi.fn()
   const root = document.createElement('div')
   app = createApp({
@@ -87,7 +99,7 @@ const menuFor = (bodyView?: BodyView) => {
         forward: () => {},
         reloadMails: () => {},
         dropMail: () => () => {},
-        thread: [mail],
+        thread,
         bodyView,
         onToggleAsSent,
       }),
@@ -96,7 +108,8 @@ const menuFor = (bodyView?: BodyView) => {
   app.mount(root)
   const item = (label: string) =>
     [...root.querySelectorAll('button')].find((button) => button.textContent === label)
-  return { item, onToggleAsSent }
+  const beside = (label: string) => root.querySelector(`button[aria-label="${label}"]`)
+  return { item, beside, onToggleAsSent }
 }
 
 describe("a message's More menu in the dark theme", () => {
@@ -126,5 +139,28 @@ describe("a message's menu", () => {
     const { item } = menuFor(undefined)
     expect(item('Download Email')).toBeDefined()
     expect(handed.filter((label) => /event/i.test(label))).toEqual([])
+  })
+})
+
+describe("an open message's Reply beside its star", () => {
+  const earlier = fromPartial<Mail>({ ...mail, name: 'm0', id: 'm0' })
+  const replyDraft = fromPartial<Mail>({ ...mail, name: 'd1', id: 'd1', draft: 1 })
+
+  it('is left to the reply bar on a phone when the message is the only one, a draft beside it or not', () => {
+    screen.phone = true
+    const { beside, item } = menuFor(undefined, [mail, replyDraft])
+    expect(beside('Reply')).toBeNull()
+    expect(item('Reply')).toBeDefined()
+  })
+
+  it('stays on a phone in a longer conversation', () => {
+    screen.phone = true
+    const { beside } = menuFor(undefined, [earlier, mail])
+    expect(beside('Reply')).not.toBeNull()
+  })
+
+  it('stays on a desktop, which has no reply bar, when the message is alone', () => {
+    const { beside } = menuFor(undefined, [mail])
+    expect(beside('Reply')).not.toBeNull()
   })
 })

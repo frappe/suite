@@ -11,6 +11,7 @@ type SFUMeetingManagerLike = {
 }
 
 interface TileMetrics {
+  consumerId: string
   width: number
   height: number
   visible: boolean
@@ -79,7 +80,7 @@ export function useTileAdaptiveStreaming() {
     const width = visible ? Math.round(controller.width) : 0
     const height = visible ? Math.round(controller.height) : 0
 
-    const last = controller.lastSent
+    const last = controller.lastSent?.consumerId === consumerId ? controller.lastSent : null
     const widthChanged = !last || Math.abs(last.width - width) >= SIZE_DELTA_THRESHOLD
     const visibilityChanged = !last || last.visible !== visible
 
@@ -97,8 +98,13 @@ export function useTileAdaptiveStreaming() {
         width,
         height,
       })
-      if (!controller.active || getManager() !== manager) return
-      controller.lastSent = { visible, width, height }
+      if (
+        !controller.active ||
+        getManager() !== manager ||
+        manager.getVideoConsumerId(controller.participantId) !== consumerId
+      )
+        return
+      controller.lastSent = { consumerId, visible, width, height }
     } catch (error) {
       console.warn('Failed to update consumer preferences for', controller.participantId, error)
     }

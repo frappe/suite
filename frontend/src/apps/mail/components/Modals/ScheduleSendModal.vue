@@ -1,5 +1,5 @@
 <template>
-  <Dialog v-model:open="show" v-bind="dialogOptions">
+  <AdaptiveDialog v-model:open="show" v-bind="dialogOptions">
     <template #default>
       <div class="space-y-4">
         <div class="flex flex-col gap-1">
@@ -23,15 +23,16 @@
         <ErrorMessage :message="error" />
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
-import { Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { ErrorMessage, FormControl } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { fromLocalInput, inUserTimeZone, userTimeZone } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 
 const show = defineModel<boolean>()
 

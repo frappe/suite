@@ -15,16 +15,16 @@
         type="datetime"
         :label="__('Starts')"
         :format="SHOWN_FORMAT"
-        :placeholder="__('Select date and time')"
+        :placeholder="__('Now')"
         variant="outline"
         :disabled="isOff"
       />
       <FormControl
         v-model="draft.to_date"
         type="datetime"
-        :label="__('Ends (optional)')"
+        :label="__('Ends')"
         :format="SHOWN_FORMAT"
-        :placeholder="__('Select date and time')"
+        :placeholder="__('Until you turn it off')"
         variant="outline"
         :disabled="isOff"
       />
@@ -37,7 +37,7 @@
       :disabled="isOff"
     />
     <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
+      <FormLabel :label="__('Message')" />
       <MailRichTextField
         v-model="draft.html_body"
         :placeholder="__('Write your reply…')"
@@ -60,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl, FormLabel, SettingsRow, Switch } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
@@ -134,9 +134,19 @@ watch(
     immediate: true,
   },
 )
-// Nothing to save until the form differs from the reply as it was read
+// Words a reply goes out with: a body with neither text nor an image is none, and would send a
+// blank reply
+function hasWords(html: string) {
+  const body = new DOMParser().parseFromString(html, 'text/html').body
+  return !!body.textContent?.trim() || !!body.querySelector('img')
+}
+// Nothing to save until the form differs from the reply as it was read, nor a reply turned on
+// with nothing to say
 const isSaveBlocked = computed(
-  () => vacationResponse.isFetching || JSON.stringify(draft) === original.value,
+  () =>
+    vacationResponse.isFetching ||
+    JSON.stringify(draft) === original.value ||
+    (draft.enabled && !hasWords(draft.html_body)),
 )
 // A refused save is said on the form, where the eyes are, so no toast says it too
 const updateVacationResponse = useMutation(api.mail.vacation.update, { silent: true })
@@ -147,7 +157,8 @@ async function updateVacationResponseSubmit() {
     enabled: draft.enabled,
     from_date: fromLocalInput(draft.from_date),
     to_date: fromLocalInput(draft.to_date),
-    subject: draft.subject,
+    // A reply goes out with a subject: left empty, the one its field suggests
+    subject: draft.subject.trim() || __('Out of office'),
     html_body: draft.html_body,
   }
   await updateVacationResponse.run(input)
