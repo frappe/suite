@@ -64,21 +64,16 @@
 
 <script setup lang="ts">
 import { Tooltip } from 'frappe-ui'
-import { Archive, ArchiveRestore, Mail, MailOpen, Pin, Star, Trash2 } from 'lucide-vue-next'
+import { Pin, Star } from 'lucide-vue-next'
 import { computed } from 'vue'
 
+import { useRowActions, type RowActionKey } from '@/apps/mail/composables/useRowActions'
 import { FLAGGED_STAR_STYLE, PINNED_PIN_STYLE } from '@/apps/mail/constants'
-import { userStore } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { archivable, unarchivable } from '@/apps/mail/utils/receivedMail'
 
-// The hover actions on a row, for one thread or for a whole collapsed run of them.
-//
-// The conditions read "any member": offer Archive while any thread is still outside it, Delete only
-// once every thread is already in Trash. For a single thread each rule collapses to the obvious thing,
-// which is why one component can serve both. Labels name the count when there is more than one, since
-// a stack row deliberately hides its members and a click is about to move all of them.
+// The hover actions on a row, for one thread or for a whole collapsed run of them (see
+// useRowActions for which it offers), and the star and pin beside them.
 const {
   isHovered,
   threads,
@@ -94,8 +89,7 @@ const {
   showStar?: boolean
   // The list files by the filing rules, so it can take an archived thread back to the Inbox.
   unarchive?: boolean
-  // The list is Drafts: its bin discards rather than trashes. Asked of the list, not the thread —
-  // a conversation with a reply draft is filed in Drafts and in Inbox alike.
+  // The list is Drafts, whose bin discards (see useRowActions).
   drafts?: boolean
   // The list's folder takes pins. Not on a stack, whose members are never pinned.
   pinnable?: boolean
@@ -112,26 +106,9 @@ const emit = defineEmits([
 ])
 
 const { isMobile } = useScreenSize()
-const user = userStore()
-
-const many = computed(() => threads.length > 1)
-const count = computed(() => String(threads.length))
 
 const flagged = computed(() => !!threads[0]?.flagged)
 const pinned = computed(() => !!threads[0]?.pinned)
-
-// Members of a stack always share an account (it is part of the stack key), so the first row's own
-// Archive/Trash ids speak for the run. Falling back to the active account covers a plain row whose
-// mailbox ids are not carried on the thread.
-const archiveId = computed(() => threads[0]?.archive ?? user.mailboxIds.archive)
-const trashId = computed(() => threads[0]?.trash ?? user.mailboxIds.trash)
-
-const someIn = (mailboxId: string) =>
-  threads.some((t) => t.mailboxes.some((m) => m.mailbox_id === mailboxId))
-const everyIn = (mailboxId: string) =>
-  threads.every((t) => t.mailboxes.some((m) => m.mailbox_id === mailboxId))
-
-const someUnread = computed(() => threads.some((t) => !t.seen))
 
 // A draft is never starred: each save replaced it with one that dropped the star. Drafts' rows, and a
 // search result that is a draft, have none to offer.
@@ -139,76 +116,18 @@ const starrable = computed(
   () => showStar && !drafts && !threads.every((t) => t.draft && !t.messages?.length),
 )
 
+const run: Record<RowActionKey, () => void> = {
+  unread: () => emit('setSeen', false),
+  read: () => emit('setSeen', true),
+  archive: () => emit('archive'),
+  unarchive: () => emit('unarchive'),
+  trash: () => emit('trash'),
+  delete: () => emit('delete'),
+}
+
+const rowActions = useRowActions(() => ({ threads, unarchive, drafts }))
 const actions = computed(() =>
-  [
-    {
-      label: many.value
-        ? __('Mark {0} conversations as Unread', [count.value])
-        : __('Mark as Unread'),
-      onClick: () => emit('setSeen', false),
-      icon: Mail,
-      condition: !drafts && !someUnread.value,
-    },
-    {
-      label: many.value ? __('Mark {0} conversations as Read', [count.value]) : __('Mark as Read'),
-      onClick: () => emit('setSeen', true),
-      icon: MailOpen,
-      condition: !drafts && someUnread.value,
-    },
-    {
-      label: many.value ? __('Archive {0} conversations', [count.value]) : __('Archive'),
-      onClick: () => emit('archive'),
-      icon: Archive,
-      // Lists that don't file by the rules yet (All Inboxes) keep the old test: their rows span
-      // accounts, and the active account's Sent can't tell another account's replies apart.
-      condition:
-        !drafts &&
-        (unarchive
-          ? threads.some((t) =>
-              archivable(t.messages?.length ? t.messages : [t], {
-                sent: t.sent ?? user.mailboxIds.sent,
-                archive: archiveId.value,
-                inbox: t.inbox ?? user.mailboxIds.inbox,
-              }),
-            )
-          : !everyIn(archiveId.value)),
-    },
-    {
-      label: many.value ? __('Unarchive {0} conversations', [count.value]) : __('Unarchive'),
-      onClick: () => emit('unarchive'),
-      icon: ArchiveRestore,
-      condition:
-        unarchive &&
-        !drafts &&
-        threads.some((t) =>
-          unarchivable(t.messages?.length ? t.messages : [t], {
-            sent: t.sent ?? user.mailboxIds.sent,
-            archive: archiveId.value,
-            inbox: t.inbox ?? user.mailboxIds.inbox,
-          }),
-        ),
-    },
-    {
-      label: many.value
-        ? __('Move {0} conversations to Trash', [count.value])
-        : __('Move to Trash'),
-      onClick: () => emit('trash'),
-      icon: Trash2,
-      condition: !drafts && !someIn(trashId.value),
-    },
-    {
-      label: many.value ? __('Delete {0} conversations', [count.value]) : __('Delete Conversation'),
-      onClick: () => emit('delete'),
-      icon: Trash2,
-      condition: !drafts && everyIn(trashId.value),
-    },
-    {
-      label: many.value ? __('Discard {0} drafts', [count.value]) : __('Discard'),
-      onClick: () => emit('delete'),
-      icon: Trash2,
-      condition: drafts,
-    },
-  ].filter((action) => action.condition),
+  rowActions.value.map((action) => ({ ...action, onClick: run[action.key] })),
 )
 </script>
 

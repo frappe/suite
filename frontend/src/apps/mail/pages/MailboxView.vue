@@ -95,34 +95,21 @@
               @back="router.push(routeForTab('primary'))"
             >
               <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
-              <template v-if="clearScope" #actions>
+              <template v-if="clearScope || showDeleteBanner" #actions>
                 <div class="mr-2.5 flex items-center">
                   <ClearListMenu
                     :scope="clearScope"
+                    :empty-folder="showDeleteBanner ? __('Empty {0}', [mailboxName]) : undefined"
                     :empty="listState === 'empty'"
                     :target="{ account: accountId, mailbox }"
                     :inbox="
                       mailbox === store.mailboxIds.inbox && (!inboxTab || inboxTab === 'primary')
                     "
+                    @empty-folder="showEmptyMailbox = true"
                   />
                 </div>
               </template>
             </MobileTitleHeader>
-
-            <!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
-						     the whole header read as chrome on top of the page). Borderless: it
-						     reads as part of the header block, not a boxed-off strip. -->
-            <div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
-              <span class="text-ink-gray-5">
-                {{ __('Items in this folder will be automatically deleted after 30 days.') }}
-              </span>
-              <Button
-                :label="__('Empty {0}', [mailboxName])"
-                variant="ghost"
-                theme="red"
-                @click="showEmptyMailbox = true"
-              />
-            </div>
 
             <!-- On a phone these scroll with the list, at its top. -->
             <PhoneListHead :into="listTop">
@@ -132,6 +119,15 @@
                 :ready="categoryCardsReady"
                 :route-for="routeForTab"
               />
+
+              <!-- Trash/Junk: what happens to the folder, under its title. Emptying it now is in
+                   the title's menu, where a tap can't empty it by mistake. -->
+              <p
+                v-if="showDeleteBanner && mailbox !== 'search'"
+                class="text-p-sm text-ink-gray-5 px-4 pb-3"
+              >
+                {{ __('Deleted forever after 30 days') }}
+              </p>
 
               <!-- No `loading`: the bar below spans this whole header block, so it
 						     also covers search, where this row is absent. -->
@@ -449,8 +445,8 @@
     </div>
   </div>
 
-  <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
-  <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
+  <AdaptiveDialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
+  <AdaptiveDialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
   <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
   <SnoozeMenu
     v-model:open="showSnooze"
@@ -468,7 +464,7 @@
   />
 </template>
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
 import { computed, h, onMounted, onUnmounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -549,6 +545,7 @@ import { threadRow } from '@/apps/mail/utils/threadRows'
 import { timeMenuOptions } from '@/apps/mail/utils/timeMenuOptions'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 
@@ -1093,9 +1090,17 @@ const {
   },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
-// (Starred, a search) or nothing unread to clear (Sent, Drafts).
+// (Starred, a search), nothing unread to clear (Sent, Drafts), or nothing worth reading (Trash and
+// Junk, on their way out: a phone's menu empties them instead).
 const clearScope = computed(() =>
-  ['search', 'starred', store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox)
+  [
+    'search',
+    'starred',
+    store.mailboxIds.sent,
+    store.mailboxIds.drafts,
+    store.mailboxIds.trash,
+    store.mailboxIds.junk,
+  ].includes(mailbox)
     ? undefined
     : listScope(inboxCategory.value, mailboxName.value, filter.value),
 )

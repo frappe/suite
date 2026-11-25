@@ -1,6 +1,7 @@
 <template>
   <!-- Clearing what the list shows in one go, on its own toolbar: an Inbox tab, or a whole folder.
-       Drawn as the toolbar's own buttons are. On a phone, whose Inbox has no View menu, the Inbox's
+       Trash and Junk have nothing to mark read; there it empties the folder (`emptyFolder`, the
+       action's name), which asks first. Drawn as the toolbar's own buttons are. On a phone, whose Inbox has no View menu, the Inbox's
        menu (Primary's, not a category's) also turns its categories on and off, and leads to a sheet
        of its own to choose which show. A phone opens it as a sheet from the bottom. An empty list
        has nothing to clear, so offers none of it, and without the categories, no menu at all. -->
@@ -43,7 +44,15 @@ const {
   target,
   inbox = false,
   empty = false,
-} = defineProps<{ scope: ClearScope; target: ClearTarget; inbox?: boolean; empty?: boolean }>()
+  emptyFolder,
+} = defineProps<{
+  scope?: ClearScope
+  target: ClearTarget
+  inbox?: boolean
+  empty?: boolean
+  emptyFolder?: string
+}>()
+const emit = defineEmits<{ emptyFolder: [] }>()
 
 const { menuFor } = useClearList(() => target)
 const { isMobile } = useScreenSize()
@@ -53,7 +62,24 @@ const choosing = ref(false)
 const categoryChoice = computed(() => inbox && isMobile.value && offered.value)
 
 const options = computed(() => {
-  const clearing = empty ? [] : menuFor(scope)
+  const clearing = [
+    ...(scope && !empty ? menuFor(scope) : []),
+    ...(emptyFolder
+      ? [
+          {
+            group: '',
+            options: [
+              {
+                label: emptyFolder,
+                icon: 'lucide-trash-2',
+                theme: 'red' as const,
+                onClick: () => emit('emptyFolder'),
+              },
+            ],
+          },
+        ]
+      : []),
+  ]
   if (!categoryChoice.value) return clearing
   return [
     ...clearing,

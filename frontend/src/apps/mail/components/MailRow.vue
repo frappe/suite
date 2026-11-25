@@ -1,213 +1,247 @@
 <template>
   <!-- No browser focus ring, whose top and bottom showed as stray lines once the list clipped its
        sides. Tab focus moves the keyboard's cursor instead (see onListFocusIn), whose bar marks it. -->
-  <component
-    :is="to ? RouterLink : 'div'"
-    :to="to"
-    class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
-    :class="[
-      ROW_BOX_CLASS,
-      {
-        '!bg-surface-gray-1': isSelected || isTouching,
-        // A press while selecting toggles the row, and the row's own grey says which way it went; the
-        // press grey on top of that flashed a deselected row darker than it ends up. Taken from when
-        // the press began: deselecting the last row ends selecting while the finger is still down.
-        'max-sm:active:bg-surface-gray-2': !pressBeganSelecting,
-        '!py-1': isFullWidth,
-        // Under the pills, the room the eye sees above the first line's letters: the row's pt-1, half
-        // of what its 19px line (text-base, 14px at 1.35) leaves of the h-8 it is centred in, and the
-        // font's room above its capitals in that line, about 15px in all.
-        '!pb-3.5': pillsBelow,
-      },
-    ]"
-    :draggable="draggable || undefined"
-    @mouseenter="isHovered = true"
-    @mouseleave="isHovered = false"
-    @touchstart="onTouchStart"
-    @touchend="clearTouchTimer"
-    @touchcancel="clearTouchTimer"
-    @contextmenu="onContextMenu"
-    @click.capture="onRowClick"
-    @dragstart="onDragStart"
-    @dragend="emit('dragEnd')"
-  >
-    <!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
+  <!-- On a phone the row swipes (see useRowSwipe): this box holds it in place, clips it as it goes,
+       and shows what the swipe does behind it. The row's own attributes go on the row. -->
+  <div ref="box" :class="{ 'relative overflow-x-clip': swipeEnabled }" :style="swiping.boxStyle">
+    <div
+      v-if="swiping.side && swiping.shown"
+      class="absolute inset-0 flex items-center px-5"
+      :class="[swiping.shown.tone, swiping.side === 'left' ? 'justify-end' : 'justify-start']"
+      aria-hidden="true"
+    >
+      <!-- Grows a little once letting go would do it. -->
+      <div
+        class="text-ink-base flex w-16 flex-col items-center gap-1 transition-transform duration-150"
+        :class="{ 'scale-110': swiping.armed }"
+      >
+        <component :is="swiping.shown.icon" class="size-5" />
+        <span class="text-xs font-medium">{{ swiping.shown.label }}</span>
+      </div>
+    </div>
+    <component
+      :is="to ? RouterLink : 'div'"
+      :to="to"
+      v-bind="$attrs"
+      class="sm:hover:bg-surface-gray-1 group relative cursor-default select-none overflow-x-clip outline-none focus-visible:outline-none [-webkit-touch-callout:none]"
+      :class="[
+        ROW_BOX_CLASS,
+        {
+          '!bg-surface-gray-1': isSelected || isTouching,
+          // A press while selecting toggles the row, and the row's own grey says which way it went; the
+          // press grey on top of that flashed a deselected row darker than it ends up. Taken from when
+          // the press began: deselecting the last row ends selecting while the finger is still down.
+          // Nor while it is dragged sideways, which is no press.
+          'max-sm:active:bg-surface-gray-2': !pressBeganSelecting && !swiping.side,
+          // Moved off its place, it covers what it does behind it.
+          'bg-surface-base': swiping.side,
+          '!py-1': isFullWidth,
+          // Under the pills, the room the eye sees above the first line's letters: the row's pt-1, half
+          // of what its 19px line (text-base, 14px at 1.35) leaves of the h-8 it is centred in, and the
+          // font's room above its capitals in that line, about 15px in all.
+          '!pb-3.5': pillsBelow,
+        },
+      ]"
+      :style="rowStyle"
+      :draggable="draggable || undefined"
+      @mouseenter="isHovered = true"
+      @mouseleave="isHovered = false"
+      @touchstart="onTouchStart"
+      @touchmove="rowSwipe.onTouchMove"
+      @touchend="onTouchEnd"
+      @touchcancel="onTouchCancel"
+      @contextmenu="onContextMenu"
+      @click.capture="onRowClick"
+      @dragstart="onDragStart"
+      @dragend="emit('dragEnd')"
+    >
+      <!-- Selection column: checkbox on desktop, sender avatar on mobile or where the list has no
 		     bulk selection. Long-pressing the row anywhere selects it on touch. On a phone a selected
 		     row keeps its avatar, with a tick on its bottom-right corner, so the sender stays in view;
 		     elsewhere a check circle takes the avatar's place. -->
-    <!-- max-sm:justify-start pins the avatar/checkbox to the row's 14px padding
+      <!-- max-sm:justify-start pins the avatar/checkbox to the row's 14px padding
 		     axis; centered, the 40px column left them 2-4px "inside" it. -->
-    <div
-      v-if="showLeading"
-      class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
-      :class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
-    >
-      <!-- Wide: a flex box, as the day headers' is, so the checkbox (an inline-flex) centres on the
+      <div
+        v-if="showLeading"
+        class="flex shrink-0 items-center justify-center max-sm:w-10 max-sm:justify-start"
+        :class="isFullWidth ? 'h-8' : 'h-10 sm:-mt-1.5'"
+      >
+        <!-- Wide: a flex box, as the day headers' is, so the checkbox (an inline-flex) centres on the
            row's line rather than sitting on a text line's baseline, a few pixels above it. -->
-      <div
-        v-if="showCheckbox"
-        class="checkbox-hitbox -m-3 cursor-pointer p-3"
-        :class="{ flex: isFullWidth }"
-        @click.stop.prevent="emit('setSelected', !isSelected)"
-      >
-        <Checkbox
-          :model-value="isSelected"
-          size="md"
-          class="pointer-events-none"
-          :aria-label="selectLabel"
-        />
-      </div>
-      <div
-        v-else-if="isSelected && !isMobile"
-        class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full"
-        @click.stop.prevent="emit('setSelected', false)"
-      >
-        <Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
-      </div>
-      <div v-show="showAvatar" class="relative">
-        <Avatar
-          :label="avatarLabel"
-          :image="avatarImage"
-          size="xl"
-          class="hitbox max-sm:!h-10 max-sm:!w-10"
+        <div
+          v-if="showCheckbox"
+          class="checkbox-hitbox -m-3 cursor-pointer p-3"
+          :class="{ flex: isFullWidth }"
           @click.stop.prevent="emit('setSelected', !isSelected)"
-        />
-        <!-- Ringed in the selected row's own grey, so it reads as cut out of the avatar. -->
-        <span
-          v-if="isSelected"
-          class="bg-surface-gray-10 absolute -bottom-px -right-px flex size-[18px] items-center justify-center rounded-full ring-[1.5px] ring-[color:var(--surface-gray-1)]"
         >
-          <Check class="text-ink-base size-3 stroke-[3.5px]" />
-        </span>
+          <Checkbox
+            :model-value="isSelected"
+            size="md"
+            class="pointer-events-none"
+            :aria-label="selectLabel"
+          />
+        </div>
+        <div
+          v-else-if="isSelected && !isMobile"
+          class="bg-surface-gray-10 hitbox flex h-8 w-8 shrink-0 rounded-full"
+          @click.stop.prevent="emit('setSelected', false)"
+        >
+          <Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
+        </div>
+        <div v-show="showAvatar" class="relative">
+          <Avatar
+            :label="avatarLabel"
+            :image="avatarImage"
+            size="xl"
+            class="hitbox max-sm:!h-10 max-sm:!w-10"
+            @click.stop.prevent="emit('setSelected', !isSelected)"
+          />
+          <!-- Ringed in the selected row's own grey, so it reads as cut out of the avatar. -->
+          <span
+            v-if="isSelected"
+            class="bg-surface-gray-10 absolute -bottom-px -right-px flex size-[18px] items-center justify-center rounded-full ring-[1.5px] ring-[color:var(--surface-gray-1)]"
+          >
+            <Check class="text-ink-base size-3 stroke-[3.5px]" />
+          </span>
+        </div>
       </div>
-    </div>
 
-    <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
+      <!-- The leading column set the row's height in the wide layout; without it (hideAvatar)
 		     rows shrank to their text and no longer lined up with the day headers. Hold that
 		     height here so the rhythm survives the column going away. -->
-    <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, the
+      <!-- min-w-0 rather than truncate here and on the preview line: each line truncates itself, the
          chips clip themselves (below), and clipping these too would cut the star's hit area down to
          the glyph. That area runs past the row's right edge, which the row itself clips, so the
          list can't scroll sideways. -->
-    <div
-      class="min-w-0 grow"
-      :class="[
-        pillsBelow
-          ? // The first line exactly as a plain row's: sender, subject, preview, held to the leading
-            // column's height so the checkbox and date line up with it. The pills go under the subject
-            // and preview, a small gap below.
-            'grid grid-cols-[theme(width.48)_auto_minmax(0,1fr)] grid-rows-[theme(height.8)_auto] items-center gap-x-3 gap-y-1'
-          : isFullWidth
-            ? 'flex items-center space-x-3'
-            : 'space-y-1 sm:space-y-0.5',
-        { 'min-h-8': isFullWidth && !showLeading },
-      ]"
-    >
       <div
-        v-if="showSender"
-        class="flex items-center"
-        :class="isFullWidth ? 'w-48 shrink-0' : 'justify-between'"
+        class="min-w-0 grow"
+        :class="[
+          pillsBelow
+            ? // The first line exactly as a plain row's: sender, subject, preview, held to the leading
+              // column's height so the checkbox and date line up with it. The pills go under the subject
+              // and preview, a small gap below.
+              'grid grid-cols-[theme(width.48)_auto_minmax(0,1fr)] grid-rows-[theme(height.8)_auto] items-center gap-x-3 gap-y-1'
+            : isFullWidth
+              ? 'flex items-center space-x-3'
+              : 'space-y-1 sm:space-y-0.5',
+          { 'min-h-8': isFullWidth && !showLeading },
+        ]"
       >
         <div
-          class="mr-2 flex items-center space-x-1.5 truncate"
-          :class="{ 'mt-0.5': !isFullWidth }"
+          v-if="showSender"
+          class="flex items-center"
+          :class="isFullWidth ? 'w-48 shrink-0' : 'justify-between'"
         >
-          <span v-if="unread" class="min-h-2 min-w-2 rounded-full bg-blue-500" />
-          <h3
-            class="truncate text-[15px] !font-medium sm:text-base"
-            :class="{ '!font-semibold': unread }"
+          <div
+            class="mr-2 flex items-center space-x-1.5 truncate"
+            :class="{ 'mt-0.5': !isFullWidth }"
           >
-            <slot name="sender" />
-          </h3>
-          <slot name="badges" :is-hovered="isHovered" />
-          <!-- The account keeps the sender company in both layouts. It stays affordable
+            <span v-if="unread" class="min-h-2 min-w-2 rounded-full bg-blue-500" />
+            <h3
+              class="truncate text-[15px] !font-medium sm:text-base"
+              :class="{ '!font-semibold': unread }"
+            >
+              <slot name="sender" />
+            </h3>
+            <slot name="badges" :is-hovered="isHovered" />
+            <!-- The account keeps the sender company in both layouts. It stays affordable
 					     in the sender column because only the odd accounts out are labelled, and
 					     by their short names. -->
-          <div v-if="accountLabel" class="text-ink-blue-6 flex shrink-0 items-center gap-1 text-xs">
-            <span aria-hidden="true">·</span>
-            <span>{{ __('in {0}', [accountLabel]) }}</span>
+            <div
+              v-if="accountLabel"
+              class="text-ink-blue-6 flex shrink-0 items-center gap-1 text-xs"
+            >
+              <span aria-hidden="true">·</span>
+              <span>{{ __('in {0}', [accountLabel]) }}</span>
+            </div>
+          </div>
+          <MailDate v-if="!isFullWidth" :datetime format="list" />
+        </div>
+
+        <h4
+          class="truncate text-sm !leading-[1.5]"
+          :class="{
+            'text-ink-gray-5': subjectPlaceholder,
+            '!text-base': isFullWidth,
+            '!font-semibold': unread,
+          }"
+        >
+          <!-- Wherever the sender line is dropped, the dot it normally sits on comes down here. -->
+          <span
+            v-if="unread && !showSender"
+            class="bg-blue-500 mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full align-middle"
+          />
+          <slot name="subject" />
+        </h4>
+
+        <div
+          class="flex min-w-0 items-center justify-between"
+          :class="{ 'flex-1 !text-base': isFullWidth }"
+        >
+          <h5
+            class="truncate text-sm !leading-[1.5]"
+            :class="[
+              previewPlaceholder ? 'text-ink-gray-4' : 'text-ink-gray-5',
+              { '!text-base': isFullWidth },
+            ]"
+          >
+            <slot name="preview" />
+          </h5>
+
+          <div v-if="!isFullWidth" class="ml-3.5 flex items-center gap-3.5">
+            <slot name="trailing" :is-hovered="isHovered" />
           </div>
         </div>
-        <MailDate v-if="!isFullWidth" :datetime format="list" />
-      </div>
 
-      <h4
-        class="truncate text-sm !leading-[1.5]"
-        :class="{
-          'text-ink-gray-5': subjectPlaceholder,
-          '!text-base': isFullWidth,
-          '!font-semibold': unread,
-        }"
-      >
-        <!-- Wherever the sender line is dropped, the dot it normally sits on comes down here. -->
-        <span
-          v-if="unread && !showSender"
-          class="bg-blue-500 mr-1.5 inline-block h-2 w-2 shrink-0 rounded-full align-middle"
-        />
-        <slot name="subject" />
-      </h4>
-
-      <div
-        class="flex min-w-0 items-center justify-between"
-        :class="{ 'flex-1 !text-base': isFullWidth }"
-      >
-        <h5
-          class="truncate text-sm !leading-[1.5]"
-          :class="[
-            previewPlaceholder ? 'text-ink-gray-4' : 'text-ink-gray-5',
-            { '!text-base': isFullWidth },
-          ]"
+        <!-- Its own line under the subject, so the first line stays a plain row's. Here and in the
+           stacked layout, chips that don't fit are cut off at the column's edge, short of the date
+           and the star, and only sideways, so a chip's focus ring still shows. -->
+        <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex min-w-0 overflow-x-clip">
+          <slot name="extra" :is-full-width="isFullWidth" />
+        </div>
+        <!-- The wide line without pills has none to show (see hasExtra). Stacked, they get a block
+           spaced inside as the column is, so its lines sit as they would without it, and hidden
+           when there is nothing in it, so it adds no gap. -->
+        <div
+          v-else-if="!isFullWidth"
+          class="min-w-0 space-y-1 overflow-x-clip empty:hidden sm:space-y-0.5"
         >
-          <slot name="preview" />
-        </h5>
-
-        <div v-if="!isFullWidth" class="ml-3.5 flex items-center gap-3.5">
-          <slot name="trailing" :is-hovered="isHovered" />
+          <slot name="extra" :is-full-width="isFullWidth" />
         </div>
       </div>
 
-      <!-- Its own line under the subject, so the first line stays a plain row's. Here and in the
-           stacked layout, chips that don't fit are cut off at the column's edge, short of the date
-           and the star, and only sideways, so a chip's focus ring still shows. -->
-      <div v-if="pillsBelow" class="col-span-2 col-start-2 -mt-1 flex min-w-0 overflow-x-clip">
-        <slot name="extra" :is-full-width="isFullWidth" />
-      </div>
-      <!-- The wide line without pills has none to show (see hasExtra). Stacked, they get a block
-           spaced inside as the column is, so its lines sit as they would without it, and hidden
-           when there is nothing in it, so it adds no gap. -->
       <div
-        v-else-if="!isFullWidth"
-        class="min-w-0 space-y-1 overflow-x-clip empty:hidden sm:space-y-0.5"
+        v-if="isFullWidth"
+        class="flex shrink-0 items-center justify-end gap-4"
+        :class="{ 'h-8 self-start': pillsBelow }"
       >
-        <slot name="extra" :is-full-width="isFullWidth" />
-      </div>
-    </div>
-
-    <div
-      v-if="isFullWidth"
-      class="flex shrink-0 items-center justify-end gap-4"
-      :class="{ 'h-8 self-start': pillsBelow }"
-    >
-      <!-- As wide as what it shows: at rest the date and the star (and a pinned row's pin), so the
+        <!-- As wide as what it shows: at rest the date and the star (and a pinned row's pin), so the
            preview runs up to it; hovered, the actions, and the preview, the row's one flexible part,
            ends its ellipsis sooner to make the room. The pills have a line of their own and the
            subject's column is fixed, so nothing else moves, and the right edge stays put. -->
-      <MailDate v-if="!isHovered" :datetime format="list" />
-      <slot name="trailing" :is-hovered="isHovered" />
-    </div>
+        <MailDate v-if="!isHovered" :datetime format="list" />
+        <slot name="trailing" :is-hovered="isHovered" />
+      </div>
 
-    <slot />
-  </component>
+      <slot />
+    </component>
+  </div>
 </template>
 
 <script setup lang="ts">
 import { Avatar, Checkbox } from 'frappe-ui'
 import { Check } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref, useTemplateRef } from 'vue'
 import { RouterLink, type RouteLocationRaw } from 'vue-router'
 
 import MailDate from '@/apps/mail/components/MailDate.vue'
 import { useRowLayout } from '@/apps/mail/composables/useRowLayout'
+import {
+  ROW_SWIPE_MS,
+  useRowSwipe,
+  type RowSwipeAction,
+  type SwipeSide,
+} from '@/apps/mail/composables/useRowSwipe'
 import { ROW_BOX_CLASS } from '@/apps/mail/constants'
 
 // The shared skeleton of a row in the mail list: selection column, sender line with its date, subject,
@@ -217,6 +251,8 @@ import { ROW_BOX_CLASS } from '@/apps/mail/constants'
 // It exists because MailListItem and StackListItem must line up pixel-for-pixel while being different
 // things (one is a link to a thread, the other a collapsed run of them). Holding the class strings in
 // one place is what keeps them from drifting apart, which is exactly what happened when they didn't.
+defineOptions({ inheritAttrs: false })
+
 const {
   to,
   isSelected,
@@ -233,6 +269,7 @@ const {
   hideAvatar = false,
   accountLabel,
   hasExtra = false,
+  swipes,
 } = defineProps<{
   // Renders the row as a link when set, and as a plain div when not — a thread opens, a stack expands.
   to?: RouteLocationRaw
@@ -267,12 +304,15 @@ const {
   // Whether the row can be dragged onto a folder. Off on touch, where the browser
   // gives HTML5 drag no events at all and a long press already means selection.
   draggable?: boolean
+  // What a swipe each way does on a phone, if anything (see useRowSwipe).
+  swipes?: Partial<Record<SwipeSide, RowSwipeAction>>
 }>()
 
 const emit = defineEmits<{
   setSelected: [selected: boolean]
   dragStart: [event: DragEvent]
   dragEnd: []
+  swipe: [side: SwipeSide]
 }>()
 
 const { isMobile, isFullWidth, showCheckbox, showAvatar, showLeading } = useRowLayout(() => ({
@@ -280,6 +320,32 @@ const { isMobile, isFullWidth, showCheckbox, showAvatar, showLeading } = useRowL
   hideAvatar,
   isSelected,
 }))
+
+// Not while selecting, where a touch is for ticking rows.
+const swipeEnabled = computed(
+  () => isMobile.value && !selectionMode && !!(swipes?.left || swipes?.right),
+)
+const rowSwipe = useRowSwipe({
+  el: useTemplateRef<HTMLElement>('box'),
+  enabled: () => swipeEnabled.value,
+  action: (side) => swipes?.[side],
+  commit: (side) => emit('swipe', side),
+})
+const swiping = reactive({
+  side: rowSwipe.side,
+  shown: rowSwipe.shown,
+  armed: rowSwipe.armed,
+  boxStyle: rowSwipe.boxStyle,
+})
+// Where the row stands under the finger, and on its way back or out. Nothing at rest, as on a desktop.
+const rowStyle = computed(() => {
+  const { dx, settling } = rowSwipe.swipe
+  if (!dx && !settling) return undefined
+  return {
+    transform: `translateX(${String(dx)}px)`,
+    transition: settling ? `transform ${String(ROW_SWIPE_MS)}ms ease-out` : 'none',
+  }
+})
 
 // Only a row with pills to move takes a second line; any other keeps the single wide line.
 const pillsBelow = computed(() => isFullWidth.value && hasExtra)
@@ -305,6 +371,12 @@ const onRowClick = (e: MouseEvent) => {
   const checkedEventTarget = e.target
   if (!(checkedEventTarget instanceof Element)) return
 
+  // A swipe that ended over the row opens nothing
+  if (rowSwipe.wasDragged()) {
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
   if (!selectionMode) return
   if (checkedEventTarget.closest('button')) return
   e.preventDefault()
@@ -330,6 +402,7 @@ const isTouching = ref(false)
 const pressBeganSelecting = ref(false)
 
 const onTouchStart = (e: TouchEvent) => {
+  rowSwipe.onTouchStart(e)
   touchMoved = false
   pressBeganSelecting.value = selectionMode
   touchStartX = e.touches[0].clientX
@@ -350,6 +423,16 @@ const clearTouchTimer = () => {
     clearTimeout(touchTimer)
     touchTimer = null
   }
+}
+
+const onTouchEnd = (e: TouchEvent) => {
+  clearTouchTimer()
+  rowSwipe.onTouchEnd(e)
+}
+
+const onTouchCancel = () => {
+  clearTouchTimer()
+  rowSwipe.onTouchCancel()
 }
 
 // The row is an anchor, so a long press also summons the browser's link menu on top of the

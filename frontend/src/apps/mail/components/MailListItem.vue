@@ -16,6 +16,8 @@
     :account-label="accountLabel"
     :draggable
     :has-extra="hasExtra(true)"
+    :swipes
+    @swipe="onSwipe"
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
     @drag-start="(e: DragEvent) => emit('dragStart', e)"
     @drag-end="emit('dragEnd')"
@@ -247,6 +249,8 @@ import MailRow from '@/apps/mail/components/MailRow.vue'
 import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
+import { useRowActions, type RowActionKey } from '@/apps/mail/composables/useRowActions'
+import type { SwipeSide } from '@/apps/mail/composables/useRowSwipe'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
@@ -383,6 +387,37 @@ const openDraft = (event: MouseEvent) => {
   // Alone in its thread, it answers nothing: a new message, not the reply a thread's draft is.
   const draft = { ...composeOfDraft(mail.messages[0]), in_reply_to: '', in_reply_to_id: '' }
   void openComposePage(router, String(accountId || route.params.accountId), draft)
+}
+
+// A phone's swipes do what the row's own actions would: left moves it to Trash, right files it away
+// (Archive, or in Archive back to the Inbox; in Trash and Junk the Archive the row offers takes it
+// out). Where the row's bin lets go for good, left does that instead: in Drafts it discards the
+// draft, which Undo takes back, and in Trash it deletes forever once you confirm.
+const rowActions = useRowActions(() => ({ threads: [mail], unarchive, drafts }))
+const offers = (key: RowActionKey) => rowActions.value.find((action) => action.key === key)
+const filing = computed(() => offers('archive') ?? offers('unarchive'))
+const binning = computed(() => offers('trash') ?? offers('delete'))
+const deletesForever = computed(() => binning.value?.key === 'delete' && !drafts)
+const binLabel = () => {
+  if (drafts) return __('Discard')
+  return deletesForever.value ? __('Delete') : __('Trash')
+}
+const swipes = computed(() => ({
+  left: binning.value && {
+    icon: binning.value.icon,
+    label: binLabel(),
+    tone: 'bg-surface-red-7',
+    asks: deletesForever.value,
+  },
+  right: filing.value && {
+    icon: filing.value.icon,
+    label: filing.value.key === 'unarchive' ? __('Unarchive') : __('Archive'),
+    tone: 'bg-surface-gray-7',
+  },
+}))
+const onSwipe = (side: SwipeSide) => {
+  if (side === 'left') return emit(binning.value?.key === 'delete' ? 'deleteThread' : 'trashThread')
+  emit(filing.value?.key === 'unarchive' ? 'unarchiveThread' : 'archiveThread')
 }
 
 // Where else the conversation is filed. A row stands for one of its messages, which in Sent is your
