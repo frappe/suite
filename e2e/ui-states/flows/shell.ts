@@ -137,7 +137,7 @@ const machine = setupFlow<Event>().createMachine({
 			meta: { description: "A `>` followed by a name no area has: \"No app matches\" the name." },
 		},
 		notFound: {
-			meta: { description: "An address under an app's path that no route knows (/drive/quarterly-plans): \"Page not found\" and a Back to launcher link, with no rail, icon or other frame around it." },
+			meta: { description: "An address under an app's path that no route knows (/drive/quarterly-plans): \"Page not found\", a line on why, and a Go to launcher button, with no rail, icon or other frame around it." },
 		},
 		siteNotFound: {
 			meta: { description: "An address outside the app's paths (/quarterly-plans): the server answers with the site's own \"Page not found\" page and Back to Home, which looks different from the app's Not found page." },
@@ -341,7 +341,7 @@ export const shell = defineFlow<Event, BaseScene>({
 		},
 		async GO_NOWHERE(scene) {
 			await scene.page.goto("/drive/quarterly-plans");
-			await expect(scene.page.getByRole("link", { name: "Back to launcher" })).toBeVisible();
+			await expect(scene.page.getByRole("link", { name: "Go to launcher" })).toBeVisible();
 		},
 		async GO_OUTSIDE_THE_APP(scene) {
 			await scene.page.goto("/quarterly-plans");

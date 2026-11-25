@@ -84,6 +84,5 @@
   "frontend/src/composition/DocumentHost.vue": 4,
   "frontend/src/composition/home/HomePage.vue": 1,
   "frontend/src/shell/GuestSurface.vue": 1,
-  "frontend/src/shell/NotFoundView.vue": 2,
   "frontend/src/shell/SuiteCommandPalette.vue": 17
 }

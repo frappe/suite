@@ -193,3 +193,11 @@ html[data-page-slide='back']::view-transition-new(root) {
     transform: translateX(-25%);
   }
 }
+
+/* One size for every sheet's title. frappe-ui sets it at 20px semibold, but Mail's own h2 rule
+   brought the sheets inside Mail down to 16px medium, so a sheet opened outside Mail (Mail's
+   Settings pages, Calendar) had a bigger title than one opened inside it. The title is the h2 in
+   the sheet's grab handle, its first child. */
+.bottom-sheet-content > :first-child > h2 {
+  @apply text-lg-medium;
+}

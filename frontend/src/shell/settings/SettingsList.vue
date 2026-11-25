@@ -33,11 +33,12 @@
 
 <script setup lang="ts">
 import { Avatar } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import type { SettingsTab, VisibleSettingsGroup } from '@/shell/settings/settings'
+import { preloadTabBodies } from '@/shell/settings/tabBodies'
 
 const PROFILE_TAB = 'account.profile'
 
@@ -63,4 +64,7 @@ const shown = computed(() => {
   if (!props.flat || !groups.length) return groups
   return [{ label: __('Settings'), tabs: groups.flatMap((group) => group.tabs) }]
 })
+
+// The rows' pages load while the list is idle on screen, so a row's page opens with its body.
+onMounted(() => preloadTabBodies(() => shown.value.flatMap((group) => group.tabs)))
 </script>
