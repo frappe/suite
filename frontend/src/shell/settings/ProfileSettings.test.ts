@@ -11,14 +11,30 @@ vi.mock('@/platform/session', () => ({
 }))
 vi.mock('@/api', () => ({
   api: { suite: { preferences: { get: {}, update: {} }, account: { changePassword: {} } } },
-  useQuery: () => reactive({ data: undefined }),
+  useQuery: () =>
+    reactive({ data: { first_name: 'Maya', last_name: '', email: 'maya@example.com' } }),
   useMutation: () => reactive({ isPending: false, error: null, run: async () => {} }),
+  client: { mutation: async () => {} },
 }))
 // The parts this file doesn't open
 vi.mock('@/shell/settings/SettingsTabHeader.vue', () => ({ default: { render: () => null } }))
-vi.mock('@/shell/settings/SettingsTabContent.vue', () => ({ default: { render: () => null } }))
+vi.mock('@/shell/settings/SettingsTabContent.vue', () => ({
+  default: {
+    setup:
+      (_: unknown, { slots }: { slots: { default?: () => unknown } }) =>
+      () =>
+        h('div', slots.default?.() as never),
+  },
+}))
 vi.mock('frappe-ui', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
+  Avatar: { render: () => null },
+  Button: { render: () => null },
+  Dropdown: { render: () => null },
+  ErrorMessage: { render: () => null },
+  FileUploader: { render: () => null },
+  FormControl: { render: () => null },
+  SettingsRow: { render: () => null },
   Dialog: defineComponent({
     props: { open: Boolean, title: { type: String, default: '' } },
     setup(props) {

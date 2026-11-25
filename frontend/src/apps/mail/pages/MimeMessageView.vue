@@ -22,7 +22,9 @@
           class="even:bg-surface-gray-1 flex flex-col gap-1 px-4 py-4 text-base last:rounded-b-4 sm:flex-row sm:items-center sm:px-6"
         >
           <div class="text-ink-gray-5 w-full sm:w-1/4">{{ value.label }}</div>
-          <div class="flex w-full items-center break-words sm:w-3/4">
+          <!-- A block, not a flex row: a flex item will not shrink below its longest word, and a
+               message ID or an address is one long word. -->
+          <div class="w-full break-words sm:w-3/4">
             <Tooltip v-if="value.description" :text="value.description">
               <span>{{ value.value }}</span>
             </Tooltip>
@@ -68,11 +70,12 @@ const route = useRoute()
 const mime = useQuery(api.mail.messages.mime, () => ({
   name: String(route.params.id),
 }))
-// The labelled facts about the message; its source shows below them, not as a row.
+// The labelled facts about the message; its source shows below them, not as a row. A fact the
+// message does not have (no CC, say) is left out rather than shown as an empty row.
 const fields = computed(() => {
   if (!mime.data) return []
   const { message: _source, ...facts } = mime.data
-  return Object.entries(facts)
+  return Object.entries(facts).filter(([, fact]) => fact?.value?.trim())
 })
 // The server's own words for a missing or forbidden message are a status line ("NOT FOUND"):
 // say what it means instead. Anything else keeps the server's message under a plain title.

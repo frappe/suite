@@ -15,16 +15,16 @@
         type="datetime"
         :label="__('Starts')"
         :format="SHOWN_FORMAT"
-        :placeholder="__('Select date and time')"
+        :placeholder="__('Now')"
         variant="outline"
         :disabled="isOff"
       />
       <FormControl
         v-model="draft.to_date"
         type="datetime"
-        :label="__('Ends (optional)')"
+        :label="__('Ends')"
         :format="SHOWN_FORMAT"
-        :placeholder="__('Select date and time')"
+        :placeholder="__('Until you turn it off')"
         variant="outline"
         :disabled="isOff"
       />
@@ -37,7 +37,7 @@
       :disabled="isOff"
     />
     <div class="space-y-1.5">
-      <label class="text-ink-gray-5 block text-xs">{{ __('Message') }}</label>
+      <FormLabel :label="__('Message')" />
       <MailRichTextField
         v-model="draft.html_body"
         :placeholder="__('Write your reply…')"
@@ -56,8 +56,8 @@
         @click="handleSave"
       />
     </SettingsDialogActions>
-    <!-- The mail server runs one script at a time, and the reply is one: on, it stops the rules -->
-    <Dialog
+    <!-- The mail server runs one script at a time, and the reply is one: on, it stops the app's sorting -->
+    <AdaptiveDialog
       v-model:open="showConfirmDialog"
       v-bind="{
         title: __('Turn on auto-reply?'),
@@ -81,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, ErrorMessage, FormControl, SettingsRow, Switch } from 'frappe-ui'
+import { Button, ErrorMessage, FormControl, FormLabel, SettingsRow, Switch } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery, type InputOf } from '@/api'
@@ -92,6 +92,7 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, inUserTimeZone } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
@@ -108,11 +109,12 @@ function closeConfirm() {
 const activeSieveScript = computed(
   () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
 )
-// Names what the reply stops as the app names it: folder automation, or a rule of the user's own
+// Names what the reply stops. The automation script is all of the app's sorting at delivery, not
+// only its folder rules, so each part of it is named; otherwise it is a rule of the user's own
 const confirmMessage = computed(() => {
   if (activeSieveScript.value === 'frappe_mail_automation') {
     return __(
-      'Folder automation stops sorting mail while auto-reply is on. It starts again when you turn auto-reply off.',
+      'While auto-reply is on, incoming mail isn’t sorted: screening, blocked senders, categories and folder rules all stop. They start again when you turn auto-reply off.',
     )
   }
 
@@ -187,9 +189,19 @@ watch(
     immediate: true,
   },
 )
-// Nothing to save until the form differs from the reply as it was read
+// Words a reply goes out with: a body with neither text nor an image is none, and would send a
+// blank reply
+function hasWords(html: string) {
+  const body = new DOMParser().parseFromString(html, 'text/html').body
+  return !!body.textContent?.trim() || !!body.querySelector('img')
+}
+// Nothing to save until the form differs from the reply as it was read, nor a reply turned on
+// with nothing to say
 const isSaveBlocked = computed(
-  () => vacationResponse.isFetching || JSON.stringify(draft) === original.value,
+  () =>
+    vacationResponse.isFetching ||
+    JSON.stringify(draft) === original.value ||
+    (draft.enabled && !hasWords(draft.html_body)),
 )
 // A refused save is said on the form, where the eyes are, so no toast says it too
 const updateVacationResponse = useMutation(api.mail.vacation.update, { silent: true })
@@ -200,7 +212,8 @@ async function updateVacationResponseSubmit() {
     enabled: draft.enabled,
     from_date: fromLocalInput(draft.from_date),
     to_date: fromLocalInput(draft.to_date),
-    subject: draft.subject,
+    // A reply goes out with a subject: left empty, the one its field suggests
+    subject: draft.subject.trim() || __('Out of office'),
     html_body: draft.html_body,
   }
   try {

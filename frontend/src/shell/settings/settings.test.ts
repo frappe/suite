@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 
 import {
   resolveSettingsTab,
@@ -46,6 +47,27 @@ describe('settings groups', () => {
     ])
   })
 
+  it('leaves a tab that is not for a phone out of a phone, and keeps it on a computer', () => {
+    const mail: SettingsGroup = {
+      label: () => 'Mail',
+      tabs: [
+        { id: 'mail.general', label: () => 'General', icon: 'lucide-circle', body },
+        {
+          id: 'mail.import-export',
+          label: () => 'Import',
+          icon: 'lucide-circle',
+          body,
+          onPhone: false,
+        },
+      ],
+    }
+    const ids = (phone: boolean) =>
+      visibleSettingsGroups([mail], { phone }).flatMap((g) => g.tabs.map((tab) => tab.id))
+
+    expect(ids(true)).toEqual(['mail.general'])
+    expect(ids(false)).toEqual(['mail.general', 'mail.import-export'])
+  })
+
   it('opens the requested tab when the user may see it, else the first tab', () => {
     expect(resolveSettingsTab(groups, 'workspace.users')).toBe('workspace.users')
     expect(resolveSettingsTab(groups, 'drive.external-access')).toBe('account.profile')
@@ -73,7 +95,7 @@ describe('settings groups', () => {
     // Runs under the type check: each id below must stay a real tab id.
     const known = () => {
       openSettings('mail.inbox')
-      openSettings('drive.statistics')
+      openSettings('account.storage')
       openSettings('account.profile')
       // @ts-expect-error A misspelled tab id fails the type check.
       openSettings('mail.inbx')
@@ -82,30 +104,27 @@ describe('settings groups', () => {
   })
 })
 
-describe('loading the settings groups', () => {
-  it('keeps a group that fails on a later open, and counts one that never loaded', async () => {
-    let driveUp = true
-    const account = async () => group('Account', [['account.profile']])
-    const drive = async () => {
-      if (!driveUp) throw new Error('chunk failed')
-      return group('Drive', [['drive.statistics']])
+describe('the settings groups', () => {
+  it('are there without a wait, and show a tab once the answer it waits on arrives', () => {
+    const webdavOn = ref(false)
+    const drive: SettingsGroup = {
+      ...group('Drive', [['drive.statistics']]),
+      tabs: [
+        ...group('Drive', [['drive.statistics']]).tabs,
+        {
+          id: 'drive.external-access',
+          label: () => 'External access',
+          icon: '',
+          body,
+          condition: () => webdavOn.value,
+        },
+      ],
     }
-    let mailUp = false
-    const mail = async () => {
-      if (!mailUp) throw new Error('chunk failed')
-      return group('Mail', [['mail.general']])
-    }
-    const { groups, failed, load } = useSettingsGroups([account, drive, mail])
-    const labels = () => groups.value?.map((visible) => visible.label)
+    const { groups } = useSettingsGroups([group('Account', [['account.profile']]), drive])
+    const ids = () => groups.value.flatMap((visible) => visible.tabs.map((tab) => tab.id))
 
-    await load()
-    expect(labels()).toEqual(['Account', 'Drive'])
-    expect(failed.value).toBe(1)
-
-    driveUp = false
-    mailUp = true
-    await load()
-    expect(labels()).toEqual(['Account', 'Drive', 'Mail'])
-    expect(failed.value).toBe(0)
+    expect(ids()).toEqual(['account.profile', 'drive.statistics'])
+    webdavOn.value = true
+    expect(ids()).toEqual(['account.profile', 'drive.statistics', 'drive.external-access'])
   })
 })

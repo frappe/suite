@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, provide } from 'vue'
 
 import { openSettings, settingsSection } from '@/platform/settings'
 
@@ -8,8 +8,9 @@ import SettingsDialogRow from './SettingsDialogRow.vue'
 vi.mock('frappe-ui', () => ({
   Button: defineComponent({
     props: { label: { type: String, default: '' } },
-    setup(props) {
-      return () => h('button', props.label)
+    emits: ['click'],
+    setup(props, { emit }) {
+      return () => h('button', { onClick: () => emit('click') }, props.label)
     },
   }),
   Dialog: defineComponent({
@@ -86,4 +87,41 @@ it('opens no section when Settings is opened on a tab alone', () => {
   openSettings('mail.import-export', 'import')
   openSettings('mail.import-export')
   expect(showPage()()).toEqual([])
+})
+
+describe('on a phone', () => {
+  // The phone's Settings page, as the shell marks it, with one row.
+  function showPhonePage() {
+    const root = document.body.appendChild(document.createElement('div'))
+    app = createApp({
+      setup() {
+        provide('app-settings-mobile-page', true)
+        return () => h(SettingsDialogRow, { title: 'Rules', action: 'Manage' })
+      },
+    })
+    app.mount(root)
+    const press = (label: string) =>
+      [...root.querySelectorAll('button')].find((button) => button.textContent === label)!.click()
+    return { root, press }
+  }
+
+  it('opens a part as a page of its own, which Back closes', async () => {
+    const { root, press } = showPhonePage()
+
+    press('Manage')
+    await nextTick()
+    expect(root.querySelector('[role="region"]')?.getAttribute('aria-label')).toBe('Rules')
+    root.querySelector<HTMLElement>('[aria-label="Back"]')!.click()
+    // Gone once it has slid away.
+    await vi.waitFor(() => expect(root.querySelector('[role="region"]')).toBeNull())
+  })
+
+  it("leaves the part's page on the phone's own back, for the tab's page it came from", async () => {
+    const { root, press } = showPhonePage()
+    press('Manage')
+    await nextTick()
+    expect(history.state).toHaveProperty('suiteSettingsPart')
+    history.back()
+    await vi.waitFor(() => expect(root.querySelector('[role="region"]')).toBeNull())
+  })
 })

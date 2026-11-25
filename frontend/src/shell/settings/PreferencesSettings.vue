@@ -13,7 +13,9 @@
           @update:model-value="selectTheme"
         />
       </SettingsRow>
+      <!-- A phone has no pointer to show. -->
       <SettingsRow
+        v-if="!phonePage"
         :title="__('Cursor')"
         :description="
           __('Show the hand cursor on every control, or only on links that leave the app.')
@@ -53,13 +55,15 @@
           @update:model-value="(value) => saveUserField('time_zone', value)"
         />
       </SettingsRow>
+      <!-- Rows an app adds beside the account's own, such as Mail's own locale and time zone. -->
+      <slot />
     </div>
   </SettingsTabContent>
 </template>
 
 <script setup lang="ts">
 import { Combobox, Select, SettingsRow } from 'frappe-ui'
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import { useCursor, type CursorMode } from '@/platform/cursor'
@@ -67,6 +71,7 @@ import { toast } from '@/platform/feedback'
 import { useSession } from '@/platform/session'
 import { useTheme, type ThemeMode } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
+import { SETTINGS_PHONE_PAGE } from '@/shell/settings/settings'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
 import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
 import { normalizeTimezone, useTimezones } from '@/shell/useTimezones'
@@ -115,6 +120,7 @@ function selectCursor(value?: string | number | null) {
 }
 const theme = useTheme()
 const cursor = useCursor()
+const phonePage = inject(SETTINGS_PHONE_PAGE, false)
 useSession()
 const user = useQuery(api.suite.preferences.get)
 const updateUser = useMutation(api.suite.preferences.update, {

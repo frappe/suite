@@ -1,17 +1,10 @@
 <!--
   Settings: the composition settings list as a dialog on desktop and as a
-  drill-in on phone. Group modules load when it opens; a tab body loads when
-  its tab first shows.
+  drill-in on phone. The list is part of the app; a tab body loads when its
+  tab first shows.
 -->
 <template>
-  <SettingsDrillIn
-    v-if="isMobile"
-    v-model:open="open"
-    :groups="groups"
-    :failed="failed"
-    :retry="load"
-    :tab="requestedTab"
-  />
+  <SettingsDrillIn v-if="isMobile" v-model:open="open" :groups="groups" :tab="requestedTab" />
   <SettingsDialog v-else v-model:open="open" v-model:tab="activeTab" size="5xl">
     <template #title>{{ __('Settings') }}</template>
     <!-- SettingsDialog draws no close button. This one sits where Dialog
@@ -24,73 +17,61 @@
         :aria-label="__('Close')"
       />
     </Dialog.Close>
-    <template v-if="groups">
-      <SettingsSidebar @keydown.exact.capture="moveFocus">
-        <!-- The dialog puts focus on the box it finds marked autofocus, each time it opens -->
-        <TextInput
-          ref="searchBox"
-          v-model="query"
-          type="text"
-          autofocus
-          :placeholder="__('Search settings')"
-          :aria-label="__('Search settings')"
-          @keydown.enter="showFirstFound"
-        >
-          <template #prefix>
-            <span class="lucide-search size-4" aria-hidden="true" />
-          </template>
-        </TextInput>
-        <SettingsNavGroup v-for="group in found" :key="group.label" :label="group.label">
-          <template v-for="{ tab, sections } in group.tabs" :key="tab.id">
-            <SettingsNavItem :value="tab.id">
-              <template #prefix>
-                <Avatar
-                  v-if="isProfile(tab)"
-                  :image="avatar"
-                  :label="fullName"
-                  size="xs"
-                  class="shrink-0"
-                  aria-hidden="true"
-                />
-                <span
-                  v-else
-                  :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']"
-                  aria-hidden="true"
-                />
-              </template>
-              {{ tab.label() }}
-            </SettingsNavItem>
-            <!-- Lines up with the tab's label, past its icon -->
-            <button
-              v-for="section in sections"
-              :key="section.id"
-              type="button"
-              class="flex h-7 w-full items-center rounded-4 pl-8 pr-2 text-left text-base text-ink-gray-6 hover:bg-surface-gray-2"
-              @click="showSection(tab, section)"
-            >
-              <span class="min-w-0 flex-1 truncate">{{ section.label() }}</span>
-            </button>
-          </template>
-        </SettingsNavGroup>
-        <p v-if="isNothingFound" class="px-2 text-base text-ink-gray-5">
-          {{ __('No settings match your search.') }}
-        </p>
-        <SettingsLoadFailed v-if="failed" class="px-2 py-1.5" :retry="load" />
-      </SettingsSidebar>
-      <SettingsContent>
-        <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
-          <SettingsTabBody :tab="tab" />
-        </SettingsPanel>
-      </SettingsContent>
-    </template>
-    <div
-      v-else
-      class="flex min-h-0 flex-1 items-center justify-center"
-      role="status"
-      :aria-label="__('Loading')"
-    >
-      <LoadingIndicator class="size-5 text-ink-gray-5" />
-    </div>
+    <SettingsSidebar @keydown.exact.capture="moveFocus">
+      <!-- The dialog puts focus on the box it finds marked autofocus, each time it opens -->
+      <TextInput
+        v-model="query"
+        type="text"
+        autofocus
+        :placeholder="__('Search settings')"
+        :aria-label="__('Search settings')"
+        @keydown.enter="showFirstFound"
+      >
+        <template #prefix>
+          <span class="lucide-search size-4" aria-hidden="true" />
+        </template>
+      </TextInput>
+      <SettingsNavGroup v-for="group in found" :key="group.label" :label="group.label">
+        <template v-for="{ tab, sections } in group.tabs" :key="tab.id">
+          <SettingsNavItem :value="tab.id">
+            <template #prefix>
+              <Avatar
+                v-if="isProfile(tab)"
+                :image="avatar"
+                :label="fullName"
+                size="xs"
+                class="shrink-0"
+                aria-hidden="true"
+              />
+              <span
+                v-else
+                :class="[tab.icon, 'size-4 shrink-0 text-ink-gray-6']"
+                aria-hidden="true"
+              />
+            </template>
+            {{ tab.label() }}
+          </SettingsNavItem>
+          <!-- Lines up with the tab's label, past its icon -->
+          <button
+            v-for="section in sections"
+            :key="section.id"
+            type="button"
+            class="flex h-7 w-full items-center rounded-4 pl-8 pr-2 text-left text-base text-ink-gray-6 hover:bg-surface-gray-2"
+            @click="showSection(tab, section)"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ section.label() }}</span>
+          </button>
+        </template>
+      </SettingsNavGroup>
+      <p v-if="isNothingFound" class="px-2 text-base text-ink-gray-5">
+        {{ __('No settings match your search.') }}
+      </p>
+    </SettingsSidebar>
+    <SettingsContent>
+      <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
+        <SettingsTabBody :tab="tab" />
+      </SettingsPanel>
+    </SettingsContent>
   </SettingsDialog>
 </template>
 
@@ -99,7 +80,6 @@ import {
   Avatar,
   Button,
   Dialog,
-  LoadingIndicator,
   SettingsContent,
   SettingsDialog,
   SettingsNavGroup,
@@ -108,7 +88,7 @@ import {
   SettingsSidebar,
   TextInput,
 } from 'frappe-ui'
-import { computed, ref, useTemplateRef, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { useSession } from '@/platform/session'
@@ -122,7 +102,6 @@ import {
   type SettingsTabId,
 } from '@/shell/settings/settings'
 import SettingsDrillIn from '@/shell/settings/SettingsDrillIn.vue'
-import SettingsLoadFailed from '@/shell/settings/SettingsLoadFailed.vue'
 import SettingsTabBody from '@/shell/settings/SettingsTabBody.vue'
 import { useSettingsGroups } from '@/shell/settings/useSettingsDialog'
 import { isMobile } from '@/shell/useIsMobile'
@@ -141,8 +120,8 @@ function isProfile(tab: SettingsTab) {
   return tab.id === PROFILE_TAB
 }
 
-const { groups, failed, load } = useSettingsGroups()
-const tabs = computed(() => groups.value?.flatMap((group) => group.tabs) ?? [])
+const { groups, refresh } = useSettingsGroups()
+const tabs = computed(() => groups.value.flatMap((group) => group.tabs))
 
 // The dialog's own selection. It follows the requested tab, falls back to the
 // settings of the app on screen and then to the first visible tab, and stays
@@ -153,9 +132,7 @@ const route = useRoute()
 watch(
   [groups, requestedTab],
   ([visible, requested]) => {
-    if (visible) {
-      activeTab.value = resolveSettingsTab(visible, requested, route.meta.area)
-    }
+    activeTab.value = resolveSettingsTab(visible, requested, route.meta.area)
   },
   { immediate: true },
 )
@@ -170,7 +147,7 @@ function dropSectionOfAnotherTab(tab: string | undefined) {
 watch(activeTab, dropSectionOfAnotherTab)
 
 const query = ref('')
-const found = computed(() => searchSettings(groups.value ?? [], query.value))
+const found = computed(() => searchSettings(groups.value, query.value))
 const isNothingFound = computed(() => !!query.value.trim() && found.value.length === 0)
 
 /** Shows the section's tab. A section that is a dialog opens there, by its name. */
@@ -178,19 +155,6 @@ function showSection(tab: SettingsTab, section: SettingsSection) {
   activeTab.value = tab.id
   settingsSection.value = `${tab.id}.${section.id}`
 }
-
-// The first time Settings opens, the search box shows only once the groups
-// load, after the dialog has looked for it
-const searchBox = useTemplateRef<InstanceType<typeof TextInput>>('searchBox')
-watch(
-  groups,
-  (now, before) => {
-    if (now && !before) {
-      searchBox.value?.focus()
-    }
-  },
-  { flush: 'post' },
-)
 
 const ROW_ABOVE = -1
 const ROW_BELOW = 1
@@ -230,7 +194,7 @@ watch(
   open,
   (isOpen) => {
     if (isOpen) {
-      void load()
+      void refresh()
       return
     }
 

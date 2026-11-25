@@ -116,6 +116,15 @@ describe('MIME message page', () => {
     expect(errors).toEqual([])
   })
 
+  it('leaves out what the message does not have, such as an empty CC', async () => {
+    const { element } = await open('acc|m1')
+
+    await vi.waitFor(() => expect(element.textContent).toContain('sam@example.test'))
+    expect(element.textContent).toContain('To')
+    expect(element.textContent).not.toContain('CC')
+    expect(element.textContent).not.toContain('BCC')
+  })
+
   it('says plainly that a missing message is gone, and offers no Retry', async () => {
     const { element, errors } = await open('not-a-name')
 

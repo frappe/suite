@@ -218,11 +218,19 @@ export const useMobileSearch = () => {
   }
 }
 
-// Mobile selection mode — MailboxView owns the selection; the compose button
-// (mounted in DefaultLayout) hides behind the contextual action bar while it's on.
-const isMobileSelectionActive = ref(false)
+// Mobile selection mode — each list owns its selection; the bottom bar and Compose step aside for
+// the selection bar while any list has one. Held per list, so one list leaving (as another comes in
+// over it) doesn't turn off another's.
+const selectingLists = ref(new Set<symbol>())
+const isMobileSelectionActive = computed(() => selectingLists.value.size > 0)
+const defaultList = Symbol('list')
 export const useMobileSelection = () => {
-  const setMobileSelectionActive = (active: boolean) => (isMobileSelectionActive.value = active)
+  const setMobileSelectionActive = (active: boolean, list: symbol = defaultList) => {
+    const next = new Set(selectingLists.value)
+    if (active) next.add(list)
+    else next.delete(list)
+    selectingLists.value = next
+  }
   return {
     isMobileSelectionActive,
     setMobileSelectionActive,

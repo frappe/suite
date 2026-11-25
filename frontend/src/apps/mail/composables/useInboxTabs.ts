@@ -5,7 +5,7 @@ import { onBeforeRouteUpdate, useRoute, useRouter, type RouteLocationNamedRaw } 
 import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import { slideRouteChange } from '@/apps/mail/utils/pageSlide'
+import { slideRouteChange } from '@/platform/page-slide'
 
 export type InboxCategory = 'primary' | 'updates' | 'forums' | 'promotions' | 'social'
 

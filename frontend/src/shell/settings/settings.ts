@@ -33,6 +33,8 @@ export interface SettingsTab {
   readonly keywords?: () => string
   /** Cheap and synchronous. It must not load a product store. */
   readonly condition?: () => boolean
+  /** False keeps the tab out of a phone's Settings, for work that is done at a computer. */
+  readonly onPhone?: boolean
   /** Loads the body when its tab first opens. */
   readonly body: AsyncComponentLoader
   readonly sections?: readonly SettingsSection[]
@@ -48,36 +50,33 @@ export interface SettingsGroup {
   readonly area?: string
   readonly condition?: () => boolean
   readonly tabs: readonly SettingsTab[]
+  /**
+   * Reads again what the conditions read from the server, each time Settings opens. A row
+   * whose answer changes shows or goes as it arrives.
+   */
+  readonly refresh?: () => Promise<unknown>
 }
 
-/**
- * Resolves one group each time Settings opens. A loader may wait for the data
- * its conditions read, so no row appears after the list shows.
- */
-export type SettingsGroupLoader = () => Promise<SettingsGroup>
-
-type TabOf<Loader> = Loader extends () => Promise<{ readonly tabs: readonly (infer Tab)[] }>
-  ? Tab
-  : never
+type TabOf<Group> = Group extends { readonly tabs: readonly (infer Tab)[] } ? Tab : never
 type IdOf<Named> = Named extends { readonly id: infer Id extends string } ? Id : never
 type SectionOf<Tab> = Tab extends { readonly sections: readonly (infer Section)[] }
   ? Section
   : never
 
 /**
- * Each tab id a group loader resolves to, with the ids of that tab's sections.
+ * Each tab id of a group, with the ids of that tab's sections.
  * A group module declares its object `as const`, so the ids stay literal and
  * need no shell import.
  */
-export type SettingsSectionIdsOf<Loader> = {
-  [Id in IdOf<TabOf<Loader>>]: IdOf<SectionOf<Extract<TabOf<Loader>, { readonly id: Id }>>>
+export type SettingsSectionIdsOf<Group> = {
+  [Id in IdOf<TabOf<Group>>]: IdOf<SectionOf<Extract<TabOf<Group>, { readonly id: Id }>>>
 }
 
 // The tab ids live in the platform, so a product can name a tab too.
 export type { SettingsTabId, SettingsTabIds } from '@/platform/settings'
 
 /** The composition settings list, provided once at the app root. */
-export const SETTINGS_GROUPS_KEY: InjectionKey<readonly SettingsGroupLoader[]> =
+export const SETTINGS_GROUPS_KEY: InjectionKey<readonly SettingsGroup[]> =
   Symbol('suite-settings-groups')
 
 export interface VisibleSettingsGroup {
@@ -86,8 +85,14 @@ export interface VisibleSettingsGroup {
   readonly tabs: readonly SettingsTab[]
 }
 
-/** Drops hidden groups, hidden tabs, and groups left with no tab. Keeps order. */
-export function visibleSettingsGroups(groups: readonly SettingsGroup[]): VisibleSettingsGroup[] {
+/**
+ * Drops hidden groups, hidden tabs (on a phone, also the tabs not for one), and groups left with
+ * no tab. Keeps order.
+ */
+export function visibleSettingsGroups(
+  groups: readonly SettingsGroup[],
+  { phone = false }: { phone?: boolean } = {},
+): VisibleSettingsGroup[] {
   return groups
     .flatMap((group) =>
       (group.condition?.() ?? true)
@@ -95,7 +100,9 @@ export function visibleSettingsGroups(groups: readonly SettingsGroup[]): Visible
             {
               label: group.label(),
               area: group.area,
-              tabs: group.tabs.filter((tab) => tab.condition?.() ?? true),
+              tabs: group.tabs.filter(
+                (tab) => (tab.condition?.() ?? true) && !(phone && tab.onPhone === false),
+              ),
             },
           ]
         : [],

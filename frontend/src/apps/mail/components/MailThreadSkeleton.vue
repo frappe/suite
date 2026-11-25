@@ -3,7 +3,7 @@
        subject, then one message with its sender row and a few lines of body. The paddings and the
        line boxes are the thread's own, so the subject and the sender land where their outlines
        stood. -->
-  <div class="min-h-full animate-pulse" role="status" :aria-label="__('Loading thread')">
+  <div class="min-h-full animate-pulse" role="status" :aria-label="__('Loading conversation')">
     <div class="sm:px-5 sm:pt-5">
       <!-- Subject: the heading's one line. -->
       <div class="flex h-7 items-center box-content max-sm:px-4 max-sm:pb-2 max-sm:pt-4 sm:pb-2">

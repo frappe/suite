@@ -65,7 +65,7 @@ const setDragChip = (e: DragEvent, count: number) => {
   // rather than copy. "Thread" is the word the toast that follows uses.
   const label = document.createElement('span')
   label.textContent =
-    count === 1 ? __('Moving 1 thread') : __('Moving {0} threads', [String(count)])
+    count === 1 ? __('Moving 1 conversation') : __('Moving {0} conversations', [String(count)])
 
   chip.append(icon, label)
   // Rendered, but out of the way: setDragImage needs a laid-out element, and the

@@ -1045,7 +1045,6 @@ export const operationUpdateAccountPreferences: Validators<
                 title: 'Keep Forwarded Email In Thread',
                 type: 'integer',
               },
-              enable_screening: { enum: [0, 1], title: 'Enable Screening', type: 'integer' },
               block_remote_images: { enum: [0, 1], title: 'Block Remote Images', type: 'integer' },
               on_block_old_mail: {
                 enum: ['Ask', 'Move to Junk', 'Keep'],
