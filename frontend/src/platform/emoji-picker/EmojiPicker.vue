@@ -1,5 +1,12 @@
 <template>
-  <Popover v-model:open="isOpen" bare :side="side" :align="align" :auto-focus="!openOnHover">
+  <Popover
+    :open="isOpen"
+    bare
+    :side="side"
+    :align="align"
+    :auto-focus="!openOnHover"
+    @update:open="setPickerOpen"
+  >
     <template #trigger="{ setOpen, open }">
       <slot
         v-bind="{
@@ -31,18 +38,20 @@
           class="rounded-full"
           icon="lucide-plus"
           :aria-label="__('More reactions')"
-          @click.stop="() => (reaction = false)"
+          @click.stop="showFullPicker"
         />
       </div>
-      <EmojiGrid v-else @select="selectAndClose" />
+      <EmojiGrid v-else :picker @select="selectAndClose" />
     </template>
   </Popover>
 </template>
 <script setup lang="ts">
+import type { Picker } from 'emoji-mart'
 import { Button, Popover } from 'frappe-ui'
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 
 import EmojiGrid from './EmojiGrid.vue'
+import { prepareEmojiPicker } from './prepareEmojiPicker'
 
 const { openOnHover = false } = defineProps<{
   openOnHover?: boolean
@@ -61,12 +70,18 @@ const CLOSE_DELAY_MS = 300
 const isMouse = (event: PointerEvent) => event.pointerType === 'mouse'
 
 const isOpen = ref(false)
+const picker = shallowRef<typeof Picker>()
+let openRequest = 0
 let hoverTimer: ReturnType<typeof setTimeout> | undefined
 const cancelClose = () => clearTimeout(hoverTimer)
-onBeforeUnmount(cancelClose)
+onBeforeUnmount(() => {
+  cancelClose()
+  openRequest++
+})
 
 const scheduleOpen = (event: PointerEvent) => {
   if (!openOnHover || !isMouse(event)) return
+  void prepareEmojiPicker()
   clearTimeout(hoverTimer)
   hoverTimer = setTimeout(() => (isOpen.value = true), OPEN_DELAY_MS)
 }
@@ -76,7 +91,7 @@ const scheduleOpen = (event: PointerEvent) => {
 const scheduleClose = (event: PointerEvent) => {
   if (!openOnHover || !isMouse(event)) return
   clearTimeout(hoverTimer)
-  if (reaction.value) hoverTimer = setTimeout(() => (isOpen.value = false), CLOSE_DELAY_MS)
+  if (reaction.value) hoverTimer = setTimeout(() => setPickerOpen(false), CLOSE_DELAY_MS)
 }
 
 // The popover's own trigger toggles on a press, which is right for a tap or a key. A mouse that
@@ -98,8 +113,29 @@ function selectEmoji(value: string) {
   emit('select', value)
 }
 
+function setPickerOpen(open: boolean) {
+  if (!open) {
+    openRequest++
+    isOpen.value = false
+  } else if (openOnHover || reaction.value) {
+    if (openOnHover) reaction.value = true
+    isOpen.value = true
+  } else {
+    void showFullPicker()
+  }
+}
+
+async function showFullPicker() {
+  const request = ++openRequest
+  const prepared = await prepareEmojiPicker()
+  if (request !== openRequest) return
+  picker.value = prepared
+  if (reaction.value) reaction.value = false
+  isOpen.value = true
+}
+
 function selectAndClose(value: string) {
   selectEmoji(value)
-  isOpen.value = false
+  setPickerOpen(false)
 }
 </script>

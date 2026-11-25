@@ -106,7 +106,7 @@
 import { Button, Dropdown } from 'frappe-ui'
 import { EditorFixedMenu } from 'frappe-ui/editor'
 import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
@@ -114,6 +114,7 @@ import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
 import EmojiPicker from '@/platform/emoji-picker/EmojiPicker.vue'
+import { prepareEmojiPicker } from '@/platform/emoji-picker/prepareEmojiPicker'
 
 const { isRecipientsEmpty, isUploading, isSending, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
@@ -148,6 +149,13 @@ const sendOptions = [
 ]
 
 const { isMobile } = useScreenSize()
+watch(
+  isMobile,
+  (mobile) => {
+    if (!mobile) void prepareEmojiPicker()
+  },
+  { immediate: true },
+)
 const menu = useEditorMenu(() => true)
 </script>
 

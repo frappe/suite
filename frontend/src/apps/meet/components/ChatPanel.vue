@@ -177,6 +177,7 @@ import LucideChartColumn from '~icons/lucide/chart-column'
 import { Button, Dropdown } from 'frappe-ui'
 import { computed, inject, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { prepareEmojiPicker } from '@/platform/emoji-picker/prepareEmojiPicker'
 import { translate as __ } from '@/platform/translation'
 
 import {
@@ -334,6 +335,14 @@ async function scrollToBottom() {
   if (!el) return
   el.scrollTop = el.scrollHeight
 }
+
+watch(
+  () => props.open && canSendMessages.value,
+  (canUsePicker) => {
+    if (canUsePicker) void prepareEmojiPicker()
+  },
+  { immediate: true },
+)
 
 watch(chatItems, () => {
   if (!listEl.value?.querySelector('.chat-message:focus')) void scrollToBottom()
