@@ -703,7 +703,7 @@
                         <EmailContent
                           v-if="hasHtmlContent(mail.html_body)"
                           :content="mail.html_body"
-                          :block-images="isBlocked(mail)"
+                          :block-images="isBlocked(mail) || heldBeside.has(mail.name)"
                           :highlight="isMatch(mail) ? searchTerm : ''"
                           :sent-at="offersEvents(mail) ? mail.received_at : undefined"
                           :as-sent="bodyViews[mail.name] === 'asSent'"
@@ -1774,6 +1774,18 @@ const hiddenImagesByMail = computed(() => {
   }
   return held
 })
+// Beside the open thread nothing remote loads, even from trusted senders: a tracker would report it
+// read before it is opened. Only messages that hold remote content are held, so the rest are
+// drawn as they will open and need not be drawn again when the thread comes in.
+const heldBeside = computed(() =>
+  beside
+    ? new Set(
+        thread.value
+          .filter((mail) => !isBlocked(mail) && analyzeRemoteAssets(mail.html_body).hasRemote)
+          .map((mail) => mail.name),
+      )
+    : new Set<string>(),
+)
 // A verdict changes who is trusted, and an accepted sender's images load: read the rules again.
 watch(screener.version, () =>
   screenedAddresses.value
