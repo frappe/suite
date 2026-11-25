@@ -73,8 +73,9 @@
     </Button>
     <!-- Only actions up here, on a phone as on a desktop: the subject heads the thread below,
 	     where it can wrap. -->
-    <!-- On a phone the actions stand at the far end, away from Back. -->
-    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:justify-end max-sm:gap-3">
+    <!-- On a phone the actions stand at the far end, away from Back, and More keeps the 8px the
+         actions keep between them. -->
+    <div class="flex min-w-0 flex-1 items-center gap-4 max-sm:justify-end max-sm:gap-2">
       <template v-if="thread?.length">
         <!-- Three groups, apart a step more than their buttons, with a line halfway: what is done to
              it, read or taken away; where it is filed; what holds it for later, the order of a row's

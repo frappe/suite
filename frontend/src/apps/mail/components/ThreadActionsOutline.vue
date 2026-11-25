@@ -13,8 +13,8 @@
         <ThreadButtonOutline v-for="n in count" :key="n" />
       </div>
     </template>
-    <!-- A phone's More, a step apart from the groups and with no line before it. -->
-    <ThreadButtonOutline v-if="isMobile && !drafts" class="ml-1.5" />
+    <!-- A phone's More, with no line before it: 8px from the group, as its buttons are apart. -->
+    <ThreadButtonOutline v-if="isMobile && !drafts" class="ml-0.5" />
   </div>
 </template>
 
