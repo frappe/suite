@@ -17,6 +17,7 @@ const ACCOUNT_STORAGE_KEY = 'mail-account-id'
 const FORM_LOAD_WAIT_MS = 10_000
 export const userStore = defineStore('calendar-user', () => {
   const accountId = ref('')
+  const preferredAccountId = () => localStorage.getItem(ACCOUNT_STORAGE_KEY)
   const resolveAccount = (accounts?: readonly UserAccount[], routeAccountId?: string) => {
     if (!accounts?.length) return
 
@@ -27,7 +28,7 @@ export const userStore = defineStore('calendar-user', () => {
     }
 
     // 2. localStorage
-    const localId = localStorage.getItem(ACCOUNT_STORAGE_KEY)
+    const localId = preferredAccountId()
     if (localId && accounts.some((a) => a.id === localId)) {
       if (localId !== accountId.value) setAccount(localId)
       return
@@ -184,6 +185,7 @@ export const userStore = defineStore('calendar-user', () => {
   }
   return {
     accountId,
+    preferredAccountId,
     resolveAccount,
     userResource,
     loadUser,

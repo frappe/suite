@@ -41,7 +41,7 @@ const join = (name: string) => router.push({ name: 'meet-meeting', params: { mee
       <h2 class="text-base font-medium text-ink-gray-8">{{ __('Recent meets') }}</h2>
     </div>
     <div
-      v-if="rooms.error"
+      v-if="rooms.error && !rows.length"
       class="flex items-center justify-center gap-2 rounded-7 border border-dashed border-outline-gray-2 px-4 py-6 text-base text-ink-gray-5"
       role="alert"
     >

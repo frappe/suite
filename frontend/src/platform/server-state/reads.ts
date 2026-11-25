@@ -4,10 +4,21 @@ import { reactive, shallowRef, type ShallowRef } from 'vue'
 
 import { randomId } from '@/platform/random-id'
 import type { Realtime } from '@/platform/realtime'
-import type { EntityDeclaration, Operation, RequestContext, Transport } from '@/platform/transport'
+import {
+  TransportError,
+  type EntityDeclaration,
+  type Operation,
+  type RequestContext,
+  type Transport,
+} from '@/platform/transport'
 
 import { Entities, isRecord } from './entities'
 import type { Effects, Policy, ReadOptions } from './types'
+
+const RELOAD_CACHE_KEY = 'suite-query-results-v1'
+const RELOAD_CACHE_LIMIT = 12
+const isAccessRefusal = (error: unknown) =>
+  error instanceof TransportError && (error.status === 401 || error.status === 403)
 
 export interface ReadRecord {
   key: string
@@ -16,6 +27,7 @@ export interface ReadRecord {
   partition: string
   policy: Policy
   context?: RequestContext
+  reloadCacheKey?: string
   value: unknown
   pages: unknown[]
   status: 'pending' | 'success' | 'error'
@@ -53,6 +65,7 @@ export class Reads {
     private readonly transport: Transport,
     readonly entities: Entities,
     private readonly realtime?: Realtime | false,
+    private readonly reloadCacheIdentity?: () => string | undefined,
   ) {}
 
   retain(record: ReadRecord, observer: () => void, paging: boolean): void {
@@ -60,6 +73,7 @@ export class Reads {
     if (timeout) clearTimeout(timeout)
     this.gc.delete(record.key)
     record.observers.add(observer)
+    void this.restore(record)
     if (!this.realtime || this.rooms.has(record.key) || !record.reference.entity) return
     const entity = record.reference.entity
     const doctype = entity.doctype ?? entity.tag.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -143,6 +157,7 @@ export class Reads {
     const key = this.key(reference, input, partition) + (pages ? ':pages' : '')
     let record = this.records.get(key)
     if (!record) {
+      const identity = this.reloadCacheIdentity?.()
       record = reactive<ReadRecord>({
         key,
         // SAFETY: the heterogeneous cache erases I/O but keeps this operation, canonical input and policy together under one key.
@@ -152,6 +167,17 @@ export class Reads {
         // SAFETY: callbacks receive the input retained with this same reference; the cache never pairs a policy with another operation.
         policy: policy as Policy,
         context,
+        reloadCacheKey:
+          identity &&
+          policy.persistCache &&
+          !pages &&
+          !context &&
+          !policy.partition &&
+          !policy.operation &&
+          !reference.entity &&
+          reference.kind === 'query'
+            ? this.key(reference, input, identity)
+            : undefined,
         value: undefined,
         pages: [],
         status: 'pending',
@@ -167,6 +193,60 @@ export class Reads {
       this.records.set(key, record)
     }
     return record
+  }
+
+  private async restore(record: ReadRecord): Promise<void> {
+    if (!record.reloadCacheKey || record.value !== undefined) return
+    try {
+      const saved = this.reloadCache()[record.reloadCacheKey]
+      if (saved === undefined) return
+      const validate: ((value: unknown) => void) | undefined =
+        (await record.reference.loadValidators?.())?.validateOutput ??
+        record.reference.validateOutput
+      if (
+        !validate ||
+        !record.observers.size ||
+        record.partition !== this.access(record.policy, record.input, record.context) ||
+        record.value !== undefined ||
+        record.minRevision ||
+        isAccessRefusal(record.error)
+      )
+        return
+      validate(saved)
+      const value = this.entities.normalize(saved, null, record.partition, 0)
+      this.setValue(record, value, [value])
+      if (record.status === 'pending') record.status = 'success'
+    } catch {
+      return
+    }
+  }
+
+  private reloadCache(): Record<string, unknown> {
+    const entries: unknown = JSON.parse(sessionStorage.getItem(RELOAD_CACHE_KEY) ?? '{}')
+    return isRecord(entries) ? entries : {}
+  }
+
+  private saveReloadResult(key: string, value?: unknown): void {
+    try {
+      const cache = this.reloadCache()
+      delete cache[key]
+      if (value !== undefined) cache[key] = value
+      sessionStorage.setItem(
+        RELOAD_CACHE_KEY,
+        JSON.stringify(Object.fromEntries(Object.entries(cache).slice(-RELOAD_CACHE_LIMIT))),
+      )
+    } catch {
+      return
+    }
+  }
+
+  clearReloadCache(): void {
+    if (!this.reloadCacheIdentity) return
+    try {
+      sessionStorage.removeItem(RELOAD_CACHE_KEY)
+    } catch {
+      return
+    }
   }
 
   async fetch(
@@ -249,9 +329,15 @@ export class Reads {
       record.status = 'success'
       record.stale = false
       record.updatedAt = Date.now()
+      if (record.reloadCacheKey && record.observers.size)
+        this.saveReloadResult(record.reloadCacheKey, outcome.output)
       return outcome.output
     } catch (cause) {
       if (!isAbort(cause)) {
+        if (record.reloadCacheKey && isAccessRefusal(cause)) {
+          this.setValue(record, undefined, [])
+          this.saveReloadResult(record.reloadCacheKey)
+        }
         record.error = asError(cause)
         if (next) record.nextError = record.error
         record.status = 'error'
@@ -379,7 +465,8 @@ export class Reads {
     }
   }
 
-  switchPartition(): void {
+  switchPartition(clearSavedResults = true): void {
+    if (clearSavedResults) this.clearReloadCache()
     for (const leave of this.rooms.values()) leave()
     for (const timeout of this.gc.values()) clearTimeout(timeout)
     this.rooms.clear()
@@ -395,7 +482,7 @@ export class Reads {
   }
 
   dispose(): void {
-    this.switchPartition()
+    this.switchPartition(false)
   }
 
   private collect(record: ReadRecord): void {
