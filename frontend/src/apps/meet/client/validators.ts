@@ -11,6 +11,8 @@ import type {
   BanGuestOutput,
   CalendarMeetingInput,
   CalendarMeetingOutput,
+  DefaultInviteRoomInput,
+  DefaultInviteRoomOutput,
   E2eeDeviceInput,
   E2eeDeviceOutput,
   EnableE2eeInput,
@@ -23,6 +25,8 @@ import type {
   GuestRoomJoinOutput,
   GuestRoomTokenInput,
   GuestRoomTokenOutput,
+  MyRoomsInput,
+  MyRoomsOutput,
   PromoteToCohostInput,
   PromoteToCohostOutput,
   RecordingListInput,
@@ -45,12 +49,16 @@ import type {
   RoomDocumentOutput,
   RoomJoinInput,
   RoomJoinOutput,
+  RoomLinkAvailabilityInput,
+  RoomLinkAvailabilityOutput,
   RoomLinkInput,
   RoomLinkOutput,
   RoomPresenceTokenInput,
   RoomPresenceTokenOutput,
   RoomPreviewInput,
   RoomPreviewOutput,
+  RoomResolveInput,
+  RoomResolveOutput,
   RoomSearchInput,
   RoomSearchOutput,
   RoomsPostInput,
@@ -59,6 +67,8 @@ import type {
   RoomTokenOutput,
   ScheduledMeetingsPostInput,
   ScheduledMeetingsPostOutput,
+  SetDefaultInviteRoomInput,
+  SetDefaultInviteRoomOutput,
   UpdateSettingsInput,
   UpdateSettingsOutput,
 } from './generated'
@@ -69,7 +79,11 @@ export const operationRoomsPost: Validators<RoomsPostInput, RoomsPostOutput> = {
       value,
       {
         type: 'object',
-        properties: { type: { enum: ['open', 'restricted'], title: 'Type', type: 'string' } },
+        properties: {
+          type: { enum: ['open', 'restricted'], title: 'Type', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          link: { title: 'Link', type: 'string' },
+        },
         required: ['type'],
         additionalProperties: false,
         $defs: {},
@@ -90,6 +104,82 @@ export const operationRoomsPost: Validators<RoomsPostInput, RoomsPostOutput> = {
         type: 'object',
       },
       'rooms_post output',
+    )
+  },
+}
+
+export const operationRoomLinkAvailability: Validators<
+  RoomLinkAvailabilityInput,
+  RoomLinkAvailabilityOutput
+> = {
+  validateInput(value: unknown): asserts value is RoomLinkAvailabilityInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { link: { title: 'Link', type: 'string' } },
+        required: ['link'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'room_link_availability input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RoomLinkAvailabilityOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          status: {
+            enum: ['available', 'invalid', 'reserved', 'taken'],
+            title: 'Status',
+            type: 'string',
+          },
+        },
+        required: ['status'],
+        title: 'LinkAvailability',
+        type: 'object',
+      },
+      'room_link_availability output',
+    )
+  },
+}
+
+export const operationRoomResolve: Validators<RoomResolveInput, RoomResolveOutput> = {
+  validateInput(value: unknown): asserts value is RoomResolveInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { link: { title: 'Link', type: 'string' } },
+        required: ['link'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'room_resolve input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RoomResolveOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          Room: {
+            properties: {
+              code: { title: 'Code', type: 'string' },
+              url: { title: 'Url', type: 'string' },
+            },
+            required: ['code', 'url'],
+            title: 'Room',
+            type: 'object',
+          },
+        },
+        properties: { meeting: { anyOf: [{ $ref: '#/$defs/Room' }, { type: 'null' }] } },
+        required: ['meeting'],
+        title: 'ResolvedRoom',
+        type: 'object',
+      },
+      'room_resolve output',
     )
   },
 }
@@ -825,6 +915,105 @@ export const operationRecordingList: Validators<RecordingListInput, RecordingLis
         type: 'array',
       },
       'recording_list output',
+    )
+  },
+}
+
+export const operationDefaultInviteRoom: Validators<
+  DefaultInviteRoomInput,
+  DefaultInviteRoomOutput
+> = {
+  validateInput(value: unknown): asserts value is DefaultInviteRoomInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'default_invite_room input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DefaultInviteRoomOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          InviteRoom: {
+            properties: {
+              room: { title: 'Room', type: 'string' },
+              title: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Title' },
+              meeting_url: { title: 'Meeting Url', type: 'string' },
+            },
+            required: ['room', 'title', 'meeting_url'],
+            title: 'InviteRoom',
+            type: 'object',
+          },
+        },
+        properties: {
+          room: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Room' },
+          meeting_url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Meeting Url' },
+          rooms: { items: { $ref: '#/$defs/InviteRoom' }, title: 'Rooms', type: 'array' },
+        },
+        required: ['room', 'meeting_url', 'rooms'],
+        title: 'DefaultInviteRoom',
+        type: 'object',
+      },
+      'default_invite_room output',
+    )
+  },
+}
+
+export const operationSetDefaultInviteRoom: Validators<
+  SetDefaultInviteRoomInput,
+  SetDefaultInviteRoomOutput
+> = {
+  validateInput(value: unknown): asserts value is SetDefaultInviteRoomInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { room: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Room' } },
+        required: ['room'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'set_default_invite_room input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SetDefaultInviteRoomOutput {
+    assertSchema(value, { type: 'null' }, 'set_default_invite_room output')
+  },
+}
+
+export const operationMyRooms: Validators<MyRoomsInput, MyRoomsOutput> = {
+  validateInput(value: unknown): asserts value is MyRoomsInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'my_rooms input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is MyRoomsOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          MyRoom: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Title' },
+              meeting_type: { enum: ['open', 'restricted'], title: 'Meeting Type', type: 'string' },
+              owner: { title: 'Owner', type: 'string' },
+              modified: { title: 'Modified', type: 'string' },
+              custom_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Custom Link' },
+              url: { title: 'Url', type: 'string' },
+            },
+            required: ['name', 'title', 'meeting_type', 'owner', 'modified', 'custom_link', 'url'],
+            title: 'MyRoom',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/MyRoom' },
+        type: 'array',
+      },
+      'my_rooms output',
     )
   },
 }

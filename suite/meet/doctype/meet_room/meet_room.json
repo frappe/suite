@@ -7,6 +7,7 @@
   "field_order": [
     "section_break_voms",
     "title",
+    "custom_link",
     "meeting_type",
    "allow_guest",
    "host_only_chat",
@@ -31,6 +32,12 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Title"
+  },
+  {
+   "fieldname": "custom_link",
+   "fieldtype": "Data",
+   "label": "Custom Link",
+   "read_only": 1
   },
   {
    "default": "open",

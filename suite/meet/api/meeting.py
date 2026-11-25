@@ -205,22 +205,35 @@ def _build_guest_connection_details(
 
 @frappe.whitelist()
 @dynamic_rate_limit()
-def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
-    """Create a new meeting with specified type"""
+def create(
+    meeting_type: str = "open",
+    allow_guest: bool = True,
+    title: str | None = None,
+    link: str | None = None,
+) -> str:
+    """Create a meet and optionally claim its custom link in the same transaction."""
+    from suite.meet.links import change_link
+
     global_settings = frappe.get_cached_doc("Meet Settings")
     if not global_settings.allow_guest:
         allow_guest = False
 
-    meeting: MeetRoom = frappe.get_doc(
-        {
-            "doctype": "Meet Room",
-            "title": title,
-            "meeting_type": meeting_type,
-            "allow_guest": allow_guest,
-        }
-    ).insert()
-
-    return meeting.name
+    frappe.db.savepoint("meet_create")
+    try:
+        meeting: MeetRoom = frappe.get_doc(
+            {
+                "doctype": "Meet Room",
+                "title": title,
+                "meeting_type": meeting_type,
+                "allow_guest": allow_guest,
+            }
+        ).insert()
+        if link is not None:
+            change_link(meeting.name, link, user=frappe.session.user)
+        return meeting.name
+    except Exception:
+        frappe.db.rollback(save_point="meet_create")
+        raise
 
 
 @frappe.whitelist(allow_guest=True)

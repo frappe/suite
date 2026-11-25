@@ -1,0 +1,20 @@
+{
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": ["room"],
+ "fields": [
+  {
+   "fieldname": "room",
+   "fieldtype": "Link",
+   "label": "Meet Room",
+   "options": "Meet Room",
+   "read_only": 1,
+   "reqd": 1
+  }
+ ],
+ "module": "Meet",
+ "name": "Meet Room Link",
+ "permissions": [],
+ "sort_field": "creation",
+ "sort_order": "DESC"
+}

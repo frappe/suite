@@ -3,7 +3,13 @@ import type { Operation } from '@/platform/transport'
 
 const effects = {
   update_settings: {
-    invalidates: ['room_document', 'room_access', 'room_preview', 'get_waiting_room_details'],
+    invalidates: [
+      'room_document',
+      'room_access',
+      'room_preview',
+      'get_waiting_room_details',
+      'my_rooms',
+    ],
   },
   enable_e2ee: {
     invalidates: ['room_document', 'room_access', 'room_preview', 'get_waiting_room_details'],
@@ -23,7 +29,9 @@ const effects = {
   approve_join_request: {
     invalidates: ['room_document', 'room_access', 'room_preview', 'get_waiting_room_details'],
   },
-  rooms_post: { invalidates: ['room_search'] },
+  rooms_post: {
+    invalidates: ['room_search', 'my_rooms', 'room_link_availability', 'room_resolve'],
+  },
   scheduled_meetings_post: {
     invalidates: [
       'calendar.events_get',
@@ -52,6 +60,7 @@ const effects = {
     ],
   },
   room_link: 'none',
+  set_default_invite_room: { invalidates: ['default_invite_room'] },
 } as const
 
 // Tokens and connection details establish a protocol session; ordinary readers do not consume them.

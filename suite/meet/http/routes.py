@@ -7,10 +7,12 @@ from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
-from frappe.utils import get_system_timezone, get_url
+from frappe.rate_limiter import rate_limit
+from frappe.utils import get_system_timezone
 
 from suite.composition.http import BadRequest, Route
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+from suite.meet import links
 from suite.meet.api import meeting, recording, recordings, schedule
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.http import shapes
@@ -20,6 +22,8 @@ Given = str | int | float | bool | list | dict | None
 
 class CreateRoom(TypedDict):
     type: Literal["open", "restricted"]
+    title: NotRequired[str]
+    link: NotRequired[str]
 
 
 class Room(TypedDict):
@@ -115,16 +119,48 @@ class RoomLinkResult(TypedDict):
     meeting_url: str
 
 
+class LinkRef(TypedDict):
+    link: str
+
+
+class LinkAvailability(TypedDict):
+    status: links.LinkStatus
+
+
+class ResolvedRoom(TypedDict):
+    meeting: Room | None
+
+
 ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
         "rooms",
         "rooms_post",
         body=CreateRoom,
-        errors=(BadRequest,),
+        errors=(BadRequest, links.LinkError),
         output=Room,
         kind="mutation",
         public_name="rooms.create",
+    ),
+    Route(
+        "GET",
+        "rooms/link-availability",
+        "room_link_availability",
+        query=LinkRef,
+        output=LinkAvailability,
+        errors=(frappe.RateLimitExceededError,),
+        kind="query",
+        public_name="rooms.linkAvailability",
+    ),
+    Route(
+        "GET",
+        "rooms/resolve",
+        "room_resolve",
+        query=LinkRef,
+        output=ResolvedRoom,
+        allow_guest=True,
+        kind="query",
+        public_name="rooms.resolve",
     ),
     Route(
         "POST",
@@ -327,14 +363,26 @@ recording_list = recordings.get_recordings
 
 
 @frappe.whitelist(methods=["POST"])
-def rooms_post(type: Given = None) -> Room:
-    from suite.meet.api.meeting import create as create_meeting
-
+def rooms_post(type: Given = None, title: str | None = None, link: str | None = None) -> Room:
     kind = _required_text(type, "type")
     if kind not in ("open", "restricted"):
-        frappe.throw(_("Meet room type is invalid"), BadRequest)
-    meeting_id = create_meeting(meeting_type=kind)
-    return {"code": meeting_id, "url": get_url(f"/meet/{meeting_id}")}
+        frappe.throw(_("Meet type is invalid"), BadRequest)
+    meeting_id = meeting.create(meeting_type=kind, title=title, link=link)
+    return {"code": meeting_id, "url": links.meeting_url(meeting_id)}
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(limit=120, seconds=60, user_based=True)
+def room_link_availability(link: str) -> LinkAvailability:
+    return {"status": links.link_status(link)}
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+# Guests can resolve, so cap it per IP: short guessable links must not be enumerable.
+@rate_limit(limit=60, seconds=60)
+def room_resolve(link: str) -> ResolvedRoom:
+    code = links.resolve_link(link)
+    return {"meeting": {"code": code, "url": links.meeting_url(code)} if code else None}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -505,6 +553,52 @@ enable_e2ee = MeetRoom.enable_e2ee
 update_settings = MeetRoom.update_settings
 
 
+class MyRoom(TypedDict):
+    name: str
+    title: str | None
+    meeting_type: Literal["open", "restricted"]
+    owner: str
+    modified: str
+    custom_link: str | None
+    url: str
+
+
+@frappe.whitelist(methods=["GET"])
+def my_rooms() -> list[MyRoom]:
+    """The rooms the signed-in user owns or co-hosts, most recently used first.
+
+    Filters on ownership itself rather than leaning on read permission, which a
+    System Manager holds for every room.
+    """
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+    cohosted = frappe.get_all(
+        "Meet Room User",
+        filters={"parenttype": "Meet Room", "parentfield": "co_hosts", "user": user},
+        pluck="parent",
+    )
+    rooms = frappe.get_all(
+        "Meet Room",
+        fields=["name", "title", "meeting_type", "owner", "modified", "custom_link"],
+        or_filters={"owner": user, **({"name": ["in", cohosted]} if cohosted else {})},
+        order_by="modified desc",
+        limit=3,
+    )
+    return [
+        {
+            "name": room.name,
+            "title": room.title,
+            "meeting_type": room.meeting_type,
+            "owner": room.owner,
+            "modified": str(room.modified),
+            "custom_link": room.custom_link or None,
+            "url": links.meeting_url(room.name, current_link=room.custom_link or ""),
+        }
+        for room in rooms
+    ]
+
+
 class RoomSearch(TypedDict):
     q: str
 
@@ -525,7 +619,40 @@ def room_search(q: str) -> list[RoomSummary]:
     )
 
 
+class SetDefaultInviteRoom(TypedDict):
+    room: str | None
+
+
+default_invite_room = schedule.default_invite_room
+set_default_invite_room = schedule.set_default_invite_room
+
 ROUTES += (
+    Route(
+        "GET",
+        "rooms/default-invite",
+        "default_invite_room",
+        output=schedule.DefaultInviteRoom,
+        kind="query",
+        public_name="rooms.defaultInvite",
+    ),
+    Route(
+        "POST",
+        "rooms/default-invite",
+        "set_default_invite_room",
+        body=SetDefaultInviteRoom,
+        output=type(None),
+        errors=(frappe.PermissionError,),
+        kind="mutation",
+        public_name="rooms.setDefaultInvite",
+    ),
+    Route(
+        "GET",
+        "rooms/mine",
+        "my_rooms",
+        output=list[MyRoom],
+        kind="query",
+        public_name="rooms.mine",
+    ),
     Route(
         "GET",
         "rooms/search",

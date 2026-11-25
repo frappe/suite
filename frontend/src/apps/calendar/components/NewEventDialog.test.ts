@@ -64,11 +64,49 @@ vi.mock('frappe-ui', async () => {
     Avatar: passthrough,
     BottomSheet: passthrough,
     Combobox: passthrough,
-    Dropdown: passthrough,
+    // The trigger's label, then each option as a button, so a choice can be made by name.
+    Dropdown: defineComponent({
+      props: ['button', 'options'],
+      setup: (props) => () =>
+        h('div', [
+          h('span', { 'data-trigger': '' }, props.button?.label ?? ''),
+          // Groups flatten into their options; a group's heading shows when it isn't hidden.
+          ...(Array.isArray(props.options) ? props.options : []).flatMap(
+            (item: {
+              label?: string
+              onClick?: () => void
+              group?: string
+              hideLabel?: boolean
+              options?: { label: string; description?: string; onClick?: () => void }[]
+            }) =>
+              item.options
+                ? [
+                    item.hideLabel ? '' : h('p', item.group),
+                    ...item.options.flatMap((option) => [
+                      h('button', { onClick: () => option.onClick?.() }, option.label),
+                      option.description ? h('small', option.description) : '',
+                    ]),
+                  ]
+                : [h('button', { onClick: () => item.onClick?.() }, item.label)],
+          ),
+        ]),
+    }),
     LoadingIndicator: passthrough,
     Radio: passthrough,
     RadioGroup: passthrough,
-    Switch: passthrough,
+    Switch: defineComponent({
+      props: ['modelValue'],
+      emits: ['update:modelValue'],
+      setup:
+        (props, { attrs, emit }) =>
+        () =>
+          h('button', {
+            role: 'switch',
+            'aria-label': attrs['aria-label'],
+            'aria-checked': String(!!props.modelValue),
+            onClick: () => emit('update:modelValue', !props.modelValue),
+          }),
+    }),
     TabButtons: passthrough,
     Tooltip: passthrough,
     toast: {
@@ -195,6 +233,7 @@ beforeEach(async () => {
       'mail.account.get',
       { full_name: 'Me', accounts: [{ id: 'acc', _name: 'Me', is_personal: 1, in_calendar: 1 }] },
     ],
+    ['meet.rooms.defaultInvite', { room: null, meeting_url: null }],
     ['mail.identities.list', [{ email: ME }]],
     ['mail.participantIdentities.list', [{ email: ME, _name: 'Me', default: 1 }]],
     [
@@ -257,6 +296,8 @@ const dialogs = () => [...document.querySelectorAll('[role="dialog"]')]
 const form = () =>
   dialogs().find((dialog) => dialog.querySelector('input[placeholder="Add title"]'))
 const titleField = () => form()?.querySelector<HTMLInputElement>('input[placeholder="Add title"]')
+// The label on the Meet card's dropdown button.
+const trigger = () => form()?.querySelector('[data-trigger]')?.textContent
 const button = (label: string) =>
   [...document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)
 const click = async (target: Element | null | undefined) => {
@@ -272,6 +313,18 @@ const selectedWhole = (field: HTMLInputElement | null | undefined) =>
   field.selectionEnd === field.value.length
 const loadingFrame = () => document.querySelector('[role="dialog"] [role="status"]')
 const created = () => server.writes.filter((write) => write.to === 'calendar.events.create')
+const roomUrl = (room: string) => `${window.location.origin}/meet/${room}`
+// The default room, plus any rooms that were the default before.
+const defaultInvite = (
+  ...past: { room: string; title: string | null; meeting_url?: string }[]
+) => ({
+  room: 'team-meet-room',
+  meeting_url: roomUrl('team-meet-room'),
+  rooms: [{ room: 'team-meet-room', title: null }, ...past].map((room) => ({
+    meeting_url: roomUrl(room.room),
+    ...room,
+  })),
+})
 
 describe("Calendar's new-event form opened over another area's page", () => {
   it('opens filled in from the draft, and the page stays where it was', async () => {
@@ -334,6 +387,78 @@ describe("Calendar's new-event form opened over another area's page", () => {
       path: '/calendar/account/acc/day/2026/11/19',
       query: { event: 'evt-1' },
     })
+  })
+
+  it('starts with the default room and switches the call off and back to that room', async () => {
+    server.replies.set('meet.rooms.defaultInvite', defaultInvite())
+    void open(draft)
+    await opened()
+    const meetSwitch = () => form()?.querySelector('[aria-label="Frappe Meet video call"]')
+
+    expect(trigger()).toBe('meet/team-meet-room')
+    // Joining waits until the event is saved; a new event is still being scheduled.
+    expect(button('Join')).toBeUndefined()
+    await click(meetSwitch())
+    expect(form()?.textContent).not.toContain('meet/team-meet-room')
+    expect(form()?.textContent).toContain('Add Frappe Meet video call')
+
+    await click(meetSwitch())
+    expect(trigger()).toBe('meet/team-meet-room')
+    expect(server.writes).toEqual([])
+  })
+
+  it('saves the default room on the event without asking Meet for a new one', async () => {
+    server.replies.set('meet.rooms.defaultInvite', defaultInvite())
+    void open(draft)
+    await opened()
+
+    await click(button('Save'))
+    await click(button('Send Email'))
+    expect(server.writes.map((write) => write.to)).toEqual(['calendar.events.create'])
+    expect(created()[0].input.links).toEqual([
+      expect.objectContaining({ href: `${window.location.origin}/meet/team-meet-room` }),
+    ])
+  })
+
+  it('gives the event a room of its own when the user picks a new room over the default', async () => {
+    server.replies.set('meet.rooms.defaultInvite', defaultInvite())
+    void open(draft)
+    await opened()
+
+    await click(button('New link for this event'))
+    expect(trigger()).toBe('New link')
+
+    await click(button('Save'))
+    await click(button('Send Email'))
+    expect(server.writes.map((write) => write.to)).toEqual(['meet.meetings.createCalendar'])
+    expect(JSON.stringify(server.writes[0].input)).not.toContain('team-meet-room')
+  })
+
+  it('offers rooms that were the default before by name, and saves the one picked', async () => {
+    server.replies.set(
+      'meet.rooms.defaultInvite',
+      defaultInvite({
+        room: 'sale-stea-mroo',
+        title: 'Sales team',
+        meeting_url: roomUrl('sales-team'),
+      }),
+    )
+    void open(draft)
+    await opened()
+
+    expect(form()?.textContent).toContain('Your meets')
+    // A titled meet shows its link under the title; an untitled one is listed by its link.
+    expect(button('Sales team')?.nextElementSibling?.textContent).toBe('meet/sales-team')
+    expect(button('meet/team-meet-room')).toBeTruthy()
+    await click(button('Sales team'))
+    expect(trigger()).toBe('meet/sales-team')
+
+    await click(button('Save'))
+    await click(button('Send Email'))
+    expect(server.writes.map((write) => write.to)).toEqual(['calendar.events.create'])
+    expect(created()[0].input.links).toEqual([
+      expect.objectContaining({ href: roomUrl('sales-team') }),
+    ])
   })
 
   it('sends nothing when it is cancelled', async () => {
