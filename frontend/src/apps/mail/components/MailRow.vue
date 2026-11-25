@@ -5,9 +5,8 @@
        and shows what the swipe does behind it. The row's own attributes go on the row. -->
   <div ref="box" :class="{ 'relative overflow-x-clip': swipeEnabled }" :style="swiping.boxStyle">
     <!-- A tint of what the swipe does, solid once letting go would do it. The icon and its
-         word stand a fixed way off the row's edge, in the gap it leaves, and go with it: the same
-         on either side, whatever the word's length. Once the row is on its way out they move to
-         the middle, where they stay while its space closes up. -->
+         word come in a fixed way off the row's edge, in the gap it leaves, and once all in stay in
+         the middle of it: the middle of the row once it is out, while its space closes up. -->
     <!-- One per side (the key), and no fade: a drag that crosses over, or back over the threshold,
          shows the other colour at once, where a fade showed the shades between. -->
     <div
@@ -345,9 +344,8 @@ const { isMobile, isFullWidth, showCheckbox, showAvatar, showLeading } = useRowL
 const swipeEnabled = computed(
   () => isMobile.value && !selectionMode && !!(swipes?.left || swipes?.right),
 )
-const box = useTemplateRef<HTMLElement>('box')
 const rowSwipe = useRowSwipe({
-  el: box,
+  el: useTemplateRef<HTMLElement>('box'),
   enabled: () => swipeEnabled.value,
   action: (side) => swipes?.[side],
   commit: (side) => emit('swipe', side),
@@ -369,8 +367,6 @@ const TONES = {
 }
 // The gap the row leaves on the side it goes, for what it does to stand in. It moves as the row
 // does, on its way back or out too.
-// Its way off the row's edge is 16px, or once the row is on its way out (let go, not coming back),
-// what puts it in the middle of the box: both move with the row, so it slides there.
 const EDGE_GAP = 16
 const swipeContent = useTemplateRef<HTMLElement>('swipeContent')
 const gapStyle = computed(() => {

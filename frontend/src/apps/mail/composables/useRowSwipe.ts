@@ -17,7 +17,7 @@ export type SwipeSide = 'left' | 'right'
 /** What a swipe one way does, as the row shows it behind itself. */
 export interface RowSwipeAction {
   icon: Component
-  /** A word or two for it, under the icon. */
+  /** A word or two for it, beside the icon. */
   label: string
   /** The colour behind the row: red for what lets go of the mail, grey for what files it. */
   tone: 'red' | 'gray'
