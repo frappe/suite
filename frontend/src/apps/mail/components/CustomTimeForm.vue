@@ -16,12 +16,18 @@
       />
     </div>
     <TimePicker v-model="time" :label="__('Time')" />
-    <!-- Its line is kept, so the message showing doesn't move the buttons. -->
+    <!-- Its line is kept, so the message showing doesn't move the button. -->
     <div class="min-h-5"><ErrorMessage :message="error" /></div>
-    <div class="flex gap-2">
-      <Button class="flex-1" :label="__('Cancel')" @click="emit('cancel')" />
-      <Button type="submit" variant="solid" class="flex-1" :label="action" :disabled="!date" />
-    </div>
+    <!-- One action, as Mail's other form dialogs and sheets have: closing the dialog or sheet
+         is the way out. On a phone, a sheet's size, as AdaptiveDialog's. -->
+    <Button
+      type="submit"
+      variant="solid"
+      class="w-full"
+      :size="isMobile ? 'lg' : 'sm'"
+      :label="action"
+      :disabled="!date"
+    />
   </form>
 </template>
 
@@ -30,6 +36,7 @@ import { Button, ErrorMessage, TimePicker } from 'frappe-ui'
 import { DateCalendar } from 'frappe-ui/experimental'
 import { ref, watch } from 'vue'
 
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, inUserTimeZone, userTimeZone } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 
@@ -40,7 +47,8 @@ const { action, pastMessage, initialValue } = defineProps<{
   initialValue?: string
 }>()
 
-const emit = defineEmits<{ pick: [value: string]; cancel: [] }>()
+const emit = defineEmits<{ pick: [value: string] }>()
+const { isMobile } = useScreenSize()
 
 const now = dayjs().tz(userTimeZone())
 // The time already set, or else tomorrow morning, as the choices' Tomorrow.

@@ -3,14 +3,7 @@
        dialog, the same choices as rows, as a phone's sheet lists them; a time of the reader's own
        takes their place in it. -->
   <Dialog v-if="!isMobile && !$slots.default" v-model:open="dialogOpen" :title size="xs">
-    <CustomTimeForm
-      v-if="formShown"
-      :action
-      :past-message
-      :initial-value
-      @pick="pick"
-      @cancel="dialogOpen = false"
-    />
+    <CustomTimeForm v-if="formShown" :action :past-message :initial-value @pick="pick" />
     <div v-else class="-mx-3">
       <button
         v-for="choice in listed"
@@ -42,17 +35,11 @@
          as it opens and drops it once it has closed, so the form starts afresh every time and the
          dialog or sheet leaves whole. -->
     <Dialog v-if="!isMobile" v-model:open="picking" :title size="xs">
-      <CustomTimeForm :action :past-message :initial-value @pick="pick" @cancel="picking = false" />
+      <CustomTimeForm :action :past-message :initial-value @pick="pick" />
     </Dialog>
     <BottomSheet v-else v-model:open="picking" :title>
       <div class="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
-        <CustomTimeForm
-          :action
-          :past-message
-          :initial-value
-          @pick="pick"
-          @cancel="picking = false"
-        />
+        <CustomTimeForm :action :past-message :initial-value @pick="pick" />
       </div>
     </BottomSheet>
   </template>
