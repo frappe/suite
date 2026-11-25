@@ -1,4 +1,5 @@
-import { gemoji } from 'gemoji'
+import type { EmojiMartData } from '@emoji-mart/data'
+import { shallowRef } from 'vue'
 
 import { readJSON, remove, writeJSON } from '@/utils/localStorage'
 
@@ -7,10 +8,46 @@ export type EmojiSuggestion = {
   emoji: string
 }
 
-/** Flat name → emoji list (one entry per alias), matching frappe-ui emoji UX. */
-const EMOJIS: EmojiSuggestion[] = gemoji.flatMap((entry) =>
-  entry.names.map((name) => ({ name, emoji: entry.emoji })),
-)
+const QUICK_EMOJI_LABELS = new Map([
+  ['👍', 'thumbs up'],
+  ['❤️', 'red heart'],
+  ['😂', 'face with tears of joy'],
+])
+
+function indexCatalog(data: EmojiMartData) {
+  const suggestions: EmojiSuggestion[] = []
+  const labels = new Map<string, string>()
+  for (const entry of Object.values(data.emojis)) {
+    const emoji = entry.skins[0]?.native
+    if (emoji) suggestions.push({ name: entry.id, emoji })
+    for (const skin of entry.skins) {
+      labels.set(skin.native, entry.name.toLowerCase())
+    }
+  }
+  for (const [name, id] of Object.entries(data.aliases)) {
+    const emoji = data.emojis[id]?.skins[0]?.native
+    if (emoji) suggestions.push({ name, emoji })
+  }
+  return { suggestions, labels }
+}
+
+const catalog = shallowRef<ReturnType<typeof indexCatalog>>()
+let catalogLoad: Promise<void> | undefined
+
+export function loadEmojiCatalog(): Promise<void> {
+  catalogLoad ??= import('@emoji-mart/data/sets/15/native.json')
+    .then(({ default: data }) => {
+      catalog.value = indexCatalog(data)
+    })
+    .catch(() => {
+      catalogLoad = undefined
+    })
+  return catalogLoad
+}
+
+export function emojiLabel(emoji: string): string {
+  return QUICK_EMOJI_LABELS.get(emoji) ?? catalog.value?.labels.get(emoji) ?? emoji
+}
 
 const RECENT_STORAGE_KEY = 'meet-chat-recent-emojis'
 const RECENT_LIMIT = 5
@@ -76,7 +113,8 @@ export function rememberEmoji(item: EmojiSuggestion): void {
 /** Substring filter + ranking: exact name → prefix → shorter names; cap at limit. */
 function filterEmojis(query: string, limit: number): EmojiSuggestion[] {
   const needle = query.toLowerCase()
-  return EMOJIS.filter((item) => item.name.toLowerCase().includes(needle))
+  return (catalog.value?.suggestions ?? [])
+    .filter((item) => item.name.toLowerCase().includes(needle))
     .sort((a, b) => {
       const aName = a.name.toLowerCase()
       const bName = b.name.toLowerCase()
@@ -94,7 +132,11 @@ function filterEmojis(query: string, limit: number): EmojiSuggestion[] {
  * duplicates) so the menu always has up to `limit` rows.
  * Non-empty → name filter + ranking; cap at 5.
  */
-export function suggestEmojis(query: string, limit = RECENT_LIMIT): EmojiSuggestion[] {
+export async function suggestEmojis(
+  query: string,
+  limit = RECENT_LIMIT,
+): Promise<EmojiSuggestion[]> {
+  await loadEmojiCatalog()
   if (!query) {
     const recent = getRecentEmojis().slice(0, limit)
     if (recent.length === 0) return filterEmojis('', limit)

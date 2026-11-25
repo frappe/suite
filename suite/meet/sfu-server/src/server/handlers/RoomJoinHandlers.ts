@@ -89,6 +89,7 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			socket.participantId = participantId;
 
 			if (socket.scope === 'full') {
+				deps.registry.markChatParticipant(scopedRoomId, participantId);
 				deps.registry.joinScope(socket, scopedRoomId, 'full');
 				syncHostOnlyChatFromToken(deps, socket, scopedRoomId);
 				const senderId = deps.registry.assignSenderId(scopedRoomId, peerId);
@@ -167,10 +168,9 @@ export function registerRoomJoinHandlers(deps: HandlerDeps) {
 			});
 
 			if (socket.scope === 'full') {
+				socket.emit('chat:snapshot', deps.registry.chatSnapshot(scopedRoomId, participantId));
 				const pinned = deps.registry.getPinnedChatMessage(scopedRoomId);
-				if (pinned) {
-					socket.emit('existing_pinned_message', { pinned });
-				}
+				socket.emit('existing_pinned_message', { pinned });
 			}
 
 			if (socket.scope === 'full' && !socket.e2eeRequired) {

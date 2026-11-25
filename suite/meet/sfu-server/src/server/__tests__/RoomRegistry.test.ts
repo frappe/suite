@@ -87,6 +87,38 @@ function addRecorderSocket(
 	registry.joinRecorder(sock, roomId, `recorder:${sock.id}`);
 }
 
+it('recovers chat within the active call and starts empty after room cleanup', () => {
+	const { io } = makeIo();
+	const registry = new RoomRegistry(io);
+	registry.markChatParticipant('r1', 'alice');
+	const message = {
+		roomId: 'r1',
+		messageId: 'm1',
+		message: 'See you after lunch',
+		fromUser: 'alice',
+		fromName: 'Alice',
+		timestamp: '2026-11-24T12:00:00Z',
+	};
+	registry.recordChatMessage('r1', message);
+	registry.setChatReaction('r1', 'alice', { messageId: 'm1', emoji: '👍', active: true });
+	registry.setPinnedChatMessage('r1', message);
+	registry.setHostOnlyChat('r1', true);
+	registry.markChatParticipant('r1', 'alice');
+	expect(registry.chatSnapshot('r1', 'alice')).toMatchObject({
+		messages: [message],
+		reactions: [{ messageId: 'm1', reactions: [{ emoji: '👍', userIds: ['alice'] }] }],
+		pinnedId: 'm1',
+		hostOnlyChat: true,
+	});
+
+	registry.cleanupMediaRoom('r1');
+	registry.markChatParticipant('r1', 'alice');
+	expect(registry.chatSnapshot('r1', 'alice')).toEqual({
+		messages: [], reactions: [], pinnedId: null, pinnedRetained: false, hostOnlyChat: false,
+	});
+	expect(registry.setChatReaction('r1', 'alice', { messageId: 'm1', emoji: '👍', active: true })).toBeUndefined();
+});
+
 describe('RoomRegistry', () => {
 	it('acquires the first participant connection', () => {
 		const { io } = makeIo();

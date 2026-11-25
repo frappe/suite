@@ -157,6 +157,7 @@
                   :open="true"
                   :messages="chatStore.chatMessages"
                   :avatar-by-user="participantAvatars"
+                  :name-by-user="participantNames"
                   :user-id="(currentUser.currentUser.value?.user_id ?? '') || ''"
                   :user-name="
                     (currentUser.currentUser.value?.full_name as string) ||
@@ -169,6 +170,10 @@
                   :host-only-chat="chatStore.hostOnlyChat"
                   :pinned-message="chatStore.pinnedMessage"
                   :send-message="chat.onSendChat"
+                  :reactions-by-message="chatStore.reactionsByMessage"
+                  :expired-pinned-message-id="chatStore.expiredPinnedMessageId"
+                  :has-unavailable-encrypted-history="chatStore.hasUnavailableEncryptedHistory"
+                  :set-reaction="chat.setReaction"
                   @close="toggleChat"
                   @pin="chat.pinMessage"
                   @unpin="unpinChatMessage"
@@ -901,6 +906,15 @@ const participantAvatars = computed(() =>
     ]),
   ),
 )
+const participantNames = computed(() =>
+  Object.fromEntries(
+    Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
+      userId,
+      participant.user_name,
+    ]),
+  ),
+)
+
 const { isMobile } = useResponsiveGrid()
 const panelWidth = computed(() => {
   if (!activePanel.value) return '0rem'
@@ -1076,6 +1090,8 @@ const handleE2EENeedsMediaRepublish = async (event: Event) => {
 }
 
 // --- Lifecycle ---
+let disposeChatEvents: (() => void) | undefined
+
 onMounted(async () => {
   // Reset all stores
   connectionState.$reset()
@@ -1094,6 +1110,7 @@ onMounted(async () => {
   document.addEventListener('meet:e2ee-needs-media-republish', handleE2EENeedsMediaRepublish)
   document.addEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
   syncFullscreenState()
+  disposeChatEvents = chat.setupChatEvents(showMeetingNotification)
 
   // Check meeting access for unauthenticated users
   if (!session.isLoggedIn) {
@@ -1117,7 +1134,6 @@ onMounted(async () => {
   }
 
   // Setup event handlers
-  chat.setupChatEvents(showMeetingNotification)
   reactions.setupReactionEvents()
   raiseHand.setupRaiseHandEvents()
   poll.setupPollEvents(showMeetingNotification)
@@ -1154,6 +1170,7 @@ onMounted(async () => {
   }
 })
 onUnmounted(() => {
+  disposeChatEvents?.()
   isPreparingAutoJoin.value = false
   clearConnectingToast()
   clearMeetingNotifications()

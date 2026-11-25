@@ -1,4 +1,11 @@
 import { randomUUID } from 'node:crypto';
+import {
+	MAX_CHAT_REACTIONS_PER_MESSAGE,
+	MAX_RETAINED_CHAT_MESSAGES,
+	type ChatReactionRequest,
+	type ChatReactionsUpdated,
+	type ChatSnapshot,
+} from '../../../types/chatReactions';
 import type { Server, Socket } from 'socket.io';
 import type {
 	ActivePoll,
@@ -48,8 +55,13 @@ export class RoomRegistry {
 	private io: Server<ClientToServerEvents, ServerToClientEvents>;
 	private raisedHands: Record<string, Record<string, string>> = {};
 	private hostOnlyChat: Record<string, boolean> = {};
-	private recentChatMessages: Record<string, ChatMessage[]> = {};
-	private pinnedChatMessage: Record<string, PinnedChatMessage> = {};
+	private readonly chatByRoom = new Map<string, {
+		messages: ChatMessage[];
+		reactions: Map<string, Map<string, Set<string>>>;
+		firstVisibleIndex: Map<string, number>;
+		nextIndex: number;
+		pinned: PinnedChatMessage | null;
+	}>();
 	private participantConnections = new Map<
 		string,
 		Map<
@@ -364,33 +376,113 @@ export class RoomRegistry {
 		return Boolean(this.hostOnlyChat[roomId]);
 	}
 
-	/** Keep the bounded message window used to resolve pin requests. */
-	recordChatMessage(roomId: string, message: ChatMessage): void {
-		const buffer = this.recentChatMessages[roomId] ?? [];
-		buffer.push(message);
-		if (buffer.length > 200) buffer.shift();
-		this.recentChatMessages[roomId] = buffer;
+	private chatState(roomId: string) {
+		let chat = this.chatByRoom.get(roomId);
+		if (!chat) {
+			chat = {
+				messages: [],
+				reactions: new Map(),
+				firstVisibleIndex: new Map(),
+				nextIndex: 0,
+				pinned: null,
+			};
+			this.chatByRoom.set(roomId, chat);
+		}
+		return chat;
 	}
 
-	/** Resolve a message that is still eligible for pinning. */
-	getRecentChatMessage(
+	recordChatMessage(roomId: string, message: ChatMessage): string | undefined {
+		const chat = this.chatState(roomId);
+		chat.messages.push(message);
+		chat.nextIndex++;
+		if (chat.messages.length <= MAX_RETAINED_CHAT_MESSAGES) return;
+		const evicted = chat.messages.shift();
+		if (evicted) chat.reactions.delete(evicted.messageId);
+		return evicted?.messageId;
+	}
+
+	getRecentChatMessage(roomId: string, messageId: string): ChatMessage | undefined {
+		return this.chatByRoom.get(roomId)?.messages.find((message) => message.messageId === messageId);
+	}
+
+	markChatParticipant(roomId: string, participantId: string): void {
+		const chat = this.chatState(roomId);
+		if (!chat.firstVisibleIndex.has(participantId)) {
+			chat.firstVisibleIndex.set(participantId, chat.nextIndex);
+		}
+	}
+
+	getChatReplyTarget(
 		roomId: string,
+		participantId: string,
 		messageId: string,
-	): ChatMessage | undefined {
-		return this.recentChatMessages[roomId]?.find(
-			(message) => message.messageId === messageId,
-		);
+	): ChatMessage | PinnedChatMessage | undefined {
+		const chat = this.chatByRoom.get(roomId);
+		if (!chat) return;
+		if (chat.pinned?.messageId === messageId) return chat.pinned;
+		const offset = this.chatHistoryOffset(chat, participantId);
+		return chat.messages.find((message, index) => index >= offset && message.messageId === messageId);
 	}
 
-	/** Set or clear the room-wide pin; room cleanup removes this ephemeral state. */
+	private chatHistoryOffset(chat: ReturnType<RoomRegistry['chatState']>, participantId: string): number {
+		const firstVisibleIndex = chat.firstVisibleIndex.get(participantId) ?? chat.nextIndex;
+		return Math.max(0, firstVisibleIndex - (chat.nextIndex - chat.messages.length));
+	}
+
+	chatSnapshot(roomId: string, participantId: string): ChatSnapshot {
+		const chat = this.chatState(roomId);
+		const messages = chat.messages.slice(this.chatHistoryOffset(chat, participantId));
+		const visibleIds = new Set(messages.map(({ messageId }) => messageId));
+		if (chat.pinned) visibleIds.add(chat.pinned.messageId);
+
+		return {
+			messages,
+			reactions: Array.from(visibleIds, (id) => this.chatReactionUpdate(roomId, id))
+				.filter(({ reactions }) => reactions.length > 0),
+			pinnedId: chat.pinned?.messageId ?? null,
+			pinnedRetained: Boolean(chat.pinned && this.getRecentChatMessage(roomId, chat.pinned.messageId)),
+			hostOnlyChat: this.isHostOnlyChat(roomId),
+		};
+	}
+
+	private chatReactionUpdate(roomId: string, messageId: string): ChatReactionsUpdated {
+		const reactions = this.chatByRoom.get(roomId)?.reactions.get(messageId);
+		return {
+			messageId,
+			reactions: Array.from(reactions ?? [], ([emoji, users]) => ({
+				emoji,
+				userIds: Array.from(users),
+			})),
+		};
+	}
+
+	setChatReaction(
+		roomId: string,
+		participantId: string,
+		{ messageId, emoji, active }: ChatReactionRequest,
+	): ChatReactionsUpdated | undefined {
+		if (!this.getRecentChatMessage(roomId, messageId)) return;
+		const chat = this.chatState(roomId);
+		const reactions = chat.reactions.get(messageId) ?? new Map<string, Set<string>>();
+		if (active && !reactions.has(emoji) && reactions.size >= MAX_CHAT_REACTIONS_PER_MESSAGE) {
+			throw new Error('This message has reached the limit for different reactions');
+		}
+		const users = reactions.get(emoji) ?? new Set<string>();
+		if (active) users.add(participantId);
+		else users.delete(participantId);
+		if (users.size) reactions.set(emoji, users);
+		else reactions.delete(emoji);
+		if (reactions.size) chat.reactions.set(messageId, reactions);
+		else chat.reactions.delete(messageId);
+		return this.chatReactionUpdate(roomId, messageId);
+	}
+
 	setPinnedChatMessage(roomId: string, pinned: PinnedChatMessage | null): void {
-		if (pinned === null) delete this.pinnedChatMessage[roomId];
-		else this.pinnedChatMessage[roomId] = pinned;
+		this.chatState(roomId).pinned = pinned;
 	}
 
-	/** Return the current room-wide pin, if one exists. */
 	getPinnedChatMessage(roomId: string): PinnedChatMessage | null {
-		return this.pinnedChatMessage[roomId] ?? null;
+		return this.chatByRoom.get(roomId)?.pinned ?? null;
 	}
 
 	getActivePolls(roomId: string): Map<string, ActivePoll> | undefined {
@@ -422,8 +514,7 @@ export class RoomRegistry {
 		}
 		delete this.raisedHands[roomId];
 		delete this.hostOnlyChat[roomId];
-		delete this.recentChatMessages[roomId];
-		delete this.pinnedChatMessage[roomId];
+		this.chatByRoom.delete(roomId);
 		this.participantConnections.delete(roomId);
 		delete this.activePolls[roomId];
 		this.fullAccessSockets.delete(roomId);

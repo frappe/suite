@@ -50,17 +50,12 @@
       <!-- Text editor buttons -->
       <div class="flex min-w-0 items-center gap-1 overflow-x-auto" :class="{ 'px-3': isMobile }">
         <EditorFixedMenu :items="menu" class="shrink-0" />
-        <EmojiPicker
-          v-if="!isMobile"
-          v-slot="{ toggle }"
-          @update:model-value="emit('appendEmoji', $event)"
-        >
+        <EmojiPicker v-if="!isMobile" @select="emit('appendEmoji', $event)">
           <Button
             variant="ghost"
             class="max-h-6 max-w-6"
             :tooltip="__('Insert emoji')"
             :aria-label="__('Insert emoji')"
-            @click="toggle()"
           >
             <template #icon>
               <Laugh class="text-ink-gray-8 h-4 w-4" />
@@ -111,14 +106,15 @@
 import { Button, Dropdown } from 'frappe-ui'
 import { EditorFixedMenu } from 'frappe-ui/editor'
 import { CalendarClock, ChevronDown, Laugh, Paperclip } from 'lucide-vue-next'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 
 import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
-import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
+import EmojiPicker from '@/platform/emoji-picker/EmojiPicker.vue'
+import { prepareEmojiPicker } from '@/platform/emoji-picker/prepareEmojiPicker'
 
 const { isRecipientsEmpty, isUploading, isSending, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
@@ -153,6 +149,13 @@ const sendOptions = [
 ]
 
 const { isMobile } = useScreenSize()
+watch(
+  isMobile,
+  (mobile) => {
+    if (!mobile) void prepareEmojiPicker()
+  },
+  { immediate: true },
+)
 const menu = useEditorMenu(() => true)
 </script>
 
