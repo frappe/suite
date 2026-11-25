@@ -2,13 +2,15 @@
   <div>
     <template v-for="(segment, index) in segments" :key="index">
       <template v-if="segment.kind === 'quote'">
+        <!-- A quiet outlined pill, as an HTML mail's quoted trail has (see EmailContent) -->
         <button
-          class="bg-surface-gray-2 text-ink-gray-6 hover:bg-surface-gray-3 active:bg-surface-gray-3 my-3 rounded-6 px-1.5 leading-4 [-webkit-tap-highlight-color:transparent]"
+          type="button"
+          class="border-outline-gray-2 text-ink-gray-5 hover:bg-surface-gray-2 active:bg-surface-gray-2 my-3 inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-sm [-webkit-tap-highlight-color:transparent] max-sm:h-8 max-sm:px-3 max-sm:text-base"
           :aria-expanded="expanded.has(index)"
-          :aria-label="__('Show quoted text')"
           @click="toggle(index)"
         >
-          &middot;&middot;&middot;
+          <Ellipsis class="size-3.5" aria-hidden="true" />
+          {{ expanded.has(index) ? __('Hide quoted text') : __('Show quoted text') }}
         </button>
         <div v-if="expanded.has(index)">
           <LinkifiedText
@@ -40,6 +42,7 @@
 </template>
 
 <script setup lang="ts">
+import { Ellipsis } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 
 import { mailReader, useMailDates } from '@/apps/mail/composables/useMailDates'

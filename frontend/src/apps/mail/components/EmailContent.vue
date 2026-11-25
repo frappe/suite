@@ -177,16 +177,16 @@ const collapseQuotes = (doc: Document) => {
   findQuoteRoots(doc).forEach((quote) => {
     quote.classList.add('quote-hidden')
     // A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
-    // that a reply hides a whole conversation underneath it.
+    // that a reply hides a whole conversation underneath it. Drawn as PlainTextBody's is.
     const button = doc.createElement('button')
     button.innerHTML =
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg>'
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>'
     const label = doc.createElement('span')
-    label.textContent = __('Show trimmed content')
+    label.textContent = __('Show quoted text')
     // The toggle script runs inside the iframe, where __() doesn't exist — both
     // translations ride along as data attributes instead.
-    button.dataset.show = __('Show trimmed content')
-    button.dataset.hide = __('Hide trimmed content')
+    button.dataset.show = __('Show quoted text')
+    button.dataset.hide = __('Hide quoted text')
     button.appendChild(label)
     // Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
     // inline styles, so the mobile variant can size the touch target up. The frame's script
@@ -312,15 +312,18 @@ const srcdoc = computed(() => {
 					display: none;
 				}
 
+				/* A quiet outlined pill: it says something is folded away without standing out more
+				   than the message it sits in. */
 				.quote-toggle {
 					display: inline-flex;
 					align-items: center;
 					gap: 6px;
-					background: ${colors.value.button};
-					color: ${colors.value.text};
-					padding: 4px 9px;
-					/* frappe-ui's standard button radius (rounded-4) */
-					border-radius: 8px;
+					height: 24px;
+					padding: 0 10px;
+					border: 1px solid ${colors.value.outline};
+					border-radius: 999px;
+					color: ${colors.value.muted};
+					font-size: 13px;
 					transition: background .2s;
 					margin: 12px 0;
 					/* iOS paints its own tap highlight over a pressed button, which shows blue on a
@@ -332,28 +335,23 @@ const srcdoc = computed(() => {
 				   a tap: there the shade lasts as long as the press. */
 				@media (hover: hover) {
 					.quote-toggle:hover {
-						background: ${colors.value.buttonHover};
+						background: ${colors.value.button};
 					}
 				}
 
 				.quote-toggle:active {
-					background: ${colors.value.buttonHover};
+					background: ${colors.value.button};
 				}
 
-				/* A finger target on mobile — matches the app's 40px mobile buttons,
-				   with the lg radius that size takes. Keyed on the app's own isMobile,
-				   not an iframe media query: the iframe only knows the reading pane's
-				   width, and a desktop pane narrowed by the sidebar is not a phone. */
+				/* A finger's size on a phone. Keyed on the app's own isMobile, not an iframe media
+				   query: the iframe only knows the reading pane's width, and a desktop pane narrowed
+				   by the sidebar is not a phone. */
 				${
           isMobile.value
             ? `.quote-toggle {
-						padding: 10px 14px;
-						gap: 8px;
-						border-radius: 10px;
-					}
-					.quote-toggle svg {
-						width: 14px;
-						height: 14px;
+						height: 32px;
+						padding: 0 12px;
+						font-size: 14px;
 					}`
             : ''
         }
@@ -916,6 +914,9 @@ const THEME_CONFIG = {
     text: '#383838',
     button: '#F3F3F3',
     buttonHover: '#EDEDED',
+    // ink-gray-5 and outline-gray-2, for the quoted trail's toggle
+    muted: '#7C7C7C',
+    outline: '#E2E2E2',
     link: '',
   },
   dark: {
@@ -926,6 +927,8 @@ const THEME_CONFIG = {
     text: '#D4D4D4',
     button: '#2B2B2B',
     buttonHover: '#343434',
+    muted: '#8F8F8F',
+    outline: '#343434',
     link: '#6CB6FF',
   },
 }

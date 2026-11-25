@@ -338,7 +338,7 @@
               v-if="mail?.quoted_content"
               variant="subtle"
               icon-left="lucide-align-left"
-              :label="__('Show trimmed content')"
+              :label="__('Show quoted text')"
               @click="openQuotedContent"
             />
 
