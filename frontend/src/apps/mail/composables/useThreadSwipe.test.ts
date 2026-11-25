@@ -1,12 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, type App } from 'vue'
+import { createApp, defineComponent, nextTick, ref, type App } from 'vue'
 
-import {
-  SETTLE_MS,
-  useThreadSwipe,
-  type ThreadPeek,
-  type ThreadSwipe,
-} from '@/apps/mail/composables/useThreadSwipe'
+import { SETTLE_MS, useThreadSwipe, type ThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -20,23 +15,22 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-const NEXT: ThreadPeek = {
-  subject: 'Next',
-  sender: 'Ann',
-  initial: 'A',
-  to: 'to Bo',
-  receivedAt: '2026-11-24T09:00:00Z',
-}
-
-function mountSwipe(peeks: { next?: ThreadPeek | null; prev?: ThreadPeek | null }) {
-  const step = vi.fn()
+/** A list of threads with one open; a step opens the one that way, as the views' do. */
+function mountSwipe(ids: string[], openAt: string, { phone = true } = {}) {
+  const open = ref(openAt)
+  const phoneRef = ref(phone)
+  const byOffset = (offset: number) => ids[ids.indexOf(open.value) + offset]
+  const step = vi.fn((offset: number) => {
+    open.value = byOffset(offset)!
+  })
   let handle!: ReturnType<typeof useThreadSwipe>
   app = createApp(
     defineComponent({
       setup() {
         handle = useThreadSwipe({
-          enabled: () => true,
-          peek: (offset) => (offset > 0 ? peeks.next : peeks.prev),
+          enabled: () => phoneRef.value,
+          open: () => open.value,
+          byOffset,
           step,
         })
         return () => null
@@ -45,7 +39,7 @@ function mountSwipe(peeks: { next?: ThreadPeek | null; prev?: ThreadPeek | null 
   )
   app.mount(document.createElement('div'))
   const swipe: Readonly<ThreadSwipe> = handle.swipe
-  return { ...handle, swipe, step }
+  return { ...handle, swipe, step, open }
 }
 
 // A touch on the pane, as the browser hands it over.
@@ -66,14 +60,13 @@ const framePoint = (phase: string, x: number, y = 400) =>
 
 describe('useThreadSwipe', () => {
   it('follows the finger, then opens the next thread once the page has gone', async () => {
-    const { swipe, step, onTouchStart, onTouchMove, onTouchEnd } = mountSwipe({ next: NEXT })
+    const { swipe, step, onTouchStart, onTouchMove, onTouchEnd } = mountSwipe(['a', 'b'], 'a')
     onTouchStart(touch(300))
     vi.advanceTimersByTime(100)
     const move = touch(150)
     onTouchMove(move)
 
     expect(swipe.dx).toBe(-150)
-    expect(swipe.next).toEqual(NEXT)
     expect(move.preventDefault).toHaveBeenCalled()
 
     vi.advanceTimersByTime(300)
@@ -87,7 +80,7 @@ describe('useThreadSwipe', () => {
   })
 
   it('gives only a little where there is no thread that way, and stays put', async () => {
-    const { swipe, step, onTouchStart, onTouchMove, onTouchEnd } = mountSwipe({ next: NEXT })
+    const { swipe, step, onTouchStart, onTouchMove, onTouchEnd } = mountSwipe(['a', 'b'], 'a')
     onTouchStart(touch(100))
     vi.advanceTimersByTime(100)
     onTouchMove(touch(250))
@@ -102,7 +95,7 @@ describe('useThreadSwipe', () => {
   })
 
   it('pages from a swipe over a message body too', async () => {
-    const { step } = mountSwipe({ prev: NEXT })
+    const { step } = mountSwipe(['a', 'b'], 'b')
     framePoint('start', 100)
     vi.advanceTimersByTime(100)
     framePoint('move', 250)
@@ -111,5 +104,36 @@ describe('useThreadSwipe', () => {
 
     await vi.advanceTimersByTimeAsync(SETTLE_MS)
     expect(step).toHaveBeenCalledWith(-1)
+  })
+
+  it('draws the threads either side, and the one stepped to stays where it was drawn', async () => {
+    const { slots, open } = mountSwipe(['a', 'b', 'c', 'd'], 'b')
+    const before = slots.value
+    expect(Object.fromEntries(before.map((slot) => [slot.id, slot.beside]))).toEqual({
+      a: -1,
+      b: undefined,
+      c: 1,
+    })
+
+    open.value = 'c'
+    await nextTick()
+    const after = slots.value
+    expect(Object.fromEntries(after.map((slot) => [slot.id, slot.beside]))).toEqual({
+      b: -1,
+      c: undefined,
+      d: 1,
+    })
+    // b and c are the same slots, in the same order: neither is drawn again or moved
+    const kept = (list: typeof before) =>
+      list.filter((slot) => slot.id === 'b' || slot.id === 'c').map((slot) => slot.key)
+    expect(kept(after)).toEqual(kept(before))
+  })
+
+  it('keeps one slot for every thread off a phone, so switching draws nothing again', async () => {
+    const { slots, open } = mountSwipe(['a', 'b'], 'a', { phone: false })
+    const key = slots.value[0]!.key
+    open.value = 'b'
+    await nextTick()
+    expect(slots.value).toEqual([{ id: 'b', key }])
   })
 })

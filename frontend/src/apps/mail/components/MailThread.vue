@@ -1,50 +1,46 @@
 <template>
-  <div v-if="threadID" class="relative flex h-full flex-col overflow-hidden">
-    <ThreadHeader
-      v-if="!readonly"
-      :threads
-      :threads-loading="threadsLoading"
-      :thread
-      :can-go-next="canGoNext"
-      :remindable="replyReminder.remindable.value"
-      :failed="loadFailed"
-      @set-seen="setThreadSeen"
-      @set-pinned="onSetPinned"
-      @snooze="(until: string) => emit('snoozeThread', until)"
-      @unsnooze="emit('unsnoozeThread')"
-      @remind="remindReply"
-      @archive-thread="emit('archiveThread')"
-      @unarchive-thread="emit('unarchiveThread')"
-      @move-thread="onMoveThread"
-      @add-thread-to-mailbox="(mailboxId: string) => fileThread(mailboxId, true)"
-      @remove-thread-from-mailbox="(mailboxId: string) => fileThread(mailboxId, false)"
-      @set-spam-status="onSetSpamStatus"
-      @delete-thread="emit('deleteThread')"
-      @prev-thread="emit('prevThread')"
-      @next-thread="emit('nextThread')"
-      @print="printThread"
-    />
+  <!-- A thread beside the open one (`beside`, on a phone) lies over it, off to its side, out of
+       reach until a swipe makes it the open one. -->
+  <div
+    v-if="threadID"
+    class="flex h-full flex-col overflow-hidden"
+    :class="beside ? 'pointer-events-none absolute inset-0' : 'relative'"
+    :inert="!!beside"
+    :aria-hidden="beside ? 'true' : undefined"
+  >
+    <!-- Beside, the toolbar keeps its room unseen: the thread sits under the open one's, as it will
+         once it is the open one. A wrapper, as the toolbar has more than one root. -->
+    <div v-if="!readonly" class="contents" :class="{ invisible: beside }">
+      <ThreadHeader
+        :threads
+        :threads-loading="threadsLoading"
+        :thread
+        :can-go-next="canGoNext"
+        :remindable="replyReminder.remindable.value"
+        :failed="loadFailed"
+        @set-seen="setThreadSeen"
+        @set-pinned="onSetPinned"
+        @snooze="(until: string) => emit('snoozeThread', until)"
+        @unsnooze="emit('unsnoozeThread')"
+        @remind="remindReply"
+        @archive-thread="emit('archiveThread')"
+        @unarchive-thread="emit('unarchiveThread')"
+        @move-thread="onMoveThread"
+        @add-thread-to-mailbox="(mailboxId: string) => fileThread(mailboxId, true)"
+        @remove-thread-from-mailbox="(mailboxId: string) => fileThread(mailboxId, false)"
+        @set-spam-status="onSetSpamStatus"
+        @delete-thread="emit('deleteThread')"
+        @prev-thread="emit('prevThread')"
+        @next-thread="emit('nextThread')"
+        @print="printThread"
+      />
+    </div>
     <!-- A swipe (`swipe`, on a phone) pulls only the thread's own part — subject, messages,
 		     reply bar — sideways under the finger, the toolbar above staying put, with the thread
-		     it would go to showing beside it. Keyed per thread on mobile, so the one it goes to
-		     comes in fresh, at the top. Desktop keys statically: switching threads never remounts. -->
+		     it would go to beside it. Keyed per thread on mobile, so one opened from the list comes
+		     in fresh, at the top. Desktop keys statically: switching threads never remounts. -->
     <div class="relative min-h-0 flex-1 overflow-hidden">
-      <template v-if="swipe && (swipe.dx || swipe.settling)">
-        <div
-          v-for="side in peeks"
-          :key="side.offset"
-          class="absolute inset-0 overflow-hidden"
-          :style="trackStyle(side.offset)"
-          aria-hidden="true"
-        >
-          <MailThreadSkeleton :peek="side.peek ?? undefined" />
-        </div>
-      </template>
-      <div
-        :key="isMobile ? threadID : 'thread'"
-        class="flex h-full flex-col"
-        :style="trackStyle(0)"
-      >
+      <div :key="isMobile ? threadID : 'thread'" class="flex h-full flex-col" :style="trackStyle">
         <!-- A phone sets each message on a card of its own, outlined on the page's own ground. -->
         <div ref="threadContainer" class="flex-1 overflow-y-auto">
           <!-- A thread that could not be fetched says so where it would have been, with a way to
@@ -993,6 +989,7 @@ import type {
   Mailbox,
   MailboxData,
   MailCopy,
+  Recipient,
   ScreenedAddress,
 } from '@/apps/mail/types'
 import {
@@ -1035,11 +1032,12 @@ import {
   mailCopyIds,
 } from '@/apps/mail/utils/mailCopies'
 import type { NamedDate } from '@/apps/mail/utils/mailDates'
-import { getSenderInitial, recipientsSummary } from '@/apps/mail/utils/participants'
+import { getSenderInitial } from '@/apps/mail/utils/participants'
 import { printMessages, type PrintedMessage } from '@/apps/mail/utils/printMail'
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { returnedStrip } from '@/apps/mail/utils/snoozeTimes'
 import { submissionRow } from '@/apps/mail/utils/submission'
+import type { SwipeOffset } from '@/apps/mail/utils/swipeGesture'
 import {
   foldedNames,
   holdNewestOpen,
@@ -1068,6 +1066,7 @@ const {
   // `?? !readonly` fallback — every caller that didn't pass it would silently stop marking read.
   marksSeen = true,
   swipe,
+  beside,
   account,
   landOn,
 } = defineProps<{
@@ -1099,6 +1098,12 @@ const {
   marksSeen?: boolean
   /** Where a swipe has the thread, on a phone (see useThreadSwipe). */
   swipe?: ThreadSwipe
+  /**
+   * Drawn beside the open thread, that way, for a swipe to bring in (see ThreadSlot): it looks as it
+   * will open, and does nothing of its own until it is the open one — it marks nothing read, takes
+   * no keys, names no page, and leaves the pane where it is.
+   */
+  beside?: SwipeOffset
 }>()
 const emit = defineEmits([
   'reloadMails',
@@ -1123,26 +1128,16 @@ const emit = defineEmits([
   'deleteMail',
 ])
 const { isMobile } = useScreenSize()
-// The threads either side, where there are any, as they show while the page is pulled
-const peeks = computed(() =>
-  swipe
-    ? (
-        [
-          { offset: 1, peek: swipe.next },
-          { offset: -1, peek: swipe.prev },
-        ] as const
-      ).filter((side) => side.peek !== undefined)
-    : [],
-)
-// The page sits at 0 and the next thread a page to its right, all moved as far as the finger has
+// The open thread sits at 0 and the next a page to its right, all moved as far as the finger has
 // taken them; let go, they glide the rest of the way.
-const trackStyle = (offset: 0 | 1 | -1) =>
-  swipe && (swipe.dx || swipe.settling)
-    ? {
-        transform: `translateX(calc(${offset * 100}% + ${swipe.dx}px))`,
-        transition: swipe.settling ? `transform ${SETTLE_MS}ms ease-out` : undefined,
-      }
-    : undefined
+const trackStyle = computed(() => {
+  const dx = swipe?.dx ?? 0
+  if (!beside && !dx && !swipe?.settling) return undefined
+  return {
+    transform: `translateX(calc(${(beside ?? 0) * 100}% + ${dx}px))`,
+    transition: swipe?.settling ? `transform ${SETTLE_MS}ms ease-out` : undefined,
+  }
+})
 // Everything a sender has sent — the sender card's View all, as its Recent list is.
 const viewAllFrom = (email: string) =>
   router.push(mailSearchRoute(scopeAccountId.value, { from: email }))
@@ -1249,6 +1244,21 @@ const daysHeaded = computed(
 // The expanded header's second line: "to Pushkar", "to Pushkar and Neha", "to Pushkar,
 // Rushabh and Neha", "to Pushkar, Rushabh and 2 others". First names only — the full
 // roster with addresses is behind the chevron beside it.
+// The expanded header's second line: "to Pushkar", "to Pushkar and Neha", "to Pushkar,
+// Rushabh and Neha", "to Pushkar, Rushabh and 2 others". First names only — the full
+// roster with addresses is behind the chevron beside it.
+const recipientsSummary = (mail: Mail) => {
+  const ordered = [...mail.recipients].sort(
+    (a, b) => Number(b.type === 'To') - Number(a.type === 'To'),
+  )
+  const names = ordered.map((r: Recipient) => (r.display_name || r.email).split(' ')[0])
+  if (!names.length) return ''
+  if (names.length === 1) return __('to {0}', [names[0]])
+  if (names.length === 2) return __('to {0} and {1}', [names[0], names[1]])
+  if (names.length === 3) return __('to {0}, {1} and {2}', names)
+  return __('to {0}, {1} and {2} others', [names[0], names[1], String(names.length - 2)])
+}
+
 const collapsedMailNames = computed(() => stillFolded(foldedAway.value, thread.value || []))
 const isSomeSeen = computed(() => (thread.value || []).some(isMailSeen))
 const unseenCount = computed(
@@ -1297,7 +1307,7 @@ const hasStrip = computed(() => !readonly && (returned || !!replyReminder.remind
 const remindReply = (at: string) => replyReminder.remind(at).catch(raiseError)
 // Use the same messages as the heading: a directly opened thread may never occur in the list.
 usePageTitle(() =>
-  threadID && thread.value.length
+  threadID && thread.value.length && !beside
     ? appDocumentTitle(thread.value[0].subject || __('[No subject]'), 'Mail')
     : '',
 )
@@ -1320,6 +1330,7 @@ watch(
     // A thread that is gone, its mail deleted or moved out of reach, has nothing to show: back to
     // the list, which drops its row. One that could not be fetched stays, to say so (loadFailed).
     if (threadFallback.status === 'success' && !threadFallback.data?.length) {
+      if (beside) return
       goToMailbox()
       emit('reloadMails')
     } else if (threadFallback.data?.length) rederive()
@@ -1367,7 +1378,12 @@ watch(heldDrafts, (now, before) => {
   // before the rows have it. They are read again and bring it, as a phone's drafts follow the rows
   // (see syncWithSource). Without, it waited for the next sync, the list's own reload being Drafts'
   // and Sent's.
-  if (isMobile.value && threadID && released.some((id) => !source.some((mail) => mail.id === id)))
+  if (
+    isMobile.value &&
+    threadID &&
+    !beside &&
+    released.some((id) => !source.some((mail) => mail.id === id))
+  )
     emit('reloadMails')
   const shown = new Set(thread.value.map((mail: Mail) => mail.id))
   const back = transformThreadMails(source).filter(
@@ -1492,6 +1508,7 @@ const loadThread = () => {
   }
   const data = transformThreadMails(source)
   if (!data.length) {
+    if (beside) return
     goToMailbox()
     emit('reloadMails')
     return
@@ -1508,7 +1525,7 @@ const loadThread = () => {
   // says only that a window was opened from this pane at some point and stays true across a move to
   // another conversation.
   const held = composeWindowDraft()
-  if (held && data.some((mail: Mail) => mail.id === held) && !data.some(isPoppedOut))
+  if (!beside && held && data.some((mail: Mail) => mail.id === held) && !data.some(isPoppedOut))
     closeComposeWindow()
   data.forEach((mail) => {
     if (mail.draft) {
@@ -1521,8 +1538,21 @@ const loadThread = () => {
   // mailboxes (e.g. Sent) that aren't shown in this view. The Screener included: reading there is
   // still reading, and leaving it unread left the "waiting to be screened" dot burning after you had
   // looked and simply not decided yet.
-  if (marksSeen && source.flatMap(mailCopies).some((copy) => !copy.seen)) setThreadSeen(true)
+  markSeen(source)
 }
+const markSeen = (source: Mail[]) => {
+  if (marksSeen && !beside && source.flatMap(mailCopies).some((copy) => !copy.seen))
+    setThreadSeen(true)
+}
+// Brought in by a swipe, it is read now, as one opened from the list is
+watch(
+  () => beside,
+  (now) => {
+    if (now) return closeQuickReply()
+    const source = sourceMessages()
+    if (source?.length) markSeen(source)
+  },
+)
 
 // Mark the whole conversation seen/unseen — every message across all mailboxes, not just the ones
 // shown in this view — so the seen state stays consistent (opening reads all; Mark as Unread unreads
@@ -2159,7 +2189,7 @@ const discardLocalDraft = (mail: string) => {
 const handleKeydown = (e: KeyboardEvent) => {
   // Read-only views (the Screener) expose no reply/forward, so their shortcuts are inert too.
   // The listener sits on window, so it only acts while a Mail route is active.
-  if (readonly || !isMailRoute(route)) return
+  if (readonly || beside || !isMailRoute(route)) return
   // Chrome fires a keydown with no key when it autofills a field.
   if (!e.key) return
   const key = e.key.toLowerCase()

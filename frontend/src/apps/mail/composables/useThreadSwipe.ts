@@ -1,29 +1,23 @@
-import { onMounted, onUnmounted, reactive, readonly } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, readonly, shallowReactive, watch } from 'vue'
 
 import { createSwipeGesture, type SwipeOffset } from '@/apps/mail/utils/swipeGesture'
 
-/** What shows of the thread a swipe is bringing in, before it opens. */
-export interface ThreadPeek {
-  subject: string
-  sender: string
-  /** The letter on the sender's avatar, and their picture where they have one. */
-  initial: string
-  image?: string
-  /** Who it went to, as the open message says it (see recipientsSummary). */
-  to: string
-  receivedAt: string
-}
-
-/**
- * Where an open thread stands under the finger: how far it is pulled sideways, whether it is on its
- * way to rest, and the threads either side of it, as they show while it is pulled. A side's peek is
- * undefined where there is no thread that way, and null where there is one still to load.
- */
+/** Where an open thread stands under the finger: how far it is pulled sideways, and whether it is on
+ * its way to rest. */
 export interface ThreadSwipe {
   dx: number
   settling: boolean
-  next?: ThreadPeek | null
-  prev?: ThreadPeek | null
+}
+
+/**
+ * One of the threads the pane draws: the open one, or one either side of it (`beside`), drawn
+ * already, ready to be pulled in. `key` keeps each one's place in the pane, so the one a swipe brings
+ * in becomes the open one where it is, without being drawn again.
+ */
+export interface ThreadSlot {
+  id?: string
+  key: string
+  beside?: SwipeOffset
 }
 
 /** How long a let-go page takes to come to rest, or to go; MailThread's transition is as long. */
@@ -51,22 +45,27 @@ function inSidewaysScroller(from: Element) {
 /**
  * Swipe-to-page on an open thread, on a phone: the thread follows the finger sideways with the next
  * (or previous) thread showing beside it, and let go, either goes on to that one or settles back.
- * The view says what is either side and how to step there; this owns the gesture and where the page
- * stands, for MailThread to draw.
+ * The threads either side are drawn as soon as one opens (`slots`), so the one pulled in is there
+ * already, read, and is the open one once it lands. The view says what is either side and how to
+ * step there; this owns the gesture, where the page stands and which threads it draws, for the view
+ * and MailThread to draw.
  *
  * Touches over a message body happen inside its frame and never reach the pane, so the frame sends
  * each point up and EmailContent re-sends it as an `email-swipe-point` window event, which this
  * listens to as well as the pane's own touches.
  */
-export function useThreadSwipe({
+export function useThreadSwipe<Pane>({
   enabled,
-  peek,
+  open,
+  byOffset,
   step,
 }: {
   enabled: () => boolean
-  /** The thread a step that way would open, as it should show coming in. */
-  peek: (offset: SwipeOffset) => ThreadPeek | null | undefined
-  /** Opens the thread that way. The page stays where the swipe took it until this settles. */
+  /** The open thread. */
+  open: () => string | undefined
+  /** The loaded thread that way from the open one, if there is one. */
+  byOffset: (offset: SwipeOffset) => string | undefined
+  /** Opens the thread that way. */
   step: (offset: SwipeOffset) => unknown
 }) {
   const gesture = createSwipeGesture()
@@ -74,14 +73,48 @@ export function useThreadSwipe({
   let settle: ReturnType<typeof setTimeout> | undefined
 
   function rest() {
-    Object.assign(swipe, { dx: 0, settling: false, next: undefined, prev: undefined })
+    clearTimeout(settle)
+    Object.assign(swipe, { dx: 0, settling: false })
   }
+  // The thread it went to is in the middle now, where the swipe left it: the page rests in the same
+  // render, before it is drawn (a watcher runs before the render it is part of).
+  watch(open, rest)
+
+  // Keyed by thread and in list order, so a step keeps the two threads it shares with the last
+  // three where they were, in the same order: the one coming in is the element it lands as, and
+  // nothing is moved (moving a message's frame would load it again). Off a phone there is one, and
+  // one key for every thread: switching draws nothing again, as it always has.
+  const slots = computed<ThreadSlot[]>(() => {
+    const id = open()
+    if (!enabled() || !id) return [{ id, key: 'open' }]
+    const prev = byOffset(-1)
+    const next = byOffset(1)
+    return [
+      ...(prev ? [{ id: prev, key: prev, beside: -1 as const }] : []),
+      { id, key: id },
+      ...(next ? [{ id: next, key: next, beside: 1 as const }] : []),
+    ]
+  })
+
+  // The open thread's pane, for the view to reach into, whichever slot holds it. Held by slot, not
+  // by order: a slot's ref is let go and set again as it is drawn, in no set order among them.
+  const panes = shallowReactive(new Map<string, Pane>())
+  const holdPane = (slot: ThreadSlot) => (pane: unknown) => {
+    if (!pane) {
+      panes.delete(slot.key)
+      return
+    }
+    // SAFETY: bound only as the ref of the view's thread pane in that slot.
+    panes.set(slot.key, pane as Pane)
+  }
+  const openPane = computed(() => {
+    const slot = slots.value.find((each) => !each.beside)
+    return (slot && panes.get(slot.key)) ?? null
+  })
 
   function start(x: number, y: number, count: number) {
     // A page still on its way somewhere is left to get there
     if (!enabled() || swipe.settling) return gesture.cancel()
-    swipe.next = peek(1)
-    swipe.prev = peek(-1)
     gesture.start(x, y, performance.now(), count)
   }
 
@@ -89,22 +122,21 @@ export function useThreadSwipe({
   function move(x: number, y: number) {
     const { phase, dx } = gesture.move(x, y, performance.now())
     if (phase !== 'drag') return false
-    const way = dx < 0 ? swipe.next : swipe.prev
-    swipe.dx = way === undefined ? dx * RESIST : dx
+    swipe.dx = byOffset(dx < 0 ? 1 : -1) ? dx : dx * RESIST
     return true
   }
 
   function end(x: number) {
     if (swipe.settling) return
     const offset = gesture.end(x, performance.now(), window.innerWidth)
-    const goes = offset !== null && (offset > 0 ? swipe.next : swipe.prev) !== undefined
+    const goes = offset !== null && !!byOffset(offset)
     if (!goes && !swipe.dx) return rest()
 
     swipe.settling = true
     swipe.dx = goes ? -offset * window.innerWidth : 0
     clearTimeout(settle)
     settle = setTimeout(async () => {
-      // The thread it went to takes the page's place as the page comes back, in the same render
+      // Opening it rests the page (see above); this is for a step that went nowhere
       if (goes) await step(offset)
       rest()
     }, SETTLE_MS)
@@ -147,5 +179,14 @@ export function useThreadSwipe({
     clearTimeout(settle)
   })
 
-  return { swipe: readonly(swipe), onTouchStart, onTouchMove, onTouchEnd, onTouchCancel }
+  return {
+    swipe: readonly(swipe),
+    slots,
+    holdPane,
+    openPane,
+    onTouchStart,
+    onTouchMove,
+    onTouchEnd,
+    onTouchCancel,
+  }
 }

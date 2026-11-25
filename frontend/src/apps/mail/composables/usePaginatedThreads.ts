@@ -1,11 +1,9 @@
 import { useIntersectionObserver } from '@vueuse/core'
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
-import type { ThreadPeek } from '@/apps/mail/composables/useThreadSwipe'
 import type { Thread } from '@/apps/mail/types'
 import { beginListRead } from '@/apps/mail/utils/draftsInList'
-import { getSenderInitial, recipientsSummary } from '@/apps/mail/utils/participants'
 
 /** Rows per window; the server reports whether another window exists. */
 export const PAGE_LENGTH = 25
@@ -62,26 +60,6 @@ export function usePaginatedThreads({
   const threadIDs = computed(() => rows().map(threadKey))
   const threadByOffset = (offset: number, from = openThreadID()) =>
     threadIDs.value[threadIDs.value.indexOf(from ?? '') + offset]
-  /**
-   * The thread a step from the open one would open, as a swipe shows it coming in: null where it is
-   * past the loaded rows, still to load, and undefined where there is none.
-   */
-  const peekByOffset = (offset: number): ThreadPeek | null | undefined => {
-    const at = threadIDs.value.indexOf(openThreadID() ?? '')
-    if (at < 0) return undefined
-    const row = rows()[at + offset]
-    if (!row) return offset > 0 && hasMore.value ? null : undefined
-    // The latest message, as the row describes it: the one a lone message's thread opens on
-    const mail = row.messages?.at(-1) ?? row
-    return {
-      subject: row.subject ?? '',
-      sender: mail.from_name || mail.from_email,
-      initial: getSenderInitial(mail) ?? '',
-      image: mail.user_image,
-      to: recipientsSummary(mail),
-      receivedAt: mail.received_at,
-    }
-  }
   let pendingEdge = false
   async function loadMore() {
     if (!hasMore.value || isFetching.value) return
@@ -103,6 +81,16 @@ export function usePaginatedThreads({
       pendingEdge = false
     }
   }
+  // A thread open at the end of what is loaded brings in the next window, so the one after it is
+  // there to step or swipe to (see useThreadSwipe) before it is asked for. Once mounted: the caller
+  // may declare its rows further down.
+  onMounted(() =>
+    watch(
+      () => !!openThreadID() && threadIDs.value.at(-1) === openThreadID(),
+      (atEnd) => atEnd && void loadMore(),
+      { immediate: true },
+    ),
+  )
   /**
    * Read the list again from its first window. Every such read goes through here: its rows settle
    * the drafts shown on them (see beginListRead).
@@ -194,7 +182,6 @@ export function usePaginatedThreads({
     canGoNext: hasMore,
     threadIDs,
     threadByOffset,
-    peekByOffset,
     loadMoreThenOpenEdge,
     topUpIfShort,
     scrollListToTop: () =>

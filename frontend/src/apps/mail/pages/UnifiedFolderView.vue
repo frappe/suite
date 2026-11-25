@@ -259,48 +259,56 @@
 				     opening a cross-account thread does NOT switch the active account.
 				     set-seen passes `seen` as `silent` too: the pane only marks read silently
 				     (on open), while its explicit action is Mark as Unread — as in MailboxView. -->
-        <MailThread
-          v-if="openRow || !threadID"
-          ref="mailThread"
-          :swipe="threadSwipe"
-          :account="openRow?.account"
-          :mailbox="openRow?.view_mailbox || ''"
-          :thread-i-d="threadID"
-          :threads="headerThreadIDs"
-          :can-go-next="canGoNext"
-          :messages="openRow?.messages"
-          :returned="!!openRow?.returned"
-          :no-reply="!!openRow?.no_reply"
-          :snoozed-at="openRow?.snoozed_at"
-          :returned-at="openRow?.returned_at"
-          @reload-mails="reloadPaneThread()"
-          @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
-          @set-flagged="
-            (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
-          "
-          @set-pinned="
-            (ids: string[], pinned: boolean, folder: string) =>
-              pinMails(openRow!.account!, ids, pinned, folder)
-          "
-          @snooze-thread="(until: string) => snoozeTo([openRow!], until)"
-          @unsnooze-thread="unsnoozeThreads([openRow!])"
-          @clear-returned="clearReturned([openRow!])"
-          @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-          @delete-thread="
-            isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
-          "
-          @archive-thread="handleArchive(openRow!)"
-          @unarchive-thread="handleUnarchive(openRow!)"
-          @sync-unseen="handleSyncUnseen"
-          @add-thread-to-mailbox="handleAddToMailbox"
-          @remove-thread-from-mailbox="handleRemoveFromMailbox"
-          @set-spam-status="handleSetSpamStatus"
-          @move-mail="handleMailMove"
-          @mark-mail-spam="handleMailSpam"
-          @delete-mail="handleMailDelete"
-          @prev-thread="stepOpenThread(-1)"
-          @next-thread="stepOpenThread(1)"
-        />
+        <!-- On a phone, the threads either side of the open one too, ready for a swipe (see
+             ThreadSlot). Only the open one acts, so its handlers are the open row's. -->
+        <template v-if="openRow || !threadID">
+          <MailThread
+            v-for="pane in threadPanes"
+            :key="pane.key"
+            :ref="holdThreadPane(pane)"
+            :swipe="threadSwipe"
+            :beside="pane.beside"
+            :account="pane.row?.account"
+            :mailbox="pane.row?.view_mailbox || ''"
+            :thread-i-d="pane.row?.thread_id ?? threadID"
+            :threads="headerThreadIDs"
+            :can-go-next="canGoNext"
+            :messages="pane.row?.messages"
+            :returned="!!pane.row?.returned"
+            :no-reply="!!pane.row?.no_reply"
+            :snoozed-at="pane.row?.snoozed_at"
+            :returned-at="pane.row?.returned_at"
+            @reload-mails="reloadPaneThread()"
+            @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
+            @set-flagged="
+              (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
+            "
+            @set-pinned="
+              (ids: string[], pinned: boolean, folder: string) =>
+                pinMails(openRow!.account!, ids, pinned, folder)
+            "
+            @snooze-thread="(until: string) => snoozeTo([openRow!], until)"
+            @unsnooze-thread="unsnoozeThreads([openRow!])"
+            @clear-returned="clearReturned([openRow!])"
+            @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
+            @delete-thread="
+              isTrashFolder || folder === 'drafts'
+                ? confirmDelete([openRow!])
+                : handleTrash(openRow!)
+            "
+            @archive-thread="handleArchive(openRow!)"
+            @unarchive-thread="handleUnarchive(openRow!)"
+            @sync-unseen="handleSyncUnseen"
+            @add-thread-to-mailbox="handleAddToMailbox"
+            @remove-thread-from-mailbox="handleRemoveFromMailbox"
+            @set-spam-status="handleSetSpamStatus"
+            @move-mail="handleMailMove"
+            @mark-mail-spam="handleMailSpam"
+            @delete-mail="handleMailDelete"
+            @prev-thread="stepOpenThread(-1)"
+            @next-thread="stepOpenThread(1)"
+          />
+        </template>
         <!-- The open thread's row is on its way with the list: the pane stands in outline until
              it lands, not a blank half. Its toolbar is the thread's own, which outlines its buttons
              while it has no thread. -->
@@ -356,7 +364,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
-import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, inject, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery } from '@/api'
@@ -516,7 +524,6 @@ const {
   canGoNext,
   threadIDs,
   threadByOffset,
-  peekByOffset,
   loadMoreThenOpenEdge,
   topUpIfShort,
 } = usePaginatedThreads({
@@ -727,24 +734,30 @@ const headerThreadIDs = computed(() => (threadRows.value ?? []).map((t: Thread) 
 
 // The loaded row the open thread belongs to. Every mutation reads its account/archive/trash
 // off the row, so the pane acts on the owning account without consulting the active one.
-const openRow = computed(() =>
-  openKey.value
-    ? (threadRows.value ?? []).find((t: Thread) => threadKey(t) === openKey.value)
-    : undefined,
-)
+const rowByKey = (key?: string) =>
+  key ? (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key) : undefined
+const openRow = computed(() => rowByKey(openKey.value))
 
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
   swipe: threadSwipe,
+  slots: threadSlots,
+  holdPane: holdThreadPane,
+  openPane: mailThread,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
   onTouchCancel: onThreadTouchCancel,
-} = useThreadSwipe({
+} = useThreadSwipe<InstanceType<typeof MailThread>>({
   enabled: () => isMobile.value && !!threadID,
-  peek: peekByOffset,
+  open: () => openKey.value,
+  byOffset: threadByOffset,
   step: (offset) => stepOpenThread(offset),
 })
+// Slots are keyed by row key, which the pane splits back into its account and thread
+const threadPanes = computed(() =>
+  threadSlots.value.map((slot) => ({ ...slot, row: rowByKey(slot.id) })),
+)
 const stepOpenThread = (offset: number) => {
   const next = threadByOffset(offset)
   if (next) return openThread(next)
@@ -999,14 +1012,6 @@ const handleSyncUnseen = (ids: string[]) => {
   if (changed) thread.seen = 0
   refreshCounts()
 }
-const mailThread = useTemplateRef<{
-  syncFlagged: (ids: string[], flagged: boolean) => void
-  syncMailboxMembership: (mailboxId: string, add: boolean) => void
-  removeMailFromView: (mailId: string) => {
-    emptied: boolean
-    rollback: () => void
-  }
-}>('mailThread')
 
 // Folder membership shows as tags on the row and in the pane. Neither refetches, so both have to be
 // told — mirroring syncListMailboxMembership plus MailThread's own syncMailboxMembership.

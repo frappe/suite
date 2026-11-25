@@ -70,8 +70,9 @@
       @touchcancel.passive="emit('touchCancel', $event)"
     >
       <!-- A swipe moves the thread inside MailThread, whose toolbar must not move. The scroll
-			     wrapper must be h-full on desktop too, or the empty state's h-full collapses. -->
-      <div class="h-full overflow-y-auto">
+			     wrapper must be h-full on desktop too, or the empty state's h-full collapses. It holds
+			     the threads beside the open one (see ThreadSlot), over it, below the phone's inset. -->
+      <div class="relative h-full overflow-y-auto">
         <slot />
       </div>
     </div>
