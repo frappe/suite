@@ -369,7 +369,9 @@ const removeMeetLink = () => {
     (link) => typeof link.href !== 'string' || !link.href.includes('/meet/'),
   )
 }
-const inviteRooms = computed(() => (isNew.value ? (defaultInvite.data?.rooms ?? []) : []))
+const inviteRooms = computed<NonNullable<typeof defaultInvite.data>['rooms']>((previous) =>
+  show.value ? (isNew.value ? (defaultInvite.data?.rooms ?? []) : []) : (previous ?? []),
+)
 const meetAddress = (url: string) => url.match(/\/meet\/[^/?#]+/)?.[0].slice(1)
 const useRoom = (url: string) => {
   removeMeetLink()

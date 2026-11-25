@@ -1,6 +1,8 @@
 import type { OwnerRegistration } from '@/platform/server-state'
 import type { Operation } from '@/platform/transport'
 
+const roomLists = ['my_rooms', 'default_invite_room'] as const
+
 const effects = {
   update_settings: {
     invalidates: [
@@ -30,10 +32,11 @@ const effects = {
     invalidates: ['room_document', 'room_access', 'room_preview', 'get_waiting_room_details'],
   },
   rooms_post: {
-    invalidates: ['room_search', 'my_rooms', 'room_link_availability'],
+    invalidates: ['room_search', 'room_link_availability', ...roomLists],
   },
   scheduled_meetings_post: {
     invalidates: [
+      ...roomLists,
       'calendar.events_get',
       'calendar.get_calendar_events',
       'calendar.get_calendar_events_with_shared',
@@ -52,6 +55,7 @@ const effects = {
   recording_stop: { invalidates: ['recording_state', 'recording_preflight'] },
   calendar_meeting: {
     invalidates: [
+      ...roomLists,
       'calendar.events_get',
       'calendar.get_calendar_events',
       'calendar.get_calendar_events_with_shared',
@@ -59,7 +63,7 @@ const effects = {
       'calendar.search_calendar_events_with_shared',
     ],
   },
-  room_link: 'none',
+  room_link: { invalidates: roomLists },
   set_default_invite_room: { invalidates: ['default_invite_room'] },
 } as const
 

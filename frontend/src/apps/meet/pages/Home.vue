@@ -32,7 +32,7 @@
           ref="upcomingMeetingsRef"
         />
         <div
-          class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] gap-x-6 gap-y-8 empty:hidden"
+          class="grid grid-cols-[repeat(auto-fit,minmax(min(100%,20rem),1fr))] gap-x-6 gap-y-8 empty:hidden"
         >
           <RecentRooms />
           <RecentRecordings />
