@@ -537,11 +537,11 @@
                                 isCollapsed(mail)
                                   ? 'absolute right-0 top-1/2 hidden h-5 -translate-y-1/2 items-center gap-1 sm:group-hover/card:flex sm:group-has-[[data-state=open]]/card:flex'
                                   : thread.length > 1 || mail.draft
-                                    ? 'flex gap-1'
+                                    ? 'isolate flex gap-1'
                                     : /* A message alone has no card around it: its edge is
                                            the column's, so its icons stand out by their padding
                                            to line up with the toolbar's above. */
-                                      'flex gap-1 sm:-mr-1.5'
+                                      'isolate flex gap-1 sm:-mr-1.5'
                               "
                             >
                               <MailActions
@@ -578,9 +578,11 @@
 												     the same reason as the actions: the button overhangs rather than
 												     growing the row. -->
                           <!-- A phone's open card: More, Reply and the star, as a desktop's. -->
+                          <!-- isolate: each button's grown hit area lies under the buttons (see
+                               MailActions), so a tap on one's own box is never its neighbour's. -->
                           <div
                             v-if="isMobile && !isCollapsed(mail) && !readonly"
-                            class="-mr-2 flex items-center"
+                            class="isolate -mr-2 flex items-center"
                           >
                             <MailActions
                               :mailbox

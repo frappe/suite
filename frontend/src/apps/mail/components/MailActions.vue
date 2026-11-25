@@ -1,12 +1,14 @@
 <template>
   <!-- .stop lives on the wrapper: AdaptiveDropdown's mobile trigger opens via
 	     the click bubbling to its own span, so stopping on the Button itself
-	     would keep the sheet from opening. -->
+	     would keep the sheet from opening.
+	     Each button's grown hit area (touch-target) lies under the buttons, in the row's isolated
+	     stack (see MailThread): set 30px apart, the star's area otherwise took taps on More's edge. -->
   <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
     <AdaptiveDropdown :options="moreActions(mail)" align="end">
       <Button
         variant="ghost"
-        class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target"
+        class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target after:-z-10"
         :tooltip="isMobile ? undefined : __('More')"
         :aria-label="__('More')"
       >
@@ -21,7 +23,7 @@
     v-for="action in shown(mail).filter((d) => !d.star)"
     :key="action.label"
     variant="ghost"
-    class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target"
+    class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target after:-z-10"
     :tooltip="isMobile ? undefined : action.label"
     :aria-label="action.label"
     @click.stop="action.onClick"
@@ -37,7 +39,7 @@
     v-for="action in shown(mail).filter((d) => d.star)"
     :key="action.label"
     variant="ghost"
-    class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target"
+    class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target after:-z-10"
     :tooltip="isMobile ? undefined : action.label"
     :aria-label="action.label"
     @click.stop="action.onClick"
