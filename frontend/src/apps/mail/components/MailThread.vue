@@ -73,7 +73,8 @@
               /* Clear of the reply island over the foot (48px over a 12px gap, and the
                    phone's own inset under it), with a gutter's gap to spare. */
               'pb-[calc(4.5rem+env(safe-area-inset-bottom))]': isMobile && !thread?.at(-1)?.draft,
-              'pb-3': isMobile && thread?.at(-1)?.draft,
+              /* A draft last has no island under it: a gutter's gap, over the phone's inset. */
+              'pb-[calc(1.5rem+env(safe-area-inset-bottom))]': isMobile && thread?.at(-1)?.draft,
               'sm:pb-24': isComposeWindowOpen(),
               'sm:pb-6': !isComposeWindowOpen(),
               'sm:flex sm:h-full sm:flex-col': isDraftAlone,
@@ -219,8 +220,9 @@
                       isMobile && (thread.length > 1 || mail.draft) && !isCollapsed(mail),
                     'pb-4': isMobile && thread.length === 1 && !mail.draft,
                     'py-2.5': isMobile && isCollapsed(mail),
-                    // A phone's draft card opens at a tap anywhere, and answers it as a list row does.
-                    'active:bg-surface-gray-2': isMobile && mail.draft,
+                    // A phone's draft card opens at a tap anywhere, and answers it as a list row
+                    // does. A press on one of its buttons (⋯) is the button's, not the card's.
+                    '[&:active:not(:has(button:active))]:bg-surface-gray-2': isMobile && mail.draft,
                     'sm:rounded-7': thread.length > 1 || mail.draft,
                     // A collapsed row only holds one line — reading-card padding
                     // around it is what made the thread feel loose. A draft's card

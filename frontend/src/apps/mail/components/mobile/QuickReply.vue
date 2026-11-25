@@ -34,8 +34,9 @@
         ref="suggestions"
         class="bg-surface-elevation-2 pointer-events-auto mx-3.5 max-h-72 overflow-y-auto rounded-[24px] border py-1 shadow-xl [&:not(:has(li))]:hidden"
       />
-      <!-- Measured whole for the toasts, which rise above it (see phoneBarsAway). -->
-      <div ref="lift">
+      <!-- Measured whole for the toasts, which rise above it (see phoneBarsAway). Positioned, so
+           the bar's offset is taken from here and not from the full-screen layer around it. -->
+      <div ref="lift" class="relative">
         <div
           ref="bar"
           class="pointer-events-auto px-3.5 pt-2"
@@ -60,9 +61,10 @@
               <!-- Rounded as the pill it grew from: half its 48px row, which keeps a one-row forward
                    the same shape as the reply island and sits even around the 40px buttons inset
                    4px from the edge. The scale has nothing between 20px and 100px. -->
+              <!-- A send dims what it holds, not the island: the thread would show through. -->
               <div
                 class="bg-surface-elevation-2 rounded-[24px] border shadow-xl"
-                :class="{ 'opacity-50': isSending }"
+                :class="{ '*:opacity-50': isSending }"
                 @mousedown="keepFocus"
               >
                 <!-- 48px tall, as the reply island is: its 40px buttons sit 3px inside its 1px
