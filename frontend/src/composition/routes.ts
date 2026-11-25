@@ -35,8 +35,10 @@ function areaMeta(
  * The app of its own on a phone (an area with its own phone bar, as Mail) that `path` is in. Its
  * error pages lead back into it: a phone app has no way out to the Suite.
  */
-function phoneAppAt(path: unknown) {
-  if (typeof path !== 'string') return undefined
+function phoneAppAt(target: unknown) {
+  if (typeof target !== 'string') return undefined
+  // A failed page's address keeps its query and hash.
+  const path = target.split(/[?#]/)[0]
   const area = areaDefinitions.find(
     ({ phoneNav, to }) => phoneNav && (path === to || path.startsWith(`${to}/`)),
   )

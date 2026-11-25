@@ -89,7 +89,7 @@ describe('a page whose code fails to load', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/broken', component: () => Promise.reject(failure) },
-        { path: '/mail/broken', component: () => Promise.reject(failure) },
+        { path: '/mail', component: () => Promise.reject(failure) },
         { path: '/working', component: { render: () => h('p', 'Working page') } },
         ...routes,
       ],
@@ -160,7 +160,7 @@ describe('a page whose code fails to load', () => {
     phone.isMobile.value = true
     const { router, root } = mountRouter(new TypeError('Failed to fetch'))
 
-    await open(router, '/mail/broken')
+    await open(router, '/mail?compose=1')
     const home = root.querySelector('a')
     expect([home?.textContent, home?.getAttribute('href')]).toEqual(['Go to Mail', '/mail'])
 
