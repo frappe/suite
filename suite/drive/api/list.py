@@ -446,7 +446,11 @@ def get_query_data(
     query = (
         query.left_join(DriveUser)
         .on(DriveUser.name == DriveFile.owner)
-        .select(DriveUser.full_name.as_("owner_full_name"), DriveUser.user_image.as_("owner_image"))
+        .select(
+            DriveUser.full_name.as_("owner_full_name"),
+            DriveUser.user_image.as_("owner_image"),
+            DriveUser.email.as_("owner_email"),
+        )
     )
 
     # Apply favourites filter

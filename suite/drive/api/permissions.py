@@ -141,7 +141,12 @@ def get_entity_with_permissions(entity_name: str | None = None):
         ]
         frappe.throw("You don't have access to this file.", frappe.PermissionError)
 
-    owner_info = frappe.db.get_value("User", entity.owner, ["user_image", "full_name"], as_dict=True) or {}
+    owner_info = (
+        frappe.db.get_value(
+            "User", entity.owner, ["user_image", "full_name", "email as owner_email"], as_dict=True
+        )
+        or {}
+    )
     breadcrumbs = {"breadcrumbs": get_valid_breadcrumbs(entity.name, user_access)}
     favourite = frappe.db.get_value(
         "Drive Favourite",

@@ -10,7 +10,7 @@
         <li>
           <span class="inline-block w-24 text-ink-gray-5">{{ __('Owner') }}:</span>
           <span class="col-span-1">
-            <a :href="`mailto:${entity.owner}`">{{ entity.owner }}</a>
+            <a :href="`mailto:${entity.owner_email}`">{{ entity.owner_email || entity.owner }}</a>
           </span>
         </li>
         <li>
