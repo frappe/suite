@@ -30,7 +30,7 @@ export const useChatStore = defineStore('meet-chat', {
     chatMessages: [],
     hasUnreadMessages: false,
     hasUnavailableEncryptedHistory: false,
-    reactionsByMessage: {} as Record<string, ChatReactionsUpdated['reactions']>,
+    reactionsByMessage: {},
     hostOnlyChat: false,
     pinnedMessage: null,
     expiredPinnedMessageId: null,
