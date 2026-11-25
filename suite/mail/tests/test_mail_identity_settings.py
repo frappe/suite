@@ -121,14 +121,23 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
             # an auto-reply is read as plain text by whoever gets it.
             self.assertEqual(vacation["text_body"], "Back next week.\nAsk ops@example.com if urgent.")
 
-            # Turning vacation off reactivates the previously active (automation) script.
-            update_vacation_response(self.account, enabled=0)
-            self.assertFalse(get_vacation_response(self.account)["enabled"])
-
+            # On, the reply is sent by the automation script, which stays the active one.
             from suite.mail.api.sieve import get_sieve_scripts
+            from suite.mail.doctype.sieve_script.sieve_script import SieveScript
 
             scripts = {s["_name"]: s for s in get_sieve_scripts(self.account)}
             self.assertTrue(scripts[AUTOMATION_SCRIPT_NAME]["active"])
+            (automation,) = SieveScript._get_sieve_scripts(
+                self.account, [scripts[AUTOMATION_SCRIPT_NAME]["id"]], download_content=True
+            )
+            self.assertIn('vacation :subject "Out of office"', automation["content"])
+
+            update_vacation_response(self.account, enabled=0)
+            self.assertFalse(get_vacation_response(self.account)["enabled"])
+            (automation,) = SieveScript._get_sieve_scripts(
+                self.account, [scripts[AUTOMATION_SCRIPT_NAME]["id"]], download_content=True
+            )
+            self.assertNotIn("vacation :", automation["content"])
 
         # From/to validation.
         with self.set_user(self.member.email):

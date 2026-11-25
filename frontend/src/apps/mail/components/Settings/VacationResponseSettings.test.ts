@@ -9,10 +9,7 @@ const saved = vi.hoisted<{ value: Record<string, unknown> | null }>(() => ({ val
 const run = vi.hoisted(() => vi.fn())
 const reported = vi.hoisted(() => vi.fn())
 const failureToast = vi.hoisted(() => vi.fn())
-// The scripts on the mail server, of which one runs at a time
-const scripts = vi.hoisted<{ value: { _name: string; active: number }[] }>(() => ({ value: [] }))
 
-type Answer = { label: string; onClick: () => void }
 vi.mock('frappe-ui', async () => {
   const { defineComponent, h } = await import('vue')
   const passthrough = defineComponent({
@@ -29,21 +26,6 @@ vi.mock('frappe-ui', async () => {
         return () => props.message && h('p', { role: 'alert' }, props.message)
       },
     }),
-    // An open dialog asks its question and offers its answers
-    Dialog: defineComponent(
-      (props: { open?: boolean; title?: string; message?: string; actions?: Answer[] }) => () => {
-        if (!props.open) {
-          return null
-        }
-
-        return h('div', { role: 'dialog' }, [
-          h('h2', props.title),
-          h('p', props.message),
-          props.actions?.map((action) => h('button', { onClick: action.onClick }, action.label)),
-        ])
-      },
-      { props: ['open', 'title', 'message', 'actions'] },
-    ),
     SettingsBody: passthrough,
     SettingsHeader: passthrough,
     SettingsRow: passthrough,
@@ -89,7 +71,7 @@ vi.mock('@/platform/session', () => ({
   useSession: () => ({ user: { value: { timeZone: 'Asia/Kolkata' } } }),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({
-  userStore: () => ({ accountId: 'account', sieveScripts: { data: scripts.value } }),
+  userStore: () => ({ accountId: 'account' }),
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
 vi.mock('@/apps/mail/utils/composables', () => ({
@@ -141,7 +123,6 @@ beforeEach(() => {
   run.mockReset()
   reported.mockReset()
   failureToast.mockReset()
-  scripts.value = []
 })
 
 it('starts from no dates once an absence is off and over, keeping its words', async () => {
@@ -215,44 +196,4 @@ it('saves a picked time as UTC, and a date left alone as it was read', async () 
 it('reads a saved time to the minute, as the picker hands times back', async () => {
   const { field } = await mount(1, { from: '2099-06-01T09:00:45Z', to: AHEAD.to })
   expect(field('Starts')!.value).toBe('2099-06-01 14:30:00')
-})
-it('asks before turning on, in its own words, when that stops folder automation', async () => {
-  scripts.value = [{ _name: 'frappe_mail_automation', active: 1 }]
-  const { root, turnOn } = await mount(0, AHEAD)
-  await turnOn()
-  root.querySelector<HTMLElement>('[label="Save"]')!.click()
-  await nextTick()
-  const question = requireTestElement(root.querySelector('[role="dialog"]'), HTMLElement)
-  expect(question.querySelector('h2')?.textContent).toBe('Turn on auto-reply?')
-  expect(question.querySelector('p')?.textContent).toContain('Folder automation stops sorting mail')
-  expect(run).not.toHaveBeenCalled()
-
-  const [cancel, confirm] = Array.from(question.querySelectorAll('button'))
-  expect(cancel.textContent).toBe('Cancel')
-  expect(confirm.textContent).toBe('Turn on auto-reply')
-  confirm.click()
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(run).toHaveBeenCalledWith(expect.objectContaining({ enabled: true }))
-  expect(root.querySelector('[role="dialog"]')).toBeNull()
-})
-it('names the rule of the user’s own that turning on would stop', async () => {
-  scripts.value = [{ _name: 'Newsletters', active: 1 }]
-  const { root, turnOn } = await mount(0, AHEAD)
-  await turnOn()
-  root.querySelector<HTMLElement>('[label="Save"]')!.click()
-  await nextTick()
-  const warning = root.querySelector('[role="dialog"] p')?.textContent
-  expect(warning).toContain('Your rule “Newsletters” stops running')
-  expect(warning).not.toContain('Folder automation')
-})
-it('saves nothing when the question is cancelled', async () => {
-  scripts.value = [{ _name: 'frappe_mail_automation', active: 1 }]
-  const { root, turnOn } = await mount(0, AHEAD)
-  await turnOn()
-  root.querySelector<HTMLElement>('[label="Save"]')!.click()
-  await nextTick()
-  root.querySelector<HTMLElement>('[role="dialog"] button')!.click()
-  await nextTick()
-  expect(root.querySelector('[role="dialog"]')).toBeNull()
-  expect(run).not.toHaveBeenCalled()
 })

@@ -1,6 +1,7 @@
 # Copyright (c) 2026, Frappe Technologies Pvt. Ltd. and contributors
 # For license information, please see license.txt
 
+import base64
 import re
 import time
 from collections.abc import Generator
@@ -19,6 +20,7 @@ from suite.mail.doctype.screened_email_address.screened_email_address import (
     get_effective_screened_email_addresses,
 )
 from suite.mail.doctype.user_account.user_account import get_enabled_account_user, get_user_for_jmap_account
+from suite.mail.doctype.vacation_response.vacation_response import get_vacation_reply
 from suite.mail.jmap import (
     JMAP_REFUSALS,
     SuiteJMAPClient,
@@ -430,55 +432,6 @@ def get_active_sieve_script_id(account: str) -> str | None:
         return query_result["ids"][0]
 
 
-def is_vacation_script_active(account: str) -> bool:
-    """Whether the account's currently active sieve script is the read-only vacation script.
-
-    Used to keep the automation sieve from being activated over an active vacation auto-responder.
-    """
-
-    active_id = get_active_sieve_script_id(account)
-    if not active_id:
-        return False
-
-    scripts = SieveScript._get_sieve_scripts(account, [active_id])
-    return bool(scripts) and bool(scripts[0].get("read_only"))
-
-
-def activate_last_active_sieve_script(account: str) -> None:
-    """Activates the last active sieve script for the given account, if any, and clears the last active sieve script setting."""
-
-    sieve_script_id = frappe.db.get_value("JMAP Account", account, "last_active_sieve_script_id")
-    if not sieve_script_id:
-        return
-
-    if sieve_scripts := SieveScript._get_sieve_scripts(account, [sieve_script_id], download_content=True):
-        sieve_script = sieve_scripts[0]
-
-        if (sieve_script.get("_name") or "").lower() != "vacation" and not sieve_script["active"]:
-            SieveScript._update_sieve_script(
-                account,
-                sieve_script_id,
-                sieve_script["_name"],
-                sieve_script["content"],
-                active=True,
-            )
-
-    set_last_active_sieve_script_id(account, None)
-
-
-def set_last_active_sieve_script_id(account: str, sieve_script_id: str | None = None) -> None:
-    """Sets the given sieve script ID as the last active sieve script for the given account."""
-
-    get_user_for_jmap_account(account, raise_exception=True)
-    frappe.db.set_value(
-        "JMAP Account",
-        account,
-        "last_active_sieve_script_id",
-        sieve_script_id,
-        update_modified=False,
-    )
-
-
 def format_sieve_script(account: str, script: dict) -> dict:
     """Format the sieve script for display."""
 
@@ -549,11 +502,17 @@ SCREENER_MAILBOX_NAME = "Screener"
 # other mail and shown there as from a new sender; allowing or denying the sender takes it off.
 UNSCREENED_KEYWORD = "unscreened"
 AUTOMATION_SCRIPT_NAME = "frappe_mail_automation"
-# "regex" is for the Category block (see `classification.sieve`), declared whether or not it is there.
+# "regex" is for the Category block (see `classification.sieve`), and "vacation" and "date" for the
+# Vacation block: declared whether or not the blocks are there.
 AUTOMATION_SCRIPT_REQUIRE = (
     'require ["fileinto", "mailbox", "imap4flags", "spamtest", "relational", "comparator-i;ascii-numeric", '
-    '"regex"];'
+    '"regex", "vacation", "date"];'
 )
+# Spam by the server's verdict (see `build_screening_gate`).
+_SPAM_TEST = 'spamtest :value "ge" :comparator "i;ascii-numeric" "5"'
+# The boundary between the parts of a reply with an HTML body. Free of quotes, so the reply's MIME
+# entity needs no escaping inside its Sieve string.
+_VACATION_BOUNDARY = "suite-vacation-reply"
 
 
 def maybe_build_automation_sieve(account: str, activate: bool = False) -> None:
@@ -567,10 +526,6 @@ def maybe_build_automation_sieve(account: str, activate: bool = False) -> None:
 
 def build_automation_sieve(account: str, activate: bool = False, raise_exception: bool = False) -> None:
     """Build the automation sieve script for the given account and optionally activate it.
-
-    Activation is skipped while the vacation sieve script is active, so rebuilding the automation
-    script (e.g. from a Mailbox Settings / Screened Email Address change) never disables the
-    vacation auto-responder. The vacation flow reactivates the last active script once vacation ends.
 
     Accounts whose resolved user is disabled or gone are skipped: the JMAP connection is made as
     that user, so the rebuild cannot work (e.g. the personal account of a deactivated employee) and
@@ -590,12 +545,7 @@ def build_automation_sieve(account: str, activate: bool = False, raise_exception
         doc = frappe.get_doc("Sieve Script", get_automation_script_name(account))
         doc.content = _build_automation_content(account)
 
-        # Activate the automation script unless vacation is active. `doc.active` is the freshly loaded
-        # state (load_from_db just fetched it), and only one script can be active at a time — so an
-        # already-active automation script means vacation isn't, and we skip the vacation lookup. That
-        # keeps the hot document-save path (where automation is already active) free of the two extra
-        # JMAP round-trips `is_vacation_script_active` would otherwise make.
-        if activate and not doc.active and not is_vacation_script_active(account):
+        if activate and not doc.active:
             doc.active = True
 
         doc.save()
@@ -619,9 +569,9 @@ def rebuild_all_automation_sieves() -> None:
     Changing a global Screened Email Address (one without an account) deliberately rebuilds nothing —
     an admin batches their global changes and then triggers this once, from the Screened Email Address
     list view. The rebuild refreshes script content only (activate=False): activating here would
-    override accounts whose active script is the vacation auto-responder or one the user wrote
-    themselves. Inactive automation scripts still pick the rules up when the account enables
-    screening or touches a rule, which activates the script.
+    override accounts whose active script is one the user wrote themselves. Inactive automation
+    scripts still pick the rules up when the account enables screening or touches a rule, which
+    activates the script.
     """
 
     frappe.only_for("System Manager")
@@ -640,8 +590,8 @@ def rebuild_all_automation_sieves() -> None:
 def enqueue_automation_sieve_rebuilds(accounts: list[str], job_id_prefix: str) -> None:
     """Rebuild the automation script of each account in the background, once the current transaction
     commits: a chain of long-queue jobs per batch of accounts, the batches side by side. Content only
-    (activate=False): activating would override an account whose active script is the vacation
-    auto-responder or one the user wrote themselves.
+    (activate=False): activating would override an account whose active script is one the user
+    wrote themselves.
 
     Only a batch's first job carries `job_id_prefix` and is deduplicated — a link carrying it would
     find the job before it still running, and be dropped. So a second call once a chain is under way
@@ -817,11 +767,19 @@ def get_automation_script_name(account: str) -> str:
 
 def _build_automation_content(account: str) -> str:
     content = AUTOMATION_SCRIPT_REQUIRE + "\n"
+    screened = get_effective_screened_email_addresses(account)
 
     # Category section, ahead of every block that files the mail: it only adds a keyword, which the
     # `fileinto` or `keep` of whichever block claims the mail then carries (RFC 5232).
     if classification.is_enabled():
         content += "\n" + classification.build_classification_block()
+
+    # Vacation section, also ahead of every block that files the mail: a reply is an action of its
+    # own, which a later `fileinto` and `stop` leave in place, so mail a folder rule claims is
+    # answered too. Blocked senders are left out within the block.
+    spam_emails = [s.email for s in screened if s.action == "Spam"]
+    if vacation_block := build_vacation_block(account, spam_emails):
+        content = append_sieve_block(content, "Vacation", vacation_block)
 
     # Mailbox section: one block per mailbox that has automation rules in Mailbox Settings.
     for mailbox in get_mailboxes(account):
@@ -835,7 +793,7 @@ def _build_automation_content(account: str) -> str:
             content = append_sieve_block(content, f"Mailbox: {mailbox['_name']}", block)
 
     # Spam / Screening sections, layered on top of the mailbox rules.
-    content = _apply_screening_blocks(account, content)
+    content = _apply_screening_blocks(account, content, screened)
 
     return content.rstrip() + "\n"
 
@@ -990,7 +948,7 @@ def append_sieve_block(script: str, block_name: str, sieve_block: str) -> str:
     return script.rstrip() + "\n" + f"\n# {block_name}{sieve_block}"
 
 
-def _apply_screening_blocks(account: str, content: str) -> str:
+def _apply_screening_blocks(account: str, content: str, screened: list) -> str:
     """Layer the Spam/Screening sieve blocks onto `content` and return the result.
 
     Rebuilt from the Screened Email Address list (+ JMAP Account) in one pass. The mailbox automation
@@ -1014,7 +972,6 @@ def _apply_screening_blocks(account: str, content: str) -> str:
     for name in ("Rejected Emails", "Spam Senders", "Screening", "Blocked Emails", "Junk Senders"):
         content = remove_sieve_block(content, name)
 
-    screened = get_effective_screened_email_addresses(account)
     spam_emails = [s.email for s in screened if s.action == "Spam"]
     accepted_emails = [s.email for s in screened if s.action == "Accepted"]
 
@@ -1189,7 +1146,7 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
 
     # Mail the server has not classified as spam (spamtest value below 5, i.e. ham or unscored) is
     # screened; spam falls through to the server's default filtering.
-    not_spam_test = 'not spamtest :value "ge" :comparator "i;ascii-numeric" "5"'
+    not_spam_test = f"not {_SPAM_TEST}"
     delivery_report_test = 'header :matches "Content-Type" "multipart/report*delivery-status*"'
 
     lines = ["# Screening"]
@@ -1220,3 +1177,67 @@ def build_screening_gate(account: str, accepted_emails: list[str]) -> str:
     ]
 
     return "\n".join(lines)
+
+
+def build_vacation_block(account: str, spam_emails: list[str]) -> str:
+    """The Vacation block: the account's auto-reply (RFC 5230), or an empty string while it is off.
+
+    It answers mail that arrives within the reply's window, read with `currentdate` (RFC 5260) in
+    UTC, as Stalwart's own vacation script does. A window gone by leaves the block inert, so nothing
+    has to rebuild the script when it ends. Blocked senders (`spam_emails`, the Spam Senders block)
+    and mail the server classifies as spam get no reply; everyone else does, unscreened senders
+    included. Repeats to one sender, mailing lists and other automated mail are left to the
+    extension's own rules (RFC 5230 §4.5, RFC 3834).
+    """
+
+    reply = get_vacation_reply(account)
+    if not reply:
+        return ""
+
+    tests = []
+    if reply.from_date:
+        tests.append(f'currentdate :zone "+0000" :value "ge" "iso8601" "{reply.from_date}"')
+    if reply.to_date:
+        tests.append(f'currentdate :zone "+0000" :value "lt" "iso8601" "{reply.to_date}"')
+    tests.append(f"not {_SPAM_TEST}")
+
+    blocked = [c for c in (_sender_match_condition(e) for e in spam_emails) if c]
+    if len(blocked) == 1:
+        tests.append(f"not {blocked[0]}")
+    elif blocked:
+        joined = ",\n    ".join(blocked)
+        tests.append(f"not anyof (\n    {joined}\n  )")
+
+    subject = f' :subject "{_escape_sieve_string(reply.subject)}"' if reply.subject else ""
+    joined = ",\n  ".join(tests)
+    return "\n".join(
+        [
+            "",
+            f"if allof (\n  {joined}\n) {{",
+            f'  vacation{subject} :mime "{_vacation_mime(reply.text_body, reply.html_body)}";',
+            "}",
+        ]
+    )
+
+
+def _vacation_mime(text_body: str | None, html_body: str | None) -> str:
+    """The reply's body as a MIME entity, for `vacation :mime`: the text alone, or the text and the
+    HTML as alternatives. Each part is base64, so neither a quote nor a backslash in the message
+    reaches the Sieve string, and no line of it is longer than mail allows."""
+
+    def part(subtype: str, body: str) -> str:
+        encoded = base64.encodebytes(body.encode("utf-8")).decode("ascii").rstrip("\n")
+        return (
+            f"Content-Type: text/{subtype}; charset=utf-8\nContent-Transfer-Encoding: base64\n\n{encoded}\n"
+        )
+
+    text = part("plain", text_body or "")
+    if not html_body:
+        return text
+
+    return (
+        f"Content-Type: multipart/alternative; boundary={_VACATION_BOUNDARY}\n\n"
+        f"--{_VACATION_BOUNDARY}\n{text}"
+        f"--{_VACATION_BOUNDARY}\n{part('html', html_body)}"
+        f"--{_VACATION_BOUNDARY}--\n"
+    )

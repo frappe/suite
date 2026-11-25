@@ -4,7 +4,7 @@
 
 It knows the part of Sieve the script is written in and fails on anything else rather than guess:
 RFC 5228 control, tests and match types, `fileinto`, imap4flags (RFC 5232), spamtest with relational
-(RFC 5235, 5231) and `:regex`. Two things follow the mail server instead of a general reading:
+(RFC 5235, 5231), `:regex`, `vacation` (RFC 5230) and `currentdate` in UTC (RFC 5260). Two things follow the mail server instead of a general reading:
 `:regex` compares case as written, as Stalwart's does, and a header's value is unfolded and
 trimmed before it is tested.
 
@@ -33,10 +33,12 @@ TOKEN = re.compile(r'\s+|#[^\n]*|"(?:[^"\\]|\\.)*"|:[\w-]+|[\w-]+|[\[\](){},;]')
 
 @dataclass(frozen=True)
 class Message:
-    """A message as the script sees it: its headers in order, and the server's spam verdict."""
+    """A message as the script sees it: its headers in order, the server's spam verdict, and when it
+    arrives, as an ISO 8601 UTC timestamp."""
 
     headers: tuple[tuple[str, str], ...]
     spamtest: int = 1
+    now: str = "2026-11-25T12:00:00Z"
 
     def values(self, name: str) -> list[str]:
         return [" ".join(value.split()) for header, value in self.headers if header.lower() == name.lower()]
@@ -44,10 +46,12 @@ class Message:
 
 @dataclass(frozen=True)
 class Delivery:
-    """Where the script left a message, and the flags it left it with."""
+    """Where the script left a message, the flags it left it with, and the auto-reply it sent, as
+    the MIME entity `vacation :mime` names, or None."""
 
     mailbox: str
     flags: frozenset[str]
+    reply: str | None = None
 
 
 class _Stop(Exception):
@@ -65,6 +69,7 @@ class _Run:
         self.message = message
         self.flags: set[str] = set()
         self.delivery: Delivery | None = None
+        self.reply: str | None = None
 
     # Reading
 
@@ -104,7 +109,9 @@ class _Run:
         except _Stop:
             pass
         # RFC 5232 §2: the implicit keep takes the flags as they stand.
-        return self.delivery or Delivery(KEEP, frozenset(self.flags))
+        delivery = self.delivery or Delivery(KEEP, frozenset(self.flags))
+        # RFC 5230 §4.7: a reply is an action of its own, which neither `fileinto` nor `stop` undoes.
+        return Delivery(delivery.mailbox, delivery.flags, self.reply)
 
     def block(self, live: bool) -> None:
         self.take("{")
@@ -136,6 +143,10 @@ class _Run:
             self.block(live and not matched)
 
     def action(self, name: str, live: bool) -> None:
+        if name == "vacation":
+            self.vacation(live)
+            return
+
         flags = None
         if name in ("keep", "fileinto") and self.peek() == ":flags":
             self.take()
@@ -154,6 +165,20 @@ class _Run:
             self.delivery = Delivery(argument or KEEP, frozenset(self.flags if flags is None else flags))
         else:
             raise AssertionError(f"Unrecognised Sieve action: {name}")
+
+    def vacation(self, live: bool) -> None:
+        mime = False
+        while self.peek() in (":subject", ":mime"):
+            if self.take() == ":mime":
+                mime = True
+            else:
+                self.string()
+        if not mime:
+            raise AssertionError("A vacation reason this interpreter reads is a MIME entity.")
+        reason = self.string()
+        self.take(";")
+        if live:
+            self.reply = reason
 
     def test(self) -> bool:
         name = self.take()
@@ -184,6 +209,14 @@ class _Run:
             self.take(":comparator")
             self.take('"i;ascii-numeric"')
             return relation(self.message.spamtest, int(self.string()))
+        if name == "currentdate":
+            self.take(":zone")
+            self.take('"+0000"')
+            self.take(":value")
+            relation = RELATIONS[self.string()]
+            self.take('"iso8601"')
+            # Both sides are ISO 8601 in UTC, so they compare as strings, as the default comparator does.
+            return relation(self.message.now, self.string())
         raise AssertionError(f"Unrecognised Sieve test: {name}")
 
     def match_type(self) -> str:

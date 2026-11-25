@@ -13,10 +13,21 @@ JMAP_CORE = "urn:ietf:params:jmap:core"
 JMAP_SIEVE = "urn:ietf:params:jmap:sieve"
 
 
-def render_automation_script(classify: bool = True) -> str:
+# An auto-reply that is on, with a window, a subject and an HTML body carrying quotes and backslashes.
+VACATION_REPLY = frappe._dict(
+    from_date="2026-11-20T09:00:00Z",
+    to_date="2026-12-01T09:00:00Z",
+    subject='Away "until" December',
+    text_body='Back on 1 December. Path: C:\\away "now"',
+    html_body='<p>Back on <b>1 December</b>. Path: C:\\away "now"</p>',
+)
+
+
+def render_automation_script(classify: bool = True, vacation: frappe._dict | None = None) -> str:
     """The automation script for an account using every block the generator writes, with the lookups
     it would make over JMAP stubbed out. Paths and keywords carry quotes and backslashes. `classify`
-    is whether Mail Settings has mail classified, and so whether the Category block is there."""
+    is whether Mail Settings has mail classified, and so whether the Category block is there;
+    `vacation` is the auto-reply, or None while it is off."""
 
     from suite.mail.doctype.sieve_script import sieve_script
 
@@ -44,6 +55,7 @@ def render_automation_script(classify: bool = True) -> str:
         patch.object(sieve_script, "is_screening_enabled", return_value=True),
         patch.object(sieve_script, "get_inbox_mailbox_path", return_value="INBOX"),
         patch.object(sieve_script, "get_account_emails", return_value=["me@example.org"]),
+        patch.object(sieve_script, "get_vacation_reply", return_value=vacation),
     ):
         return sieve_script._build_automation_content("account")
 
@@ -102,6 +114,11 @@ class TestAutomationSieveCompiles(IntegrationTestCase):
 
     def test_the_generated_script_compiles(self):
         script = render_automation_script()
+        self.assertIsNone(self.validate(script), script)
+
+    def test_the_generated_script_compiles_with_the_auto_reply_on(self):
+        script = render_automation_script(vacation=VACATION_REPLY)
+        self.assertIn("vacation", script)
         self.assertIsNone(self.validate(script), script)
 
     def test_a_script_missing_a_require_does_not(self):
