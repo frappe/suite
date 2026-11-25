@@ -6,6 +6,10 @@ import { DOCUMENT_VIEW_SEGMENTS, driveNodeRoute } from '@/apps/drive'
 import { canonicalRoutes, routes } from '@/composition/routes'
 import { installLoadFailureRecovery } from '@/platform/load-failure'
 
+// Read as each page mounts, so set before mounting.
+const phone = vi.hoisted(() => ({ isMobile: { value: false } }))
+vi.mock('@/shell/useIsMobile', () => phone)
+
 describe('canonical route metadata', () => {
   it('declares a frame and scroll owner on every canonical route', () => {
     for (const route of canonicalRoutes) {
@@ -75,6 +79,7 @@ describe('a page whose code fails to load', () => {
     sessionStorage.clear()
     assign.mockReset()
     vi.unstubAllGlobals()
+    phone.isMobile.value = false
   })
 
   /** The suite's routes plus pages whose imports fail the way a browser reports it. */
@@ -84,6 +89,7 @@ describe('a page whose code fails to load', () => {
       history: createMemoryHistory(),
       routes: [
         { path: '/broken', component: () => Promise.reject(failure) },
+        { path: '/mail/broken', component: () => Promise.reject(failure) },
         { path: '/working', component: { render: () => h('p', 'Working page') } },
         ...routes,
       ],
@@ -148,5 +154,20 @@ describe('a page whose code fails to load', () => {
     await router.push('/broken').catch(() => {})
 
     expect(assign).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a phone in the app it was in, away from the Suite', async () => {
+    phone.isMobile.value = true
+    const { router, root } = mountRouter(new TypeError('Failed to fetch'))
+
+    await open(router, '/mail/broken')
+    const home = root.querySelector('a')
+    expect([home?.textContent, home?.getAttribute('href')]).toEqual(['Go to Mail', '/mail'])
+
+    // A page of no app of its own still leads to the Suite.
+    cleanup?.()
+    const other = mountRouter(new TypeError('Failed to fetch'))
+    await open(other.router, '/broken')
+    expect(other.root.querySelector('a')?.getAttribute('href')).toBe('/home')
   })
 })

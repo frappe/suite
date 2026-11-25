@@ -2,6 +2,7 @@
   Shown when a page's code failed to load: the connection dropped, or the tab
   is older than the last deploy. Reload loads the page it was opening afresh.
   The router imports this view eagerly, so it shows when no chunk can load.
+  On a phone, a page of an app of its own (Mail) leads back to that app, not to the Suite.
 -->
 <template>
   <section
@@ -20,18 +21,28 @@
     </div>
     <div class="flex items-center gap-3">
       <Button variant="solid" @click="reload">{{ __('Reload') }}</Button>
-      <a href="/home" class="text-sm text-ink-gray-6 hover:underline">{{ __('Go to Home') }}</a>
+      <a :href="home.to" class="text-sm text-ink-gray-6 hover:underline">{{ home.label }}</a>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { translate as __ } from '@/platform/translation'
+import { isMobile } from '@/shell/useIsMobile'
+
+const props = defineProps<{ phoneApp?: { to: string; label: () => string } }>()
 
 const route = useRoute()
+
+const home = computed(() =>
+  isMobile.value && props.phoneApp
+    ? { to: props.phoneApp.to, label: __('Go to {0}', [props.phoneApp.label()]) }
+    : { to: '/home', label: __('Go to Home') },
+)
 
 // Only a path on this site: the query is part of a URL anyone can send.
 function reload() {
