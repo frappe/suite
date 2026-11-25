@@ -135,7 +135,7 @@ export const raisePromiseToast = async (
 export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
   void forward.then(undo, () => {})
 
-// The inverse of the last Undo, sent or still waiting on its write: see `undoOnClick`.
+// Every Undo's inverse still to be sent or still in flight: see `undoOnClick`.
 let undoing: Promise<unknown> = Promise.resolve()
 
 /**
@@ -156,7 +156,8 @@ export const undoOnClick =
       () => inverse().then(() => {}),
       () => {},
     )
-    undoing = inverted.catch(() => {})
+    // Chained: a second Undo made while the first's inverse waits must not let new writes past it.
+    undoing = Promise.all([undoing, inverted.catch(() => {})])
     restore(inverted)
   }
 

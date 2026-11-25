@@ -74,6 +74,7 @@ vi.mock('@/api', () => ({
   },
 }))
 vi.mock('@/apps/mail/utils', () => ({
+  afterUndoing: (send: () => Promise<unknown>) => send(),
   raiseToast: (message: string) => toasts.push(message),
   raiseOptimisticToast: async (
     done: Promise<unknown>,

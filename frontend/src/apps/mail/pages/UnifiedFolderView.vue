@@ -1007,18 +1007,13 @@ type PaneCommand =
 function runPaneCommand(command: PaneCommand, account?: string) {
   const acting = account ?? openRow.value?.account
   if (!acting) return Promise.reject(new Error(__('Conversation is no longer in the list.')))
-  switch (command.kind) {
-    case 'add':
-      return client.mutation(api.mail.messages.addToFolder, {
-        ...command.input,
-        account: acting,
-      })
-    case 'remove':
-      return client.mutation(api.mail.messages.removeFromFolder, {
-        ...command.input,
-        account: acting,
-      })
-  }
+  // Behind any Undo's inverse still to be sent (see afterUndoing).
+  const input = { ...command.input, account: acting }
+  return afterUndoing(() =>
+    command.kind === 'add'
+      ? client.mutation(api.mail.messages.addToFolder, input)
+      : client.mutation(api.mail.messages.removeFromFolder, input),
+  )
 }
 const messageIdsOf = (thread: Thread) => thread.messages?.flatMap(mailCopyIds) ?? [thread.id]
 
@@ -1194,16 +1189,18 @@ const undoMail = (mail: Mail, account: string | undefined, undoSuccess: string) 
   }
 }
 // One message and its copies, by the same rules as a conversation (see fileThreads).
-const fileMail = (mail: Mail, account: string | undefined, action: Filing, target?: string) =>
-  account
-    ? client.mutation(api.mail.messages.file, {
-        account,
-        ids: mailCopyIds(mail),
-        action,
-        mailbox: target ?? null,
-        screen_action: action === 'not_junk' ? 'Accepted' : null,
-      })
-    : Promise.reject(new Error(__('Conversation is no longer in the list.')))
+// Behind any Undo's inverse still to be sent (see afterUndoing).
+const fileMail = (mail: Mail, account: string | undefined, action: Filing, target?: string) => {
+  if (!account) return Promise.reject(new Error(__('Conversation is no longer in the list.')))
+  const input = {
+    account,
+    ids: mailCopyIds(mail),
+    action,
+    mailbox: target ?? null,
+    screen_action: action === 'not_junk' ? ('Accepted' as const) : null,
+  }
+  return afterUndoing(() => client.mutation(api.mail.messages.file, input))
+}
 const handleMailMove = (mail: Mail, target: string) => {
   const account = openRow.value?.account
   const folder = folderName(target)

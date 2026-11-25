@@ -3,7 +3,7 @@ import { computed, effectScope, reactive, ref, watch } from 'vue'
 
 import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
-import { raiseToast } from '@/apps/mail/utils'
+import { afterUndoing, raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
@@ -281,7 +281,11 @@ const createShared = () => {
       putBack = () =>
         Promise.all([
           reverseVerdict(account, emails, junked),
-          rest.length && client.mutation(api.mail.messages.setFolders, { account, mails: rest }),
+          // Behind any Undo's inverse still to be sent, which would overturn it.
+          rest.length &&
+            afterUndoing(() =>
+              client.mutation(api.mail.messages.setFolders, { account, mails: rest }),
+            ),
         ]).then(settled)
       // The rule is in place already, so this only junks the rest of what is being junked, and
       // counts what else of theirs is in the Inbox — mail from before screening, say. Should it fail,
