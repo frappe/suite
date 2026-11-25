@@ -1,4 +1,3 @@
-// Counters belong to Consumer instances. Recovery can replace one mid-window.
 export function measureStream(samples, producerId) {
   let bytesDelta = 0,
     framesDelta = 0;

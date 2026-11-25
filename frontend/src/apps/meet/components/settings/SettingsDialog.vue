@@ -1,8 +1,3 @@
-<!--
-  The in-call and preview Settings dialog: Controls for a host, then Meet's
-  settings tabs. Meet has no group in the Suite Settings dialog, so this is
-  the only place these tabs live.
--->
 <template>
   <SettingsDialog v-model:open="open" v-model:tab="activeTab" size="5xl" :keyboard-shortcut="false">
     <template #title>{{ __('Meeting settings') }}</template>
@@ -88,13 +83,10 @@ const canManageMeeting = computed(
   () => !props.isPreview && Boolean(props.meetingId) && (isHost.value || isCohost.value),
 )
 
-// Layout arranges the call grid, so the preview has no use for it.
 const tabs = computed(() =>
   meetSettings.tabs.filter((tab) => !(props.isPreview && tab.id === 'meet.layout')),
 )
 
-// The same loading and error states as the Suite Settings tab bodies. Meet
-// may not import the shell, so they are drawn here.
 const Loading = defineComponent({
   name: 'MeetSettingsTabLoading',
   setup: () => () =>

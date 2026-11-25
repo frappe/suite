@@ -257,7 +257,7 @@ let previewSession: {
   stream: MediaStream
 } | null = null
 let previewInputStream: MediaStream | null = null
-let isPreviewStreamDedicated = false // Track if preview stream is dedicated (not meeting's processed stream; needed when cam is off in meeting)
+let isPreviewStreamDedicated = false
 let previewRequestId = 0
 let isMounted = false
 let previewController: AbortController | null = null
@@ -375,8 +375,6 @@ async function startVideoPreview(deviceId: string) {
     isLoadingPreview.value = true
     previewError.value = ''
 
-    // If in a meeting, don't create a new stream
-    // Reuse processedStream to avoid breaking
     if (
       isInMeeting.value &&
       processedStream.value
@@ -391,8 +389,6 @@ async function startVideoPreview(deviceId: string) {
       return
     }
 
-    // This is a dedicated stream that we created
-    // for when we don't have a cam on in a meeting
     isPreviewStreamDedicated = true
 
     const constraints: MediaStreamConstraints = {

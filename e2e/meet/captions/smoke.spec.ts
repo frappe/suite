@@ -7,7 +7,6 @@ import { CaptionCaseError, installAudioCapture, observeCaptions } from "./browse
 // @ts-expect-error publication.mjs has a runtime browser-statistics interface.
 import { verifyAudioPublication } from "./publication.mjs";
 
-// A known tone is sufficient to test browser capture; this is not an STT fixture.
 function toneWav(): Buffer {
 	const sampleRate = 48_000;
 	const samples = sampleRate;

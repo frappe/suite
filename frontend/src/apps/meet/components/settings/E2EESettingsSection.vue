@@ -93,8 +93,6 @@ watch(
       await enableEncryption.run({ name: props.meetingId })
       e2eeEnabled.value = true
 
-      // Broadcast locally after the server-side meeting flag is enabled, so
-      // epoch collection runs against SFU/server state that already requires E2EE.
       document.dispatchEvent(
         new CustomEvent('meet:e2ee-host-enabled', {
           detail: {

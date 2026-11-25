@@ -484,8 +484,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 result = process_upload(recording.name)
                 self.assertEqual(process_upload(recording.name), result)
 
-            # Drive enqueues its own preview render for the stored file through
-            # the same `frappe.enqueue`; only Meet's processing job is asserted.
             processing_jobs = [c for c in enqueue.call_args_list if c.args and c.args[0] is process_upload]
             self.assertEqual(len(processing_jobs), 1)
             self.assertEqual(
@@ -1423,10 +1421,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         with patch("suite.meet.api.recording._get_free_bytes", return_value=MINIMUM_BUDGET_BYTES):
             started = start(self.room.name, str(uuid.uuid4()))
         recording = frappe.get_doc("Meet Recording", started["name"])
-        # Offboarding archives the root in place. Drive has no public root
-        # administration workflow until the HTTP routes land (ticket 21), and
-        # this owner cannot be deleted while a Meet Room links to them, so the
-        # fixture writes the archive directly. Recorded in BASELINE_DEBT.
         used_bytes = cint(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"))
         stored_bytes = used_bytes - cint(recording.budget_bytes)
         frappe.db.set_value(

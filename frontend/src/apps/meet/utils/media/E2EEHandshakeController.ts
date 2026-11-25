@@ -419,12 +419,6 @@ export class E2EEHandshakeController {
     })
   }
 
-  /**
-   * Transient socket reconnect: the SFU socket reconnected to the same
-   * meeting. Do NOT wipe the in-memory meeting secret or pending key
-   * packages — the relay can replay retained commits/welcomes and the
-   * client can re-join via processCommit / processWelcome.
-   */
   handleTransientReconnect(): void {
     if (this.deps.isCurrentTabHost.value) return
     console.log('[DEBUG-e2ee] handleTransientReconnect: requesting resync', {

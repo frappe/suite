@@ -162,9 +162,7 @@ export class ClientTelemetry {
     if (!this.sampled) return
     try {
       this.client.sendClientTelemetry(event)
-    } catch {
-      // Telemetry must never affect the meeting.
-    }
+    } catch {}
   }
 }
 

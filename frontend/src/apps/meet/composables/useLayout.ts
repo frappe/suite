@@ -61,7 +61,6 @@ export function useLayout(
   const getPinnedParticipantId = (): string[] =>
     pinnedTiles.value.filter((t) => t.type === 'participant').map((t) => t.id)
 
-  // Pin, viewport and screen changes start a new layout session. Joins do not.
   const sidebarColumns = shallowRef(1)
   watch(
     () =>
@@ -207,8 +206,6 @@ export function useLayout(
         pinnedParticipantIds,
       )
 
-      // Seed personal layouts from the shared presentation; subsequent selection
-      // changes replace vacancies without moving retained strip tiles.
       const pins = new Set(pinnedParticipantIds)
       const strip = partitioned.list.filter((p) => !pins.has(p.user_id))
       const presentationCapacity = strip.length

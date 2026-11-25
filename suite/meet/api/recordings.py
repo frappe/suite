@@ -26,9 +26,6 @@ def get_recordings() -> list[dict]:
         try:
             drive.check(recording.artifact, 1)
         except drive.DriveError:
-            # Drive refuses with its own types, not Frappe's permission errors,
-            # so an artifact that is gone or unreadable skips one recording
-            # instead of failing the list.
             continue
         visible.append(recording)
     if not visible:

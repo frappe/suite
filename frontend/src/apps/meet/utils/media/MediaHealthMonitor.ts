@@ -94,11 +94,6 @@ const browserEnvironment: MediaHealthEnvironment = {
 
 const POLL_INTERVAL_MS = 3000
 
-/**
- * Polls live media health and applies recovery policy independently of Vue.
- * Call `start` once mounted, subscribe to state changes, and call `stop` during
- * teardown. The optional environment makes lifecycle races deterministic in tests.
- */
 export class MediaHealthMonitor {
   private stateValue: MediaHealthState = {
     networkQuality: 'unknown',
@@ -214,7 +209,6 @@ export class MediaHealthMonitor {
     }
   }
 
-  /** Recovery control completion alone must never clear the media warning. */
   beginRecovery(direction: 'send' | 'recv' | 'both', reason: string): void {
     const previous = this.recovering
     if (direction !== 'recv') this.lastSendProgressAt = null
@@ -322,7 +316,6 @@ export class MediaHealthMonitor {
       this.qualityCandidates.delete(direction)
       return
     }
-    // Missing measurements cannot prove that an outstanding warning recovered.
     if (quality === 'unknown' && (current === 'poor' || current === 'critical')) {
       this.qualityCandidates.delete(direction)
       return
@@ -387,7 +380,6 @@ export class MediaHealthMonitor {
             now - bytesAt,
             entry.kind === 'video' && framesDecoded !== null ? now - framesAt : 0,
           )
-      // Static screens may send no new frames; detect their decode stalls only when RTP arrives.
       const deadline = entry.isScreen ? 15_000 : 6000
       if (stalledFor >= deadline) {
         stallQuality = 'critical'

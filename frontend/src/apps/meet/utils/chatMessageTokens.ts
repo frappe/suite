@@ -28,8 +28,6 @@ function toLinkToken(raw: string): ChatMessageToken {
     if (ALLOWED_SCHEMES.has(parsed.protocol)) {
       return { type: 'link', text: raw, url: parsed.href }
     }
-  } catch {
-    // fall through to text
-  }
+  } catch {}
   return { type: 'text', text: raw }
 }

@@ -1,4 +1,3 @@
-/** Recent measurements for one direction. Missing browser fields remain unknown. */
 export interface NetworkPathStats {
   rtt: number | null
   packetLoss: number | null
@@ -26,7 +25,6 @@ export type NetworkReport = {
   jitter?: number
 }
 
-/** Keeps loss windows per stream and transport, so old loss cannot mask recovery. */
 export class NetworkStatsTracker {
   private remoteTimestamps = new Map<string, number>()
   private previous = new Map<string, { received: number; lost: number; at: number }>()
@@ -55,8 +53,6 @@ export class NetworkStatsTracker {
     )?.selectedCandidatePairId
     for (const report of values) {
       const codec = values.find((value) => value.id === report.codecId)?.mimeType?.toLowerCase()
-      // Unbound/probation SSRCs are not an active media receiver. Chromium
-      // can retain their loss/jitter even while every real track is healthy.
       if (report.type === 'inbound-rtp' && hasCodecReports && !report.codecId) continue
       if (codec?.endsWith('/rtx') || codec?.includes('fec')) continue
       if (direction === 'send' && report.type === 'outbound-rtp') hasMedia = true
@@ -73,7 +69,6 @@ export class NetworkStatsTracker {
           availableOutgoingBitrate = report.availableOutgoingBitrate
       }
       if (direction === 'send' && report.type === 'remote-inbound-rtp') {
-        // Remote reports can stop arriving while the local stats call succeeds.
         if (report.timestamp !== undefined && Date.now() - report.timestamp > 10_000) continue
         const key = `${transportId}:${report.id ?? values.indexOf(report)}`
         activeRemoteKeys.add(key)
@@ -95,7 +90,6 @@ export class NetworkStatsTracker {
           const key = `${transportId}:${report.id ?? values.indexOf(report)}`
           activeKeys.add(key)
           const before = this.previous.get(key)
-          // A reset/new SSRC begins a new interval. Late packets can reduce lost.
           if (
             before &&
             Date.now() - before.at <= 10_000 &&

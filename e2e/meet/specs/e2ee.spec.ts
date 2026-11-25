@@ -55,7 +55,6 @@ async function readFingerprint(page: Page): Promise<string> {
 		.getByText("Encryption fingerprint", { exact: true })
 		.locator("xpath=..");
 	await expect(section).toBeVisible({ timeout: 30_000 });
-	// The value truncates on one line; its title holds the whole fingerprint.
 	const value = section.locator("[title]").first();
 	await expect(value).toHaveAttribute("title", /\S/);
 	return ((await value.getAttribute("title")) ?? "").trim();
@@ -102,7 +101,6 @@ function capturePageErrors(page: Page, filterPatterns: string[] = []) {
 }
 
 test.describe("E2EE", () => {
-	// Join first so media is healthy, then enable E2EE (avoids host-only avatar on CI).
 	test("participants keep video after E2EE is enabled", async ({ hostPage, createMeeting, createParticipant }) => {
 		const meetingId = await createMeeting();
 		const guestName = "Guest E2EE";

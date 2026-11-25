@@ -1,4 +1,3 @@
-<!-- A full-screen Meet status: an icon in a tinted circle, a title, a line of explanation and one action. Every screen that stands in for the call (could not join, moved away, waiting to be let in) uses it, so they read as one family. -->
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 

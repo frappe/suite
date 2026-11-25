@@ -581,12 +581,9 @@ def register_e2ee_device(
         doc.user = user
         doc.device_id = device_id
         doc.ed25519_public_key = ed25519_public_key
-        # Users may register only their own public E2EE device key through this validated API.
         try:
             doc.insert(ignore_permissions=True)
         except frappe.DuplicateEntryError:
-            # Lost a concurrent insert race after the initial lookup. The DB unique
-            # constraint guarantees there is now exactly one row to update.
             if not _update_e2ee_device_key(user, device_id, ed25519_public_key):
                 raise
 

@@ -3,7 +3,6 @@
     <div
       class="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-8 p-5 text-ink-gray-8 lg:flex-row lg:items-center lg:gap-10 lg:px-6 lg:py-8"
     >
-      <!-- Video preview remains bounded so the camera-off state does not dominate. -->
       <div class="flex min-w-0 flex-1 items-center justify-center lg:flex-[2]">
         <div
           class="relative aspect-video w-full overflow-hidden rounded-7 bg-black shadow-xl lg:aspect-[3/2]"
@@ -46,8 +45,6 @@
 
           <h2 class="mb-7 text-3xl-semibold text-ink-gray-9">{{ __('Ready to join?') }}</h2>
 
-          <!-- You may be in the call already on another device; the presence list counts that
-               device, which read as if someone else with your name were there. -->
           <p v-if="!isGuest && isCurrentUserPresent" class="text-base text-ink-gray-7">
             {{ __("You're in this meeting on another device") }}
           </p>
@@ -175,7 +172,6 @@ const joinGuestAPI = useMutation(api.meet.guests.join, { silent: true })
 const isGuest = computed(() => !session.isLoggedIn)
 
 const previewName = computed(() => {
-  // A guest has no account name or initials yet: until they type one, the tile says "You".
   if (isGuest.value) {
     return guestName.value.trim() || __('You')
   }
@@ -254,8 +250,6 @@ const handleJoin = async () => {
       })
     } catch (error) {
       console.error('Failed to join as guest:', error)
-      // A refusal the server wrote for people ("Guests are not allowed in this meeting") says more
-      // than a generic failure; a network or browser error does not, so it gets the fixed text.
       toast.error(refusalOr(error, __('Could not join the meeting as a guest')))
     }
   } else {

@@ -49,8 +49,6 @@ def admission():
 
 
 def prepare(recording):
-    # Serialize site admission, including unknown current capture sizes. Reserve
-    # each active capture's full allowance until its bounded manifest arrives.
     lock = frappe.cache.lock(f"meet-transcription-admission:{frappe.local.site}", timeout=30)
     if not lock.acquire(blocking=True, blocking_timeout=5):
         frappe.throw("Transcription admission is busy; please try again")
@@ -78,8 +76,6 @@ def prepare(recording):
                 "completed_segments": "[]",
             }
         ).insert(ignore_permissions=True)
-        # Persist admission before contacting services. Interrupted startup is
-        # reconciled rather than losing a source retention obligation.
         frappe.db.commit()
     finally:
         lock.release()
@@ -103,8 +99,6 @@ def prepare(recording):
         job.save(ignore_permissions=True)
         return result
     except Exception:
-        # A timed-out start may already be capturing. Retain its durable
-        # obligation and stop intent until the recorder/SFU can resolve it.
         job.stop_requested = 1
         job.participant_revision = cint(job.participant_revision) + 1
         job.failure_code = "capture_start_unconfirmed"
@@ -126,8 +120,6 @@ def reconcile_capture(job):
         if frappe.db.exists("Meet Recording", job.capture)
         else None
     )
-    # Stop explicitly at four hours even when SFU has restarted. SFU also enforces
-    # this bound independently, along with last-human-leaves.
     if recording and now_datetime() - get_datetime(job.capture_started_at) > timedelta(hours=4):
         try:
             client.sfu(job.capture, job.meet_room, "stop")
@@ -189,7 +181,6 @@ def reconcile_capture(job):
     job.manifest = json.dumps(manifest)
     job.audio_seconds = manifest["audio_seconds"]
     job.source_bytes = manifest["source_bytes"]
-    # Retention is bounded from capture end, not each retry.
     from suite.meet.api.transcription import _local
 
     job.retention_deadline = _local(result.get("ended_at") or now_datetime()) + timedelta(days=7)

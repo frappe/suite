@@ -11,7 +11,6 @@ interface Publication {
 	timer?: ReturnType<typeof setTimeout>;
 }
 
-/** All receiver demand, including recorder demand, controls one publisher cap. */
 export class CameraLayerDemand {
 	private publications = new Map<string, Publication>();
 
@@ -84,11 +83,9 @@ export class CameraLayerDemand {
 	}
 
 	private target(publication: Publication): number {
-		let target = 0; // Never stop the tiny stream.
+		let target = 0;
 		for (const consumer of publication.consumers.values()) {
 			if (consumer.closed || consumer.paused) continue;
-			// Actual received layers can be low because we capped the publisher.
-			// Unknown preferences must bootstrap at full quality, including recorders.
 			target = Math.max(
 				target,
 				consumer.preferredLayers?.spatialLayer ?? publication.maximum,

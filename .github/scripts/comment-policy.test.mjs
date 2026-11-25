@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { execFileSync, spawnSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
 
@@ -12,7 +12,11 @@ function repository(t, files) {
   const cwd = mkdtempSync(join(tmpdir(), 'suite-comments-'))
   t.after(() => rmSync(cwd, { recursive: true, force: true }))
   const git = (...args) => execFileSync('git', args, { cwd, stdio: 'pipe' })
-  const write = (path, content) => writeFileSync(join(cwd, path), content)
+  const write = (path, content) => {
+    const target = join(cwd, path)
+    mkdirSync(dirname(target), { recursive: true })
+    writeFileSync(target, content)
+  }
   git('init', '--quiet')
   for (const [path, content] of Object.entries(files)) write(path, content)
   git('add', '.')
@@ -116,4 +120,27 @@ test('ratchet allows interpreter and TypeScript safety comments', (t) => {
   )
   const result = repo.run('check')
   assert.equal(result.status, 0, result.stderr)
+})
+
+test('Meet rejects pre-existing ordinary comments while preserving directives', (t) => {
+  const repo = repository(t, {
+    'suite/meet/example.py':
+      '# Copyright (c) 2026, Frappe and contributors\n# Existing prose\nx = 1\n',
+    'frontend/src/apps/meet/example.ts':
+      '// SAFETY: The runtime check validates this union.\nexport const x = 1 as 1 | 2\n',
+    'e2e/meet/example.ts':
+      '// @ts-expect-error External fixture has no types.\nimport "./fixture.mjs"\n',
+    'suite/other/example.py': '# Existing prose\nx = 1\n',
+  })
+
+  const result = repo.run('check')
+  assert.equal(result.status, 1)
+  assert.equal(
+    result.stderr.trim(),
+    'suite/meet/example.py:2: code comments are prohibited in Meet',
+  )
+
+  repo.write('suite/meet/example.py', '# Copyright (c) 2026, Frappe and contributors\nx = 1\n')
+  const clean = repo.run('check')
+  assert.equal(clean.status, 0, clean.stderr)
 })

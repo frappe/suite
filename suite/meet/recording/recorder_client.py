@@ -103,7 +103,6 @@ class RecorderClient:
         self.secret = secret
         self.site = site
         self.session = session or requests.Session()
-        # Be explicit even if urllib3's current default changes.
         adapter = HTTPAdapter(max_retries=0)
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)

@@ -170,6 +170,26 @@ function inventory(files) {
   })
 }
 
+function isMeetSource(path) {
+  return /^(?:frontend\/src\/apps|suite|e2e)\/meet\//.test(path)
+}
+
+function meetDirective(path, start, text) {
+  const body = text.replace(/^(?:\/\/|#)\s*/, '')
+  return (
+    (start <= 2 &&
+      /^(?:Copyright \(c\) |(?:For license information, please see|See) license\.txt)/.test(
+        body,
+      )) ||
+    (path.endsWith('.py') &&
+      /^(?:type: |(?:begin|end): auto-generated types$|This code is auto-generated\. Do not modify anything in this block\.$)/.test(
+        body,
+      )) ||
+    (/\.(?:[cm]?ts|tsx|vue)$/.test(path) && /^@ts-(?:expect-error|ignore)\b/.test(body)) ||
+    (start === 1 && /^Generated from .*\. Do not edit\.$/.test(body))
+  )
+}
+
 function requiredComment(path, start, text) {
   return (
     (path.endsWith('.py') && start === 1 && text.startsWith('#!')) ||
@@ -188,7 +208,7 @@ const baseline = mode === 'check' ? git('merge-base', base, 'HEAD').trim() : und
 const changed =
   baseline && new Set(git('diff', '--no-renames', '--name-only', '-z', baseline).split('\0'))
 const currentFiles = paths
-  .filter((path) => !changed || changed.has(path))
+  .filter((path) => !changed || changed.has(path) || isMeetSource(path))
   .flatMap((path) => {
     try {
       return [[path, readFileSync(path, 'utf8')]]
@@ -210,7 +230,7 @@ if (mode === 'inventory') {
   const previous = new Map(
     inventory(
       currentFiles
-        .filter(([path]) => previousPaths.has(path))
+        .filter(([path]) => !isMeetSource(path) && previousPaths.has(path))
         .map(([path]) => [path, git('show', `${baseline}:${path}`)]),
     ),
   )
@@ -220,11 +240,17 @@ if (mode === 'inventory') {
       existing.set(text, (existing.get(text) ?? 0) + 1)
     }
     for (const [start, , text] of comments) {
-      if (requiredComment(path, start, text)) continue
+      if (
+        requiredComment(path, start, text) ||
+        (isMeetSource(path) && meetDirective(path, start, text))
+      )
+        continue
       const count = existing.get(text) ?? 0
       if (count) existing.set(text, count - 1)
       else {
-        console.error(`${path}:${start}: new code comment`)
+        console.error(
+          `${path}:${start}: ${isMeetSource(path) ? 'code comments are prohibited in Meet' : 'new code comment'}`,
+        )
         process.exitCode = 1
       }
     }

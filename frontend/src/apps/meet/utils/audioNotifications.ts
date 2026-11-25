@@ -49,7 +49,6 @@ class AudioNotificationManager {
         oscillator.frequency.setValueAtTime(frequencies, this.audioContext.currentTime)
       }
 
-      // prevent speaker popping using smooth attack and decay
       const attackTime = 0.01
       gainNode.gain.setValueAtTime(0, this.audioContext.currentTime)
       gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + attackTime)

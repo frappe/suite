@@ -297,8 +297,6 @@ const confirmRemove = () =>
 </script>
 
 <style scoped>
-/* A camera-off avatar grows with its tile: 3xl on a grid or sidebar tile, larger on a big one,
-   where a 3xl avatar alone in the middle read as a loading dot. */
 .participant-tile {
   container: meet-tile / inline-size;
 }
@@ -313,7 +311,6 @@ const confirmRemove = () =>
   }
 }
 
-/* Firefox blank video mitigation */
 .remote-video {
   background-color: #000;
   will-change: transform;

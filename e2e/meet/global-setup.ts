@@ -27,7 +27,6 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 		? sfuBaseURL
 		: `${sfuBaseURL.replace(/\/$/, "")}/health`;
 
-	// Meetings are created per-test for worker isolation; only health-check here.
 	await waitForService(baseURL, "Frappe Meet");
 	await waitForService(sfuHealthURL, "SFU server");
 

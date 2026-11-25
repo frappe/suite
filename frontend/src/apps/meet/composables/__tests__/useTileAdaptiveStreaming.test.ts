@@ -176,7 +176,6 @@ describe('useTileAdaptiveStreaming', () => {
         height: 0,
       })
 
-      // Position-only animation: no resize or media metadata event can rescue it.
       observer.setIntersection(0.05)
       observer.setIntersection(1)
       await vi.advanceTimersByTimeAsync(300)

@@ -92,7 +92,6 @@ function createMediaReconfigurationController({
   }
 }
 
-// Crypto values are opaque identity tokens here; protocol calls are mocked and never decode them.
 function createController() {
   return new E2EEHandshakeController({
     meetingId: 'meeting-1',

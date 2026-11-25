@@ -11,7 +11,6 @@ export type {
   ScheduledMeetingsPostOutput as ScheduledMeeting,
 } from '@/apps/meet/client/generated'
 
-/** Meet has no capability gate: every signed-in user can start or join a call [T010]. */
 export const meetArea: AreaDefinition = {
   id: 'meet',
   label: () => __('Meet'),

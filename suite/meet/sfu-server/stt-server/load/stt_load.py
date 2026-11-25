@@ -17,7 +17,7 @@ from pathlib import Path
 from websockets.asyncio.client import connect
 
 SAMPLE_RATE = 24000
-DEFAULT_FRAME_MS = 100  # SFU AudioIngester sends 100 ms VAD frames.
+DEFAULT_FRAME_MS = 100
 
 
 def read_pcm(path: Path) -> bytes:
@@ -41,7 +41,6 @@ def percentile(values: list[float], fraction: float) -> float | None:
 
 def summarize(results: list[dict], elapsed: float) -> dict:
     """Summarize completed rounds, interim-caption delay, failures, and sender lag."""
-    # Results arrive grouped by connection, not by time.
     results = sorted(results, key=lambda row: row["round"])
     completed = [row for row in results if row["completed"]]
     first = [row["first_text_seconds"] for row in completed if row["first_text_seconds"] is not None]
@@ -159,7 +158,6 @@ async def run_stream(
                             acknowledged += 1
                             continue
                         index = items.get(event.get("item_id"))
-                        # Interim deltas can arrive before the commit acknowledgement.
                         if (
                             index is None
                             and kind == "conversation.item.input_audio_transcription.delta"
@@ -172,8 +170,6 @@ async def run_stream(
                             rows[index]["error"] = str(event.get("error"))
                             finished += 1
                         elif kind == "conversation.item.input_audio_transcription.delta":
-                            # The server acknowledges commit before emitting final deltas.
-                            # Earlier deltas remain interim even if read after we send commit.
                             if (
                                 event.get("delta")
                                 and index >= acknowledged
@@ -221,7 +217,6 @@ async def run_stream(
                         await asyncio.sleep(max(0, audio_end - time.monotonic()))
                         ends.append(audio_end)
                         await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-                        # Do not wait for transcription; a slow server must visibly accumulate lag.
                     await receiver
                 finally:
                     if not receiver.done():

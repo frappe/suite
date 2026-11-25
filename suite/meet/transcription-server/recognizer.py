@@ -92,7 +92,6 @@ class TrelisRecognizer:
         self.torch = torch
 
     def transcribe(self, pcm: bytes, sample_rate: int, *, hints=None, speaker_name="") -> str:
-        # Whisper's feature extractor otherwise silently truncates long input.
         if sample_rate != 24000 or not pcm or len(pcm) % 2 or len(pcm) > 30 * 24000 * 2:
             raise WorkError("unsupported_source_format")
         if not any(pcm):
@@ -142,14 +141,9 @@ class TrelisRecognizer:
         generation.max_new_tokens = min(
             CONFIGURATION["max_new_tokens"], self.model.config.max_target_positions - len(prefix)
         )
-        # Decide once below: Transformers' threshold handling can retry decoding
-        # with temperature fallback and uses a different prefix position.
         for key in ("logprob_threshold", "compression_ratio_threshold", "no_speech_threshold"):
             setattr(generation, key, None)
         with torch.inference_mode():
-            # <|nospeech|> is predicted after SOT, before language/mixedcode/task.
-            # Prompt hints precede SOT. Generation scores suppress this token, so
-            # read the unsuppressed first-step output scores explicitly.
             first = self.model(
                 encoder_outputs=encoder_outputs,
                 decoder_input_ids=torch.tensor([prefix[: len(prompt_ids) + 1]], device=self.model.device),
@@ -186,8 +180,6 @@ class TrelisRecognizer:
         ratio = len(encoded) / len(gzip.compress(encoded))
         keep, reason = segment_decision(no_speech, average_logprob, ratio, repetition_fraction(result))
         if keep and int(generated[-1]) not in eos:
-            # Repetition may exhaust the token budget. Filter it, but never
-            # checkpoint a truncated result that otherwise looks like speech.
             raise WorkError("decoder_output_truncated", transient=True)
         if not keep and self.metrics is not None:
             self.metrics.add("segments_dropped_total", 1)

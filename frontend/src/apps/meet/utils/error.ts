@@ -1,4 +1,3 @@
-/** Whether the server refused with messages written for people, as `frappe.throw` sends them. */
 function hasServerMessages(error: unknown): boolean {
   return (
     error instanceof Error &&
@@ -29,7 +28,6 @@ function normalizeErrorMessage(message: unknown): string {
     .replace(/^(?:[\w.]+\.)?(?:[A-Z]\w*(?:Error|Exception)|Error|Exception):\s*/, '')
 }
 
-/** The server's own refusal when it sent one, else `fallback`: never a raw network or browser error. */
 export function refusalOr(error: unknown, fallback: string): string {
   return (hasServerMessages(error) && getErrorMessage(error)) || fallback
 }

@@ -45,7 +45,6 @@ const phase = ref("Baseline");
 const healthSnapshot = computed(() =>
   Object.fromEntries(Object.entries(health).map(([k, v]) => [k, v.value])),
 );
-// Original Meeting.vue combines only server quality, downlink and hard failure.
 const legacyQuality = computed(() =>
   health.isTransportFailed.value ? "critical" : health.downlinkQuality.value,
 );
@@ -73,7 +72,6 @@ window.networkDemo = {
 };
 </script>
 <style>
-/* Presentation CSS for the isolated fixture; the product uses its existing utilities. */
 #network-demo [data-network-status] {
   display: inline-flex;
   padding: 6px;

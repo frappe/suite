@@ -1,4 +1,3 @@
-// Presentation-only substitute: real video refs remain connected to VideoElementManager.
 import {defineComponent,h} from 'vue';
 export default defineComponent({
  props:['participant','videoRef','isLocal'],

@@ -1,17 +1,3 @@
-// E2EE roster persistence — file-backed implementation.
-//
-// Writes the full roster to `<filePath>` on every change. Hydrates from
-// the same file on construction. Intended for single-process SFU
-// deployments; concurrent writes from multiple SFU processes are not
-// supported (the file would corrupt).
-//
-// File format: a single JSON document of the shape
-//   { "rooms": { "<roomId>": [RosterEntry, ...] } }
-//
-// Errors are surfaced through the rejected promise. The store awaits
-// each write, so a write failure propagates to the SFU's e2ee:epoch
-// handler. The SFU's existing try/catch logs the failure and continues.
-
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -92,8 +78,6 @@ export class FileRosterPersistence implements RosterPersistence {
 		};
 		const json = JSON.stringify(shape);
 		await mkdir(dirname(this.filePath), { recursive: true });
-		// Atomic write: write to a temp file, then rename. Survives crashes
-		// mid-write without leaving a half-written file.
 		const tmp = `${this.filePath}.tmp`;
 		await writeFile(tmp, json);
 		await rename(tmp, this.filePath);

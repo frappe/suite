@@ -314,8 +314,6 @@ export function createManager(
 		io.socketsMap.set(socket.id, socket);
 		const origDisconnect = socket.disconnect.bind(socket);
 		socket['disconnect'] = (close: boolean) => {
-			// Mirror socket.io's auto-leave-on-disconnect: remove the socket
-			// from every adapter room it joined.
 			for (const [roomId, ids] of io.socketsAdapterRooms) {
 				ids.delete(socket.id);
 				if (ids.size === 0) io.socketsAdapterRooms.delete(roomId);

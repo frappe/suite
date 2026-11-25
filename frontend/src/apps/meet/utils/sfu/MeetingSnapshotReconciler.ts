@@ -38,10 +38,6 @@ export function createMeetingReconciliationState<
   }
 }
 
-/**
- * Applies one live event. Later events win, while leave and close events leave
- * tombstones for stale snapshots.
- */
 export function applyMeetingReconciliationEvent<Participant extends ReconciledParticipant>(
   state: MeetingReconciliationState<Participant>,
   event: MeetingReconciliationEvent<Participant>,
@@ -86,10 +82,6 @@ export function applyMeetingReconciliationEvent<Participant extends ReconciledPa
   }
 }
 
-/**
- * Uses supplied snapshot sections as the baseline, then replays live events in
- * arrival order. Omitted sections keep their current state.
- */
 export function reconcileMeetingSnapshot<Participant extends ReconciledParticipant>(
   state: MeetingReconciliationState<Participant>,
   snapshot: MeetingSnapshot<Participant>,

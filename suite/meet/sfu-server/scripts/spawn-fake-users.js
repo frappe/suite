@@ -191,36 +191,28 @@ function randomDelay(min, max) {
 
 const dgram = require("dgram");
 
-// Create RTP packet with audio level header extension for active speaker detection
 function createOpusPacket(seq, ts, ssrc, isSpeaking) {
-	// Audio level: 0 = loudest (speaking), 127 = silence
-	const audioLevel = isSpeaking ? 30 : 127; // 30 is "fairly loud"
+	const audioLevel = isSpeaking ? 30 : 127;
 
-	// RTP Header (12 bytes) + Header Extension (4 + 4 bytes)
 	const header = Buffer.alloc(20);
 
-	// RTP fixed header
-	header.writeUInt8(0x90, 0); // Version 2, no padding, HAS extension (X=1), no CSRC
+	header.writeUInt8(0x90, 0);
 	header.writeUInt8(111, 1);
 	header.writeUInt16BE(seq % 65536, 2);
 	header.writeUInt32BE(ts % 4294967296, 4);
 	header.writeUInt32BE(ssrc, 8);
 
-	// RTP Header Extension (RFC 5285 one-byte header)
-	header.writeUInt16BE(0xBEDE, 12); // One-byte header profile
-	header.writeUInt16BE(1, 14);       // Length: 1 word (4 bytes)
+	header.writeUInt16BE(0xBEDE, 12);
+	header.writeUInt16BE(1, 14);
 
-	// Extension element: ID=1 (ssrc-audio-level), Length=0 (1 byte data)
-	// Format: 4-bit ID | 4-bit length-1, then data bytes
-	header.writeUInt8(0x10, 16);       // ID=1, Length=0 (means 1 byte)
-	header.writeUInt8(0x80 | audioLevel, 17); // V=1 (voice activity), Level
+	header.writeUInt8(0x10, 16);
+	header.writeUInt8(0x80 | audioLevel, 17);
 	header.writeUInt8(0x00, 18);
 	header.writeUInt8(0x00, 19);
 
-	// Opus payload: TOC byte + minimal data
 	const opus = isSpeaking
-		? Buffer.from([0xF8, 0x7F, 0x7F, 0x7F, 0x7F]) // "loud" noise
-		: Buffer.from([0xF8, 0x00, 0x00, 0x00, 0x00]); // silence
+		? Buffer.from([0xF8, 0x7F, 0x7F, 0x7F, 0x7F])
+		: Buffer.from([0xF8, 0x00, 0x00, 0x00, 0x00]);
 
 	return Buffer.concat([header, opus]);
 }
@@ -265,7 +257,6 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	});
 	console.log(`[#${index}] 📷 Video Producer created`);
 
-	// Setup audio via UDP (lightweight, no FFmpeg)
 	const audioIp = audioTransport.ip === "0.0.0.0" ? "127.0.0.1" : audioTransport.ip;
 	const audioPort = audioTransport.port;
 	const audioSsrc = 111111 + index;
@@ -288,12 +279,11 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 
 		const packet = createOpusPacket(seq++, ts, audioSsrc, isSpeaking);
 		udpSocket.send(packet, audioPort, audioIp);
-		ts += 960; // 20ms @ 48kHz
+		ts += 960;
 	}, 20);
 
 	console.log(`[#${index}] 🔊 Audio streaming started`);
 
-	// Video via FFmpeg (only if needed for visual debugging)
 	const videoIp = videoTransport.ip === "0.0.0.0" ? "127.0.0.1" : videoTransport.ip;
 	const videoArgs = [
 		"-re",

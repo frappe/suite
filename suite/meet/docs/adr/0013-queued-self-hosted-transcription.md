@@ -5,3 +5,5 @@ Meet needs a saved Transcript after the conversation, so capture audio and queue
 Completion retries can return the existing Transcript only to the same worker and lease. A complete empty Transcript requires successfully processed audio with no speech. Missing or failed sources cannot establish silence. Transcription maintenance logs omit participant content and exception response bodies, since those bodies can contain source tokens.
 
 The site locks the job and rechecks its status when claiming work. The shared worker pool coordinates scheduling across sites. The site persists recovery state separately from notification and source cleanup so either downstream service can be unavailable without losing recovery.
+
+Checkpoints belong to one recognizer configuration and must not be reused after a model change. A failed source does not stop the worker from processing later speakers. Exact digital silence can bypass inference, while quiet audio still reaches the model.

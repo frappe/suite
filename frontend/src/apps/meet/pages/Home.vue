@@ -52,7 +52,6 @@
           </TextInput>
         </form>
       </template>
-      <!-- In the actions row like Schedule meet's; Enter in the field still submits the form. -->
       <template #actions>
         <div class="flex justify-end">
           <Button
@@ -88,13 +87,11 @@ const router = useRouter()
 const root = useRootStore()
 const { isStartingMeeting, startMeeting } = useStartMeeting()
 const calendarStore = useCalendarUserStore()
-// Resolve the account before mounting the list, so it shows the account's meetings from the start.
 const calendarReady = ref(false)
 onMounted(async () => {
   try {
     await calendarStore.loadUser()
   } catch {
-    // The list owns the account error and retry UI.
   } finally {
     calendarReady.value = true
   }

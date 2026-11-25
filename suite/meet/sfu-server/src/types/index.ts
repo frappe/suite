@@ -583,7 +583,6 @@ export interface ActivePoll {
 	createdAt: string;
 }
 
-// for FE, sending the votedUser each payload not a good idea, if the votedUser are in huge qty
 interface PollPayloadFE {
 	pollId: string;
 	createdBy: string;

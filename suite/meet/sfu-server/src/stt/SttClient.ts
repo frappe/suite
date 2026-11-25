@@ -20,7 +20,6 @@ export interface SttTranscriptEvent {
 }
 
 export interface ISttStream {
-	/** True when the audio frame was queued on the STT connection, not acknowledged by STT. */
 	sendAudio(frame: Buffer): boolean;
 	markFinal(durationMs: number): void;
 	onUnexpectedClose(listener: () => void): void;

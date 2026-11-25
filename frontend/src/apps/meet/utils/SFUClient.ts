@@ -63,11 +63,6 @@ export interface ConnectionDetails {
   userData?: JoinUserData
 }
 
-/**
- * Map a join/API payload that already includes SFU fields into ConnectionDetails.
- * Prefer this over a second Frappe round-trip when join_meeting already returned
- * auth_token + sfu_url. Lobby-only payloads (lobby_token / waiting) return null.
- */
 export function connectionDetailsFromJoinPayload(
   payload: JoinPayload,
   options: {
@@ -226,7 +221,6 @@ export class SFURequestError extends Error {
   }
 }
 
-/** Preserves structured server rejection details, including takeover generations. */
 export class SFUResponseError extends Error {
   readonly code?: string
   readonly details?: ParticipantConnectionConflictDetails
@@ -558,8 +552,6 @@ export class SFUClient {
 
     const origin = isSecured ? urlObj.origin : `${urlObj.protocol}//${urlObj.hostname}:${sfuPort}`
 
-    // If the URL has a pathname (e.g. /sfu), use it as the socket.io path prefix.
-    // Otherwise fall back to the default /socket.io/.
     const basePath = urlObj.pathname.replace(/\/$/, '')
     const socketPath = basePath ? `${basePath}/socket.io` : '/socket.io'
 
@@ -648,9 +640,7 @@ export class SFUClient {
       const pendingRefresh = this.tokenRefreshPromise
       try {
         await pendingRefresh
-      } catch {
-        // A fresh request can still recover from the in-flight refresh failure.
-      }
+      } catch {}
       if (this.tokenRefreshPromise === pendingRefresh) {
         this.tokenRefreshPromise = null
       }

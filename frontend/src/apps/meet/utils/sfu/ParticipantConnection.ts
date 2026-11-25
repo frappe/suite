@@ -1,5 +1,3 @@
-/** Owns one browser endpoint's SFU lifecycle from setup through cleanup. */
-
 import { randomId } from '@/platform/random-id'
 
 import type { User } from '../../composables/useCurrentUser'
@@ -517,8 +515,6 @@ export class ParticipantConnection {
   ): Promise<boolean> {
     const generation = this.lifecycleGeneration
     const wasBuffering = this.initialSyncInProgress
-    // Rejoin removes the server's old transports. Buffer producer events until
-    // the replacement media side is ready and setupExistingParticipants syncs it.
     this.initialSyncInProgress = true
     try {
       const joinOptions: NonNullable<Parameters<SFUClient['joinRoom']>[3]> = {
@@ -1022,9 +1018,7 @@ export class ParticipantConnection {
             flowing = bytesSent > (this.localProducerBytes.get(item.producer.id) ?? 0)
             this.localProducerBytes.set(item.producer.id, bytesSent)
           }
-        } catch {
-          // A later safety-net pass will retry the observation.
-        }
+        } catch {}
       }
       const desired = Boolean(
         item.track?.readyState === 'live' && item.track.enabled !== false && !item.producer?.paused,
@@ -1726,8 +1720,6 @@ export class ParticipantConnection {
       this.pendingNetworkQuality.clear()
     }
     signal.addEventListener('abort', cancel, { once: true })
-    // Room-wide refreshes arrive as separate messages. Apply one short burst in
-    // one task so reactive views do not render the entire grid for every peer.
     this.networkQualityFlush = setTimeout(() => {
       signal.removeEventListener('abort', cancel)
       this.networkQualityFlush = null

@@ -32,10 +32,6 @@ interface ParticipantConnectionRecoveryOptions {
   maxDelayMs?: number
 }
 
-/**
- * Exhausted media, transport, signaling, and snapshot repairs converge here:
- * rebuild a fresh Participant Connection, verify it, or enter terminal failure.
- */
 export class ParticipantConnectionRecovery {
   private readonly random: () => number
   private readonly sleep: (delayMs: number, signal: AbortSignal) => Promise<void>

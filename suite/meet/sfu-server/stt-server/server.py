@@ -118,12 +118,8 @@ def load_model() -> None:
     if device == "cuda":
         model = model.to("cuda")
     apply_language(NEMOTRON_LANGUAGE)
-    # Enable per-stream hypothesis biasing once; never swap the shared decoder
-    # while other participants have active hypotheses.
     decoding = model.cfg.decoding.copy()
     OmegaConf.update(decoding, "greedy.enable_per_stream_biasing", True, force_add=True)
-    # Every utterance selects its pinned vocabulary; do not install a newer
-    # global terminology tree over other rooms' active hypotheses.
     OmegaConf.update(decoding, "greedy.boosting_tree", None, force_add=True)
     model.change_decoding_strategy(decoding)
     model.encoder.set_default_att_context_size(att_context_size)
@@ -200,8 +196,6 @@ class StreamingFeatureBuffer:
         self.cfg = reference.streaming_cfg
         self.feature_count = reference.input_features
         self.right_samples = int(model.cfg.preprocessor.n_fft) // 2
-        # Align the crop to the original hop grid, including pre-emphasis's
-        # previous sample. Never expose an STFT frame before its right context.
         self.left_frames = (self.right_samples + 1 + MEL_HOP_SAMPLES - 1) // MEL_HOP_SAMPLES
         for step in (0, 1):
             if _streaming_value(self.cfg.chunk_size, step) != _streaming_value(self.cfg.shift_size, step):
@@ -289,7 +283,6 @@ class IncrementalDecoder:
         self.features.reset()
 
     def feed(self, audio: np.ndarray) -> str:
-        # Limit storage even when a caller submits a large audio packet.
         for offset in range(0, len(audio), self.chunk_samples):
             self.features.append(audio[offset : offset + self.chunk_samples])
             self._drain(final=False)
@@ -342,7 +335,6 @@ class RealtimeTranscriptionSession:
     def __init__(self, language: str, names=(), context=None):
         self.language = language or NEMOTRON_LANGUAGE
         self.last_sent_text = ""
-        # Keep fallback audio without growing RAM with utterance duration.
         self.fallback_audio = tempfile.SpooledTemporaryFile(max_size=1024 * 1024)
         self.input_sample_count = 0
         self.resampler = StreamingResampler(REALTIME_SAMPLE_RATE, MODEL_SAMPLE_RATE)
@@ -436,8 +428,6 @@ def run_warmup() -> None:
     t0 = time.time()
     _run_with_language(NEMOTRON_LANGUAGE, final_transcribe, np.zeros(MODEL_SAMPLE_RATE, dtype=np.float32))
 
-    # Compile the per-stream decoder before admitting the first real speaker.
-    # Do not use a real roster in warmup or retain a GPU bias model afterward.
     def warm_biased_stream():
         session = RealtimeTranscriptionSession(NEMOTRON_LANGUAGE, ["Nemotron"])
         try:
@@ -641,8 +631,6 @@ async def realtime_transcription(websocket: WebSocket):
                         continue
 
                     if event_type == "session.ping":
-                        # Application heartbeat: quiet caption streams stay connected
-                        # without appending synthetic silence to the ASR utterance.
                         continue
 
                     if event_type == "input_audio_buffer.append":
@@ -669,8 +657,6 @@ async def realtime_transcription(websocket: WebSocket):
                             await websocket.send_json(realtime_error(str(decode_error), client_event_id))
                             continue
                         if not has_inference_slot:
-                            # Quiet sockets use no inference slot. Admit at the first
-                            # audio append and hold it through the utterance final.
                             if not stream_capacity.acquire():
                                 await websocket.close(code=1013, reason="STT stream capacity reached")
                                 closed.set()

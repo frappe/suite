@@ -1,11 +1,3 @@
-// E2EE roster store — in-memory, per-room table of current SFU sockets,
-// with pluggable persistence.
-//
-// Tier-1 MLS-adjacent state: this holds the SFU's view of "who is currently
-// in the room" and "who is online", not the ratchet tree. Path secrets and
-// meeting secrets remain client-side; the server is still server-blind on
-// MLS internals. See CONTEXT.md "Roster server (tier 1)" for the design.
-
 import type { RosterEntry, RosterPersistence } from './E2eeRosterPersistence';
 
 export class E2eeRosterStore {
@@ -76,11 +68,6 @@ export class E2eeRosterStore {
 		return Array.from(entries.values());
 	}
 
-	/**
-	 * Pick a current member to author the next epoch commit, excluding the
-	 * joiners. Strategy: prefer host if online; else oldest current member
-	 * online; else null (the SFU will retain and rely on retry).
-	 */
 	async pickCommitter(
 		roomId: string,
 		excludeSenderIds: number[],

@@ -27,7 +27,6 @@ import {
 import { SttDiagnostics } from './SttDiagnostics';
 
 interface AudioIngesterOptions {
-	/** Independent durable capture consumes decoded source PCM without an ASR connection. */
 	onPcm?: (pcm: Buffer) => void;
 	speechDetector?: SpeechDetector;
 	roomId: string;
@@ -44,7 +43,7 @@ interface AudioIngesterOptions {
 
 const SAMPLE_RATE = 24000;
 const BYTES_PER_SAMPLE = 2;
-const OUTPUT_CHANNELS = 1; // ASR input is mono; Meet still publishes stereo Opus.
+const OUTPUT_CHANNELS = 1;
 
 const VAD_CHECK_MS = 100;
 const BYTES_PER_CHECK = (SAMPLE_RATE * BYTES_PER_SAMPLE * VAD_CHECK_MS) / 1000;
@@ -151,11 +150,9 @@ export class AudioIngester {
 	}
 
 	private get preRollChecks(): number {
-		// Preserve real soft onsets while the learned detector accumulates context.
 		return this.configuredPreRollChecks ?? 20;
 	}
 
-	/** Whether an ingester currently holds a stream; false between closure and recovery. */
 	hasRealtimeStream(): boolean {
 		return this.sttStream !== null;
 	}
@@ -320,18 +317,14 @@ export class AudioIngester {
 		if (consumer) {
 			try {
 				consumer.close();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		const plainTransport = this.plainTransport;
 		this.plainTransport = null;
 		if (plainTransport) {
 			try {
 				plainTransport.close();
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 		const ffmpeg = this.ffmpeg;
 		this.ffmpeg = null;
@@ -360,9 +353,7 @@ export class AudioIngester {
 		if (sdpPath) {
 			try {
 				fs.unlinkSync(sdpPath);
-			} catch {
-				/* ignore */
-			}
+			} catch {}
 		}
 
 		loggers.stt.info('AudioIngester stopped for %s', this.participantId);
@@ -424,8 +415,6 @@ export class AudioIngester {
 		const args = [
 			'-protocol_whitelist',
 			'file,crypto,udp,rtp',
-			// Muted/DTX producers can stop sending RTP indefinitely. Keep the
-			// decoder ready for resumed audio instead of restarting the ingester.
 			'-listen_timeout',
 			'-1',
 			'-i',
@@ -596,8 +585,6 @@ export class AudioIngester {
 		generation: number,
 		stream: ISttStream | null,
 	): Promise<void> {
-		// DTX can stop PCM entirely: expire context and endpoint real buffered audio
-		// by elapsed inactivity, without synthesizing samples or leaking a server buffer.
 		if (
 			this.lastDecodedAudioAt === null ||
 			this.vadQueueBytes % BYTES_PER_SAMPLE !== 0
@@ -634,8 +621,6 @@ export class AudioIngester {
 		)
 			return;
 		if (this.streamedBytes < BYTES_PER_CHECK * MIN_TAIL_CHECKS) {
-			// Subminimum audio stays local, so discarding it leaves capture and
-			// the server stream intact for the next utterance.
 			this.diagnostics?.event('vad.idle-discard', {
 				bytes: this.pendingSpeechBytes,
 			});
@@ -660,8 +645,6 @@ export class AudioIngester {
 		) {
 			return true;
 		}
-		// Extended silence: flush whatever audio we have, even short utterances.
-		// Catches trailing words that didn't reach MIN_SPEECH_CHECKS.
 		if (
 			this.isInSpeech &&
 			this.silenceCheckCount >= SHORT_UTTERANCE_SILENCE_CHECKS &&
@@ -673,12 +656,8 @@ export class AudioIngester {
 	}
 
 	private sendFrame(frame: Buffer): void {
-		// Do not gate on the 800 ms speaker observer: short utterances can end
-		// before its first update. Each producer already has its own VAD stream.
 		const stream = this.sttStream;
 		if (!stream) return;
-		// Keep a candidate locally until it can be finalized. A tiny DTX fragment
-		// must not leave stale server audio or force a new transport/decoder.
 		this.pendingSpeechFrames.push(frame);
 		this.pendingSpeechBytes += frame.length;
 		if (
@@ -730,10 +709,6 @@ export class AudioIngester {
 		this.onUnexpectedStreamClose();
 	}
 
-	/**
-	 * Read exactly `n` bytes from the front of the vad queue.
-	 * Handles partial buffers by splitting/consuming from the head.
-	 */
 	private dequeueBytes(n: number): Buffer {
 		const out = Buffer.alloc(n);
 		let written = 0;

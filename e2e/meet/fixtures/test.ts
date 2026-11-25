@@ -78,7 +78,6 @@ async function prepareContext(context: BrowserContext): Promise<void> {
 					return;
 				}
 				const body = await response.json();
-				// Preserve Frappe-issued JWTs and claims; redirect only endpoint metadata.
 				if (body.data && "sfu_url" in body.data) {
 					body.data.sfu_url = endpoint.origin;
 					body.data.sfu_port = Number(
@@ -220,7 +219,6 @@ export const test = base.extend<TestFixtures>({
 		await context.close();
 	},
 
-	// API-only meeting create so tests do not share rooms across workers.
 	createMeeting: async ({ playwright }, use) => {
 		const api = await playwright.request.newContext({ baseURL });
 		await loginViaApi(api, meetHost);

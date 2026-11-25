@@ -97,7 +97,6 @@ class Lease:
                 return
 
     def start(self):
-        # Refresh capabilities and establish the lease before expensive work.
         self.heartbeat()
         self.thread = threading.Thread(target=self._keep_alive, daemon=True)
         self.thread.start()
@@ -168,8 +167,6 @@ class Processor:
                     continue
                 try:
                     data = gateway.source(source, lease.snapshot(source.source_id))
-                    # Pure digital silence must not become a model hallucination.
-                    # No amplitude threshold is used: quiet speech remains intact.
                     transcript = (
                         self.recognizer.transcribe(
                             data,
@@ -185,9 +182,6 @@ class Processor:
                         raise
                     failed_source = failed_source or error
                     retryable_source = retryable_source or error.transient
-                    # One bad source must not hide healthy later speakers. The
-                    # failure callback checkpoints all recovered results before
-                    # the site's bounded retry/partial-publication decision.
                     continue
                 if self.shutdown.is_set():
                     raise WorkError("worker_shutdown", transient=True)
@@ -196,8 +190,6 @@ class Processor:
                 lease.checkpoint(results)
                 self.metrics.add("processed_audio_seconds_total", len(data) / 2 / source.sample_rate)
                 self.metrics.add("segments_completed_total", 1)
-            # Stop/join the heartbeat before finalization so it cannot race the
-            # successful completion or update a subsequently reused lease.
             lease.stop()
             lease.check()
             if failed_source:
@@ -230,8 +222,6 @@ class Processor:
             if lease:
                 lease.stop()
             self.metrics.add("jobs_failed_total", 1)
-            # Error strings may contain waveform paths or model output. Send an
-            # enumerated reason only; completed segments are durable retry input.
             self._failure(gateway, job, results, "inference_failed", True)
             return "inference_failed"
         finally:

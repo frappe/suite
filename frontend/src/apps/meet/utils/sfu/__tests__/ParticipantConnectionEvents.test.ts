@@ -113,7 +113,7 @@ describe('ParticipantConnection', () => {
       expect(refresh).toHaveBeenLastCalledWith('good/critical')
       expect(participantManager.getParticipant('alice')?.networkQualityUpdatedAt).toBe(aliceAt)
       expect(participantManager.getParticipant('bob')?.networkQualityUpdatedAt).toBe(bobAt)
-      expect(refresh).toHaveBeenCalledTimes(2) // Initial state and one batched refresh.
+      expect(refresh).toHaveBeenCalledTimes(2)
     } finally {
       stop()
       await manager.disconnect()
@@ -157,7 +157,6 @@ describe('ParticipantConnection', () => {
       ]),
     )
     sfuClient.joinRoom.mockImplementationOnce(async () => {
-      // Rejoin removes the old server transports before its acknowledgement.
       await handlers.get('producer_created')?.({
         participantId: 'remote-1',
         producerId: 'encrypted-video',

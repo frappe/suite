@@ -27,7 +27,6 @@ type BuildProblemReportMailtoOptions = {
   recoveryTimeline?: RecoveryTimelineEntry[]
 }
 
-// Keep the complete encoded URI small, including the subject and escaping.
 const MAX_MAILTO_CHARS = 2000
 
 type AudioStream = AudioDiagnosticSample['streams'][number]
@@ -89,7 +88,6 @@ function audioSummary(samples: AudioDiagnosticSample[] = []): string[] {
   ]
   if (latest.error) lines.push('Audio statistics unavailable or timed out')
   if (!latest.streams.length && !latest.error) lines.push('No audio streams sampled')
-  // Keep microphone evidence ahead of remote streams when the email must be shortened.
   const streams = [...latest.streams].sort(
     (a, b) => Number(b.direction === 'send') - Number(a.direction === 'send'),
   )
@@ -228,7 +226,6 @@ export async function buildProblemReportMailto(
 
   const prefix = `mailto:?to=meet@frappe.io&subject=${encodeURIComponent(subject)}&body=`
   const encode = (lines: string[]) => prefix + encodeURIComponent(lines.join('\n'))
-  // Logs and recovery history are last, so they are removed before audio evidence.
   const omitted = '[Report shortened to fit email link]'
   if (encode(bodyLines).length <= MAX_MAILTO_CHARS) return encode(bodyLines)
   while (bodyLines.length && encode([...bodyLines, omitted]).length > MAX_MAILTO_CHARS) {

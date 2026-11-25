@@ -28,7 +28,6 @@ export interface SpeechDetector {
 	reset(): void;
 }
 
-/** Causal 24→16 kHz low-pass FIR; only the detector sees this audio. */
 export class VadResampler {
 	private history = new Float64Array(64);
 	private inputCount = 0;
@@ -95,12 +94,10 @@ async function session(): Promise<ort.InferenceSession> {
 	return sharedSession;
 }
 
-/** Load the shared CPU model without creating a producer or processing audio. */
 export async function preloadSpeechDetector(): Promise<void> {
 	await session();
 }
 
-/** Model/session are shared; all streaming state belongs to this producer. */
 export class SileroSpeechDetector implements SpeechDetector {
 	readonly mode = 'silero';
 	private resampler = new VadResampler();
@@ -177,8 +174,6 @@ export class SileroSpeechDetector implements SpeechDetector {
 			}
 		} catch {
 			if (generation !== this.generation) return { speech: false };
-			// Subsequent ingester setup fails synchronously through normal recovery
-			// backoff, rather than restarting a broken inference loop at audio rate.
 			runtimeFailure ??= new Error(
 				'Silero VAD inference failed; restart the SFU after correcting the runtime',
 			);

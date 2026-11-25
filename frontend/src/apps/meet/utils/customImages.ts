@@ -191,7 +191,6 @@ export async function convertToWebP(file: File): Promise<File> {
             })
             resolve(webpFile)
           } else {
-            // Fallback to original if WebP conversion fails
             resolve(file)
           }
         },

@@ -49,9 +49,7 @@ const LOCAL_PREVIEW_ID = 'local'
 const attachmentKey = (role: MediaAttachmentRole, id: string) => `${role}:${id}`
 
 export class VideoElementManager implements MediaAttachmentFacade {
-  /** Kept public for recorder compatibility and diagnostics. */
   videoElements = new Map<string, HTMLVideoElement>()
-  /** Kept public for existing diagnostics. Sink routing belongs to this manager. */
   audioElements = new Map<string, HTMLAudioElement>()
   deferredAttachments = new Map<string, DeferredAttachment>()
 
@@ -77,7 +75,6 @@ export class VideoElementManager implements MediaAttachmentFacade {
     )
   }
 
-  /** Legacy remote-video facade used by the recorder and existing tile callers. */
   registerVideoElement(participantId: string, element: HTMLElement): void {
     if (!(element instanceof HTMLVideoElement)) throw new Error('Expected a video element')
     this.registerRemoteVideoElement(participantId, element)

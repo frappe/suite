@@ -918,7 +918,6 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
         })
       }
     } catch {
-      // Local producer cleanup remains authoritative if signaling fails.
     } finally {
       await this.transportManager.discardProducer(producer, metadata)
     }
@@ -1193,7 +1192,6 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
         capturedAt: new Date().toISOString(),
         playback,
         transportReports: sample.transportReports,
-        // Device identifiers and constraints aren't needed to diagnose audio flow.
         streams: sample.streams
           .filter((stream) => stream.kind === 'audio')
           .map(({ trackSettings: _settings, ...stream }) => stream),
@@ -1217,9 +1215,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     let networkStats: ConnectionDiagnostics['networkStats'] = null
     try {
       networkStats = await this.transportManager.getNetworkStats()
-    } catch {
-      // Diagnostics should still open when a recovering transport disappears.
-    }
+    } catch {}
     return {
       audioSamples: [firstAudioSample, secondAudioSample],
       connectionStatus: this.sfuClient.getConnectionStatus(),

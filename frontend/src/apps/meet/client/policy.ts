@@ -54,7 +54,6 @@ const effects = {
   room_link: 'none',
 } as const
 
-// Tokens and connection details establish a protocol session; ordinary readers do not consume them.
 export const registration: OwnerRegistration = {
   policy<I, O>(reference: Operation<I, O>) {
     if (reference.kind === 'query') return {}

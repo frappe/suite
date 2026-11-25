@@ -1,7 +1,3 @@
-/**
- * Camera/mic: Chrome --use-fake-device-for-media-stream (see playwright.config).
- * Screen share: Chrome has no fake display device — stub getDisplayMedia only.
- */
 export const STUB_MEDIA_SCRIPT = `(() => {
 	window.localStorage.setItem("mediaPref.autoHideToolbar", "0");
 

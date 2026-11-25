@@ -7,7 +7,6 @@ export type EmojiSuggestion = {
   emoji: string
 }
 
-/** Flat name → emoji list (one entry per alias), matching frappe-ui emoji UX. */
 const EMOJIS: EmojiSuggestion[] = gemoji.flatMap((entry) =>
   entry.names.map((name) => ({ name, emoji: entry.emoji })),
 )
@@ -15,10 +14,6 @@ const EMOJIS: EmojiSuggestion[] = gemoji.flatMap((entry) =>
 const RECENT_STORAGE_KEY = 'meet-chat-recent-emojis'
 const RECENT_LIMIT = 5
 
-/**
- * Match a trailing `:query` before the caret (same trigger as frappe-ui TipTap emoji).
- * Query is letters, digits, `_`, `+`, `-` only so `http://` never opens the menu.
- */
 const COLON_QUERY = /:([a-zA-Z0-9_+-]*)$/
 
 export function findColonQuery(
@@ -54,9 +49,7 @@ function readRecentStore(): EmojiSuggestion[] {
 function writeRecentStore(items: EmojiSuggestion[]) {
   try {
     writeJSON(RECENT_STORAGE_KEY, items.slice(0, RECENT_LIMIT))
-  } catch {
-    // private mode / quota — ignore
-  }
+  } catch {}
 }
 
 function getRecentEmojis(): EmojiSuggestion[] {
@@ -86,11 +79,6 @@ function filterEmojis(query: string, limit: number): EmojiSuggestion[] {
     .slice(0, limit)
 }
 
-/**
- * Empty query → recent emojis first, padded with default top matches (no glyph
- * duplicates) so the menu always has up to `limit` rows.
- * Non-empty → name filter + ranking; cap at 5.
- */
 export function suggestEmojis(query: string, limit = RECENT_LIMIT): EmojiSuggestion[] {
   if (!query) {
     const recent = getRecentEmojis().slice(0, limit)
@@ -98,7 +86,6 @@ export function suggestEmojis(query: string, limit = RECENT_LIMIT): EmojiSuggest
     if (recent.length >= limit) return recent
 
     const used = new Set(recent.map((r) => r.emoji))
-    // Fetch extra defaults so we still fill `limit` after dropping duplicates.
     const padding = filterEmojis('', limit * 4).filter((item) => !used.has(item.emoji))
     return [...recent, ...padding].slice(0, limit)
   }
@@ -123,7 +110,5 @@ export function insertEmojiAtQuery(
 export function clearRecentEmojis(): void {
   try {
     remove(RECENT_STORAGE_KEY)
-  } catch {
-    // ignore
-  }
+  } catch {}
 }

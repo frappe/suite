@@ -204,8 +204,6 @@ export class AuthManager {
 			throw new Error('Insufficient scope for presence access');
 		}
 
-		// Validate that the socket's meeting ID matches the token's meeting ID
-		// This prevents token reuse across different meetings
 		const token = socket.currentToken;
 		if (!token) {
 			throw new Error('No token available for validation');

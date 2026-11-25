@@ -86,8 +86,6 @@ class TestRecordingProtocolContract(TestCase):
             self.assertEqual(set(value["body"]), CALLBACK_BODY_KEYS[value["operation"]])
             _validate_callback_payload(value["operation"], value["body"])
         for value in request_vectors["rejected"]:
-            # Exact body keys are enforced by authenticate_callback, covered in
-            # test_callback_security. This validator checks payload semantics only.
             if set(value["body"]) != CALLBACK_BODY_KEYS[value["operation"]]:
                 continue
             with self.assertRaises(frappe.AuthenticationError):

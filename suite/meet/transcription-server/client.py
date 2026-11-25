@@ -85,8 +85,6 @@ class Gateway:
             raise WorkError("invalid_queue_response") from None
 
     def source(self, source: Source, authorized: dict) -> bytes:
-        # The current lease heartbeat refreshes capabilities. Immutable source fields
-        # must agree with the original manifest before any capability is used.
         if Source.parse(authorized) != source:
             raise WorkError("source_manifest_changed")
         url = authorized.get("url", "")

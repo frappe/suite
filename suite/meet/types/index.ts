@@ -1,13 +1,10 @@
-/** Full room order, before local self exclusion, pins, and capacity projection. */
 export interface SharedStageState {
 	epoch: string;
 	protocolVersion: 1;
 	version: number;
 	participantIds: string[];
 	activeSpeakerIds: string[];
-	/** Server-owned stable slots for each ranked prefix capacity. */
 	presentationOrders?: Record<string, string[]>;
-	/** Human endpoints receive slots after canonical self exclusion. */
 	excludedParticipantId?: string;
 }
 

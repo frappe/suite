@@ -1,5 +1,3 @@
-// These thresholds describe this fixture's promised usable-poor-link behavior.
-// Use actual time and decoded progress; a burst followed by a freeze cannot pass.
 function recentSamples(window) {
 	const samples = window?.samples ?? [];
 	const end = samples.at(-1)?.timestamp;

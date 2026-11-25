@@ -95,7 +95,6 @@ let activeInstanceCount = 0
 async function getSelfieSegmentationCtor() {
   if (selfieSegmentationCtor) return selfieSegmentationCtor
 
-  // @mediapipe/selfie_segmentation ships a UMD bundle that exposes a global.
   await import('@mediapipe/selfie_segmentation')
 
   const ctor = globalThis.SelfieSegmentation
@@ -233,7 +232,7 @@ export function useBackgroundEffects({
             })
 
             instance.setOptions({
-              modelSelection: 1, // Use landscape model for better performance
+              modelSelection: 1,
             })
 
             instance.onResults((results) => {
@@ -515,7 +514,6 @@ export function useBackgroundEffects({
         const processor = new MediaStreamTrackProcessor({ track: videoTrack })
         trackProcessor = processor.readable.getReader()
       } else {
-        // Fallback to video element for browsers without MediaStreamTrackProcessor
         video = document.createElement('video')
         try {
           await racePendingWork(
@@ -597,10 +595,6 @@ export function useBackgroundEffects({
       await ensureBackgroundImage()
       assertOwnerActive(signal)
 
-      // Create output canvas - use OffscreenCanvas only if MediaStreamTrackGenerator is available
-      // Otherwise use HTMLCanvasElement for captureStream() compatibility
-      // Firefox doesn't support MediaStreamTrackGenerator yet
-      // This is a workaround to keep processing active when tab view is hidden
       const useOffscreenCanvas =
         typeof OffscreenCanvas !== 'undefined' && 'MediaStreamTrackGenerator' in window
 

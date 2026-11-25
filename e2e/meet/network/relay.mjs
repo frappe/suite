@@ -1,7 +1,6 @@
 import dgram from "node:dgram";
 import { performance } from "node:perf_hooks";
 
-// Run-owned UDP relay: no root privileges or changes to host networking.
 export async function createRelay({
 	port = 44170,
 	targetHost = "127.0.0.2",
@@ -45,7 +44,6 @@ export async function createRelay({
 			count.dropped++;
 			return;
 		}
-		// A dropped packet never entered the queue and consumes no service time.
 		next[direction] = finish;
 		const ownGeneration = generation;
 		const timer = setTimeout(

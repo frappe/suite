@@ -79,7 +79,6 @@ def text(value, *, maximum=256) -> str:
 
 
 def validate_model(value: dict) -> None:
-    # Never combine earlier Granite checkpoints with new Trelis results.
     expected = {
         "identifier": MODEL,
         "revision": REVISION,

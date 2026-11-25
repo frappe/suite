@@ -65,7 +65,6 @@ class TestTheRecordingAdmissionReportsItsDeadlock(UnitTestCase):
                 self.database.arm(self.deadlock)
 
         self.assertIs(raised.exception, self.deadlock)
-        # The full rollback is what resets a handle InnoDB already emptied.
         self.assertIn(((), {}), [(c.args, c.kwargs) for c in self.db.rollback.call_args_list])
 
     def test_an_ordinary_failure_still_rolls_back_narrowly(self):

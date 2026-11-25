@@ -213,8 +213,6 @@ export class MediasoupManager {
 			if (encodings.length === 0) continue;
 			scores.push(Math.max(...encodings.map(({ score }) => score)));
 		}
-		// A muted/idle peer has no current measurement. Let subscribers expire its
-		// previous value instead of fabricating a healthy score from absent media.
 		if (scores.length === 0) {
 			this.peerQuality.get(roomId)?.delete(peerId);
 			return;
@@ -313,7 +311,6 @@ export class MediasoupManager {
 			return {
 				worker: String(id),
 				...counts,
-				// mediasoup reports CPU time in milliseconds and max RSS in KiB.
 				userCpuSeconds: result.value.ru_utime / 1_000,
 				systemCpuSeconds: result.value.ru_stime / 1_000,
 				maxResidentMemoryBytes: result.value.ru_maxrss * 1024,
@@ -1047,7 +1044,6 @@ export class MediasoupManager {
 		const safeWidth = Math.max(width, 0);
 		const safeHeight = Math.max(height, 0);
 
-		// Use the maximum dimension to better handle portrait or square aspects alongside landscape
 		const primaryDimension = Math.max(safeWidth, safeHeight);
 
 		if (primaryDimension <= 0) {
@@ -1385,8 +1381,6 @@ export class MediasoupManager {
 		if (consumer.closed || consumer.priority === desired)
 			return Promise.resolve();
 		const state = update;
-		// Reconcile after each worker response. A silence event can arrive before
-		// an earlier boost commits, so the getter alone cannot identify a no-op.
 		state.pending = Promise.resolve()
 			.then(async () => {
 				let applied = consumer.priority;

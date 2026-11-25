@@ -223,7 +223,6 @@ async function main(): Promise<void> {
 		`first attempt should include joiner [13], got ${JSON.stringify(sent[0].joiningSenderIds)}`,
 	);
 
-	// Trigger redesignation directly (avoid waiting COMMITTER_TIMEOUT_MS).
 	await testRelay['redesignate']('meeting-1', 1);
 	expect(
 		sent,

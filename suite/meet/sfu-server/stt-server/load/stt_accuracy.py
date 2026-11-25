@@ -355,7 +355,6 @@ async def transcribe(
                         receiver.cancel()
                     await asyncio.gather(receiver, return_exceptions=True)
     except Exception as error:
-        # Do not serialize server error messages, credentials or transcript-bearing exceptions.
         result["error_type"] = type(error).__name__
     return result
 

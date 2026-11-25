@@ -189,7 +189,6 @@ export function runPolicy() {
 	const findings = SOURCE_ROOTS.flatMap((root) =>
 		filesUnder(path.join(ROOT, root)).flatMap((file) => {
 			const relativePath = path.relative(ROOT, file).split(path.sep).join("/");
-			// Contract clients are generated from schemas and share a validator template.
 			if (relativePath === "frontend/src/apps/meet/client/generated.ts") return [];
 			return analyzeSource(relativePath, fs.readFileSync(file, "utf8"));
 		}),

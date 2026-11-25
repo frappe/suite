@@ -11,3 +11,5 @@ An authenticated participant has at most one active Participant Connection in a 
 - Mediasoup peer IDs remain socket-specific; recorder and presence-preview connections are outside this ownership rule.
 
 An admitted join bundles the SFU token and endpoint data so the client can connect without a second site request. A lobby-only response carries no media token.
+
+Rejoin replaces the old server transports. The client buffers producer events while the replacement media side is being prepared, then reconciles its snapshot with those events. Late media scores from a former socket owner cannot update the new connection.

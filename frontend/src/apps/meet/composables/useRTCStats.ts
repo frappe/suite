@@ -266,9 +266,7 @@ export function useRTCStats(active: Ref<boolean>) {
           localCandidateType: stringValue(local?.candidateType),
           remoteCandidateType: stringValue(remote?.candidateType),
         }
-      } catch {
-        // A recovering transport can disappear between selection and collection.
-      }
+      } catch {}
     }
     return {}
   }

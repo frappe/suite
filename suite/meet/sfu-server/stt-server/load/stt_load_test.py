@@ -175,8 +175,6 @@ class LoadTest(unittest.TestCase):
                             json.dumps({"type": "input_audio_buffer.committed", "item_id": str(index)})
                         )
                         if index == 3:
-                            # No final is sent until all commits arrive. A sender that
-                            # waits for transcription will time out instead of completing.
                             for item in range(1, 4):
                                 await ws.send(
                                     json.dumps(
@@ -302,7 +300,6 @@ class LoadTest(unittest.TestCase):
                 await ws.send(json.dumps({"type": "session.updated"}))
                 async for raw in ws:
                     if json.loads(raw)["type"] == "input_audio_buffer.commit":
-                        # An interim response can still be queued when the sender commits.
                         await ws.send(
                             json.dumps(
                                 {

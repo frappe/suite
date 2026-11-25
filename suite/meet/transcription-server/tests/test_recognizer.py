@@ -34,7 +34,6 @@ class SegmentDecisionTests(unittest.TestCase):
 
 class InputTests(unittest.TestCase):
     def test_invalid_or_overlong_audio_never_enters_inference(self):
-        # No model/dependencies: these inputs must fail before feature extraction.
         recognizer = TrelisRecognizer.__new__(TrelisRecognizer)
         for pcm, rate in [
             (b"", 24000),
@@ -85,7 +84,6 @@ class EncoderReuseTests(unittest.TestCase):
                 return self
 
         def encoded(kwargs):
-            # Model entry points encode features if no cached output is supplied.
             return kwargs.get("encoder_outputs") or encoder(kwargs["input_features"])
 
         def detect_language(**kwargs):

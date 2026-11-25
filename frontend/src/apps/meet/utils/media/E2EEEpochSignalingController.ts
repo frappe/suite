@@ -247,9 +247,6 @@ export class E2EEEpochSignalingController {
   }
 
   private shouldAuthorCommit(committerSenderId: number): boolean {
-    // The SFU roster picks the committer: prefer host, fall back to oldest
-    // current member. Any current member tab can author a commit; the SFU
-    // validates the committer against the roster in slice 3.
     return this.deps.sfuClient.getOwnSenderId() === committerSenderId
   }
 
@@ -357,10 +354,6 @@ export class E2EEEpochSignalingController {
       return
     }
 
-    // Resolve each removed senderId to a leaf index in the ratchet
-    // Walk the ratchet tree's leaves. ts-mls stores leaf nodes at
-    // even node indices; we use getCredentialFromLeafIndex to keep the
-    // leaf-index math out of the committer code.
     const tree = activeEpoch.state.ratchetTree
     const senderIdByLeafIndex = new Map<number, number>()
     for (let leafIndex = 0; leafIndex * 2 + 1 < tree.length; leafIndex += 1) {
@@ -374,9 +367,6 @@ export class E2EEEpochSignalingController {
       }
     }
 
-    // Run one remove per leaf. ts-mls commits one remove at a time;
-    // for the common case (host kicks one participant) this is
-    // sufficient. Multiple removes would need separate commits.
     for (const removedId of removedIds) {
       const leafIndex = senderIdByLeafIndex.get(removedId)
       if (leafIndex === undefined) {

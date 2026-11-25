@@ -58,9 +58,7 @@ function getSubtle(): SubtleCrypto {
 async function warmSubtleCrypto(): Promise<void> {
   try {
     await getSubtle().digest('SHA-256', new Uint8Array(0))
-  } catch {
-    // best-effort: ignore warm-up errors
-  }
+  } catch {}
 }
 
 void warmSubtleCrypto()
@@ -167,10 +165,7 @@ class RecvState {
   async warmSigningPub(pub: CryptoKey): Promise<void> {
     try {
       await getSubtle().verify({ name: 'Ed25519' }, pub, DUMMY_VERIFY_SIG, DUMMY_VERIFY_MSG)
-    } catch {
-      // best-effort: a verify against an obviously-bad signature must fail;
-      // the goal is to warm the Ed25519 code path, not to authenticate.
-    }
+    } catch {}
   }
 
   async prewarmFrameKeys(mediaType: string): Promise<void> {
@@ -282,9 +277,7 @@ class RecvState {
       const nextGeneration = currentGeneration + 1
       const nextKey = await deriveFrameKey(this.meetingSecret, senderId, mediaType, nextGeneration)
       this.cacheFrameKey(senderId, mediaType, nextGeneration, nextKey)
-    } catch {
-      // best-effort: a background pre-derive failure is not fatal
-    }
+    } catch {}
   }
 
   private markSeen(senderId: number, mediaType: string, generation: number): boolean {

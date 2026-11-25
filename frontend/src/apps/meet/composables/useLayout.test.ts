@@ -162,7 +162,6 @@ describe('participant promotion', () => {
       { localTileCount: 0 },
     )
     expect(ids(larger)).toEqual(['b', 'd', 'c'])
-    // Self is removed from remote inventory before projection; it keeps its local tile.
     delete rightParticipants.value.b
     expect(ids(right)).toEqual(['d', 'c'])
     expect(ids(right)).not.toContain('b')

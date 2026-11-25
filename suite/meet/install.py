@@ -56,8 +56,6 @@ def add_rate_limits() -> None:
             create_rate_limit(**rl)
             continue
 
-        # Rate Limit validation resolves module functions only, while document methods
-        # are addressed by their class-qualified path at runtime.
         frappe.get_doc(
             {
                 "doctype": "Rate Limit",

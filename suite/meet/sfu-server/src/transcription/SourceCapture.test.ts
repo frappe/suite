@@ -21,8 +21,6 @@ const decoder = vi.hoisted(() => {
 	const state: DecoderFixture = {};
 	return state;
 });
-// Decoder transport and Silero behavior each have dedicated tests; this exercises
-// their speech-source integration against the actual authenticated durable store.
 vi.mock('../stt/AudioIngester', () => ({
 	AudioIngester: class {
 		constructor(options: { onPcm: (pcm: Buffer) => void }) {

@@ -50,8 +50,6 @@ def validate_names(names, *, maximum=MAX_NAMES):
 
 def make_hints(title, names, version=CURRENT_VERSION):
     vocabulary(version)
-    # Automatic metadata must never prevent capture because a display label is
-    # unsuitable for hints. It still remains unchanged in attribution metadata.
     clean_names = []
     seen = set()
     for name in names:
@@ -89,8 +87,6 @@ def validate_hints(value):
 
 def hint_phrases(hints, speaker_name=""):
     hints = validate_hints(hints)
-    # Round-robin categories so a tokenizer budget cannot exclude all domain
-    # terms just because a room has many participants. Never rewrite output text.
     names = list(hints["participant_names"])
     try:
         speaker_name = label(speaker_name, MAX_NAME_LENGTH)

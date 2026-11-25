@@ -83,7 +83,7 @@ class StreamingTest(unittest.TestCase):
     def test_raw_feature_storage_is_bounded_for_long_input(self):
         features = server.StreamingFeatureBuffer()
         block = np.zeros(320, dtype=np.float32)
-        for _ in range(6000):  # Two minutes, no whole-prefix feature recomputation.
+        for _ in range(6000):
             features.append(block)
             while features.pop_chunk(final=False) is not None:
                 pass

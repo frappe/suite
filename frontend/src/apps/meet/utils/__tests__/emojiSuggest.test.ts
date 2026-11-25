@@ -37,7 +37,6 @@ describe('suggestEmojis', () => {
   it('empty query with no recents falls back to default suggestions', () => {
     const defaults = suggestEmojis('')
     expect(defaults).toHaveLength(5)
-    // Same ranking as the old empty-query filter (shortest matching names first).
     expect(defaults.every((d) => d.emoji && d.name)).toBe(true)
   })
 

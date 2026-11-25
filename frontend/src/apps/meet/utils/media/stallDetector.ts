@@ -1,16 +1,3 @@
-/**
- * Stall Detector
- *
- * Detects consumers that are technically "connected" but not actually
- * receiving any media bytes. A stalled consumer can mean the receive side
- * is wedged, congestion has hidden producer scores, or a background tab was
- * throttled.
- *
- * Audio consumers use a shorter window than video because audio is the
- * leading indicator of a wedged transport, while brief video freezes are
- * expected under congestion.
- */
-
 const DEFAULT_STALL_TIMEOUT_MS = 15_000
 const DEFAULT_AUDIO_STALL_TIMEOUT_MS = 8_000
 const DEFAULT_MIN_CONSUMER_AGE_MS = 3000

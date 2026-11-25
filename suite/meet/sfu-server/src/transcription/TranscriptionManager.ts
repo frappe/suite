@@ -300,7 +300,6 @@ export class TranscriptionManager {
 			);
 			if (!response.ok) throw new Error('source_completion_failed');
 			this.notify(this.key(site, c.room), this.query(site, id));
-			// Keep terminal state briefly for idempotent stop/query; backend's durable source manifest owns recovery.
 			const expiry = setTimeout(
 				() => this.captures.delete(this.key(site, id)),
 				600000,

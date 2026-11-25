@@ -154,7 +154,6 @@ test.describe("Media fault recovery", () => {
 				"Healthy Control",
 			);
 
-			// Offline signaling requires a full rejoin; sfu-reconnect.spec.ts covers it.
 			await setBrowserLifecycle(hostPage, { hidden: true, online: true });
 			await injectRemoteVideoFault(hostPage, "Fault Target", "decode-stall");
 			await hostPage.waitForTimeout(7000);

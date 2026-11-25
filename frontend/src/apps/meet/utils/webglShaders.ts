@@ -259,7 +259,6 @@ export class WebGLManager {
   private imageLocation: WebGLUniformLocation | null = null
   private maskLocation: WebGLUniformLocation | null = null
 
-  // cache lightwrap program (compiled once, reused every frame)
   private lightWrapProgram: WebGLProgram | null = null
   private lightWrapTexCoordLocation = -1
   private lightWrapResolutionLocation: WebGLUniformLocation | null = null
@@ -267,7 +266,6 @@ export class WebGLManager {
   private lightWrapMaskLocation: WebGLUniformLocation | null = null
   private lightWrapBackgroundLocation: WebGLUniformLocation | null = null
 
-  // cache mask blur program (compiled once, reused every frame for virtual bg)
   private maskBlurProgram: WebGLProgram | null = null
   private maskBlurTexCoordLocation = -1
   private maskBlurResolutionLocation: WebGLUniformLocation | null = null
@@ -275,7 +273,6 @@ export class WebGLManager {
   private maskBlurSigmaLocation: WebGLUniformLocation | null = null
   private maskBlurMaskLocation: WebGLUniformLocation | null = null
 
-  // Cached FBO ping-pong pair for mask blur — reused every frame, recreated on resize
   private maskBlurCache: MaskBlurCache = {
     width: 0,
     height: 0,
@@ -325,7 +322,6 @@ export class WebGLManager {
     this.imageLocation = this.gl.getUniformLocation(this.program, 'u_image')
     this.maskLocation = this.gl.getUniformLocation(this.program, 'u_mask')
 
-    // reusable buffers for perf
     this.positionBuffer = this.gl.createBuffer()
     this.flippedPositionBuffer = this.gl.createBuffer()
     this.texCoordBuffer = this.gl.createBuffer()
@@ -441,7 +437,6 @@ export class WebGLManager {
     this.gl.attachShader(program, vertexShader)
     this.gl.attachShader(program, fragmentShader)
 
-    // Explicitly bind position attribute to location 0 to avoid WebGL warnings
     this.gl.bindAttribLocation(program, 0, 'a_position')
 
     this.gl.linkProgram(program)

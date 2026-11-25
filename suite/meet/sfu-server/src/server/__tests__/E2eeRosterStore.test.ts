@@ -24,7 +24,6 @@ function assert(condition: unknown, message: string): asserts condition {
 }
 
 async function main(): Promise<void> {
-
 	const store = new E2eeRosterStore(new InMemoryRosterPersistence());
 
 	await store.add(roomId, makeEntry(1));
@@ -74,8 +73,6 @@ async function main(): Promise<void> {
 
 	await store.remove('nonexistent', 99);
 
-	// pickCommitter: reconnects a joiner who's still in the roster (transient
-	// socket blip). The picker must not return the joiner themselves.
 	const store3 = new E2eeRosterStore(new InMemoryRosterPersistence());
 	await store3.add(roomId, makeEntry(11, { isHost: true, joinedAt: 50 }));
 	await store3.add(roomId, makeEntry(13, { joinedAt: 100 }));
@@ -87,9 +84,6 @@ async function main(): Promise<void> {
 		`rejoin should not pick the joiner; got senderId=${pickedReconnect?.senderId}`,
 	);
 
-	// pickCommitter: only the rejoining member is in the roster (everyone else left
-	// while the joiner was offline). Picker must return null rather than pick the
-	// joiner.
 	const store4 = new E2eeRosterStore(new InMemoryRosterPersistence());
 	await store4.add(roomId, makeEntry(15, { joinedAt: 200 }));
 	const pickedLone = await store4.pickCommitter(roomId, [15]);

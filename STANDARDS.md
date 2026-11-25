@@ -45,8 +45,10 @@ to a baseline.
    an owner. Similar code stays duplicated when the domain rules differ.
 6. **Keep rationale in ADRs.** CI rejects new comments in Python, JavaScript,
    TypeScript, Vue, HTML, and CSS. Existing comments can be removed
-   incrementally. Interpreter shebangs and TypeScript `SAFETY:` comments
-   required by the type-assertion lint rule are allowed.
+   incrementally. Meet requires zero ordinary comments in these formats.
+   Interpreter shebangs and TypeScript `SAFETY:` comments
+   required by the type-assertion lint rule are allowed. Meet also preserves
+   license notices, generated markers, and type-checking directives.
 7. **The server decides.** Permissions, quota and validation are enforced in a
    workflow on the server. The client hides what the server would refuse, and
    nothing more.

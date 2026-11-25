@@ -5,3 +5,5 @@ Retain temporary per-speaker transcription audio on recorder nodes' existing per
 Maintenance retries source deletion after the publication transaction commits. A recorder cleanup failure therefore cannot roll back a usable Transcript.
 
 The site persists Stopping before retrying SFU audio cleanup so an unavailable SFU cannot delay stopping paired video. The recorder enforces retention locally even when the owning site is offline.
+
+Video and Transcript publication lock the same capture row before choosing the Drive destination. This lets either artifact finish first while keeping paired artifacts together. Admission reserves the full source allowance until the bounded manifest arrives. A timed-out start retains its stop and cleanup obligations because the service might already have started capturing.

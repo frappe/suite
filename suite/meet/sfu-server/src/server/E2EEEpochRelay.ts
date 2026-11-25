@@ -470,19 +470,6 @@ export class E2EEEpochRelay {
 		);
 	}
 
-	/**
-	 * Dispatch a commit-request to a roster-picked committer, with a
-	 * timeout-driven redesignation policy. If the committer doesn't
-	 * respond with a `commit` envelope within COMMITTER_TIMEOUT_MS, the
-	 * SFU picks another current member (excluding all previously-tried
-	 * committers for this delta) and re-emits the request. After
-	 * MAX_REDESIGNATIONS attempts, the SFU gives up and logs.
-	 *
-	 * Multiple calls for the same (roomId, membershipDeltaId) merge: the
-	 * pending entry accumulates the joiners/removers and the committer is
-	 * asked only once. The pending entry is cleared when a matching
-	 * `commit` envelope arrives (see relayCommit's success branch).
-	 */
 	private async dispatchCommitRequest(input: {
 		roomId: string;
 		joiningSenderIds: number[];
@@ -493,12 +480,6 @@ export class E2EEEpochRelay {
 		const key = `${roomId}:${epochNumber}`;
 		const existing = this.pendingCommitRequests.get(key);
 
-		// Compute the delta id + hash from the merged list. If two
-		// callers race (e.g. an add and a remove for the same epoch), the
-		// later caller wins for the delta id, but the joiners/removers
-		// accumulate. In practice, the relay never has both for the same
-		// epoch (an add advances the epoch; a remove targets a different
-		// commit context). This is fine.
 		const isAdd = joiningSenderIds.length > 0;
 		const type = isAdd ? 'add' : 'remove';
 		const senderIds = isAdd ? joiningSenderIds : removedSenderIds;
@@ -703,12 +684,6 @@ export class E2EEEpochRelay {
 		});
 	}
 
-	/**
-	 * Ask the roster to pick a committer to author a remove-only commit
-	 * (e.g. host kicked a participant). The committer's tab runs the
-	 * EpochProtocolProvider.removeMember path. Returns true if a committer
-	 * was found and a commit-request was emitted.
-	 */
 	async requestCommitForRemoval(
 		roomId: string,
 		removedSenderIds: number[],
@@ -730,20 +705,6 @@ export class E2EEEpochRelay {
 		return true;
 	}
 
-	/**
-	 * Buffer key-package events and emit a single commit-request per
-	 * (roomId, epochNumber) batch within COMMIT_REQUEST_BATCH_MS. This
-	 * collapses simultaneous joiners (or successive joiners within a
-	 * short window) into a single add-member commit, instead of N
-	 * separate commits.
-	 *
-	 * The committer still sees a single `commit-request` with all the
-	 * accumulated joiningSenderIds, and uses the existing
-	 * authorAddMemberCommit / addMultipleMembers path to author one
-	 * commit. Removing this buffer would revert to the per-joiner
-	 * commit-request behavior; the committer is already capable of
-	 * handling a multi-joiner list (slice 9eeeed8).
-	 */
 	private enqueueCommitRequest(
 		roomId: string,
 		joiningSenderIds: number[],

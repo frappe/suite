@@ -49,10 +49,6 @@ const CROP_CONVERGENCE_EPSILON = 0.02
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
-/**
- * Converts face detections into a smooth, bounded square crop. Call `getCrop`
- * for every frame; pausing freezes the exact current crop until resumed.
- */
 export class CameraFramingTracker {
   private current = { ...FULL_FRAME }
   private target = { ...FULL_FRAME }
@@ -245,8 +241,7 @@ declare global {
 }
 
 async function createFaceDetector(): Promise<FaceDetectorLike> {
-  // SAFETY: The pinned MediaPipe UMD bundle exposes the declared constructor through
-  // either its named export or Vite's CommonJS default-export interop.
+  // SAFETY: The pinned MediaPipe UMD bundle exposes the declared constructor through either its named export or Vite's CommonJS default-export interop.
   const faceDetectionModule: typeof import('@mediapipe/face_detection') & {
     default?: { FaceDetection?: typeof FaceDetection }
   } = await import('@mediapipe/face_detection')
@@ -255,8 +250,7 @@ async function createFaceDetector(): Promise<FaceDetectorLike> {
     namedConstructor = faceDetectionModule.FaceDetection
   } catch {}
   const globalConstructor = globalThis.FaceDetection
-  // SAFETY: MediaPipe's pinned UMD bundle also exports this same constructor globally
-  // in browsers whose module wrapper does not expose it through import().
+  // SAFETY: MediaPipe's pinned UMD bundle also exports this same constructor globally in browsers whose module wrapper does not expose it through import().
   const FaceDetectionConstructor =
     faceDetectionModule.default?.FaceDetection ?? namedConstructor ?? globalConstructor
   if (!FaceDetectionConstructor) {
@@ -269,10 +263,6 @@ async function createFaceDetector(): Promise<FaceDetectorLike> {
   return detector
 }
 
-/**
- * Owns a lazily initialized face detector and applies its detections to a crop
- * tracker at a limited cadence. Call `dispose` when the processing session ends.
- */
 export class CameraFramingProcessor {
   private readonly tracker = new CameraFramingTracker()
   private readonly detectorFactory: () => Promise<FaceDetectorLike>

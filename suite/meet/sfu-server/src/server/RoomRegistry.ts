@@ -199,10 +199,6 @@ export class RoomRegistry {
 		this.participantToSender.get(roomId)?.delete(participantId);
 	}
 
-	/**
-	 * Claims the participant's active connection. A matching connectionId reconnects;
-	 * a different connection requires the incumbent generation as conflictId.
-	 */
 	acquireParticipant(
 		socket: Socket,
 		roomId: string,
@@ -255,7 +251,6 @@ export class RoomRegistry {
 		};
 	}
 
-	/** Releases ownership only when the socket still holds the current generation. */
 	releaseParticipant(
 		socket: Socket,
 		roomId: string,
@@ -281,7 +276,6 @@ export class RoomRegistry {
 		return owner ? [owner.socket.id] : [];
 	}
 
-	/** Checks both socket identity and ownership generation to reject stale sockets. */
 	isParticipantOwner(
 		socket: Socket,
 		roomId: string,
@@ -363,7 +357,6 @@ export class RoomRegistry {
 		return Boolean(this.hostOnlyChat[roomId]);
 	}
 
-	/** Keep the bounded message window used to resolve pin requests. */
 	recordChatMessage(roomId: string, message: ChatMessage): void {
 		const buffer = this.recentChatMessages[roomId] ?? [];
 		buffer.push(message);
@@ -380,7 +373,6 @@ export class RoomRegistry {
 		);
 	}
 
-	/** Set or clear the room-wide pin; room cleanup removes this ephemeral state. */
 	setPinnedChatMessage(roomId: string, pinned: PinnedChatMessage | null): void {
 		if (pinned === null) delete this.pinnedChatMessage[roomId];
 		else this.pinnedChatMessage[roomId] = pinned;

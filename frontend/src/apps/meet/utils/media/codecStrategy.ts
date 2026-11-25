@@ -19,7 +19,6 @@ type CodecDecision = {
 }
 
 const VALID_STRATEGIES = new Set(['svc', 'simulcast'])
-// multi-spatial single-temporal modes (L3T1/L2T1/L1T1).
 const PREFERRED_SVC_MODES = ['L3T1_KEY', 'L3T1', 'L2T1', 'L2T1_KEY', 'L1T1']
 
 type SupportInfo = {
@@ -28,7 +27,6 @@ type SupportInfo = {
   availableScalabilityModes: string[]
 }
 
-// cache is used to avoid multiple calls to getCapabilities
 const cache: BrowserSupportCache = {
   support: null,
   cachedAt: 0,
@@ -77,11 +75,7 @@ function detectBrowserSupport() {
       }
     }
 
-    // Firefox has partial support for VP9 SVC (only temporal layer)
-    // https://bugzilla.mozilla.org/show_bug.cgi?id=1633876
-
     if (!result.supportsSVC && result.supportsVP9) {
-      // Some Chromium builds omit scalabilityModes but still support SVC.
       const ua = navigator.userAgent || ''
       const isChromiumLike = /Chrome\//.test(ua) || /Chromium/.test(ua) || /Edg\//.test(ua)
       result.supportsSVC = isChromiumLike

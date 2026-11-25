@@ -10,7 +10,6 @@ import {
   wipeActiveEpochState,
 } from '../E2EEEpochStateStore'
 
-// Crypto values are opaque identity tokens here; protocol calls are mocked and never decode them.
 function createController(options: { isHost?: boolean } = {}) {
   const sendE2EEEpochEnvelope = vi.fn()
   const generateKeyPackage = vi.fn(async () => ({
@@ -321,8 +320,6 @@ describe('E2EEEpochSignalingController', () => {
       state: fromPartial({ id: 'epoch-1-state' }),
       meetingSecret: new Uint8Array(32),
     })
-    // Same senderId 7, but isCurrentTabHost is now false — a non-host
-    // current member tab is the designated committer.
     const { controller, sendE2EEEpochEnvelope, addMultipleMembers } = createController({
       isHost: false,
     })
@@ -357,8 +354,6 @@ describe('E2EEEpochSignalingController', () => {
   })
 
   it('authors a remove commit when a remove-only commit-request arrives', async () => {
-    // Mock the ratchet tree: only the committer (senderId 7) is a member.
-    // The other leaf (senderId 9) is the to-be-removed participant.
     const mockTree: unknown[] = [
       {
         nodeType: 'leaf',

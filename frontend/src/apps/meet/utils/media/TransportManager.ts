@@ -61,8 +61,6 @@ async function applySenderPreferences(
     parameters.degradationPreference =
       source === 'screen' ? 'maintain-resolution' : 'maintain-framerate'
   }
-  // Priority is relative to other media on this connection. DSCP remains a hint
-  // to the network; it is not a bandwidth reservation or a delivery guarantee.
   const priority = kind === 'audio' ? 'high' : 'low'
   parameters.encodings = originalEncodings.map((encoding) => ({
     ...encoding,
@@ -72,8 +70,6 @@ async function applySenderPreferences(
   try {
     await sender.setParameters(parameters)
   } catch (error) {
-    // Some browsers reject priority hints. Still request the video degradation
-    // policy, without removing encodings or changing their existing settings.
     if (kind !== 'video') throw error
     const retry = sender.getParameters()
     retry.degradationPreference = parameters.degradationPreference
@@ -136,9 +132,6 @@ export class TransportManager {
     const decision = this.getVideoEncodingDecision()
     const isScreen = source === 'screen'
 
-    // no adaptive streaming for screensharing
-    // as we don't reduce resolution for screenshare
-    // and fps is handled by the hint in the browser in case of congestion control
     const strategy = isScreen ? 'single' : decision.strategy
     const scalabilityMode = strategy === 'svc' ? decision.scalabilityMode : null
 
@@ -318,9 +311,7 @@ export class TransportManager {
     if (!transport) return
     try {
       transport.close()
-    } catch (_e) {
-      /* ignore */
-    }
+    } catch (_e) {}
   }
 
   closeSendTransport() {
@@ -331,9 +322,7 @@ export class TransportManager {
     if (!transport) return
     try {
       transport.close()
-    } catch (_e) {
-      /* ignore */
-    }
+    } catch (_e) {}
   }
 
   setupReceiveTransportHandlers() {
@@ -512,9 +501,7 @@ export class TransportManager {
 
     try {
       producer.close()
-    } catch {
-      // The producer may already have closed with its transport.
-    }
+    } catch {}
     const discard =
       producer.id && this.sfuClient
         ? this.sfuClient
@@ -632,7 +619,6 @@ export class TransportManager {
         ) {
           throw new DOMException('Receive transport was replaced', 'AbortError')
         }
-        // Resume only once the receiver (and any decryptor) can accept the first keyframe.
         await client.resumeConsumer(consumer.id)
         if (
           consumer.closed ||

@@ -38,8 +38,6 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
                 }
             ).insert(ignore_permissions=True)
         self.root = drive.personal_root_for(self.owner) or drive.ensure_personal_root(self.owner)
-        # `drive_home_folder` is mandatory and immutable; the recording API files
-        # recordings below the owner's Personal root, so that is the home here too.
         self.home_folder = self.root
         self.used_before = self._used()
         self.rooms = []
@@ -59,9 +57,6 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
         return int(frappe.db.get_value("Drive Root", self.root, "used_bytes") or 0)
 
     def _recording(self, *, status: str, budget_bytes: int = 0, upload_size: int = 0) -> str:
-        # The room must really belong to the test user: `validate_parties` compares
-        # `room_owner` against the stored Meet Room owner, which Frappe sets from
-        # the session user at insert time.
         frappe.set_user(self.owner)
         try:
             room = frappe.get_doc({"doctype": "Meet Room", "meeting_type": "open"}).insert(
@@ -70,9 +65,6 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
         finally:
             frappe.set_user("Administrator")
         self.rooms.append(room.name)
-        # `validate_state` accepts upload metadata only as a complete tuple, so a
-        # size needs the other three fields too. The values are dummies: the
-        # backfill only reads `upload_size`.
         upload = (
             {
                 "upload_id": frappe.generate_hash(length=40),
@@ -163,8 +155,6 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
         execute()
         bound = self._reservation(live).root
 
-        # Stand in for a same-email replacement identity: the patch resolves a
-        # different Active root, and must still not move a charged reservation.
         with patch(f"{PATCH_MODULE}.drive.personal_root_for", return_value="some-other-root"):
             execute()
 

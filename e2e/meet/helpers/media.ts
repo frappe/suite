@@ -17,7 +17,6 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 		videoEl.muted = true;
 		if (videoEl.paused) {
 			void videoEl.play().catch(() => {
-				// Poll below is the real assertion.
 			});
 		}
 	});
@@ -42,8 +41,6 @@ export async function expectVideoReceiving(video: Locator): Promise<void> {
 			};
 		});
 
-	// A live track with dimensions can still be a frozen frame, so first wait
-	// for playback and then require it to progress from a fresh baseline.
 	await expect.poll(getPlaybackState, { timeout: 45_000 }).toMatchObject({
 		hasDecodedPlayback: true,
 		isLive: true,

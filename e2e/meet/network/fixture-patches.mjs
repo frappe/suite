@@ -1,5 +1,3 @@
-// Fail loudly if the shared camera fixture changes. A silent no-op could leave
-// this audit exercising its synthetic publisher instead of Meet's sender code.
 export function applyFixturePatches(source, patches) {
 	for (const [anchor, replacement] of patches) {
 		const first = source.indexOf(anchor);

@@ -319,7 +319,6 @@ const sending = ref(false)
 const emojiSuggestions = ref<EmojiSuggestion[]>([])
 const emojiSelectedIndex = ref(0)
 const emojiQueryStart = ref<number | null>(null)
-/** True while a trailing `:query` is active at the caret (incl. empty query after `:`). */
 const emojiMenuActive = computed(() => emojiQueryStart.value !== null)
 
 const canSendMessages = computed(() => {
@@ -511,7 +510,6 @@ watch([chatItems], scrollToBottom, { deep: true })
   margin: 0;
   overflow-y: auto;
   caret-color: var(--ink-gray-8);
-  /* Kill UA / form focus chrome; the wrapper owns focus affordance. */
   outline: none !important;
   box-shadow: none !important;
   -webkit-appearance: none;

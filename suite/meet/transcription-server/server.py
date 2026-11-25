@@ -19,7 +19,6 @@ from worker import FairScheduler, Processor
 
 
 def log(event, code=None):
-    # No site/source URLs, payloads, transcript text, credentials or exception strings.
     print(json.dumps({"event": event, **({"code": code} if code else {})}), flush=True)
 
 

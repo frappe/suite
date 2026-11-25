@@ -6,7 +6,6 @@ const ACTIVITY_LEASE_MS = 1600;
 const RECENT_MS = 120_000;
 const compareIds = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
-/** Room-owned selection and presentation, independent of endpoint history. */
 export class SharedStage {
 	private participants: RecorderStageParticipant[] = [];
 	private hands: Record<string, string> = {};
@@ -87,7 +86,6 @@ export class SharedStage {
 	}
 
 	private updateSlots(ids: string[], slots: Record<string, string[]>): void {
-		// Desktop grid supports at most 16 tiles, including self/screens/overflow.
 		for (let capacity = 1; capacity <= 16; capacity++) {
 			const selected = ids.slice(0, capacity);
 			const entrants = selected.filter((id) => !slots[capacity]?.includes(id));
@@ -125,7 +123,6 @@ export class SharedStage {
 				now - candidate.since >= SUSTAIN_MS ? [id] : [],
 			),
 		);
-		// A turn is promotion into sustained activity, not accumulated speaking time.
 		const promoted = [...active]
 			.filter((id) => !this.active.has(id))
 			.sort(compareIds);
@@ -170,9 +167,6 @@ export class SharedStage {
 				);
 			})
 			.map((p) => p.participant_id);
-		// Keep a canonical presentation for every prefix. A selected survivor stays
-		// in its slot; only vacancies receive entrants. This history belongs to the
-		// room snapshot, never to an endpoint that may have joined late.
 		const rankingChanged =
 			ids.length !== this.state.participantIds.length ||
 			ids.some((id, index) => id !== this.state.participantIds[index]);

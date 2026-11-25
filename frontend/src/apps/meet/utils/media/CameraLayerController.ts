@@ -14,7 +14,6 @@ interface Publication {
   pending: boolean
 }
 
-/** Serialize sender changes and recover demand missed during publish/reconnect. */
 export class CameraLayerController {
   private publications = new Map<string, Publication>()
   private client: SFUClient | null = null
@@ -53,7 +52,6 @@ export class CameraLayerController {
     producer.observer.once('close', () => {
       this.publications.delete(producer.id)
     })
-    // A demand event can precede the local Producer returned by produce().
     this.fetchDemand(state)
   }
 
@@ -73,9 +71,7 @@ export class CameraLayerController {
         if (client === this.client && this.publications.get(state.producer.id) === state && demand)
           this.apply(demand)
       })
-      .catch(() => {
-        // Older servers do not implement this optional optimisation. Keep quality.
-      })
+      .catch(() => {})
   }
 
   private apply(demand: CameraLayerDemand): void {
@@ -107,7 +103,6 @@ export class CameraLayerController {
       }
     } catch (error) {
       if (this.publications.get(state.producer.id) !== state || state.producer.closed) return
-      // This is optional work reduction. Prefer full quality over a retry loop.
       this.publications.delete(state.producer.id)
       console.warn('Disabling camera layer control; restoring full quality', error)
       try {
@@ -124,9 +119,6 @@ export class CameraLayerController {
     const encodings = () => producer.rtpSender?.getParameters().encodings
     const matches = () =>
       encodings()?.every((encoding, index) => (encoding.active !== false) === index <= layer)
-    // This mediasoup-client version swallows some handler errors and still
-    // caches maxSpatialLayer. Inspect the sender, and break that cached no-op
-    // before restoring a layer limit that did not actually reach the browser.
     if (producer.maxSpatialLayer === layer && matches() === false) {
       const maximum = (producer.rtpParameters.encodings?.length ?? 1) - 1
       await producer.setMaxSpatialLayer(layer === maximum ? 0 : maximum)

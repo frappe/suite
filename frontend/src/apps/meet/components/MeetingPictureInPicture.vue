@@ -482,9 +482,7 @@ watch(
           : null,
       )
       actionRegistered = shouldRegister
-    } catch {
-      /* Optional action unsupported by this browser. */
-    }
+    } catch {}
   },
   { immediate: true },
 )
@@ -525,9 +523,7 @@ onBeforeUnmount(() => {
   if (actionRegistered)
     try {
       navigator.mediaSession.setActionHandler(action, null)
-    } catch {
-      /* Optional API. */
-    }
+    } catch {}
 })
 defineExpose({ supported, open, close })
 </script>

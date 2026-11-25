@@ -180,8 +180,6 @@ export class SocketHandlerManager {
 		});
 
 		this.mediasoup.onNetworkQualityUpdate((roomId, peerId, quality) => {
-			// Media peers belong to a socket; UI participants retain their authenticated
-			// identity across reconnects. Never apply an old owner's late score to it.
 			const socket = Array.from(this.io.sockets.sockets.values()).find(
 				(candidate) =>
 					candidate.scope === 'full' &&

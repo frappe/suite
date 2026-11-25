@@ -145,7 +145,6 @@ export class SFUMediaManager {
     const previous = this.producerClosures.get(key)
     if (previous) return previous
     const pending = this.pendingSubscriptions.get(key)
-    // Capture ownership before waiting: receive reset may install new consumers.
     const consumers = this.consumerManager
       .getConsumersByParticipant(request.participantId)
       .filter((entry) => entry.producerId === request.producerId)
@@ -651,8 +650,6 @@ export class SFUMediaManager {
     this.producerSubscriptionGenerations.clear()
     const pending = Array.from(this.pendingSubscriptions.values())
     this.pendingSubscriptions.clear()
-    // Old closures own only their captured consumers, so a new receive
-    // generation need not wait for their signaling acknowledgements.
     this.producerClosures.clear()
     void Promise.allSettled(pending)
     return Promise.resolve()
@@ -843,8 +840,6 @@ export class SFUMediaManager {
         }
       }
 
-      // Camera attachment can outlive a departing sharer or a receive-side reset.
-      // Never announce a screen whose consumer was removed during that await.
       if (
         this.consumerManager.getConsumer(consumer.id) !== consumer ||
         consumer.consumer.closed ||

@@ -17,7 +17,6 @@
         {{ reaction.emoji }}
       </div>
 
-      <!-- NamePill component won't work here due to it's positioning -->
       <div
         class="bg-black/70 text-white text-xs leading-tighter px-2 py-1 rounded-4 whitespace-nowrap"
       >

@@ -28,7 +28,6 @@ interface CaptureIdentity {
 	sessionId: string;
 }
 
-/** Private, bounded diagnostic slices; never enabled by a caption subscriber. */
 export class SttDiagnostics {
 	private startedAt = performance.now();
 	private offsets: Record<Boundary, number> = {
@@ -75,7 +74,6 @@ export class SttDiagnostics {
 			const capture = new SttDiagnostics(directory, identity, maxSessions);
 			return capture;
 		} catch {
-			// Diagnostics must never prevent audio publication or transcription.
 			return undefined;
 		}
 	}
@@ -228,7 +226,6 @@ export class SttDiagnostics {
 	close(reason = 'ingester-stopped'): Promise<void> {
 		if (this.closing) return this.closing;
 		if (!this.ended) {
-			// Keep termination evidence even if normal event capture reached its bound.
 			const line = `${JSON.stringify({
 				type: 'capture.end',
 				elapsedMs: performance.now() - this.startedAt,

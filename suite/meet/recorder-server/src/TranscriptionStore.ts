@@ -256,8 +256,6 @@ export class TranscriptionStore {
 						Math.max(last + 1, Date.now() - Date.parse(manifest.started_at)),
 					);
 					manifest.gaps.push({
-						// A later saved segment from one speaker is not an
-						// acknowledgment of another speaker's buffered audio.
 						start_ms: 0,
 						end_ms: end,
 						reason: 'service_restart',
@@ -265,8 +263,6 @@ export class TranscriptionStore {
 					await this.save(directory, manifest);
 				}
 			} catch {
-				// A crash between mkdir and the first manifest commit must not disable video
-				// or healthy captures. Preserve uncommitted/corrupt files for bounded cleanup.
 				this.faulted.add(directory);
 			}
 		}
@@ -346,7 +342,14 @@ export class TranscriptionStore {
 					throw new Error('capture_conflict');
 				return existing;
 			} catch (error) {
-				if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+				if (
+					!(
+						error instanceof Error &&
+						'code' in error &&
+						error.code === 'ENOENT'
+					)
+				)
+					throw error;
 			}
 			if (
 				!Number.isSafeInteger(maxBytes) ||
@@ -511,7 +514,6 @@ export class TranscriptionStore {
 			if (disk.bavail * disk.bsize < this.minimumFreeBytes + audio.length)
 				throw new Error('storage');
 			const filename = path.join(directory, `${segment.source_id}.pcm`);
-			// An interrupted write is harmless: the segment is not visible until the synced manifest commits.
 			const file = await open(filename, 'w', 0o600);
 			try {
 				await file.writeFile(audio);

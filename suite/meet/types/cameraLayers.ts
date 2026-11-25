@@ -1,4 +1,3 @@
-/** Publisher instructions are scoped to one publication, not a participant. */
 export interface CameraLayerDemand {
 	producerId: string;
 	version: number;

@@ -605,7 +605,6 @@ describe('MediasoupManager network quality refresh', () => {
 			['room-1', 'media-peer', 'poor'],
 			['room-1', 'media-peer', 'poor'],
 		]);
-		// A periodic refresh must use the current producer score, not its last event.
 		producers[0]!.score = [{ score: 2 }];
 		vi.advanceTimersByTime(5000);
 		expect(listener).toHaveBeenLastCalledWith(
@@ -775,7 +774,6 @@ describe('active speaker camera allocation', () => {
 		expect(other.setPriority).toHaveBeenCalledWith(1);
 		expect(untouched.setPriority).not.toHaveBeenCalled();
 		expect(notify).toHaveBeenCalledWith('priority-room', ['speaker']);
-		// A receiver that subscribes after the volume event gets the same policy.
 		const late = priorityConsumer('late-camera');
 		room.peers.set(
 			'receiver',

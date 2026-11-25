@@ -8,8 +8,6 @@ import { expect, it, vi } from 'vitest';
 import { AudioIngester } from './AudioIngester';
 import type { ISttClient, ISttStream } from './SttClient';
 
-// Opt-in test; requires FFmpeg with libopus. Media is synthetic and
-// loopback only. No STT server or mediasoup worker is involved.
 it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 	'keeps one decoder and STT stream across initial inactivity and an RTP gap',
 	async () => {
@@ -71,7 +69,7 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 		};
 		try {
 			await ingester.start();
-			await delay(22_000); // Previously exited after approximately 20 seconds.
+			await delay(22_000);
 			expect(receivedBytes).toBe(0);
 			assertSameCapture();
 			await new Promise<void>((resolve, reject) => {
@@ -119,8 +117,6 @@ it.skipIf(process.env.RUN_STT_FFMPEG_TESTS !== '1')(
 				{ timeout: 8000, interval: 100 },
 			);
 			assertSameCapture();
-			// Drop RTP while the sender continues; SSRC/sequence/timestamps remain
-			// continuous, avoiding restarted senders as a resumption confounder.
 			forward = false;
 			await delay(13_000);
 			assertSameCapture();

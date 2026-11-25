@@ -80,7 +80,6 @@ const calendarStore = useCalendarUserStore()
 const now = useNow({ interval: 30_000 })
 
 const session = useSession()
-// Follow the clock so a tab left open across midnight fetches the new day.
 const eventWindow = computed(() => upcomingEventWindow(now.value))
 const fromDate = computed(() => eventWindow.value.from.toISOString())
 const toDate = computed(() => eventWindow.value.to.toISOString())
@@ -97,7 +96,6 @@ const upcomingEvents = useQuery(api.calendar.events.window, () =>
     : false,
 )
 
-// JMAP start is wall time in the event's zone; floating events use the browser zone.
 const eventStart = (event: CalendarEvent) =>
   event.time_zone ? dayjs.tz(event.start, event.time_zone).local() : dayjs(event.start)
 

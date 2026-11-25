@@ -136,8 +136,6 @@ ROUTES: tuple[Route, ...] = (
         kind="mutation",
         public_name="meetings.schedule",
     ),
-    # The mounted Meet and Calendar pages still use the original workflow shapes.
-    # Route the resource URLs to those same workflows while the pages migrate.
     Route(
         "GET",
         "rooms/preview",
@@ -306,8 +304,6 @@ def room_preview(meeting_id: str) -> shapes.Preview:
         return {"title": ""}
 
 
-# Reuse the original whitelisted functions so the resource and legacy addresses
-# have exactly the same validation, authorization and transaction behavior.
 room_access = meeting.check_meeting_access
 room_connection = meeting.get_sfu_connection_details
 room_presence_token = meeting.get_sfu_presence_preview_token
@@ -404,9 +400,6 @@ def _required_text(value: Given, name: str) -> str:
     if not isinstance(value, str) or not value.strip():
         frappe.throw(_("Meet argument {0} is required").format(name), BadRequest)
     return value
-
-
-# Contract the existing Framework document endpoints without changing dispatch.
 
 
 def room_document(name: str) -> shapes.RoomDocument:

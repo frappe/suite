@@ -2,10 +2,6 @@ import { dialog } from 'frappe-ui'
 
 import { translate as __ } from '@/platform/translation'
 
-/**
- * Asks before the host removes someone, the way Leave meeting asks: frappe-ui's confirm with a red
- * Remove. A guest can also be banned from coming back, which adds the one checkbox.
- */
 export function confirmRemoveParticipant({
   name,
   canBan,

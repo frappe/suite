@@ -1,4 +1,3 @@
-/** A room code or a same-site Meet link, never an external navigation target. */
 export function meetingCodeFrom(value: string, origin: string): string {
   const code = value.trim()
   const pattern = /^[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}-[a-zA-Z0-9]{4}$/

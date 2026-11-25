@@ -73,8 +73,6 @@ export class CaptionCaseError extends Error {
 	}
 }
 
-// Only the capture source is simulated. The app still acquires a microphone
-// track and publishes it through its normal WebRTC/Opus/SFU/STT path.
 export async function installAudioCapture(page: Page, audioPath: string, diagnostics = false): Promise<string> {
 	const bytes = await readFile(audioPath);
 	await page.addInitScript(
@@ -159,7 +157,6 @@ export async function installAudioCapture(page: Page, audioPath: string, diagnos
 										reports.push(safe);
 									});
 								} catch {
-									/* Closed peers do not expose raw exceptions. */
 								}
 								return {
 									connectionState: peer.connectionState,
@@ -320,7 +317,6 @@ export async function runCaptionCase(options: {
 			const controller = window.__captionAudio;
 			return controller.play();
 		});
-		// Observe the complete bounded tail to include every utterance's final.
 		setPhase("collection");
 		await observer.waitForTimeout(playback.durationSeconds * 1000 + timeoutMs);
 		const afterPlayback = await snapshot();

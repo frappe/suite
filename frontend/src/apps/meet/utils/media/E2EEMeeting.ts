@@ -488,9 +488,7 @@ export class E2EEMeeting {
         mediaType: payload.mediaType,
         senderSigningPubs: payload.senderSigningPubs ?? [],
       })
-    } catch {
-      // best-effort: a failed pre-warm post is not fatal
-    }
+    } catch {}
   }
 
   private installScriptTransform(

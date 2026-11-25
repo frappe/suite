@@ -27,7 +27,6 @@ export function validateManifest(value) {
   }
   return value;
 }
-/** Check supplied annotations against the decoded recording, without inventing missing bounds. */
 export function validateAudioTiming(durationSeconds, clip) {
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) throw Error('Invalid decoded audio duration');
   for (const field of ['speechStartSeconds', 'speechEndSeconds']) {

@@ -9,7 +9,6 @@ import { getPlatform } from '@/apps/meet/utils/device'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
 import { translate as __ } from '@/platform/translation'
 
-// One site socket per mount, closed on unmount so a return to Meet does not add one.
 initSocket()
 onScopeDispose(disposeSocket)
 

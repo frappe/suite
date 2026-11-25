@@ -442,9 +442,6 @@ function syncHostOnlyChatFromToken(
 	roomId: string,
 ): void {
 	if (socket.scope !== 'full') return;
-	// Server-signed room policy from the SFU JWT. A true claim enforces the
-	// restriction; a false/missing claim never clears a live restriction set
-	// by a host toggle, so stale tokens cannot lift it.
 	if (socket.hostOnlyChat === true) {
 		if (!deps.registry.isHostOnlyChat(roomId)) {
 			deps.registry.setHostOnlyChat(roomId, true);

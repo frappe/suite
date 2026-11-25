@@ -27,15 +27,6 @@ interface PreloadedWorklet {
   context: AudioContext
 }
 
-/**
- * Composable for noise cancellation using DTLN (via @workadventure/noise-suppression).
- *
- * DTLN is hard-coded to 16 kHz mono, 512-sample frames. The worklet is
- * loaded on first use (lazy) so it does not consume resources until noise
- * cancellation is actually enabled. On toggle, the raw and denoised branches are crossfaded over 50 ms to
- * avoid an audible click. If preload or apply fails, the caller falls
- * back to the raw stream and `error` is set.
- */
 export function useNoiseCancellation(): UseNoiseCancellationReturn {
   const isProcessing = ref<boolean>(false)
   const processedStream = ref<MediaStream | null>(null)
@@ -146,9 +137,6 @@ export function useNoiseCancellation(): UseNoiseCancellationReturn {
       sessionDenoiseNode = worklet.handle.node
       sessionDestination = sessionContext.createMediaStreamDestination()
 
-      // Two parallel branches: raw (muted initially) and denoised (live).
-      // The denoised branch feeds the worklet; the raw branch is a safety
-      // net so a frame or two of audio is always flowing through.
       sessionDenoiseSource.connect(sessionDenoiseNode)
       sessionDenoiseNode.connect(sessionDenoiseGain)
       sessionDenoiseGain.connect(sessionDestination)

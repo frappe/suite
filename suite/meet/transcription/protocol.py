@@ -96,7 +96,6 @@ def validate_manifest(manifest, capture, site, room, max_bytes):
         ):
             raise ValueError("Invalid transcription speaker name")
         length = integer(source.get("size"), 2, max_bytes)
-        # PCM16 mono, allowing one millisecond's timestamp rounding.
         if length % 2 or abs(length / 48 - (end - start)) > 2:
             raise ValueError("Transcription source duration mismatch")
         if not isinstance(source.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", source["sha256"]):

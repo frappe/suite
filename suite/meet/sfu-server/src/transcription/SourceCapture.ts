@@ -10,7 +10,6 @@ export interface Gap {
 	end_ms: number;
 	reason: string;
 }
-/** One decoded microphone source. No live ASR service or caption subscriber is involved. */
 export class SourceCapture {
 	private ingester: AudioIngester;
 	private segmenter: SpeechSegmenter | null = null;
@@ -39,7 +38,6 @@ export class SourceCapture {
 			onFailure: (gap: Gap) => void;
 		},
 	) {
-		// AudioIngester's capture tap returns before opening any inference stream.
 		const noInference: ISttClient = {
 			createStream: async () => {
 				throw new Error('inference_disabled');

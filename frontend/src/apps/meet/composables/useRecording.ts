@@ -25,12 +25,6 @@ type RecordingEvent = {
   recording: RecordingState | null
 }
 
-/**
- * The recording state of a meeting, for its indicator and controls. `signedIn` says whether the
- * page has a session: the state route needs one. A guest without a session gets the state in its
- * join answer (`syncState`) and on its own realtime room instead, so it never asks the route.
- * Call it in a component's setup.
- */
 export function useRecording(meetingId: string, { signedIn }: { signedIn: () => boolean }) {
   const state = ref<RecordingState | null>(null)
   const globalEnabled = ref(false)
@@ -78,9 +72,7 @@ export function useRecording(meetingId: string, { signedIn }: { signedIn: () => 
       const wasLive = isLive.value
       setState(loaded)
       if (!wasLive && loaded?.status === 'Recording') toast.info(captureNotice(loaded))
-    } catch {
-      // A member the meeting no longer admits is refused; realtime still carries the state.
-    }
+    } catch {}
   }
 
   async function start(options: CaptureOptions = defaultCaptureOptions()) {

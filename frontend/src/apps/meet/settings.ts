@@ -1,10 +1,5 @@
 import { translate as __ } from '@/platform/translation'
 
-/**
- * Meet's Settings tabs, for the in-call and preview dialogs. Meet has no
- * group in the Suite Settings dialog: a device, background or layout choice
- * only means something inside a call.
- */
 export const meetSettings = {
   label: () => __('Meet'),
   tabs: [

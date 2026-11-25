@@ -53,7 +53,6 @@ def _local(value):
 
 
 def _iso(value):
-    # Frappe stores system-local naive datetime; convert through configured zone.
     from datetime import UTC
     from zoneinfo import ZoneInfo
 
@@ -315,7 +314,6 @@ def _failure(doc, code, transient):
                 return _publish(doc, segments, gaps, True)
             except Exception:
                 frappe.db.rollback(save_point="partial_transcript_publication")
-                # Publication can mutate the document before failing to save it.
                 doc.update(before_publication)
                 doc.failure_code = "publication_failed"
                 frappe.logger("meet_transcription").error("Partial transcript publication failed")

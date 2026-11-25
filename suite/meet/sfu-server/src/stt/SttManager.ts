@@ -12,11 +12,8 @@ import {
 } from './SttClient';
 
 interface SttManagerOptions {
-	/** URL of the STT server (e.g. http://127.0.0.1:8080) */
 	sttServerUrl?: string;
-	/** Bearer token sent to the STT server, when it requires authentication */
 	sttApiKey?: string;
-	/** Use mock client in development when no STT server is configured */
 	allowMockFallback?: boolean;
 	sttClient?: ISttClient;
 	onAudioSent?: (seconds: number) => void;
@@ -116,7 +113,6 @@ export class SttManager {
 		return (this.roomSubscribers.get(roomId)?.size ?? 0) > 0;
 	}
 
-	/** Aggregate rooms, subscribers, ingesters, and held streams; recovering ingesters lack streams. */
 	getResourceCounts() {
 		return {
 			stt_subscribed_rooms: this.roomSubscribers.size,
@@ -290,7 +286,6 @@ export class SttManager {
 			return;
 		}
 
-		// A failed replacement may leave a retry without an active ingester.
 		for (const key of new Set([
 			...this.sessionRecoveries.keys(),
 			...this.sessionRecoveryHistory.keys(),
@@ -425,8 +420,6 @@ export class SttManager {
 		const recovery = Symbol(sessionKey);
 		this.sessionRecoveries.set(sessionKey, recovery);
 		const history = this.sessionRecoveryHistory.get(sessionKey);
-		// A successful start alone does not prove recovery: rapid runtime exits
-		// retain their backoff until a replacement has stayed alive for a minute.
 		let attempt =
 			history &&
 			Date.now() - history.startedAt < SttManager.STREAM_RECOVERY_RESET_MS

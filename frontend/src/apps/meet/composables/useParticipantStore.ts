@@ -18,7 +18,6 @@ export const useParticipantStore = defineStore('meet-participant', {
     sharedStage: null,
   }),
   actions: {
-    // Only an authenticated join/rejoin snapshot may establish a new room epoch.
     applySharedStage(state: SharedStageState, snapshot = false) {
       if (this.sharedStage) {
         if (state.epoch !== this.sharedStage.epoch) {

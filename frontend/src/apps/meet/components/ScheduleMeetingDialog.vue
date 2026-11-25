@@ -237,8 +237,6 @@ async function submit() {
     return
   }
   submitError.value = ''
-  // The dialog stays open on a failure and says why in its own alert, so no toast repeats it; the
-  // Schedule button's spinner is the progress.
   try {
     await scheduleMeeting.run({
       account: accountId.value,

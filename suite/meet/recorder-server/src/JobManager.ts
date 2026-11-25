@@ -145,9 +145,7 @@ export class JobManager {
 					outcome?.artifact,
 					outcome?.gaps,
 				);
-			} catch {
-				// The persisted job is marked recovery-required below.
-			}
+			} catch {}
 		}
 		const orphaned = this.store
 			.all()

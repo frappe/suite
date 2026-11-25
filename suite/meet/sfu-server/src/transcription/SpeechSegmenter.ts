@@ -1,6 +1,5 @@
 import type { SpeechDetector } from '../stt/SpeechDetector';
 
-/** Bounded speech spans on the decoded sample clock, with real pre-roll and tail. */
 export class SpeechSegmenter {
 	private pending = Buffer.alloc(0);
 	private pendingStart = 0;
@@ -41,8 +40,6 @@ export class SpeechSegmenter {
 		} else if (this.bytes) {
 			this.append(audio, start);
 			this.silence++;
-			// Near the 15-second cap, take a detected pause before the next word
-			// starts. Preserve its audio; a hard cut remains the bounded fallback.
 			if (this.silence >= 5 || this.bytes >= 13 * 24000 * 2) this.flush();
 		} else {
 			this.preRoll.push({ audio: Buffer.from(audio), start });

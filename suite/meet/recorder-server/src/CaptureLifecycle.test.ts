@@ -126,7 +126,6 @@ describe('capture lifecycle', () => {
 					concat: async () => undefined,
 				},
 				watcher: (manifest, tools, epoch, onAdopt, onError) => {
-					// Scan explicitly to exercise the real watcher without timer races.
 					watcher = new SegmentWatcher(
 						manifest,
 						tools,
@@ -889,7 +888,8 @@ describe('capture lifecycle', () => {
 		const errors = vi
 			.spyOn(logger, 'error')
 			.mockImplementation(() => undefined);
-		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> = [];
+		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> =
+			[];
 		let now = Date.parse('2026-08-30T12:00:30.000Z');
 		const supervisor = {
 			start: vi.fn(

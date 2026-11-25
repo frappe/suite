@@ -1,4 +1,3 @@
-<!-- A value with a Copy button beside it, not over it: the value truncates and the button says "Copied" for a moment after a copy. -->
 <template>
   <div
     class="flex items-center gap-2 rounded-6 border border-outline-gray-2 bg-surface-gray-2 py-1.5 pl-3 pr-1.5"
@@ -28,7 +27,6 @@ import { translate as __ } from '@/platform/translation'
 
 const props = defineProps<{
   textContent: string
-  /** For values read character by character, like an encryption fingerprint. */
   mono?: boolean
 }>()
 

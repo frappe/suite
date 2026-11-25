@@ -48,7 +48,6 @@
       @action="router.push('/meet')"
     />
 
-    <!-- The reason can be setup detail (a missing SFU secret); it is logged, not shown. -->
     <MeetStatusScreen
       v-else-if="hasConnectionError"
       icon="lucide-circle-alert"
@@ -192,7 +191,6 @@
             </Transition>
           </div>
 
-          <!-- Meeting controls live in their own row so tiles resize without JS padding -->
           <div class="pointer-events-none min-h-0">
             <MeetingToolbar
               :is-chat-open="chatStore.isChatOpen"
@@ -400,7 +398,6 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeti
 onScopeDispose(unregisterPaletteGroups)
 
 const connectionState = useConnectionState()
-// Read before the first render and before resetting the shared connection store.
 const isPreparingAutoJoin = ref(session.isLoggedIn && connectionState.justCreated)
 const currentUser = useCurrentUser()
 const mediaState = useMediaState()
@@ -699,7 +696,6 @@ provideMeetingContext({
   networkHealth,
 })
 
-// Provide legacy injects for components not yet migrated to useMeetingContext
 provide('setLocalVideoRef', mediaControls.setLocalVideoRef)
 provide('setRemoteVideoRef', mediaControls.setRemoteVideoRef)
 provide('setScreenShareVideoRef', (_consumerId: string, element: HTMLVideoElement | null) => {
@@ -725,7 +721,6 @@ provide(pollKey, poll)
 
 const isConnecting = sfuConnection.isConnecting
 const hasConnectionError = computed(() => !!connectionState.connectionError)
-// The screen gives a plain title; the reason, which can be setup detail, goes to the console.
 watch(
   () => connectionState.connectionError,
   (reason) => {
@@ -752,8 +747,6 @@ const showPreview = computed(() => {
   return inPreview || joinRequestRejected
 })
 
-// During the call, toasts rise above the toolbar instead of covering its buttons (People, Chat,
-// Meeting information). The class lives on <html> because the toaster is mounted outside this page.
 const isInCall = computed(
   () => !showPreview.value && !connectionState.connectionMoved && !hasConnectionError.value,
 )
@@ -786,8 +779,6 @@ async function confirmAndEndCall() {
   const leftMeetingId = meetingId.value
   const canRejoin = session.isLoggedIn
   await sfuConnection.endCall()
-  // Back on Meet home, say the call ended for you and offer the way back; toasts from the call
-  // (such as "Meeting created") no longer apply.
   toast.dismiss()
   if (!canRejoin) return
   toast.success(__('You left the meeting'), {
@@ -805,7 +796,6 @@ onBeforeRouteUpdate((to, from) => {
   return confirmMeetingLeave()
 })
 
-// Soft connecting feedback: only if join takes longer than 5s (no full-page spinner).
 const CONNECTING_TOAST_ID = 'meet-connecting'
 const CONNECTING_TOAST_DELAY_MS = 5000
 let connectingToastTimer: ReturnType<typeof setTimeout> | null = null

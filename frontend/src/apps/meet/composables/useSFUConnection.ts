@@ -392,8 +392,6 @@ export function useSFUConnection(deps: {
       })
       sfuManager.value = manager
 
-      // Register SFU signaling handlers before connect/join. E2EE joiners can
-      // receive their host envelope immediately after sending their hello.
       setupFrappeRealtimeEventListeners()
 
       await manager.startParticipantConnection({
@@ -855,7 +853,6 @@ export function useSFUConnection(deps: {
       }
       if (joinResult.recording !== undefined) onRecordingState?.(joinResult.recording)
 
-      // Show meeting shell immediately; SFU setup continues in the background.
       connectionState.isInPreview = false
       joiningInProgress.value = true
       const prefetched = connectionDetailsFromJoinPayload(joinResult, {
@@ -883,7 +880,6 @@ export function useSFUConnection(deps: {
     try {
       joiningInProgress.value = true
       connectionState.connectionError = null
-      // Optimistic UI: leave preview shell while join/SFU work runs.
       connectionState.isInPreview = false
 
       connectionState.guestAuthToken = null

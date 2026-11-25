@@ -333,7 +333,6 @@ describe('ParticipantConnection lifecycle', () => {
       sfuClient.disconnect.mockImplementation(async () => {
         retainedUntil = Date.now() + 30_000
       })
-      // Independent server claim model: socket fallback, retained owner, no automatic takeover.
       sfuClient.joinRoom.mockImplementation(
         async (_room, _user, _media, options?: { connectionId?: string; conflictId?: string }) => {
           const claimant = options?.connectionId ?? `socket-${socket}`
@@ -354,7 +353,6 @@ describe('ParticipantConnection lifecycle', () => {
         await vi.advanceTimersByTimeAsync(35_000)
         owner = undefined
       }
-      // A join can claim the slot before later media setup fails and forces another socket.
       transportManager.initializeDevice
         .mockRejectedValueOnce(new Error('device setup interrupted'))
         .mockRejectedValueOnce(new Error('device setup interrupted again'))

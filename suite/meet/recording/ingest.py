@@ -364,8 +364,6 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
                 parent,
                 _artifact_name(recording),
                 stream,
-                # `ended_at` is naive UTC; an aware instant says so, and Drive
-                # converts it to the site zone it stores.
                 content_modified=get_datetime(recording.ended_at).replace(tzinfo=UTC),
                 reservation=recording_storage_reservation_key(recording.name),
             )

@@ -866,8 +866,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     const operation = createCameraOperation()
     try {
       assertCurrentCameraOperation(operation)
-      // An unanswered permission prompt can hold getUserMedia open indefinitely.
-      // Request new permissions only from the explicit camera and microphone controls.
       const [micOn, cameraOn] = await Promise.all([
         prefMicEnabled.value && hasMediaPermission('microphone'),
         prefCameraEnabled.value && hasMediaPermission('camera'),
@@ -1305,7 +1303,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
             'Someone is already sharing their screen. Starting yours may result in multiple active screen shares.',
           ),
           onConfirm: () => {
-            // Start the picker inside the confirmation click's activation.
             void startScreenShare().finally(resolve)
           },
           onCancel: () => resolve(),
@@ -1390,8 +1387,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     },
   )
 
-  // Surface DTLN init failures as a non-blocking warning. The mic keeps
-  // working on the raw track; this just tells the user why denoising is off.
   watch(noiseCancellation.error, (message) => {
     if (message) {
       toast.warning(__('Could not use noise cancellation. Using the microphone without it.'))
