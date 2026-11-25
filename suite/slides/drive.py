@@ -356,6 +356,45 @@ def node_title_of(node: str) -> str:
     return frappe.db.get_value("Drive Node", node, "title") or ""
 
 
+def readable_templates() -> list[dict]:
+    """Answer the readable template nodes, oldest first, under the keys the picker reads."""
+    nodes = frappe.get_all(
+        "Drive Node",
+        filters={"content_doctype": DOCTYPE, "is_template": 1, "state": "Active"},
+        fields=["name", "title", "content_docname", "creation"],
+        order_by="creation asc",
+        ignore_permissions=True,
+    )
+    if not nodes:
+        return []
+
+    readable = set(
+        frappe.get_list(
+            DOCTYPE,
+            filters={NODE_FIELD: ["in", [node["name"] for node in nodes]]},
+            pluck="name",
+        )
+    )
+    return [picker_template(node) for node in nodes if node["content_docname"] in readable]
+
+
+def picker_template(node: dict) -> dict:
+    """Answer a template `node` under the keys the picker reads."""
+    return {
+        "name": node["content_docname"],
+        "node": node["name"],
+        "title": node["title"],
+        "slug": slug(node["title"] or ""),
+        "creation": node["creation"],
+        "is_template": 1,
+    }
+
+
+def slug(text: str) -> str:
+    """Answer `text` lowercased, its spaces as hyphens."""
+    return text.lower().replace(" ", "-")
+
+
 def node_is_template(node: str) -> bool:
     """True when this node is a template. The legacy `is_template` column never is (§8.10)."""
     return bool(frappe.db.get_value("Drive Node", node, "is_template"))

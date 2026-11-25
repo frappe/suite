@@ -12,7 +12,7 @@
       <MeetingHeader :meeting-id="meetingId" :meeting-title="meetingTitle">
         <template #right>
           <RecordingIndicator
-            v-if="!showPreview && recording.isLive.value && recording.state.value"
+            v-if="!showPreview && recording.isCapturing.value && recording.state.value"
             :recording="recording.state.value"
             :can-stop="isCurrentUserHost || isCurrentUserCohost"
             @click="handleRecordingAction"
@@ -157,6 +157,7 @@
                   :open="true"
                   :messages="chatStore.chatMessages"
                   :avatar-by-user="participantAvatars"
+                  :name-by-user="participantNames"
                   :user-id="(currentUser.currentUser.value?.user_id ?? '') || ''"
                   :user-name="
                     (currentUser.currentUser.value?.full_name as string) ||
@@ -168,8 +169,12 @@
                   :is-guest="isGuestSession"
                   :host-only-chat="chatStore.hostOnlyChat"
                   :pinned-message="chatStore.pinnedMessage"
+                  :send-message="chat.onSendChat"
+                  :reactions-by-message="chatStore.reactionsByMessage"
+                  :expired-pinned-message-id="chatStore.expiredPinnedMessageId"
+                  :has-unavailable-encrypted-history="chatStore.hasUnavailableEncryptedHistory"
+                  :set-reaction="chat.setReaction"
                   @close="toggleChat"
-                  @send="chat.onSendChat"
                   @pin="chat.pinMessage"
                   @unpin="unpinChatMessage"
                 />
@@ -256,6 +261,21 @@
       </template>
     </template>
 
+    <MeetingPictureInPicture
+      :active="
+        sfuConnection.isSetupComplete.value &&
+        !showPreview &&
+        !hasConnectionError &&
+        !connectionState.connectionMoved &&
+        !canLeaveMeeting
+      "
+      :mic-on="mediaState.isMicOn"
+      :camera-on="mediaState.isCameraOn"
+      @toggle-camera="mediaControls.toggleCamera()"
+      @toggle-microphone="mediaControls.toggleMicrophone()"
+      @leave="confirmAndEndCall"
+    />
+
     <!-- Join request notifications -->
     <JoinRequestNotifications
       :waiting-users="lobbyUsersForNotifications"
@@ -265,12 +285,13 @@
 
     <RecordingPreflightDialog
       v-model:open="recordingDialogOpen"
-      :preflight="recordingPreflight"
-      :confirm="confirmRecordingStart"
+      :confirm="recording.start"
+      :e2ee="e2eeState.isContextReady.value"
     />
     <RecordingStopDialog
       v-model="recordingStopDialogOpen"
       :loading="recording.stopLoading.value"
+      :recording="recording.state.value"
       @confirm="confirmRecordingStop"
     />
   </div>
@@ -306,6 +327,7 @@ import LobbyOverlay from '../components/LobbyOverlay.vue'
 import MeetAvatar from '../components/MeetAvatar.vue'
 import MeetingHeader from '../components/MeetingHeader.vue'
 import MeetingLayout from '../components/MeetingLayout.vue'
+import MeetingPictureInPicture from '../components/MeetingPictureInPicture.vue'
 import MeetingPreview from '../components/MeetingPreview.vue'
 import MeetingToolbar from '../components/MeetingToolbar.vue'
 import MeetStatusScreen from '../components/MeetStatusScreen.vue'
@@ -343,7 +365,7 @@ import { useRaiseHand } from '../composables/useRaiseHand'
 import { useRaiseHandStore } from '../composables/useRaiseHandStore'
 import { useReactions } from '../composables/useReactions'
 import { useReactionStore } from '../composables/useReactionStore'
-import { useRecording, type RecordingPreflight } from '../composables/useRecording'
+import { useRecording } from '../composables/useRecording'
 import { useResponsiveGrid } from '../composables/useResponsiveGrid'
 import { useSFUConnection, type SFUScreenShareData } from '../composables/useSFUConnection'
 import { autoHideToolbar, selectedSpeakerId } from '../data/mediaPreferences'
@@ -393,6 +415,8 @@ onScopeDispose(unregisterPaletteGroups)
 
 // --- Stores (singletons) ---
 const connectionState = useConnectionState()
+// Read before the first render and before resetting the shared connection store.
+const isPreparingAutoJoin = ref(session.isLoggedIn && connectionState.justCreated)
 const currentUser = useCurrentUser()
 const mediaState = useMediaState()
 const participantStore = useParticipantStore()
@@ -411,19 +435,17 @@ const isCurrentUserCohost = ref(false)
 const recording = useRecording(meetingId.value, { signedIn: () => session.isLoggedIn })
 const recordingDialogOpen = ref(false)
 const recordingStopDialogOpen = ref(false)
-const recordingPreflight = ref<RecordingPreflight | null>(null)
-async function handleRecordingAction() {
+function handleRecordingAction() {
   try {
-    if (recording.isStarting.value) return
+    if (recording.isStarting.value || recording.state.value?.status === 'Stopping') return
     if (recording.isLive.value) {
       if (!isCurrentUserHost.value && !isCurrentUserCohost.value) return
-      if (recording.state.value?.status !== 'Stopping') recordingStopDialogOpen.value = true
+      recordingStopDialogOpen.value = true
       return
     }
-    recordingPreflight.value = await recording.getPreflight()
     recordingDialogOpen.value = true
   } catch (error) {
-    toast.error(refusalOr(error, __('Could not manage recording')))
+    toast.error(refusalOr(error, __('Could not manage capture')))
   }
 }
 async function confirmRecordingStop() {
@@ -431,15 +453,7 @@ async function confirmRecordingStop() {
     await recording.stop()
     recordingStopDialogOpen.value = false
   } catch (error) {
-    toast.error(refusalOr(error, __('Could not stop recording')))
-  }
-}
-async function confirmRecordingStart() {
-  try {
-    await recording.start()
-  } catch (error) {
-    toast.error(refusalOr(error, __('Could not start recording')))
-    throw error
+    toast.error(refusalOr(error, __('Could not stop capture')))
   }
 }
 const previewDetails = useQuery(api.meet.rooms.preview, () => ({ meeting_id: meetingId.value }))
@@ -590,6 +604,7 @@ const sfuConnection = useSFUConnection({
   onE2EERequired: () => captions.disableCaptionsForE2EE(),
   onRecordingState: recording.syncState,
   beginRecordingAdmissionSync: recording.beginAdmissionSync,
+  onTranscriptionCaptureState: recording.syncTranscriptionCapture,
   onRecordingEnabled: recording.setGlobalEnabled,
   onRole: (isHost, isCohost) => {
     isCurrentUserHost.value = isHost
@@ -750,6 +765,7 @@ const isInLobby = computed(() => lobbyStore.isInLobby || false)
 const isWaitingForApproval = computed(() => lobbyStore.isWaitingForApproval || false)
 const isRejected = computed(() => lobbyStore.isJoinRequestRejected || false)
 const showPreview = computed(() => {
+  if (isPreparingAutoJoin.value) return false
   const isUnauthenticatedGuest = !session.isLoggedIn && !isGuestSession.value
   if (isUnauthenticatedGuest) {
     return true
@@ -890,6 +906,15 @@ const participantAvatars = computed(() =>
     ]),
   ),
 )
+const participantNames = computed(() =>
+  Object.fromEntries(
+    Object.entries(participantsForPeoplePanel.value).map(([userId, participant]) => [
+      userId,
+      participant.user_name,
+    ]),
+  ),
+)
+
 const { isMobile } = useResponsiveGrid()
 const panelWidth = computed(() => {
   if (!activePanel.value) return '0rem'
@@ -1065,10 +1090,9 @@ const handleE2EENeedsMediaRepublish = async (event: Event) => {
 }
 
 // --- Lifecycle ---
-onMounted(async () => {
-  // get wasJustCreated before resetting stores else it'll be reset to false
-  const wasJustCreated = connectionState.justCreated
+let disposeChatEvents: (() => void) | undefined
 
+onMounted(async () => {
   // Reset all stores
   connectionState.$reset()
   mediaState.$reset()
@@ -1086,6 +1110,7 @@ onMounted(async () => {
   document.addEventListener('meet:e2ee-needs-media-republish', handleE2EENeedsMediaRepublish)
   document.addEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
   syncFullscreenState()
+  disposeChatEvents = chat.setupChatEvents(showMeetingNotification)
 
   // Check meeting access for unauthenticated users
   if (!session.isLoggedIn) {
@@ -1109,7 +1134,6 @@ onMounted(async () => {
   }
 
   // Setup event handlers
-  chat.setupChatEvents(showMeetingNotification)
   reactions.setupReactionEvents()
   raiseHand.setupRaiseHandEvents()
   poll.setupPollEvents(showMeetingNotification)
@@ -1139,13 +1163,15 @@ onMounted(async () => {
   }
   isInitializingPreview.value = false
 
-  // Auto-join if just created
-  if (wasJustCreated) {
-    connectionState.justCreated = false
-    await joinMeetingFromPreview()
+  if (isPreparingAutoJoin.value) {
+    const joining = joinMeetingFromPreview()
+    isPreparingAutoJoin.value = false
+    await joining
   }
 })
 onUnmounted(() => {
+  disposeChatEvents?.()
+  isPreparingAutoJoin.value = false
   clearConnectingToast()
   clearMeetingNotifications()
   document.removeEventListener('fullscreenchange', syncFullscreenState)

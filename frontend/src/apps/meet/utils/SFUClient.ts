@@ -16,6 +16,7 @@ import { translate as __ } from '@/platform/translation'
 
 import type { JoinRoomRequest } from '../../../../../suite/meet/types'
 import { parseCameraLayerDemand } from '../../../../../suite/meet/types/cameraLayers'
+import type { ChatReactionRequest } from '../../../../../suite/meet/types/chatReactions'
 import {
   isUnknownRecord,
   normalizeJoinPayload,
@@ -40,6 +41,7 @@ interface MeetingJoinRequest extends Omit<JoinRoomRequest, 'userData' | 'mediaSt
 }
 
 interface OutgoingChatMessage {
+  replyToId?: string
   message: string
   clientId?: string
 }
@@ -834,6 +836,9 @@ export class SFUClient {
       webrtc_answer: () => {},
       ice_candidate: () => {},
       'chat:message': () => {},
+      'chat:snapshot': () => {},
+      'chat:message_evicted': () => {},
+      'chat:reactions_updated': () => {},
       'chat:pin_updated': () => {},
       existing_pinned_message: () => {},
       active_speaker: () => {},
@@ -1159,7 +1164,7 @@ export class SFUClient {
 
   async sendChatMessage(
     message: string,
-    options: { clientId?: unknown } = {},
+    options: { clientId?: unknown; replyToId?: string } = {},
   ): Promise<{ success: boolean; timestamp: string; messageId?: string }> {
     if (!this.connected) {
       throw new Error('Not connected to SFU')
@@ -1170,6 +1175,8 @@ export class SFUClient {
       payload.clientId = String(options.clientId)
     }
 
+    if (options.replyToId) payload.replyToId = options.replyToId
+
     const response = requireObject(await this.sendRequest('chat:send', payload), 'chat send')
     if (typeof response.success !== 'boolean' || typeof response.timestamp !== 'string')
       throw new Error('Invalid chat send response')
@@ -1179,6 +1186,10 @@ export class SFUClient {
     }
     if (typeof response.messageId === 'string') result.messageId = response.messageId
     return result
+  }
+
+  setChatReaction(data: ChatReactionRequest): Promise<unknown> {
+    return this.sendRequest('chat:react', data)
   }
 
   /** Pin or explicitly unpin a room chat message. */

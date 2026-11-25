@@ -11,7 +11,11 @@ const disconnectWaitMs = Number.parseInt(
 
 test("media fault fixture follows native network availability", async ({ createParticipant }) => {
 	const participant = await createParticipant();
-	await participant.page.goto(appUrl("/meet/"));
+	const url = appUrl("/meet/network-availability-fixture");
+	await participant.page.route(url, (route) =>
+		route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Network availability</title>" }),
+	);
+	await participant.page.goto(url);
 	await expect.poll(() => participant.page.evaluate(() => navigator.onLine)).toBe(true);
 	try {
 		await participant.context.setOffline(true);

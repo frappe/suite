@@ -1,42 +1,50 @@
+import { Picker } from 'emoji-mart'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
-import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
+import EmojiPicker from '@/platform/emoji-picker/EmojiPicker.vue'
 import { translationPlugin } from '@/platform/translation'
+
+import { prepareEmojiPicker } from './prepareEmojiPicker'
 
 // The real popover: its trigger toggles on a press by itself, which is what opening on hover has to
 // work with. A stand-in without that passed while a tap did nothing at all.
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/Popover')),
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Popover')),
   Button: defineComponent({
     setup(_, { attrs }) {
       return () => h('button', { 'data-plus': '', ...attrs }, 'plus')
     },
   }),
-  FormControl: defineComponent({
+}))
+vi.mock('./prepareEmojiPicker', () => ({ prepareEmojiPicker: vi.fn() }))
+vi.mock('./EmojiGrid.vue', () => ({
+  default: defineComponent({
     setup() {
-      return () => h('input', { 'data-search': '' })
+      return () => h('button', { 'data-emoji-grid': '' }, 'Full emoji grid')
     },
   }),
 }))
-vi.mock('gemoji', () => ({ gemoji: [] }))
 
 const pointer = (type: string, pointerType: string) =>
   Object.assign(new Event(type, { bubbles: type === 'click' }), { pointerType })
 
 const paletteIsOpen = () => document.body.textContent?.includes('🙏') ?? false
-const fullListIsOpen = () => !!document.body.querySelector('[data-search]')
+const fullListIsOpen = () => !!document.body.querySelector('[data-emoji-grid]')
 
 let cleanup: (() => void) | undefined
-beforeEach(() => vi.useFakeTimers())
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.mocked(prepareEmojiPicker).mockReset().mockResolvedValue(Picker)
+})
 afterEach(() => {
   cleanup?.()
   document.body.innerHTML = ''
   vi.useRealTimers()
 })
 
-function render(openOnHover: boolean) {
-  const shortPalette = ref(true)
+function render(openOnHover: boolean, startsWithPalette = true) {
+  const shortPalette = ref(startsWithPalette)
   const root = document.createElement('div')
   document.body.append(root)
   const app = createApp({
@@ -46,7 +54,7 @@ function render(openOnHover: boolean) {
         {
           openOnHover,
           reaction: shortPalette.value,
-          'onUpdate:reaction': (value: boolean) => (shortPalette.value = value),
+          'onUpdate:reaction': (value?: boolean) => (shortPalette.value = value ?? false),
         },
         {
           default: ({
@@ -193,4 +201,20 @@ describe('EmojiPicker without it, as in the composer', () => {
     await after()
     expect(paletteIsOpen()).toBe(false)
   })
+})
+
+it('opens directly to the grid once the first request is ready', async () => {
+  const preparation = Promise.withResolvers<typeof Picker>()
+  vi.mocked(prepareEmojiPicker).mockReturnValue(preparation.promise)
+  const { trigger, after } = render(false, false)
+
+  trigger.click()
+  await after()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(fullListIsOpen()).toBe(false)
+
+  preparation.resolve(Picker)
+  await after()
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  expect(fullListIsOpen()).toBe(true)
 })

@@ -1,8 +1,13 @@
 <template>
   <div class="flex flex-wrap items-center justify-between gap-3">
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex w-full flex-wrap items-center gap-3 sm:w-auto">
       <slot name="lead" />
-      <FormControl v-model="search" :placeholder="__('Search')" class="w-80">
+      <FormControl
+        v-model="search"
+        :placeholder="__('Search')"
+        :aria-label="__('Search invitations')"
+        class="w-full sm:w-80"
+      >
         <template #prefix>
           <span class="lucide-search size-4 text-ink-gray-5" aria-hidden="true" />
         </template>
@@ -22,9 +27,8 @@
   <List
     v-model:selection="selectedInvites"
     selectable
-    class="-mx-3 list-row-px-3"
+    class="-mx-3 list-row-px-3 [--_list-row-height:3.5rem] sm:[--_list-row-height:2.75rem]"
     :columns="['minmax(0,1fr)', 'minmax(0,1fr)', 'minmax(0,1fr)', '8rem', '10rem']"
-    :row-height="56"
   >
     <ListHeader :inert="list.status !== 'success'">
       <ListHeaderCell>{{ __('Assigned email address') }}</ListHeaderCell>
@@ -86,9 +90,14 @@
   </List>
   <div
     v-if="list.status === 'success' && !inviteRows.length"
-    class="flex flex-col items-center gap-1 py-12 text-center"
+    class="flex flex-col items-center gap-1 py-16 text-center"
   >
-    <p class="text-base font-medium text-ink-gray-8">{{ emptyState.title }}</p>
+    <span
+      :class="hasActiveFilters ? 'lucide-search-x' : 'lucide-mail'"
+      class="size-6 text-ink-gray-4"
+      aria-hidden="true"
+    />
+    <p class="text-base font-medium text-ink-gray-7">{{ emptyState.title }}</p>
     <p class="text-p-sm text-ink-gray-5">{{ emptyState.description }}</p>
   </div>
   <div v-if="selectedInvites.length" class="flex items-center gap-2">

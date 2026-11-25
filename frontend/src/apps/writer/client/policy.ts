@@ -2,6 +2,8 @@ import type { OwnerRegistration } from '@/platform/server-state'
 
 const effects = {
   document_settings: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
+  document_create: { invalidates: ['drive.node_children', 'drive.view_list'] },
+  document_write: { invalidates: ['document', 'drive.node_versions', 'drive.view_list'] },
   convert_version: 'none',
 } as const
 

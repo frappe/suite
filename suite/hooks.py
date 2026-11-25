@@ -340,6 +340,7 @@ scheduler_events = {
         "suite.drive.jobs.sweep_unused_document_media",
         # mail
         "suite.mail.doctype.jmap_account.jmap_account.delete_orphaned_jmap_accounts",
+        "suite.mail.store.quota.enforce_message_cache_quotas",
         "suite.mail.doctype.mail_exchange.mail_exchange.clean_import_export_directories",
         "suite.mail.api.outbound.clean_abandoned_chunked_uploads",
         "suite.mail.doctype.push_subscription.push_subscription.renew_expiring_push_subscriptions",
@@ -373,6 +374,7 @@ scheduler_events = {
             # meet
             "suite.meet.api.recording.reconcile_pending_recordings",
             "suite.meet.recording.ingest.reconcile_due_finalizations",
+            "suite.meet.api.transcription.maintenance",
         ],
         "*/5 * * * *": [
             # mail
@@ -406,8 +408,9 @@ after_job = "suite.mail.framework.close_mail_clients"
 # prefixes. WebDAV's entry predates the framework-adapter rule. Drive's write
 # isolation reads the path the Suite dispatcher rewrote, so it follows it. The
 # old-page redirect table goes last: it answers page paths only, which no
-# entry above claims.
+# entry above claims. The content package loads first, see `suite.content.load`
 before_request = [
+    "suite.content.load",
     "suite.drive.webdav.dispatch.handle_before_request",
     "suite.composition.http.handle_before_request",
     "suite.drive.framework.isolate_drive_writes",
@@ -531,6 +534,7 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/method/suite.calendar.api.",
     # meet — recorder callbacks remain on their existing protocol during the API cutover
     "/api/method/suite.meet.api.recording.recorder_",
+    "/api/method/suite.meet.api.transcription.",
     "/api/v2/method/suite.meet.api.meeting.",
     "/api/v2/method/suite.meet.api.schedule.",
     "/api/v2/method/suite.meet.api.test_helpers.",
@@ -545,6 +549,7 @@ ALLOWED_WILDCARD_PATHS = [
     # writer — backward-compatible prefix for embed URLs stored in old documents
     # (see override_whitelisted_methods).
     "/api/method/writer.api.",
+    "/api/suite/slides/",
     "/api/method/suite.slides.api.",
     "/api/method/suite.sheets.api.",
     # drive — WebDAV namespace

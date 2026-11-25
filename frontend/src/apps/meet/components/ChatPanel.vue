@@ -57,6 +57,13 @@
         </div>
 
         <div ref="listEl" class="flex-1 overflow-y-auto px-3 py-7">
+          <p
+            v-if="hasUnavailableEncryptedHistory"
+            role="status"
+            class="mb-4 px-2 text-center text-sm text-ink-gray-6"
+          >
+            {{ __('Some earlier messages are unavailable after rejoining this encrypted call.') }}
+          </p>
           <div class="flex flex-col gap-5">
             <template v-for="item in chatItems" :key="item.key">
               <div
@@ -100,7 +107,7 @@
                 />
 
                 <div
-                  class="flex min-w-0 max-w-[314px] flex-col gap-1.5"
+                  class="flex min-w-0 max-w-[314px] flex-1 flex-col gap-1.5"
                   :class="item.group.isOwn ? 'items-end' : 'items-start'"
                 >
                   <div
@@ -114,119 +121,51 @@
                     time(item.group.timestamp)
                   }}</span>
 
-                  <div
-                    class="flex flex-col gap-2.5"
-                    :class="item.group.isOwn ? 'items-end' : 'items-start'"
-                  >
-                    <div
+                  <div class="flex w-full min-w-0 flex-col gap-3">
+                    <ChatMessageRow
                       v-for="message in item.group.messages"
                       :key="message.id"
-                      class="group relative max-w-full whitespace-pre-wrap rounded-[18px] px-3 py-2.5 text-left text-p-sm tracking-[0.28px] text-ink-gray-8 [overflow-wrap:anywhere]"
-                      :data-message-id="message.messageId"
-                      :class="item.group.isOwn ? 'bg-surface-gray-3' : 'bg-surface-gray-2'"
-                    >
-                      <Button
-                        v-if="canPin"
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        :icon="isPinned(message) ? 'lucide-pin-off' : 'lucide-pin'"
-                        :class="[
-                          'absolute -top-2.5 -right-2.5 !rounded-full border border-outline-gray-2 !bg-surface-gray-1 !p-0 !text-ink-gray-5 shadow-sm hover:!bg-surface-gray-2 hover:!text-ink-gray-8',
-                          isPinned(message) ? '!opacity-100' : 'opacity-0 group-hover:opacity-100',
-                        ]"
-                        :label="isPinned(message) ? __('Unpin message') : __('Pin message')"
-                        :tooltip="isPinned(message) ? __('Unpin message') : __('Pin message')"
-                        @click="togglePin(message)"
-                      />
-                      <template v-for="(token, i) in tokenizeChatMessage(message.message)" :key="i">
-                        <a
-                          v-if="token.type === 'link'"
-                          :href="token.url"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="break-all text-ink-blue-5 underline"
-                          >{{ token.text }}</a
-                        >
-                        <span v-else>{{ token.text }}</span>
-                      </template>
-                    </div>
+                      :message
+                      :is-own="item.group.isOwn"
+                      :user-id
+                      :can-send-messages="canSendMessages"
+                      :can-pin="canPin"
+                      :pinned="isPinned(message)"
+                      :expired="message.messageId === expiredPinnedMessageId"
+                      :can-jump-to-quote="canJumpToQuote(message)"
+                      :highlighted="
+                        !!highlightedMessageId && highlightedMessageId === message.messageId
+                      "
+                      :reactions="
+                        message.messageId ? (reactionsByMessage[message.messageId] ?? []) : []
+                      "
+                      :participant-name="participantName"
+                      @reply="startReply(message)"
+                      @jump-to-quote="scrollToMessage"
+                      @toggle-pin="togglePin(message)"
+                      @react="setReaction"
+                    />
                   </div>
                 </div>
               </div>
             </template>
           </div>
 
-          <div v-if="chatItems.length === 0" class="mt-8 text-center text-sm text-ink-gray-5">
+          <div
+            v-if="chatItems.length === 0 && !hasUnavailableEncryptedHistory"
+            class="mt-8 text-center text-sm text-ink-gray-6"
+          >
             {{ __('No messages yet') }}
           </div>
         </div>
 
-        <form class="relative shrink-0 p-3" @submit.prevent="handleSend">
-          <template v-if="canSendMessages">
-            <div
-              class="chat-composer relative flex cursor-text items-center gap-2 rounded-5 border border-outline-gray-2 bg-surface-base py-1.5 pe-2 transition-colors hover:border-outline-gray-3 hover:shadow-sm focus-within:border-outline-gray-4 focus-within:shadow-sm"
-              @click="focusInput"
-            >
-              <div
-                v-if="emojiMenuActive"
-                class="absolute bottom-full left-0 z-50 mb-1 max-h-[220px] min-w-[12rem] overflow-y-auto rounded-6 border border-outline-gray-2 bg-surface-elevation-2 p-1 shadow-lg"
-                role="listbox"
-                :aria-label="__('Emoji suggestions')"
-                data-testid="chat-emoji-suggestions"
-              >
-                <button
-                  v-for="(item, index) in emojiSuggestions"
-                  :key="item.name"
-                  type="button"
-                  role="option"
-                  class="flex w-full items-center gap-2 rounded-4 px-2 py-1.5 text-left text-sm"
-                  :class="
-                    index === emojiSelectedIndex ? 'bg-surface-gray-3' : 'hover:bg-surface-gray-2'
-                  "
-                  :aria-selected="index === emojiSelectedIndex"
-                  @mousedown.prevent="selectEmoji(item)"
-                  @mouseenter="emojiSelectedIndex = index"
-                >
-                  <span class="text-base leading-none">{{ item.emoji }}</span>
-                  <span class="truncate text-ink-gray-4">{{ item.name }}</span>
-                </button>
-                <div
-                  v-if="emojiSuggestions.length === 0"
-                  class="px-2 py-1.5 text-sm text-ink-gray-4"
-                >
-                  {{ __('No results') }}
-                </div>
-              </div>
-              <textarea
-                ref="inputEl"
-                v-model="draft"
-                rows="1"
-                :placeholder="__('Type a message')"
-                class="chat-composer-input min-h-7 min-w-0 flex-1 resize-none border-0 bg-transparent py-1.5 text-base text-ink-gray-8 shadow-none outline-none ring-0 placeholder-ink-gray-4 focus:border-0 focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
-                @input="onInput"
-                @keydown="onKeydown"
-              />
-              <Button
-                type="submit"
-                variant="subtle"
-                theme="gray"
-                size="sm"
-                :label="__('Send message')"
-              >
-                <template #icon>
-                  <lucide-send class="h-4 w-4" />
-                </template>
-              </Button>
-            </div>
-          </template>
-          <div
-            v-else
-            class="m-2 rounded-6 border border-outline-gray-2 bg-surface-gray-2 py-3 text-center text-sm text-ink-gray-5"
-          >
-            {{ __('The host has restricted chat to hosts and co-hosts only.') }}
-          </div>
-        </form>
+        <ChatComposer
+          ref="composer"
+          v-model:reply-target="replyTarget"
+          :open
+          :can-send-messages="canSendMessages"
+          :send-message="sendMessage"
+        />
         <CreatePollModal v-model="showPollModal" @submit="handlePollSubmit" />
       </div>
     </div>
@@ -236,41 +175,38 @@
 <script setup lang="ts">
 import LucideChartColumn from '~icons/lucide/chart-column'
 import { Button, Dropdown } from 'frappe-ui'
-import { computed, inject, markRaw, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, inject, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { prepareEmojiPicker } from '@/platform/emoji-picker/prepareEmojiPicker'
 import { translate as __ } from '@/platform/translation'
 
+import {
+  type ChatReactionRequest,
+  type ChatReactionsUpdated,
+} from '../../../../../suite/meet/types/chatReactions'
+import type { ChatMessage } from '../composables/useChatStore'
 import { pollKey } from '../composables/usePoll'
 import { usePollStore } from '../composables/usePollStore'
 import type { PollPayloadFE } from '../types'
-import { tokenizeChatMessage } from '../utils/chatMessageTokens'
 import { buildChatTimeline } from '../utils/chatTimeline'
-import {
-  findColonQuery,
-  insertEmojiAtQuery,
-  rememberEmoji,
-  suggestEmojis,
-  type EmojiSuggestion,
-} from '../utils/emojiSuggest'
+import ChatComposer from './ChatComposer.vue'
+import ChatMessageRow from './ChatMessage.vue'
 import CreatePollModal from './CreatePollModal.vue'
 import MeetAvatar from './MeetAvatar.vue'
 import PollMessageCard from './PollMessageCard.vue'
-
-interface ChatMessage {
-  id: string | number
-  messageId?: string
-  user_id: string
-  user_name: string
-  message: string
-  timestamp: string
-}
 
 const props = defineProps<{
   open?: boolean
   userId?: string
   userName?: string
   avatarByUser?: Record<string, string | null | undefined>
+  nameByUser?: Record<string, string>
   messages?: ChatMessage[]
+  sendMessage: (text: string, replyToId?: string) => Promise<boolean>
+  reactionsByMessage: Record<string, ChatReactionsUpdated['reactions']>
+  expiredPinnedMessageId?: string | null
+  hasUnavailableEncryptedHistory?: boolean
+  setReaction: (data: ChatReactionRequest) => Promise<void>
   isHost?: boolean
   isCohost?: boolean
   isGuest?: boolean
@@ -306,26 +242,20 @@ const handlePollSubmit = async (payload: { question: string; options: { text: st
 
 const emit = defineEmits<{
   close: []
-  send: [text: string]
   pin: [messageId: string]
   unpin: []
 }>()
 const listEl = ref<HTMLElement | null>(null)
-const inputEl = ref<HTMLTextAreaElement | null>(null)
-const draft = ref('')
+const composer = ref<InstanceType<typeof ChatComposer> | null>(null)
+const replyTarget = ref<ChatMessage | null>(null)
+const messagesById = computed(() => new Set(props.messages?.map((message) => message.messageId)))
 
-const emojiSuggestions = ref<EmojiSuggestion[]>([])
-const emojiSelectedIndex = ref(0)
-const emojiQueryStart = ref<number | null>(null)
-/** True while a trailing `:query` is active at the caret (incl. empty query after `:`). */
-const emojiMenuActive = computed(() => emojiQueryStart.value !== null)
+const canPin = computed(() => Boolean(props.isHost || props.isCohost))
+const canSendMessages = computed(() => !props.hostOnlyChat || canPin.value)
 
-const canSendMessages = computed(() => {
-  if (!props.hostOnlyChat) return true
-  return props.isHost || props.isCohost
-})
-
-const canPin = computed(() => props.isHost || props.isCohost)
+function canJumpToQuote(message: ChatMessage) {
+  return Boolean(message.replyTo && messagesById.value.has(message.replyTo.messageId))
+}
 
 function isPinned(message: ChatMessage): boolean {
   return Boolean(props.pinnedMessage && props.pinnedMessage.messageId === message.messageId)
@@ -337,11 +267,42 @@ function togglePin(message: ChatMessage) {
   else emit('pin', message.messageId)
 }
 
+function startReply(message: ChatMessage) {
+  replyTarget.value = message
+  nextTick(() => composer.value?.focusInput())
+}
+
+const chatNames = computed(
+  () => new Map(props.messages?.map(({ user_id, user_name }) => [user_id, user_name])),
+)
+
+function participantName(id: string) {
+  if (id === props.userId) return 'You'
+  return props.nameByUser?.[id] || chatNames.value.get(id) || 'Participant'
+}
+
+const MESSAGE_HIGHLIGHT_DURATION_MS = 4000
+const highlightedMessageId = ref<string>()
+let highlightTimeout: ReturnType<typeof setTimeout> | undefined
+
 function scrollToMessage(messageId?: string) {
   if (!messageId) return
-  const messageEl = listEl.value?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`)
-  messageEl?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  const messageEl = listEl.value?.querySelector<HTMLElement>(
+    `[data-message-id="${CSS.escape(messageId)}"]`,
+  )
+  if (!messageEl) return
+
+  messageEl.focus({ preventScroll: true })
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  messageEl.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'center' })
+  highlightedMessageId.value = messageId
+  clearTimeout(highlightTimeout)
+  highlightTimeout = setTimeout(() => {
+    highlightedMessageId.value = undefined
+  }, MESSAGE_HIGHLIGHT_DURATION_MS)
 }
+
+onBeforeUnmount(() => clearTimeout(highlightTimeout))
 
 onMounted(async () => {
   await scrollToBottom()
@@ -368,116 +329,6 @@ function pollCreatorName(poll: PollPayloadFE) {
   return poll.createdByName || poll.createdBy
 }
 
-function syncEmojiMenu() {
-  const el = inputEl.value
-  if (!el) {
-    closeEmojiMenu()
-    return
-  }
-  const caret = el.selectionStart ?? draft.value.length
-  const found = findColonQuery(draft.value, caret)
-  if (!found) {
-    closeEmojiMenu()
-    return
-  }
-  emojiQueryStart.value = found.start
-  emojiSuggestions.value = suggestEmojis(found.query)
-  emojiSelectedIndex.value = 0
-}
-
-function closeEmojiMenu() {
-  emojiQueryStart.value = null
-  emojiSuggestions.value = []
-  emojiSelectedIndex.value = 0
-}
-
-function selectEmoji(item: EmojiSuggestion) {
-  const el = inputEl.value
-  if (!el || emojiQueryStart.value === null) return
-  const caret = el.selectionStart ?? draft.value.length
-  const { text, caret: nextCaret } = insertEmojiAtQuery(
-    draft.value,
-    caret,
-    emojiQueryStart.value,
-    item.emoji,
-  )
-  draft.value = text
-  rememberEmoji(item)
-  closeEmojiMenu()
-  nextTick(() => {
-    el.focus()
-    el.setSelectionRange(nextCaret, nextCaret)
-    autosize()
-  })
-}
-
-function onInput() {
-  autosize()
-  syncEmojiMenu()
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (emojiMenuActive.value) {
-    if (event.key === 'ArrowDown') {
-      event.preventDefault()
-      if (emojiSuggestions.value.length === 0) return
-      emojiSelectedIndex.value = (emojiSelectedIndex.value + 1) % emojiSuggestions.value.length
-      return
-    }
-    if (event.key === 'ArrowUp') {
-      event.preventDefault()
-      if (emojiSuggestions.value.length === 0) return
-      emojiSelectedIndex.value =
-        (emojiSelectedIndex.value - 1 + emojiSuggestions.value.length) %
-        emojiSuggestions.value.length
-      return
-    }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      closeEmojiMenu()
-      return
-    }
-    if (
-      (event.key === 'Enter' || event.key === 'Tab') &&
-      !event.shiftKey &&
-      emojiSuggestions.value.length > 0
-    ) {
-      event.preventDefault()
-      selectEmoji(emojiSuggestions.value[emojiSelectedIndex.value])
-      return
-    }
-  }
-
-  if (event.key === 'Enter' && !event.shiftKey) {
-    event.preventDefault()
-    handleSend()
-  }
-}
-
-function handleSend() {
-  const text = draft.value.trim()
-  if (!canSendMessages.value) return
-  if (!text) return
-  emit('send', text)
-  draft.value = ''
-  closeEmojiMenu()
-  nextTick(() => {
-    autosize()
-    focusInput()
-  })
-}
-
-function focusInput() {
-  inputEl.value?.focus({ preventScroll: true })
-}
-
-function autosize() {
-  const el = inputEl.value
-  if (!el) return
-  el.style.height = 'auto'
-  el.style.height = `${Math.min(el.scrollHeight, 88)}px`
-}
-
 async function scrollToBottom() {
   await nextTick()
   const el = listEl.value
@@ -486,34 +337,14 @@ async function scrollToBottom() {
 }
 
 watch(
-  () => props.open,
-  async (open) => {
-    if (!open) return
-    await nextTick()
-    if (props.open) focusInput()
+  () => props.open && canSendMessages.value,
+  (canUsePicker) => {
+    if (canUsePicker) void prepareEmojiPicker()
   },
   { immediate: true },
 )
 
-watch([chatItems], scrollToBottom, { deep: true })
+watch(chatItems, () => {
+  if (!listEl.value?.querySelector('.chat-message:focus')) void scrollToBottom()
+})
 </script>
-
-<style scoped>
-.chat-composer-input {
-  max-height: 88px;
-  margin: 0;
-  overflow-y: auto;
-  caret-color: var(--ink-gray-8);
-  /* Kill UA / form focus chrome; the wrapper owns focus affordance. */
-  outline: none !important;
-  box-shadow: none !important;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.chat-composer-input:focus,
-.chat-composer-input:focus-visible {
-  outline: none !important;
-  box-shadow: none !important;
-}
-</style>

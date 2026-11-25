@@ -54,7 +54,13 @@ class TestWriterPurges(DriveCallbackCase):
         doc = self.doc_row(node)
         copy = "<p>one two three four</p>"
         installed = copies.install(
-            writer_content.APP, doc.id, 4, doc.lineage, doc.q_epoch, copy, writer_content.EDITOR.readable_copy
+            writer_content.APP,
+            doc.id,
+            4,
+            doc.lineage,
+            doc.q_epoch,
+            lambda _state: copy,
+            writer_content.EDITOR.readable_copy,
         )
         self.assertEqual(installed, "installed")
 

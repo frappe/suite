@@ -872,3 +872,34 @@ describe('MediasoupManager receiver-ready ownership', () => {
 		expect(resume).toHaveBeenCalledExactlyOnceWith('c1');
 	});
 });
+
+describe('meeting speech context', () => {
+	it('pins the initial authenticated title without leaking it to another room', () => {
+		const manager = createManager();
+		const first = fromPartial<Room>({});
+		const second = fromPartial<Room>({});
+		vi.spyOn(manager.roomManager, 'getRoom').mockImplementation((id) =>
+			id === 'first' ? first : second,
+		);
+		manager.pinRoomSpeechHints('first', {
+			vocabulary_version: 'frappe-v1',
+			title: 'Frappe planning',
+		});
+		manager.pinRoomSpeechHints('first', {
+			vocabulary_version: 'frappe-v1',
+			title: 'Changed title',
+		});
+		manager.pinRoomSpeechHints('second', {
+			vocabulary_version: 'frappe-v1',
+			title: 'Other room',
+		});
+		expect(first.speechContext).toEqual({
+			vocabulary_version: 'frappe-v1',
+			title: 'Frappe planning',
+		});
+		expect(second.speechContext).toEqual({
+			vocabulary_version: 'frappe-v1',
+			title: 'Other room',
+		});
+	});
+});

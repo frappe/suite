@@ -16,7 +16,11 @@ interface ClientEvent {
 		audio?: {
 			input?: {
 				format?: { type?: string; rate?: number };
-				transcription?: { names?: string[] };
+				transcription?: {
+					names?: string[];
+					vocabulary_version?: string;
+					title?: string;
+				};
 			};
 		};
 	};
@@ -116,6 +120,10 @@ describe('SttClient Realtime protocol', () => {
 				sampleRate: 24000,
 				language: 'en-US',
 				getNames: () => names,
+				getSpeechContext: () => ({
+					vocabulary_version: 'frappe-v1',
+					title: 'Atlas review',
+				}),
 			},
 			(event) => transcripts.push(event),
 		);
@@ -151,6 +159,13 @@ describe('SttClient Realtime protocol', () => {
 					: [],
 			),
 		).toEqual([['Siobhan'], ['Zubair']]);
+		expect(
+			clientEvents
+				.values()
+				.filter((event) => event.type === 'session.update')
+				.map((event) => event.session?.audio?.input?.transcription?.title)
+				.toArray(),
+		).toEqual(['Atlas review', 'Atlas review']);
 		expect(append).toMatchObject({
 			audio: Buffer.from([0, 0, 1, 0]).toString('base64'),
 		});
@@ -164,64 +179,69 @@ describe('SttClient Realtime protocol', () => {
 	it.each([
 		{ transcript: '', expected: '' },
 		{ transcript: undefined, expected: 'tentative guess' },
-	])('uses the final transcript when it is $transcript', async ({
-		transcript,
-		expected,
-	}) => {
-		server = createServer((_request, response) => response.end('ok'));
-		websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
-		await new Promise<void>((resolve) =>
-			server!.listen(0, '127.0.0.1', resolve),
-		);
-		const address = server.address();
-		if (!address || typeof address === 'string')
-			throw new Error('Missing test server address');
+	])(
+		'uses the final transcript when it is $transcript',
+		async ({ transcript, expected }) => {
+			server = createServer((_request, response) => response.end('ok'));
+			websocketServer = new WebSocketServer({ server, path: '/v1/realtime' });
+			await new Promise<void>((resolve) =>
+				server!.listen(0, '127.0.0.1', resolve),
+			);
+			const address = server.address();
+			if (!address || typeof address === 'string')
+				throw new Error('Missing test server address');
 
-		websocketServer.on('connection', (socket) => {
-			socket.send(JSON.stringify({ type: 'session.created' }));
-			socket.on('message', (raw) => {
-				const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
-				if (event.type === 'session.update')
-					socket.send(JSON.stringify({ type: 'session.updated' }));
-				if (event.type !== 'input_audio_buffer.commit') return;
-				socket.send(
-					JSON.stringify({
-						type: 'input_audio_buffer.committed',
-						item_id: 'item-1',
-					}),
-				);
-				socket.send(
-					JSON.stringify({
-						type: 'conversation.item.input_audio_transcription.delta',
-						item_id: 'item-1',
-						delta: 'tentative guess',
-					}),
-				);
-				socket.send(
-					JSON.stringify({
-						type: 'conversation.item.input_audio_transcription.completed',
-						item_id: 'item-1',
-						transcript,
-					}),
-				);
+			websocketServer.on('connection', (socket) => {
+				socket.send(JSON.stringify({ type: 'session.created' }));
+				socket.on('message', (raw) => {
+					const event = fromPartial<ClientEvent>(JSON.parse(raw.toString()));
+					if (event.type === 'session.update')
+						socket.send(JSON.stringify({ type: 'session.updated' }));
+					if (event.type !== 'input_audio_buffer.commit') return;
+					socket.send(
+						JSON.stringify({
+							type: 'input_audio_buffer.committed',
+							item_id: 'item-1',
+						}),
+					);
+					socket.send(
+						JSON.stringify({
+							type: 'conversation.item.input_audio_transcription.delta',
+							item_id: 'item-1',
+							delta: 'tentative guess',
+						}),
+					);
+					socket.send(
+						JSON.stringify({
+							type: 'conversation.item.input_audio_transcription.completed',
+							item_id: 'item-1',
+							transcript,
+						}),
+					);
+				});
 			});
-		});
 
-		client = new SttClient(`http://127.0.0.1:${address.port}`);
-		const transcripts: SttTranscriptEvent[] = [];
-		const stream = await client.createStream(
-			{ sessionId: 'meet-session-1', sampleRate: 24000 },
-			(event) => transcripts.push(event),
-		);
-		stream.sendAudio(Buffer.alloc(4800));
-		stream.markFinal(100);
-		await stream.close();
+			client = new SttClient(`http://127.0.0.1:${address.port}`);
+			const transcripts: SttTranscriptEvent[] = [];
+			const stream = await client.createStream(
+				{ sessionId: 'meet-session-1', sampleRate: 24000 },
+				(event) => transcripts.push(event),
+			);
+			stream.sendAudio(Buffer.alloc(4800));
+			stream.markFinal(100);
+			await stream.close();
 
-		expect(transcripts).toEqual([
-			{ text: 'tentative guess', isFinal: false, durationMs: 100, sequence: 1 },
-			{ text: expected, isFinal: true, durationMs: 100, sequence: 2 },
-		]);
-	});
+			expect(transcripts).toEqual([
+				{
+					text: 'tentative guess',
+					isFinal: false,
+					durationMs: 100,
+					sequence: 1,
+				},
+				{ text: expected, isFinal: true, durationMs: 100, sequence: 2 },
+			]);
+		},
+	);
 
 	it('reports a configured Realtime stream closing unexpectedly', async () => {
 		server = createServer((_request, response) => {

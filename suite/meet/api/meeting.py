@@ -62,7 +62,7 @@ def _generate_sfu_token(
     **extra,
 ) -> str:
     """Generate a JWT token for SFU authentication."""
-    reserved_claims = {"user_id", "meeting_id", "site", "scope", "exp", "iat"}
+    reserved_claims = {"user_id", "meeting_id", "site", "scope", "exp", "iat", "speech_context"}
     if reserved_claims.intersection(extra):
         frappe.throw(_("Reserved SFU token claims cannot be overridden"), frappe.ValidationError)
 
@@ -81,6 +81,11 @@ def _generate_sfu_token(
         "iat": now,
         **extra,
     }
+    if scope == "full":
+        from suite.meet.speech_context import make_hints
+
+        hints = make_hints(frappe.db.get_value("Meet Room", meeting_id, "title") or "", [])
+        payload["speech_context"] = {k: hints[k] for k in ("vocabulary_version", "title")}
     return jwt.encode(payload, secret, algorithm="HS256")
 
 
@@ -198,24 +203,44 @@ def _build_guest_connection_details(
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
-def create(meeting_type: str = "open", allow_guest: bool = True, title: str | None = None) -> str:
-    """Create a new meeting with specified type"""
+def create(
+    meeting_type: str = "open",
+    allow_guest: bool = True,
+    title: str | None = None,
+    link: str | None = None,
+) -> str:
+    from suite.meet.links import link_status, refuse_link
+
+    if link is not None:
+        status = link_status(link)
+        if status != "available":
+            refuse_link(status)
+
     global_settings = frappe.get_cached_doc("Meet Settings")
     if not global_settings.allow_guest:
         allow_guest = False
 
-    meeting: MeetRoom = frappe.get_doc(
-        {
-            "doctype": "Meet Room",
-            "title": title,
-            "meeting_type": meeting_type,
-            "allow_guest": allow_guest,
-        }
-    ).insert()
-
-    return meeting.name
+    frappe.db.savepoint("meet_create")
+    try:
+        meeting: MeetRoom = frappe.get_doc(
+            {
+                "doctype": "Meet Room",
+                "title": title,
+                "meeting_type": meeting_type,
+                "allow_guest": allow_guest,
+            }
+        ).insert(set_name=link)
+        return meeting.name
+    except frappe.DuplicateEntryError:
+        frappe.db.rollback(save_point="meet_create")
+        if link is not None:
+            refuse_link("taken")
+        raise
+    except Exception:
+        frappe.db.rollback(save_point="meet_create")
+        raise
 
 
 @frappe.whitelist(allow_guest=True)

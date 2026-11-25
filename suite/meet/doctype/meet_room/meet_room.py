@@ -53,6 +53,23 @@ class MeetRoom(Document):
         if not self.name:
             self.name = generate()
 
+    def notify_update(self):
+        if (
+            frappe.flags.in_import
+            or frappe.flags.in_patch
+            or frappe.flags.in_migrate
+            or frappe.flags.in_install
+        ):
+            return
+
+        frappe.publish_realtime(
+            "doc_update",
+            {"modified": self.modified, "doctype": self.doctype, "name": self.name},
+            doctype=self.doctype,
+            docname=self.name,
+            after_commit=True,
+        )
+
     def validate(self):
         self.validate_recording_policy()
         self.validate_controlled_updates()
@@ -92,6 +109,10 @@ class MeetRoom(Document):
             frappe.throw(_("Stop the active recording before enabling end-to-end encryption"))
 
     def has_active_recording(self) -> bool:
+        if frappe.db.table_exists("Meet Transcription Job") and frappe.db.exists(
+            "Meet Transcription Job", {"meet_room": self.name, "status": "Capturing"}
+        ):
+            return True
         from suite.meet.doctype.meet_recording.meet_recording import ACTIVE_RECORDING_STATUSES
 
         return bool(

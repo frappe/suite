@@ -46,7 +46,7 @@ def require_converter(case) -> None:
 
 
 def in_job(case) -> None:
-    """Run as a background job, where the content layer allows Node children."""
+    """Run as a background job, which waits for the converter's turn where a request answers busy."""
     job = patch.object(frappe.local, "job", frappe._dict(job_name="test_sheets_content"), create=True)
     job.start()
     case.addCleanup(job.stop)

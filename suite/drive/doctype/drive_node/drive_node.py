@@ -133,6 +133,9 @@ class DriveNode(Document):
         previous = self.get_doc_before_save()
         if previous and previous.kind != self.kind:
             frappe.throw(_("A Drive node's kind cannot change"))
+        if previous and previous.read_only:
+            if any(previous.get(field) != self.get(field) for field in ("read_only", "blob", "size", "mime")):
+                frappe.throw(_("This file is read-only. Download a copy to edit."), frappe.PermissionError)
         if previous and any(
             previous.get(field) != self.get(field) for field in ("content_doctype", "content_docname")
         ):

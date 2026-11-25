@@ -91,6 +91,7 @@ def handle(ctx: DavContext) -> Response:
         if resolved.is_collection:
             raise MethodNotAllowed(_COLLECTION_REFUSAL, headers={"Allow": allow_header_without("PUT")})
         require(row, EDIT, ctx.principals)
+        node_core.require_replaceable(row)
         accounting_root = row.root
 
     evaluate_preconditions(ctx.request, row)

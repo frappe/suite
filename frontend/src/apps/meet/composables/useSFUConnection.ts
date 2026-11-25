@@ -150,6 +150,7 @@ export function useSFUConnection(deps: {
   onE2EERequired?: () => void
   onRecordingState?: (recording: RecordingState | null) => void
   beginRecordingAdmissionSync?: () => (recording: RecordingState | null) => void
+  onTranscriptionCaptureState?: (value: unknown) => void
   onRecordingEnabled?: (enabled: boolean) => void
   onRole?: (isHost: boolean, isCohost: boolean) => void
   onCohostPromoted?: () => void
@@ -171,6 +172,7 @@ export function useSFUConnection(deps: {
     onE2EERequired,
     onRecordingState,
     beginRecordingAdmissionSync,
+    onTranscriptionCaptureState,
     onRecordingEnabled,
     onRole,
     onCohostPromoted,
@@ -185,6 +187,9 @@ export function useSFUConnection(deps: {
 
   const signalChannel = new SocketIOSignalChannel()
   const sfuClient = new SFUClient(signalChannel)
+  const handleTranscriptionCaptureState = (value: unknown) => onTranscriptionCaptureState?.(value)
+  sfuClient.on('transcription:state', handleTranscriptionCaptureState)
+  onUnmounted(() => sfuClient.off('transcription:state', handleTranscriptionCaptureState))
   const videoManager = new VideoElementManager()
   const clientTelemetry = getClientTelemetry(sfuClient)
   const sfuManager = shallowRef<SFUMeetingManager | null>(null)

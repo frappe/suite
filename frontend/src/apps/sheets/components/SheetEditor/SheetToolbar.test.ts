@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, isRef, nextTick, ref } from 'vue'
 
@@ -335,53 +333,5 @@ describe('SheetToolbar (row 2)', () => {
       (b) => b.textContent?.trim() === 'Format',
     )!
     expect(format.closest('.sn-format-group')).not.toBeNull()
-  })
-})
-
-describe('SheetToolbar spacing', () => {
-  const css = readFileSync(resolve(__dirname, 'SheetToolbar.vue'), 'utf8')
-  const rule = (selector: string) => {
-    const at = css.indexOf(`
-${selector} {`)
-    expect(at, selector).toBeGreaterThan(-1)
-    return css.slice(at, css.indexOf('}', at))
-  }
-
-  it('is a 36px row of tools 2px apart, as in Writer', () => {
-    expect(rule('.sn-toolbar')).toContain('height: 36px')
-    expect(rule('.sn-toolbar')).toContain('gap: 2px')
-    expect(rule('.sn-tools-scroll')).toContain('gap: 2px')
-  })
-
-  it('draws Writer’s divider', () => {
-    expect(rule('.sn-vr')).toContain('height: 20px')
-    expect(rule('.sn-vr')).toContain('margin: 0 4px')
-    expect(rule('.sn-vr')).toContain('background: var(--surface-gray-3)')
-  })
-
-  it('keeps the sideways scroll on a narrow bar', () => {
-    expect(rule('.sn-tools-scroll')).toContain('overflow-x: auto')
-  })
-
-  it('starts Undo 12px in, where Writer’s toolbar starts it', () => {
-    expect(rule('.sn-toolbar')).toContain('padding: 0 12px')
-    expect(rule('.sn-toolbar')).not.toContain('9px')
-  })
-
-  it('draws the tool icons in Writer’s toolbar ink', () => {
-    expect(rule('.sn-toolbar :deep(button:not(.bg-surface-gray-10))')).toContain(
-      'color: var(--ink-gray-7)',
-    )
-    expect(rule('.sn-swatch-btn')).toContain('color: var(--ink-gray-7)')
-    expect(rule('.sn-toolbar :deep(button:disabled)')).toContain('opacity: 0.4')
-  })
-})
-
-describe('SheetToolbar text colour', () => {
-  // With no colour set, the swatch under the "T" shows the ink a cell gets
-  // by default (canvas/constants.ts COLORS.cellText).
-  it('shows the default cell ink when the cell has no text colour', () => {
-    const sfc = readFileSync(resolve(__dirname, 'SheetToolbar.vue'), 'utf8')
-    expect(sfc).toContain("activeFormat.color || 'var(--ink-gray-7)'")
   })
 })

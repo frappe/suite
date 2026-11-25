@@ -55,7 +55,17 @@ export function setSelectedSpeakerId(deviceId: string): void {
   writeString('mediaPref.speakerId', selectedSpeakerId.value)
 }
 
+export const automaticPictureInPicture = ref(
+  readBoolean('mediaPref.automaticPictureInPicture', true),
+)
+
+export function setAutomaticPictureInPicture(value: boolean): void {
+  automaticPictureInPicture.value = value
+  writeBoolean('mediaPref.automaticPictureInPicture', value)
+}
+
 export function loadMediaPreferences(): void {
+  automaticPictureInPicture.value = readBoolean('mediaPref.automaticPictureInPicture', true)
   micEnabled.value = readBoolean('mediaPref.mic', true)
   cameraEnabled.value = readBoolean('mediaPref.camera', true)
   selectedCameraId.value = readString('mediaPref.cameraId', '')

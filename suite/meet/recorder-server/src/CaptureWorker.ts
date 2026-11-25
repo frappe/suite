@@ -1,5 +1,6 @@
 import { mkdir, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
+import { CallbackRequestError } from './CallbackClient.js';
 import type {
 	CaptureEpoch,
 	CaptureInterruption,
@@ -329,7 +330,13 @@ export class CaptureWorker {
 				{
 					env: this.env,
 					logPath: join(this.manifest.directory, `logs/ffmpeg-${epoch}.log`),
-					onUnexpectedExit: () => {
+					onUnexpectedExit: (result) => {
+						logger.error({
+							event: 'capture_process_exited',
+							job: this.job,
+							exit_code: result?.code ?? null,
+							signal: result?.signal ?? null,
+						});
 						if (committed) this.queueRecovery();
 						else exitError = new Error('ffmpeg exited during capture launch');
 					},
@@ -641,7 +648,6 @@ export class CaptureWorker {
 		epoch: number,
 		_segment: CaptureSegment,
 	): Promise<void> {
-		const stopping = Boolean(this.stopPromise);
 		const capturedBytes = this.manifest
 			.get()
 			.segments.reduce((sum, segment) => sum + segment.bytes, 0);
@@ -660,11 +666,14 @@ export class CaptureWorker {
 							? error.message.slice(0, 160)
 							: 'unknown_error',
 				});
-				if (!stopping) this.requestStop(false, 'capture_budget_unavailable');
-				return;
+				if (!(error instanceof CallbackRequestError && error.retryable)) {
+					if (!this.stopPromise)
+						this.requestStop(false, 'capture_budget_unavailable');
+					return;
+				}
 			}
 		}
-		if (stopping) return;
+		if (this.stopPromise) return;
 		if (this.healthyEpoch?.epoch === epoch)
 			this.healthyEpoch.resolve(new Date(this.now()).toISOString());
 		if (this.limitReached()) {

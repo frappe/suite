@@ -42,8 +42,8 @@ import { eventLastDay, isAllDayEvent } from '@/apps/calendar/utils/eventTime'
 import { getRepeatMessage } from '@/apps/calendar/utils/format'
 import { scopeOptions, type RecurringScope } from '@/apps/calendar/utils/recurringScope'
 import type { MailRecipient } from '@/apps/mail'
+import { MeetIcon } from '@/apps/meet'
 import LinkifiedText from '@/components/LinkifiedText.vue'
-import { meetLogo } from '@/platform/brand'
 import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
@@ -691,7 +691,7 @@ const openInDesk = () =>
             <!-- Meet link -->
             <template v-if="meetUrl">
               <div class="flex items-center gap-2.5 px-4.5 py-2">
-                <img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
+                <MeetIcon class="size-6 shrink-0 text-[#E54E17]" />
                 <div class="min-w-0 flex-1">
                   <div class="text-ink-gray-8 text-sm font-medium">
                     {{ __('Frappe Meet') }}

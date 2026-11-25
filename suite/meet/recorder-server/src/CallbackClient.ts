@@ -16,7 +16,7 @@ const CHUNK_SIZE = 8 * 1024 * 1024;
 const PROGRESS_ATTEMPTS = 3;
 const PROGRESS_ATTEMPT_TIMEOUT_MS = 10_000;
 
-class CallbackRequestError extends Error {
+export class CallbackRequestError extends Error {
 	constructor(
 		message: string,
 		readonly reason: string,
@@ -794,8 +794,7 @@ export class CallbackClient {
 	}
 
 	private gapReason(reason: string): string {
-		if (reason.includes('ffmpeg') || reason.includes('segment'))
-			return 'ffmpeg_exited';
+		if (reason.includes('ffmpeg')) return 'ffmpeg_exited';
 		if (reason.includes('renderer')) return 'renderer_interrupted';
 		return 'capture_interrupted';
 	}

@@ -50,6 +50,7 @@ from suite.mail.store import (
     get_email_address_index,
     rebuild_email_address_index,
 )
+from suite.mail.store.quota import record_message_access
 from suite.mail.utils import (
     get_config,
     log_mail_error,
@@ -977,6 +978,7 @@ def get_messages(account: str, ids: list[str]) -> list[dict]:
             if changed := _written_since(account, list(messages_to_cache), fetched_at):
                 get_data_store(account).delete_many(Entity.EMAIL, keys=list(changed))
 
+    record_message_access(account, list(messages))
     return [messages[id] for id in ids if id in messages]
 
 
@@ -1637,21 +1639,28 @@ def _cache_messages(account: str, messages: dict[str, dict]) -> None:
     Only messages the cache hasn't held before are indexed: caching runs again on every flag change,
     and indexing is safe to repeat but not free. A message is cached only once it is indexed, so a
     failed index write uncaches it and the next fetch tries again. If the store will not give it up
-    either, an index rebuild is queued.
+    either, an index rebuild is queued. A message back after eviction may be old, so it only fills
+    in names the index lacks.
     """
 
     store = get_data_store(account)
     # Asked of the write itself, so two fetches racing to cache a message can't both skip indexing.
     new_ids = store.set_many(Entity.EMAIL, items=messages)
 
-    new_messages = [message for message_id, message in messages.items() if message_id in new_ids]
+    new_messages = {id: message for id, message in messages.items() if id in new_ids}
     if not new_messages:
         return
 
     # Never let indexing break caching.
     try:
+        evicted = {
+            id for id, held in store.get_many(Entity.EVICTED_EMAIL, list(new_messages)).items() if held
+        }
         own_addresses = set(get_account_emails(account))
-        get_email_address_index(account).index_addresses(_message_addresses(new_messages, own_addresses))
+        addresses = _new_message_addresses(new_messages, evicted, own_addresses)
+        get_email_address_index(account).index_addresses(addresses)
+        if evicted:
+            store.delete_many(Entity.EVICTED_EMAIL, keys=list(evicted))
     except Exception:
         log_mail_error(
             _("Failed to index message addresses for search"), frappe.get_traceback(with_context=True)
@@ -1697,15 +1706,18 @@ def _written_since(account: str, ids: list[str], since: float) -> set[str]:
     return {id for id, at in zip(ids, stamps, strict=True) if at is not None and float(at) >= since}
 
 
-def _remove_cached_messages(account: str, ids: list[str]) -> None:
+def _remove_cached_messages(account: str, ids: list[str], is_destroyed: bool = False) -> None:
     """Remove messages from cache for the provided IDs.
 
     Addresses are left in the search index on purpose: it is cumulative, and an address seen in an
-    evicted message is almost always still valid elsewhere.
+    evicted message is almost always still valid elsewhere. A message gone from the server also
+    loses its eviction mark, since it can never come back.
     """
 
     store = get_data_store(account)
     store.delete_many(Entity.EMAIL, keys=ids)
+    if is_destroyed:
+        store.delete_many(Entity.EVICTED_EMAIL, keys=ids)
     _note_written(account, ids)
 
 
@@ -1726,6 +1738,17 @@ def _note_written(account: str, ids: list[str]) -> None:
         for id in ids:
             pipe.set(_written_key(account, id), now, ex=_WRITTEN_KEEP)
         pipe.execute()
+
+
+def _new_message_addresses(
+    messages: dict[str, dict], evicted: set[str], own_addresses: set[str]
+) -> list[dict]:
+    """Addresses of newly cached messages, with those back after eviction marked as refetched."""
+
+    refetched = [message for id, message in messages.items() if id in evicted]
+    fresh = [message for id, message in messages.items() if id not in evicted]
+    marked = [{**address, "is_refetched": True} for address in _message_addresses(refetched, own_addresses)]
+    return marked + _message_addresses(fresh, own_addresses)
 
 
 def _message_addresses(messages: list[dict], own_addresses: set[str]) -> list[dict]:
@@ -2015,7 +2038,7 @@ def fetch_changes(
 
         if destroyed_ids := result.destroyed:
             logger.info("messages-deleted", count=len(destroyed_ids))
-            _remove_cached_messages(account, destroyed_ids)
+            _remove_cached_messages(account, destroyed_ids, is_destroyed=True)
 
         if updated_ids or destroyed_ids:
             # Read, moved or deleted on another device: no new mail, but the lists this user has

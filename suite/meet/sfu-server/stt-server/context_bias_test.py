@@ -19,9 +19,24 @@ class ContextBiasTest(unittest.TestCase):
         self.assertIn("DocType", FRAPPE_TERMS)
         self.assertNotIn("app", FRAPPE_TERMS)
 
-    def test_no_room_names_does_not_allocate_a_per_stream_bias_model(self):
+    def test_interleaved_rooms_keep_their_own_metadata(self):
+        first = UtteranceBias(
+            object(), ["Anita"], context={"vocabulary_version": "frappe-v1", "title": "Atlas signup"}
+        )
+        second = UtteranceBias(
+            object(), ["Rohan"], context={"vocabulary_version": "frappe-v1", "title": "Payroll review"}
+        )
+        self.assertIn("Atlas signup", first.phrases)
+        self.assertNotIn("Rohan", first.phrases)
+        self.assertNotIn("Atlas signup", second.phrases)
+        self.assertIn("Rohan", second.phrases)
+        first.release()
+        self.assertIn("Rohan", second.phrases)
+
+    def test_empty_roster_still_selects_versioned_product_hints(self):
         bias = UtteranceBias(object(), [])
-        self.assertIsNone(bias.initial_hypotheses())
+        self.assertIn("ERPNext", bias.phrases)
+        self.assertEqual(bias.context["vocabulary_version"], "frappe-v1")
         bias.release()
 
 

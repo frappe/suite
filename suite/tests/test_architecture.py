@@ -44,6 +44,7 @@ BASELINE_DEBT = {
         (
             "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root",
             "suite/slides/patches/test_move_file_media_to_drive.py|drive-table-write|Drive Root#2",
+            "suite/slides/http/tests/test_presentation_writes.py|drive-table-write|Drive Root",
         ),
     ),
     **_debt(
@@ -129,6 +130,8 @@ BASELINE_DEBT = {
             # trash, purge and restore a version as its writer; none of these
             # is a public call yet
             "suite/writer/content/tests/drive_callback_case.py|import|suite.drive._core",
+            # An export reads as the reader Drive's GET route finds; exporting is not a public call yet
+            "suite/writer/content/tests/drive_callback_case.py|import|suite.drive.framework",
             "suite/writer/content/tests/test_document_row.py|import|suite.drive._core",
             "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.access",
             "suite/writer/content/tests/test_drive_versions.py|import|suite.drive._core.principals",
@@ -139,7 +142,6 @@ BASELINE_DEBT = {
             # The lock-order case trashes a document and races its purge; neither is a public call yet
             "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.nodes",
             "suite/writer/content/tests/test_lock_order.py|import|suite.drive._core.principals",
-            "suite/writer/content/tests/test_touches.py|import|suite.drive._core",
             "suite/writer/content/tests/test_touches.py|import|suite.drive._core.principals",
             "suite/writer/content/tests/test_touches.py|import|suite.drive._core.versions",
             "suite/writer/content/tests/test_restores.py|import|suite.drive._core.principals",
@@ -735,6 +737,7 @@ class TestArchitecture(unittest.TestCase):
                 "DriveNotFound",
                 "DriveOverQuota",
                 "DriveStorageUnmeasured",
+                "NodeShape",
                 "PersonOnNode",
                 "Satellite",
                 "administration_usage",
@@ -748,6 +751,7 @@ class TestArchitecture(unittest.TestCase):
                 "create_storage_reservation",
                 "ensure_folder",
                 "ensure_personal_root",
+                "get_node",
                 "get_storage_reservation",
                 "get_storage_usage",
                 "get_version",
@@ -781,6 +785,7 @@ class TestArchitecture(unittest.TestCase):
                 "store_file",
                 "stream_file",
                 "take_version",
+                "throw_again",
                 "touch",
                 "transfer_user_drive",
             ),

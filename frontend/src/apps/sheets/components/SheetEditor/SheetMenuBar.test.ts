@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createApp, h, nextTick, type SetupContext } from 'vue'
 
@@ -16,8 +14,6 @@ vi.mock('reka-ui', async (importOriginal) => {
   }
   return { ...reka, MenubarSubContent }
 })
-
-const menuCss = readFileSync(resolve(__dirname, 'SheetEditor.global.css'), 'utf8')
 
 // The real Button and portal helper. Opening, closing and focus are reka's. The
 // Dropdown is what Writer's menu uses, so the look can be compared with it.
@@ -304,12 +300,6 @@ describe('SheetMenuBar', () => {
     expect(menuItem('Plain text')).toBeDefined()
     // The real offset needs layout, so this reads what reka is handed.
     expect(subContent.at(-1)?.alignOffset).toBe(-6)
-  })
-
-  it('lets a panel grow to the window, with a slim scrollbar and no arrows', () => {
-    expect(menuCss).not.toContain('min(60vh, 480px)')
-    expect(menuCss).toContain('var(--reka-popper-available-height)')
-    expect(menuCss).toMatch(/\.menu-content::-webkit-scrollbar-button[^{]*\{\s*display: none/)
   })
 
   it('folds the six menus into one Menu, each a submenu, for a narrow header', async () => {

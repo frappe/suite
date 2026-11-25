@@ -9,6 +9,7 @@ from frappe.storage.blob import put_blob
 from frappe.storage.driver import get_driver
 from frappe.tests import IntegrationTestCase, UnitTestCase
 
+from suite import drive
 from suite.drive._core.access import grant
 from suite.drive._core.errors import (
     DriveConflict,
@@ -354,6 +355,17 @@ class TestVersionWorkflows(IntegrationTestCase):
         label_version(editor, node, seq, label="Editor", pinned=True)
         with self.assertRaises(DriveForbidden):
             delete_version(editor, node, seq)
+
+    def test_a_read_only_file_refuses_version_restore(self):
+        frappe.set_user(USER)
+        owner = Principals(USER, (USER,), ("$PUBLIC",))
+        node = drive.store_file(self.root.name, "Original.txt", io.BytesIO(b"original"), read_only=True)
+        seq = take_version(owner, node)
+
+        with self.assertRaises(DriveForbidden):
+            restore_version(owner, node, seq)
+
+        self.assertEqual([row.seq for row in list_versions(owner, node)["rows"]], [seq])
 
     def test_file_restore_captures_current_head_and_admits_only_restored_head(self):
         node = self._file(b"old")
