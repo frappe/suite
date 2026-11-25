@@ -914,7 +914,8 @@ const THEME_CONFIG = {
     text: '#383838',
     button: '#F3F3F3',
     buttonHover: '#EDEDED',
-    // ink-gray-5 and outline-gray-2, for the quoted trail's toggle
+    // ink-gray-5 and outline-gray-2, for the quoted trail's toggle: an outlined button's, a step
+    // stronger than a card's edge, as a control's is
     muted: '#7C7C7C',
     outline: '#E2E2E2',
     link: '',
@@ -927,8 +928,8 @@ const THEME_CONFIG = {
     text: '#D4D4D4',
     button: '#2B2B2B',
     buttonHover: '#343434',
-    muted: '#8F8F8F',
-    outline: '#343434',
+    muted: '#7A7A7A',
+    outline: '#383838',
     link: '#6CB6FF',
   },
 }
