@@ -687,18 +687,22 @@ const srcdoc = computed(() => {
 				// this copy only knows when to stop the frame scrolling under a drag.
 				let swipeOrigin = null;
 				let swipeLock = null;
+				// A second finger makes it a pinch or a two-finger scroll for good: the page is told, and
+				// lets it go, and the frame leaves it to the browser.
 				document.addEventListener('touchstart', (e) => {
-					swipeLock = null;
+					swipeLock = e.touches.length > 1 ? 'scroll' : null;
 					swipeOrigin = !inHorizontalScroller(e.target) ? e.touches[0] : null;
 					if (swipeOrigin) sendPoint('start', swipeOrigin, e.touches.length);
 				}, { passive: true });
+				// Once it is a scroll the page has nothing more to do with it until it ends.
 				document.addEventListener('touchmove', (e) => {
 					const touch = e.touches[0];
-					if (!swipeOrigin || !touch) return;
+					if (!swipeOrigin || !touch || swipeLock === 'scroll') return;
 					const dx = touch.screenX - swipeOrigin.screenX;
 					const dy = touch.screenY - swipeOrigin.screenY;
 					if (!swipeLock && Math.hypot(dx, dy) >= 10)
 						swipeLock = Math.abs(dx) > Math.abs(dy) ? 'drag' : 'scroll';
+					if (swipeLock === 'scroll') return;
 					if (swipeLock === 'drag' && e.cancelable) e.preventDefault();
 					sendPoint('move', touch);
 				}, { passive: false });

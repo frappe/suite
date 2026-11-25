@@ -734,23 +734,20 @@ const openRow = computed(() => rowByKey(openKey.value))
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
   swipe: threadSwipe,
-  slots: threadSlots,
+  slots: threadPanes,
   holdPane: holdThreadPane,
   openPane: mailThread,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
   onTouchCancel: onThreadTouchCancel,
-} = useThreadSwipe<InstanceType<typeof MailThread>>({
+} = useThreadSwipe<InstanceType<typeof MailThread>, Thread>({
   enabled: () => isMobile.value && !!threadID,
   open: () => openKey.value,
   byOffset: threadByOffset,
+  rowOf: rowByKey,
   step: (offset) => stepOpenThread(offset),
 })
-// Slots are keyed by row key, which the pane splits back into its account and thread
-const threadPanes = computed(() =>
-  threadSlots.value.map((slot) => ({ ...slot, row: rowByKey(slot.id) })),
-)
 const stepOpenThread = (offset: number) => {
   const next = threadByOffset(offset)
   if (next) return openThread(next)

@@ -1317,22 +1317,20 @@ const goToThreadByOffset = (offset: number) => {
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
   swipe: threadSwipe,
-  slots: threadSlots,
+  slots: threadPanes,
   holdPane: holdThreadPane,
   openPane: mailThreadRef,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
   onTouchCancel: onThreadTouchCancel,
-} = useThreadSwipe<InstanceType<typeof MailThread>>({
+} = useThreadSwipe<InstanceType<typeof MailThread>, Thread>({
   enabled: () => isMobile.value && !!threadID,
   open: () => threadID,
   byOffset: threadByOffset,
+  rowOf: (id) => loadedRow(id),
   step: goToThreadByOffset,
 })
-const threadPanes = computed(() =>
-  threadSlots.value.map((slot) => ({ ...slot, row: loadedRow(slot.id) })),
-)
 
 // Down the list first, then up: triaging from the oldest mail lives at the bottom, where there is
 // never anything below (see neighbourAfterRemoval). Only an emptied list falls back to the mailbox.

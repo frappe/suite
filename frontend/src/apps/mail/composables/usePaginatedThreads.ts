@@ -61,13 +61,24 @@ export function usePaginatedThreads({
   const threadByOffset = (offset: number, from = openThreadID()) =>
     threadIDs.value[threadIDs.value.indexOf(from ?? '') + offset]
   let pendingEdge = false
-  async function loadMore() {
-    if (!hasMore.value || isFetching.value) return
-    try {
-      await query().fetchNext()
-    } catch {
-      /* Query state holds the refusal. */
-    }
+  // The next window while it is on its way: asked for again meanwhile (Next at the last loaded
+  // thread, as it loads ahead), it is waited for rather than skipped.
+  let nextWindow: Promise<void> | undefined
+  function loadMore() {
+    if (nextWindow) return nextWindow
+    if (!hasMore.value || isFetching.value) return Promise.resolve()
+    const pending = (async () => {
+      try {
+        await query().fetchNext()
+      } catch {
+        /* Query state holds the refusal. */
+      }
+    })()
+    nextWindow = pending
+    void pending.then(() => {
+      if (nextWindow === pending) nextWindow = undefined
+    })
+    return pending
   }
   async function loadMoreThenOpenEdge(offset: number, action: 'open' | 'focus') {
     if (pendingEdge || offset < 0 || !hasMore.value) return

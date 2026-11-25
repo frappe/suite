@@ -54,10 +54,11 @@ function inSidewaysScroller(from: Element) {
  * each point up and EmailContent re-sends it as an `email-swipe-point` window event, which this
  * listens to as well as the pane's own touches.
  */
-export function useThreadSwipe<Pane>({
+export function useThreadSwipe<Pane, Row>({
   enabled,
   open,
   byOffset,
+  rowOf,
   step,
 }: {
   enabled: () => boolean
@@ -65,6 +66,8 @@ export function useThreadSwipe<Pane>({
   open: () => string | undefined
   /** The loaded thread that way from the open one, if there is one. */
   byOffset: (offset: SwipeOffset) => string | undefined
+  /** The loaded row a slot's thread is drawn from, if it is loaded. */
+  rowOf: (id: string | undefined) => Row | undefined
   /** Opens the thread that way. */
   step: (offset: SwipeOffset) => unknown
 }) {
@@ -107,6 +110,8 @@ export function useThreadSwipe<Pane>({
     // SAFETY: bound only as the ref of the view's thread pane in that slot.
     panes.set(slot.key, pane as Pane)
   }
+  // Each slot with the row its thread is drawn from, for the view to draw
+  const slotRows = computed(() => slots.value.map((slot) => ({ ...slot, row: rowOf(slot.id) })))
   const openPane = computed(() => {
     const slot = slots.value.find((each) => !each.beside)
     return (slot && panes.get(slot.key)) ?? null
@@ -181,7 +186,7 @@ export function useThreadSwipe<Pane>({
 
   return {
     swipe: readonly(swipe),
-    slots,
+    slots: slotRows,
     holdPane,
     openPane,
     onTouchStart,

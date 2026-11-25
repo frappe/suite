@@ -31,6 +31,7 @@ function mountSwipe(ids: string[], openAt: string, { phone = true } = {}) {
           enabled: () => phoneRef.value,
           open: () => open.value,
           byOffset,
+          rowOf: (id) => id,
           step,
         })
         return () => null
@@ -134,6 +135,6 @@ describe('useThreadSwipe', () => {
     const key = slots.value[0]!.key
     open.value = 'b'
     await nextTick()
-    expect(slots.value).toEqual([{ id: 'b', key }])
+    expect(slots.value).toEqual([{ id: 'b', key, row: 'b' }])
   })
 })
