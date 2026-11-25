@@ -37,8 +37,8 @@
     </div>
   </PageHeader>
 
-  <!-- On mobile this banner renders below the title header instead (inside the mobile
-	     header block) — above it, it read as page chrome sitting on top of the title. -->
+  <!-- A computer's Trash/Junk banner. A phone says it in a line under the title, with Empty in
+       the title's menu. -->
   <div v-if="showDeleteBanner && !isMobile" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
     <span class="text-ink-gray-5">
       {{ __('Items in this folder will be automatically deleted after 30 days.') }}

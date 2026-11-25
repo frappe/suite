@@ -4,19 +4,36 @@
   <!-- On a phone the row swipes (see useRowSwipe): this box holds it in place, clips it as it goes,
        and shows what the swipe does behind it. The row's own attributes go on the row. -->
   <div ref="box" :class="{ 'relative overflow-x-clip': swipeEnabled }" :style="swiping.boxStyle">
+    <!-- A tint of what the swipe does, solid once letting go would do it. The icon and its
+         word stand a fixed way off the row's edge, in the gap it leaves, and go with it: the same
+         on either side, whatever the word's length. Once the row is on its way out they move to
+         the middle, where they stay while its space closes up. -->
+    <!-- One per side (the key), and no fade: a drag that crosses over, or back over the threshold,
+         shows the other colour at once, where a fade showed the shades between. -->
     <div
       v-if="swiping.side && swiping.shown"
-      class="absolute inset-0 flex items-center px-5"
-      :class="[swiping.shown.tone, swiping.side === 'left' ? 'justify-end' : 'justify-start']"
+      :key="swiping.side"
+      class="absolute inset-0"
+      :class="TONES[swiping.shown.tone][swiping.armed ? 'armed' : 'idle']"
       aria-hidden="true"
     >
-      <!-- Grows a little once letting go would do it. -->
       <div
-        class="text-ink-base flex w-16 flex-col items-center gap-1 transition-transform duration-150"
-        :class="{ 'scale-110': swiping.armed }"
+        class="absolute inset-y-0 flex items-center"
+        :class="swiping.side === 'left' ? 'justify-start' : 'justify-end'"
+        :style="gapStyle"
       >
-        <component :is="swiping.shown.icon" class="size-5" />
-        <span class="text-xs font-medium">{{ swiping.shown.label }}</span>
+        <div
+          ref="swipeContent"
+          class="flex items-center gap-1.5 whitespace-nowrap transition-transform duration-200 ease-out"
+          :class="{
+            // Mirrored on the right, so the icon is next to the row either way
+            'flex-row-reverse': swiping.side === 'right',
+            'scale-110': swiping.armed,
+          }"
+        >
+          <component :is="swiping.shown.icon" class="size-5" />
+          <span class="text-sm font-medium">{{ swiping.shown.label }}</span>
+        </div>
       </div>
     </div>
     <component
@@ -328,8 +345,9 @@ const { isMobile, isFullWidth, showCheckbox, showAvatar, showLeading } = useRowL
 const swipeEnabled = computed(
   () => isMobile.value && !selectionMode && !!(swipes?.left || swipes?.right),
 )
+const box = useTemplateRef<HTMLElement>('box')
 const rowSwipe = useRowSwipe({
-  el: useTemplateRef<HTMLElement>('box'),
+  el: box,
   enabled: () => swipeEnabled.value,
   action: (side) => swipes?.[side],
   commit: (side) => emit('swipe', side),
@@ -340,6 +358,37 @@ const swiping = reactive({
   armed: rowSwipe.armed,
   boxStyle: rowSwipe.boxStyle,
 })
+// What shows behind a swiped row: a tint while the swipe is short of the threshold, solid past it.
+// frappe-ui's subtle and solid Button pairs.
+const TONES = {
+  red: {
+    idle: 'bg-surface-red-2 text-ink-red-7',
+    armed: 'bg-surface-red-7 text-ink-base dark:text-ink-red-9',
+  },
+  gray: { idle: 'bg-surface-gray-2 text-ink-gray-8', armed: 'bg-surface-gray-7 text-ink-base' },
+}
+// The gap the row leaves on the side it goes, for what it does to stand in. It moves as the row
+// does, on its way back or out too.
+// Its way off the row's edge is 16px, or once the row is on its way out (let go, not coming back),
+// what puts it in the middle of the box: both move with the row, so it slides there.
+const EDGE_GAP = 16
+const swipeContent = useTemplateRef<HTMLElement>('swipeContent')
+const gapStyle = computed(() => {
+  const { dx, settling } = rowSwipe.swipe
+  // Next to the row until all of it is in, then in the middle of the space the row left: the whole
+  // row's width once it is out. It grows from its centre, so growing never moves it.
+  const middle = (Math.abs(dx) - (swipeContent.value?.offsetWidth ?? 0)) / 2
+  const left = swiping.side === 'left'
+  return {
+    [left ? 'right' : 'left']: 0,
+    width: `${String(Math.abs(dx))}px`,
+    [left ? 'paddingLeft' : 'paddingRight']: `${String(Math.max(EDGE_GAP, middle))}px`,
+    transition: settling
+      ? `width ${String(ROW_SWIPE_MS)}ms ease-out, padding ${String(ROW_SWIPE_MS)}ms ease-out`
+      : 'none',
+  }
+})
+
 // Where the row stands under the finger, and on its way back or out. Nothing at rest, as on a desktop.
 const rowStyle = computed(() => {
   const { dx, settling } = rowSwipe.swipe

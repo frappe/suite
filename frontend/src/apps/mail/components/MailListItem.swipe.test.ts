@@ -112,8 +112,11 @@ const touch = (row: Element, type: string, x: number) => {
   row.dispatchEvent(event)
 }
 
-/** Drags the row sideways from `from` to `to`, a step every `stepMs`, and lets go. */
-const drag = async (row: Element, from: number, to: number, stepMs: number) => {
+/**
+ * Drags the row sideways from `from` to `to`, a step every `stepMs`, and lets go: then waits `forMs`,
+ * or until the row is done with it.
+ */
+const drag = async (row: Element, from: number, to: number, stepMs: number, forMs?: number) => {
   now = 0
   touch(row, 'touchstart', from)
   const step = Math.sign(to - from) * 10
@@ -122,7 +125,7 @@ const drag = async (row: Element, from: number, to: number, stepMs: number) => {
     touch(row, 'touchmove', x)
   }
   touch(row, 'touchend', to)
-  await vi.runAllTimersAsync()
+  await (forMs === undefined ? vi.runAllTimersAsync() : vi.advanceTimersByTimeAsync(forMs))
 }
 
 describe('swiping a row on a phone', () => {
@@ -170,6 +173,16 @@ describe('swiping a row on a phone', () => {
     expect(emitted.delete).toHaveBeenCalledOnce()
     expect(emitted.trash).not.toHaveBeenCalled()
     expect(emitted.archive).not.toHaveBeenCalled()
+  })
+
+  it('lets another row swipe while one the list keeps is on its way back', async () => {
+    // Nothing takes either row off the list here, as Starred keeps a row it archives
+    const first = await mountRow({ mail: thread('in'), mailbox: 'in' })
+    const second = await mountRow({ mail: thread('in'), mailbox: 'in' })
+    await drag(first.row, 100, 260, 50, 500)
+    expect(first.emitted.archive).toHaveBeenCalledOnce()
+    await drag(second.row, 100, 260, 50)
+    expect(second.emitted.archive).toHaveBeenCalledOnce()
   })
 
   it('leaves the row alone while rows are being selected', async () => {
