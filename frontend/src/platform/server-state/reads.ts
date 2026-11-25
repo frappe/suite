@@ -167,7 +167,7 @@ export class Reads {
         context,
         reloadCacheKey:
           identity &&
-          policy.cacheOnReload &&
+          policy.persistCache &&
           !pages &&
           !context &&
           !policy.partition &&

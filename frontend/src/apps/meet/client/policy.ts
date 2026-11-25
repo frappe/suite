@@ -71,7 +71,7 @@ const effects = {
 export const registration: OwnerRegistration = {
   policy<I, O>(reference: Operation<I, O>) {
     if (reference.kind === 'query')
-      return { cacheOnReload: reference.id === 'my_rooms' || reference.id === 'recording_list' }
+      return { persistCache: reference.id === 'my_rooms' || reference.id === 'recording_list' }
     const entry = Object.entries(effects).find(([id]) => id === reference.id)
     const effect = entry?.[1]
     if (!effect) throw new TypeError(`Missing Meet effects: ${reference.id}`)

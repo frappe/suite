@@ -28,7 +28,7 @@ const effects = new Map<string, Effects>(
 export const registration: OwnerRegistration = {
   policy(reference) {
     if (reference.kind === 'query')
-      return { cacheOnReload: reference.id === 'calendar.get_calendar_events' }
+      return { persistCache: reference.id === 'calendar.get_calendar_events' }
     const effect = effects.get(reference.id)
     if (!effect) throw new TypeError(`Missing Calendar effects: ${reference.id}`)
     return { effects: effect }
