@@ -1,5 +1,5 @@
 <template>
-  <Popover v-model:open="isOpen" bare :auto-focus="!openOnHover">
+  <Popover v-model:open="isOpen" bare :side="side" :align="align" :auto-focus="!openOnHover">
     <template #trigger="{ setOpen, open }">
       <slot
         v-bind="{
@@ -23,7 +23,7 @@
           v-for="r in reactionEmojis"
           :key="r"
           class="hover:bg-surface-gray-2 focus-visible:bg-surface-gray-2 flex size-7 items-center justify-center rounded-full text-xl leading-none focus:outline-none"
-          @click="() => (emoji = r) && close()"
+          @click="() => (selectEmoji(r), close())"
         >
           {{ r }}
         </button>
@@ -59,7 +59,7 @@
                 :key="_emoji.description"
                 class="hover:bg-surface-gray-2 h-8 w-8 rounded-4 p-1 text-3xl focus:outline-none focus:ring focus:ring-blue-200"
                 :title="_emoji.description"
-                @click="() => (emoji = _emoji.emoji) && close()"
+                @click="() => (selectEmoji(_emoji.emoji), close())"
               >
                 {{ _emoji.emoji }}
               </button>
@@ -75,7 +75,12 @@ import { Button, FormControl, Popover } from 'frappe-ui'
 import { gemoji } from 'gemoji'
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
-const { openOnHover = false } = defineProps<{ openOnHover?: boolean }>()
+const { openOnHover = false } = defineProps<{
+  openOnHover?: boolean
+  side?: 'top' | 'right' | 'bottom' | 'left'
+  align?: 'start' | 'center' | 'end'
+}>()
+const emit = defineEmits<{ select: [emoji: string] }>()
 
 const search = ref('')
 const emoji = defineModel()
@@ -143,10 +148,15 @@ const emojiGroups = computed(() => {
   return groups
 })
 
+function selectEmoji(value: string) {
+  emoji.value = value
+  emit('select', value)
+}
+
 function setRandom() {
   const total = gemoji.length
   const index = randomInt(0, total - 1)
-  emoji.value = gemoji[index].emoji
+  selectEmoji(gemoji[index].emoji)
 }
 
 function randomInt(min, max) {

@@ -42,7 +42,7 @@ import { Button, Tooltip } from 'frappe-ui'
 import { SmilePlus } from 'lucide-vue-next'
 import { ref, watch } from 'vue'
 
-import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
+import EmojiPicker from '@/components/EmojiPicker.vue'
 
 defineOptions({ inheritAttrs: false })
 

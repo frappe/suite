@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, h, nextTick, ref } from 'vue'
 
-import EmojiPicker from '@/apps/mail/components/EmojiPicker.vue'
+import EmojiPicker from '@/components/EmojiPicker.vue'
 import { translationPlugin } from '@/platform/translation'
 
 // The real popover: its trigger toggles on a press by itself, which is what opening on hover has to
 // work with. A stand-in without that passed while a tap did nothing at all.
 vi.mock('frappe-ui', async () => ({
-  ...(await import('../../../../../node_modules/frappe-ui/src/components/Popover')),
+  ...(await import('../../../node_modules/frappe-ui/src/components/Popover')),
   Button: defineComponent({
     setup(_, { attrs }) {
       return () => h('button', { 'data-plus': '', ...attrs }, 'plus')

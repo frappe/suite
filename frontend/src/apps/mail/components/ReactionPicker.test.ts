@@ -18,7 +18,7 @@ vi.mock('frappe-ui', () => ({
   }),
 }))
 // Stands in for the popover: the palette, there to be seen or not.
-vi.mock('@/apps/mail/components/EmojiPicker.vue', () => ({
+vi.mock('@/components/EmojiPicker.vue', () => ({
   default: defineComponent({
     setup() {
       return () => h('div', { 'data-palette': '' })
