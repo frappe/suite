@@ -16,7 +16,14 @@ import { ref, watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-const props = defineProps<{ picker?: typeof Picker }>()
+const props = withDefaults(
+  defineProps<{
+    picker?: typeof Picker
+    /** Puts the cursor in the search box. A phone shows its keyboard for it, over the grid. */
+    autoFocus?: boolean
+  }>(),
+  { autoFocus: true },
+)
 const emit = defineEmits<{ select: [emoji: string] }>()
 const pickerHost = ref<HTMLElement | null>(null)
 const failed = ref(!props.picker)
@@ -33,7 +40,7 @@ watch(pickerHost, (host, _, onCleanup) => {
       dynamicWidth: true,
       emojiButtonSize: 32,
       emojiSize: 22,
-      autoFocus: true,
+      autoFocus: props.autoFocus,
       previewPosition: 'none',
       skinTonePosition: 'search',
       onEmojiSelect: ({ native }: { native?: string }) => {

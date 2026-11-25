@@ -80,6 +80,7 @@
 
       <SettingsDialogRow
         :title="__('Password')"
+        :part-title="__('Change password')"
         :description="__('Manage password and account access.')"
         :action="__('Change password')"
         section="account.profile.password"

@@ -6,7 +6,7 @@
     <Button :label="action" :aria-label="actionName" @click="open" />
   </SettingsRow>
   <Teleport v-if="onPhonePage" :to="pageEl ?? 'body'" :disabled="!pageEl">
-    <SettingsPhonePage :open="part.shown.value" :title @back="part.close">
+    <SettingsPhonePage :open="part.shown.value" :title="partTitle" @back="part.close">
       <!-- Where a part's buttons for the whole page go, such as adding to its list; a dialog has
            them by its title. -->
       <template #actions>
@@ -19,12 +19,12 @@
       </div>
     </SettingsPhonePage>
   </Teleport>
-  <Dialog v-else v-model:open="isOpen" :title :size>
+  <Dialog v-else v-model:open="isOpen" :title="partTitle" :size>
     <!-- The title as Dialog draws it, with the part's buttons for the whole list beside it, by the
          close button: where a phone's page has them. -->
     <template #title>
       <div class="flex items-center justify-between gap-2">
-        <h3 class="text-2xl-semibold text-ink-gray-8 leading-6">{{ title }}</h3>
+        <h3 class="text-2xl-semibold text-ink-gray-8 leading-6">{{ partTitle }}</h3>
         <span ref="bar" class="contents" />
       </div>
     </template>
@@ -51,6 +51,8 @@ import { translate as __ } from '@/platform/translation'
 
 interface Props {
   title: string
+  /** The dialog's and the phone page's title, where the row's own would say too little there. */
+  partTitle?: string
   description?: string
   /** The button's word, such as "Edit". */
   action: string
@@ -66,6 +68,7 @@ const onPhonePage = inject('app-settings-mobile-page', false)
 const pageEl = inject(SETTINGS_PHONE_PAGE_EL, null)
 
 // A page has several of these, and two may share a word; read aloud, each names its part
+const partTitle = computed(() => props.partTitle ?? props.title)
 const actionName = computed(() => __('{0}: {1}', [props.action, props.title]))
 
 provide(SETTINGS_DIALOG_ACTIONS_KEY, useTemplateRef<HTMLElement>('actions'))

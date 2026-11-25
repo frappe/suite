@@ -66,7 +66,7 @@ afterEach(() => app.unmount())
 
 it('opens the password dialog when Settings is opened on Password', () => {
   openSettings('account.profile', 'password')
-  expect(openDialog()).toBe('Password')
+  expect(openDialog()).toBe('Change password')
 })
 it('opens no dialog when Settings is opened on the page alone', () => {
   openSettings('account.profile')
