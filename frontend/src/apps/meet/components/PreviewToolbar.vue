@@ -3,7 +3,6 @@
     class="pointer-events-none absolute inset-x-0 bottom-3 z-10 flex justify-center px-4 md:px-0"
   >
     <div class="pointer-events-auto mx-auto flex items-center gap-1.5 transition-all duration-300">
-      <!-- Microphone -->
       <ToolbarButton
         :variant="isMicOn ? 'default' : 'muted'"
         :title="__('Toggle audio ({0})', [$platform === 'mac' ? '⌘+D' : 'Ctrl+D'])"
@@ -13,7 +12,6 @@
         <MeetMicOffIcon v-else />
       </ToolbarButton>
 
-      <!-- Camera -->
       <ToolbarButton
         :variant="isCameraOn ? 'default' : 'muted'"
         :title="__('Toggle video ({0})', [$platform === 'mac' ? '⌘+E' : 'Ctrl+E'])"
@@ -23,7 +21,6 @@
         <MeetCameraOffIcon v-else />
       </ToolbarButton>
 
-      <!-- Settings -->
       <ToolbarButton
         v-if="cameraPermissionGranted || microphonePermissionGranted"
         :title="__('Settings')"

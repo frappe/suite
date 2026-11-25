@@ -4,7 +4,6 @@
     :description="__('Keep yourself framed and customize your video background')"
   />
   <AppSettingsBody>
-    <!-- Video Preview -->
     <div class="flex justify-center mb-4">
       <div
         class="video-preview w-full max-w-md h-auto aspect-video bg-surface-gray-10 rounded-6 overflow-hidden shadow-sm relative"
@@ -92,7 +91,6 @@
     </div>
 
     <div class="space-y-4">
-      <!-- Image picker -->
       <input
         ref="fileInputRef"
         type="file"
@@ -101,7 +99,6 @@
         @change="handleFileSelect"
       />
 
-      <!-- Background Options -->
       <div class="grid grid-cols-4 gap-3">
         <div
           v-for="option in allBackgroundOptionsTyped"
@@ -115,7 +112,6 @@
           @click="handleBackgroundOptionClick(option)"
         >
           <div class="aspect-video bg-surface-gray-2 relative">
-            <!-- For blur option -->
             <div
               v-if="option.type === 'blur'"
               class="absolute inset-0 flex items-center justify-center"
@@ -128,7 +124,6 @@
               <lucide-circle-user-round class="w-8 h-8 text-ink-gray-9" />
             </div>
 
-            <!-- For add custom option -->
             <div
               v-else-if="option.isAddButton"
               class="absolute inset-0 bg-surface-gray-2 flex items-center justify-center border-2 border-dashed border-outline-gray-2 hover:border-outline-gray-3 transition-colors"
@@ -136,7 +131,6 @@
               <lucide-plus class="w-8 h-8 text-ink-gray-5" />
             </div>
 
-            <!-- For image options -->
             <img
               v-else-if="option.url"
               :src="option.url"
@@ -145,12 +139,10 @@
               @error="handleImageError"
             />
 
-            <!-- For none option -->
             <div v-else class="absolute inset-0 bg-surface-gray-1 flex items-center justify-center">
               <lucide-circle-user-round class="w-8 h-8 text-ink-gray-5" />
             </div>
 
-            <!-- Selected indicator -->
             <div
               v-if="selectedBackgroundOption === option.name"
               class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-9 rounded-full flex items-center justify-center"
@@ -158,7 +150,6 @@
               <lucide-check class="w-3 h-3 text-ink-gray-1" />
             </div>
 
-            <!-- Delete button for custom images -->
             <div
               v-if="option.isCustom"
               class="absolute top-1 right-1 w-5 h-5 bg-surface-gray-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer hover:bg-surface-gray-6"
@@ -168,7 +159,6 @@
             </div>
           </div>
 
-          <!-- Label -->
           <div class="p-2 bg-surface-gray-1">
             <p class="text-sm-medium text-center text-ink-gray-8 truncate leading-4">
               {{ option.label }}
@@ -255,7 +245,6 @@ const isInMeeting = computed(() => !!meetingContext?.isInMeeting?.value)
 const processedStream = computed(() => meetingContext?.processedStream.value || null)
 const onBackgroundEffectsChanged = meetingContext?.onBackgroundEffectsChanged
 
-// Video preview
 const videoPreviewRef = ref<HTMLVideoElement | null>(null)
 const previewStream = ref<MediaStream | null>(null)
 const isLoadingPreview = ref(false)
@@ -273,7 +262,6 @@ let previewRequestId = 0
 let isMounted = false
 let previewController: AbortController | null = null
 
-// Background effects
 const backgroundBlurEnabledLocal = ref(backgroundBlurEnabled.value)
 const backgroundImageEnabledLocal = ref(backgroundImageEnabled.value)
 const selectedBackgroundImageLocal = ref<string | null>(selectedBackgroundImage.value)
@@ -292,10 +280,8 @@ const allBackgroundOptionsTyped = computed<BackgroundOption[]>(() =>
   })),
 )
 
-// Background effects composable
 const { applyBackgroundEffects, stopProcessing: stopBackgroundProcessing } = useBackgroundEffects()
 
-// Selected background option
 const selectedBackgroundOption = computed({
   get() {
     if (backgroundBlurEnabledLocal.value) {
@@ -516,8 +502,6 @@ function stopVideoPreview() {
 }
 
 async function applyPreviewOptions() {
-  // the meeting logic will handle it
-  // via the localStorage watcher in useMeetingLogic
   const shouldSkipPreviewUpdate = isInMeeting.value && !isPreviewStreamDedicated
   if (shouldSkipPreviewUpdate) {
     return

@@ -47,7 +47,6 @@
             class="my-2 border-t border-outline-gray-2"
           />
 
-          <!-- All Participants -->
           <div v-if="allVisibleParticipants.length > 0" class="flex flex-col gap-1">
             <PeopleParticipantTile
               v-for="participant in allVisibleParticipants"
@@ -176,20 +175,17 @@ const participantsList = computed(() => {
   const raisedHands = meetingCtx?.raiseHandStore.raisedHands || {}
 
   return Object.values(props.participants).sort((a, b) => {
-    // 1. Raised hands first
     const aRaised = raisedHands[a.user_id]
     const bRaised = raisedHands[b.user_id]
     if (aRaised && !bRaised) return -1
     if (!aRaised && bRaised) return 1
 
-    // 2. Among raised hands, sort by timestamp (earliest first)
     if (aRaised && bRaised) {
       const aTime = new Date(aRaised).getTime()
       const bTime = new Date(bRaised).getTime()
       return aTime - bTime
     }
 
-    // 3. Alphabetical by name for everyone else
     const nameA = (a.user_name || a.user_id || '').toLowerCase()
     const nameB = (b.user_name || b.user_id || '').toLowerCase()
     return nameA.localeCompare(nameB)

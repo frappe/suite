@@ -14,7 +14,6 @@
         @mouseenter="onMouseEnter"
         @mouseleave="onMouseLeave"
       >
-        <!-- Microphone -->
         <ToolbarButton
           :variant="isMicOn ? 'default' : 'muted'"
           :show-tooltip="isVisible"
@@ -25,7 +24,6 @@
           <MeetMicOffIcon v-else />
         </ToolbarButton>
 
-        <!-- Camera -->
         <ToolbarButton
           :variant="isCameraOn ? 'default' : 'muted'"
           :show-tooltip="isVisible"
@@ -36,7 +34,6 @@
           <MeetCameraOffIcon v-else />
         </ToolbarButton>
 
-        <!-- Screen Share -->
         <ToolbarButton
           v-if="canScreenShare()"
           :variant="isScreenSharing ? 'muted' : 'default'"
@@ -48,7 +45,6 @@
           <MeetPresentIcon v-else />
         </ToolbarButton>
 
-        <!-- Raise Hand -->
         <ToolbarButton
           :variant="isHandRaised ? 'muted' : 'default'"
           :show-tooltip="isVisible"
@@ -58,7 +54,6 @@
           <MeetHandIcon />
         </ToolbarButton>
 
-        <!-- Reactions -->
         <ReactionPicker
           :is-open="isReactionPickerOpen"
           @select="handleReactionSelect"
@@ -71,7 +66,6 @@
           </template>
         </ReactionPicker>
 
-        <!-- More Options -->
         <div class="relative">
           <Dropdown v-model:open="isMoreOpen" :options="moreOptions">
             <template #default>
@@ -91,7 +85,6 @@
           </Dropdown>
         </div>
 
-        <!-- End Call -->
         <ToolbarButton
           variant="active"
           :show-tooltip="isVisible"
@@ -116,7 +109,6 @@
           :show-tooltip="isVisible"
         />
 
-        <!-- People -->
         <ToolbarButton
           v-if="!isMobile"
           :active="isPeopleOpen"
@@ -132,7 +124,6 @@
           />
         </ToolbarButton>
 
-        <!-- Chat -->
         <ToolbarButton
           v-if="!isMobile"
           :active="isChatOpen"
@@ -348,8 +339,6 @@ const moreOptions = computed(() => [
 ])
 
 const isVisible = ref(true)
-// A closing menu hands focus back to More, which would open its tooltip over the call. The tooltip
-// stays off from the menu opening until the pointer leaves the button or focus moves on.
 const isMoreOpen = ref(false)
 const isMoreTooltipMuted = ref(false)
 watch(isMoreOpen, (open) => {

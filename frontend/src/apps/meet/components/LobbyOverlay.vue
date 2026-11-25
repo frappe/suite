@@ -1,5 +1,4 @@
 <template>
-  <!-- Straight on the dimmed preview, so the person waiting still sees their own picture. -->
   <div class="absolute inset-0 z-50 flex bg-black/60 backdrop-blur-sm">
     <MeetStatusScreen
       icon="lucide-clock"

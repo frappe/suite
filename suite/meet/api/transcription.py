@@ -207,7 +207,6 @@ def complete(
 ) -> dict:
     _authenticate()
     doc = _locked(job)
-    # Idempotent retry of a successful request requires the same lease identity.
     if (
         doc.status in ("Ready", "Partial")
         and doc.lease_worker == worker_id
@@ -223,8 +222,6 @@ def complete(
         for s in manifest["segments"]
         if s["source_id"] not in {r["source_id"] for r in successful}
     }
-    # A worker cannot declare every failed/omitted input to be a complete empty
-    # transcript; only successfully processed empty sources establish silence.
     provided = validate_gaps(_json(gaps, []))
     if not any(segment["text"].strip() for segment in successful) and (
         missing
@@ -259,8 +256,6 @@ def _publish(doc, segments, gaps, partial):
     doc.ready_at = now_datetime()
     doc.notification_pending = 1
     doc.save(ignore_permissions=True)
-    # Source deletion is retried by maintenance after publication transaction
-    # commits, so an external cleanup failure cannot roll back a usable artifact.
     return {
         "status": doc.status,
         "artifact": doc.artifact,
@@ -420,8 +415,6 @@ def maintenance():
             frappe.db.commit()
         except Exception:
             frappe.db.rollback()
-            # Operational logs deliberately contain neither participant content
-            # nor exception response bodies, which may include source tokens.
             frappe.logger("meet_transcription").warning("Transcription maintenance deferred")
 
 

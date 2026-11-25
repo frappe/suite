@@ -22,12 +22,10 @@ const crumbs = computed(() => [
 
 <template>
   <div class="flex items-center justify-between px-4 py-4 shrink-0 z-30">
-    <!-- Left: Meet's icon in Meet's own colour (its logo's), then the way back. -->
     <div class="flex items-center gap-2">
       <MeetIcon class="size-5 shrink-0 text-[#E54E17]" />
       <Breadcrumbs :items="crumbs" />
     </div>
-    <!-- Right: optional slot -->
     <div v-if="$slots.right" class="flex items-center gap-2">
       <slot name="right" />
     </div>

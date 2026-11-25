@@ -1140,7 +1140,6 @@ def recorder_replacement_ready(
         ready_at,
         _client(),
     )
-    # Protocol v1 status responses exclude internal grant-delivery metadata.
     return _callback_response({"status": result["status"]})
 
 

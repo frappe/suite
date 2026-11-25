@@ -25,7 +25,6 @@
     </div>
 
     <div class="flex flex-shrink-0 items-center gap-1">
-      <!-- Raised Hand Indicator -->
       <Tooltip
         v-if="isHandRaised"
         :text="__('{0} has raised their hand', [participant.user_name || participant.user_id])"
@@ -42,7 +41,6 @@
         </div>
       </Tooltip>
 
-      <!-- Video Status -->
       <Tooltip :text="participant.video_enabled ? __('Camera on') : __('Camera off')">
         <span class="flex items-center justify-center p-1.5 text-ink-gray-6">
           <MeetCameraIcon v-if="participant.video_enabled" class="size-4" />
@@ -50,7 +48,6 @@
         </span>
       </Tooltip>
 
-      <!-- Audio Status -->
       <Tooltip :text="participant.audio_enabled ? __('Microphone on') : __('Microphone off')">
         <span class="flex items-center justify-center p-1.5 text-ink-gray-6">
           <MeetMicIcon v-if="participant.audio_enabled" class="size-4" />
@@ -58,7 +55,6 @@
         </span>
       </Tooltip>
 
-      <!-- Host Controls -->
       <div v-if="canControlParticipant" class="relative">
         <Dropdown :options="hostOptions" align="end">
           <template #default>

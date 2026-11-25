@@ -28,7 +28,6 @@ const props = withDefaults(defineProps<Props>(), {
 const pillClasses = computed(() => {
   const classes: string[] = []
 
-  // Size classes
   switch (props.size) {
     case 'xs':
       classes.push('text-[10px]', 'px-1')
@@ -41,7 +40,6 @@ const pillClasses = computed(() => {
       break
   }
 
-  // Position classes
   switch (props.position) {
     case 'bottom-left':
       classes.push('bottom-1', 'left-1')

@@ -10,7 +10,6 @@
       !interactive ? 'pointer-events-none' : '',
     ]"
   >
-    <!-- ── Pinned area (empty placeholder; the pinned tile will be rendered here) ─────────────────── -->
     <div
       v-if="mode === 'sidebar' && pinnedTiles.length > 0"
       class="relative flex flex-1 gap-3 min-h-0 pointer-events-none"
@@ -23,7 +22,6 @@
       ></div>
     </div>
 
-    <!-- ── Tile strip / full grid ─────────────────────────────────────── -->
     <TransitionGroup
       name="tile"
       tag="div"
@@ -41,7 +39,6 @@
           mode === 'sidebar' ? `repeat(${gridColumns}, minmax(0, 1fr))` : undefined,
       }"
     >
-      <!-- Local camera tile -->
       <ParticipantTile
         v-if="showLocalTile"
         :key="`local-${localParticipant.user_id}`"
@@ -68,12 +65,10 @@
         :style="{ ...tileStyle, order: slot + 1 }"
       />
 
-      <!-- Remote participants -->
       <template v-for="participant in allParticipants" :key="`group-${participant.user_id}`">
         <ParticipantTile v-bind="getParticipantTileBindings(participant)" />
       </template>
 
-      <!-- Overflow tile -->
       <GroupTile
         v-if="displayParticipants.extra > 0"
         key="layout-group"
@@ -86,7 +81,6 @@
       />
     </TransitionGroup>
 
-    <!-- Floating reactions -->
     <FloatingReactions
       class="!z-[60]"
       :reactions="floatingReactions"
@@ -155,7 +149,6 @@ const setPinnedPanelRef = (el: unknown, tile: { type: string; id: string }) => {
   }
 }
 
-// Cache ref handlers to avoid UI flicker
 const videoRefHandlers = new Map<string, (el: unknown) => void>()
 const getRemoteVideoRef = (participantId: string): ((el: unknown) => void) => {
   if (!videoRefHandlers.has(participantId)) {
@@ -168,8 +161,6 @@ const getRemoteVideoRef = (participantId: string): ((el: unknown) => void) => {
   return videoRefHandlers.get(participantId)!
 }
 
-// ── Reactive state from meeting context ───────────────────────────────────────
-
 const participants: ComputedRef<Record<string, Participant>> = computed(
   () => meetingCtx.participantStore.participants,
 )
@@ -180,9 +171,6 @@ const activeSpeakerIds = computed(() => meetingCtx.participantStore.activeSpeake
 const pinnedTiles = computed(() => meetingCtx.gridLayout.pinnedTiles.value)
 const displayScreenShares = computed(() => meetingCtx.gridLayout.displayScreenShares.value)
 
-// ── Pinned area data ──────────────────────────────────────────────────────────
-
-// Unpin when a pinned participant leaves.
 watch(
   () => [pinnedTiles.value, participants.value] as const,
   () => {
@@ -192,8 +180,6 @@ watch(
   },
   { deep: true },
 )
-
-// ── Pin helpers ───────────────────────────────────────────────────────────────
 
 const isPinnedParticipant = (userId: string) =>
   pinnedTiles.value.some((t) => t.type === 'participant' && t.id === userId)
@@ -265,8 +251,6 @@ const getParticipantTileBindings = (
   }
 }
 
-// ── Local participant object ───────────────────────────────────────────────────
-
 const localParticipant = computed(() => {
   const userIdRaw = currentUser.value?.user_id
   const fullNameRaw = currentUser.value?.full_name
@@ -283,14 +267,11 @@ const localParticipant = computed(() => {
   return { user_id, user_name, avatar, initials: getInitials(user_name) }
 })
 
-// Number of extra strip tiles (pinned screenshares overlay the main panel instead)
 const extraTileCount = computed(
   () => allScreenShareTiles.value.filter((tile) => !isPinnedScreenShare(tile.pinId)).length,
 )
 
 const { isMobile } = useResponsiveGrid()
-
-// ── Layout composable ─────────────────────────────────────────────────────────
 
 const {
   mode,
@@ -372,11 +353,6 @@ const { pinnedTileStyles } = usePinnedTileAnimation({
   visibleTileCount,
 })
 
-// ── Floating reactions ────────────────────────────────────────────────────────
-// Grid mode: only reactions from hidden participants (visible tiles show their own)
-// Sidebar mode: reactions from all participants (sidebar tiles use ParticipantTile
-//   which shows reactions, main screen area doesn't)
-
 const floatingReactions = computed(() => {
   const reactions = meetingCtx.reactionStore.reactions
   const currentUserId = currentUser.value?.user_id
@@ -437,7 +413,6 @@ const floatingReactions = computed(() => {
 </script>
 
 <style scoped>
-/* Pinned tile overlays the pinned panel placeholder */
 .pinned-tile {
   border-radius: 0.5rem;
   overflow: hidden;
@@ -446,7 +421,6 @@ const floatingReactions = computed(() => {
   backface-visibility: hidden;
 }
 
-/* Hidden tiles stay mounted to preserve grid animation continuity */
 .hidden-tile {
   position: absolute;
   opacity: 0;

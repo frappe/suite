@@ -579,7 +579,6 @@ def register_e2ee_device(
         frappe.throw(_("ed25519_public_key must decode to 32 bytes"), frappe.ValidationError)
 
     user = frappe.session.user
-    # Upsert the (user, device_id) pair into the E2EE Device Key DocType.
     if not _update_e2ee_device_key(user, device_id, ed25519_public_key):
         doc = frappe.new_doc("E2EE Device Key")
         doc.user = user

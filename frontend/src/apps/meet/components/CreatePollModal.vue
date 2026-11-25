@@ -79,7 +79,6 @@ const emit = defineEmits<{
   submit: [payload: { question: string; options: { text: string }[] }]
 }>()
 
-// --- Local State ---
 const isOpen = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
@@ -95,7 +94,6 @@ const isValid = computed(() => {
   return validOptions.length >= 2
 })
 
-// --- Methods ---
 const addOption = () => {
   options.value.push({ text: '' })
 }
