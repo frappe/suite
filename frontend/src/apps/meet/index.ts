@@ -2,7 +2,6 @@ import MeetIcon from '@/apps/meet/AreaIcon.vue'
 import type { AreaDefinition } from '@/platform/contracts'
 import { translate as __ } from '@/platform/translation'
 
-/** Meet's camera icon, as Meet's own header shows it; colour it with `text-[#E54E17]`. */
 export { default as MeetIcon } from './AreaIcon.vue'
 export { default as ScheduleMeetingDialog } from './components/ScheduleMeetingDialog.vue'
 

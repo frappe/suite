@@ -373,15 +373,11 @@ import type { Participant } from '../utils/media/ParticipantManager'
 // Router
 const route = useRoute()
 const router = useRouter()
-const props = defineProps<{ resolvedCode?: string; shareUrl?: string }>()
-const address = computed(() =>
+const meetingId = computed(() =>
   Array.isArray(route.params.meetingId)
     ? (route.params.meetingId[0] ?? '')
     : route.params.meetingId,
 )
-const meetingId = computed(() => props.resolvedCode ?? address.value)
-const shareUrl = computed(() => props.shareUrl ?? window.location.href)
-provide('meetShareUrl', shareUrl)
 function redirectToLogin() {
   const path = window.location.pathname.startsWith('/meet')
     ? window.location.pathname
@@ -390,7 +386,7 @@ function redirectToLogin() {
 }
 async function copyMeetingLink() {
   try {
-    await navigator.clipboard.writeText(shareUrl.value)
+    await navigator.clipboard.writeText(window.location.href)
     toast.success(__('Meeting link copied'))
   } catch {
     toast.error(__('Could not copy meeting link'))
@@ -811,7 +807,7 @@ async function confirmMeetingLeave() {
 async function confirmAndEndCall() {
   if (!(await confirmMeetingLeave())) return
   canLeaveMeeting.value = true
-  const leftMeetingId = address.value
+  const leftMeetingId = meetingId.value
   const canRejoin = session.isLoggedIn
   await sfuConnection.endCall()
   // Back on Meet home, say the call ended for you and offer the way back; toasts from the call
@@ -1109,7 +1105,7 @@ onMounted(async () => {
         chatStore.hostOnlyChat = !!accessData.host_only_chat
       }
       if (!accessData?.allow_guest) {
-        const loginUrl = `/login?redirect-to=${encodeURIComponent(route.fullPath)}`
+        const loginUrl = `/login?redirect-to=${encodeURIComponent(`/meet/${meetingId.value}`)}`
         window.location.href = loginUrl
         return
       }

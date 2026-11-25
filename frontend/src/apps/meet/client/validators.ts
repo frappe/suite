@@ -57,8 +57,6 @@ import type {
   RoomPresenceTokenOutput,
   RoomPreviewInput,
   RoomPreviewOutput,
-  RoomResolveInput,
-  RoomResolveOutput,
   RoomSearchInput,
   RoomSearchOutput,
   RoomsPostInput,
@@ -141,45 +139,6 @@ export const operationRoomLinkAvailability: Validators<
         type: 'object',
       },
       'room_link_availability output',
-    )
-  },
-}
-
-export const operationRoomResolve: Validators<RoomResolveInput, RoomResolveOutput> = {
-  validateInput(value: unknown): asserts value is RoomResolveInput {
-    assertSchema(
-      value,
-      {
-        type: 'object',
-        properties: { link: { title: 'Link', type: 'string' } },
-        required: ['link'],
-        additionalProperties: false,
-        $defs: {},
-      },
-      'room_resolve input',
-    )
-  },
-  validateOutput(value: unknown): asserts value is RoomResolveOutput {
-    assertSchema(
-      value,
-      {
-        $defs: {
-          Room: {
-            properties: {
-              code: { title: 'Code', type: 'string' },
-              url: { title: 'Url', type: 'string' },
-            },
-            required: ['code', 'url'],
-            title: 'Room',
-            type: 'object',
-          },
-        },
-        properties: { meeting: { anyOf: [{ $ref: '#/$defs/Room' }, { type: 'null' }] } },
-        required: ['meeting'],
-        title: 'ResolvedRoom',
-        type: 'object',
-      },
-      'room_resolve output',
     )
   },
 }
@@ -1002,10 +961,9 @@ export const operationMyRooms: Validators<MyRoomsInput, MyRoomsOutput> = {
               meeting_type: { enum: ['open', 'restricted'], title: 'Meeting Type', type: 'string' },
               owner: { title: 'Owner', type: 'string' },
               modified: { title: 'Modified', type: 'string' },
-              custom_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Custom Link' },
               url: { title: 'Url', type: 'string' },
             },
-            required: ['name', 'title', 'meeting_type', 'owner', 'modified', 'custom_link', 'url'],
+            required: ['name', 'title', 'meeting_type', 'owner', 'modified', 'url'],
             title: 'MyRoom',
             type: 'object',
           },

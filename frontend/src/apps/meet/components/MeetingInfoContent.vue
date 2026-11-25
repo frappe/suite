@@ -27,7 +27,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, type ComputedRef } from 'vue'
+import { computed } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -45,8 +45,5 @@ withDefaults(
 )
 
 const { isContextReady: isE2EEActive, sessionFingerprint: e2eeFingerprint } = useE2EEState()
-const meetingUrl = inject<ComputedRef<string>>(
-  'meetShareUrl',
-  computed(() => window.location.href),
-)
+const meetingUrl = computed(() => window.location.href)
 </script>

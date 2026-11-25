@@ -174,18 +174,14 @@
               <div ref="locationsEl" :class="GROUP">
                 <div :class="ROW">
                   <MeetIcon class="size-4 shrink-0 text-[#E54E17]" />
-                  <!-- A new event with meets to pick from: the button names the link, for a
-                       chosen meet and a new one alike, so the row never changes shape. -->
-                  <template v-if="isNew && roomOptions?.length && (meetUrl || event.addMeetLink)">
+                  <template v-if="isNew && inviteRooms.length && (meetUrl || event.addMeetLink)">
                     <div class="min-w-0 flex-1">
-                      <Dropdown
-                        :button="{
-                          label: roomChoiceLabel,
-                          size: 'sm',
-                          variant: 'ghost',
-                          iconRight: 'lucide-chevron-down',
-                        }"
-                        :options="roomOptions"
+                      <MeetRoomPicker
+                        :label="roomChoiceLabel"
+                        :url="meetUrl"
+                        :rooms="inviteRooms"
+                        size="sm"
+                        @pick="emit('pickInviteRoom', $event)"
                       />
                     </div>
                     <Switch
@@ -439,7 +435,7 @@
 </template>
 
 <script setup lang="ts">
-import { Avatar, BottomSheet, Button, Dropdown, Switch, type DropdownOptions } from 'frappe-ui'
+import { Avatar, BottomSheet, Button, Dropdown, Switch } from 'frappe-ui'
 import {
   Bell,
   Briefcase,
@@ -457,6 +453,7 @@ import {
 import { computed, h, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import ConflictNote from '@/apps/calendar/components/ConflictNote.vue'
+import MeetRoomPicker from '@/apps/calendar/components/MeetRoomPicker.vue'
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import { requestAlertPermission } from '@/apps/calendar/reminders'
@@ -494,9 +491,8 @@ const {
   calendarChoices: { label: string; value: string; color: string }[]
   meetUrl?: string
   meetLinkDisplay?: string
-  /** A new event's choice between the default room and a fresh one; empty without a default. */
-  roomOptions?: DropdownOptions
-  roomChoiceLabel?: string
+  inviteRooms: { room: string; title: string | null; meeting_url: string }[]
+  roomChoiceLabel: string
 }>()
 
 /** The calendar it is on, as `account|id`. */
@@ -510,6 +506,7 @@ const emit = defineEmits<{
   setAlerts: [alerts: any[]]
   joinMeet: []
   setMeet: [on: boolean]
+  pickInviteRoom: [url: string | null]
 }>()
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()

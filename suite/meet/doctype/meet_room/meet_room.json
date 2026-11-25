@@ -1,13 +1,11 @@
 {
  "actions": [],
- "allow_rename": 1,
  "creation": "2025-06-25 15:44:00.661051",
  "doctype": "DocType",
  "engine": "InnoDB",
   "field_order": [
     "section_break_voms",
     "title",
-    "custom_link",
     "meeting_type",
    "allow_guest",
    "host_only_chat",
@@ -32,12 +30,6 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Title"
-  },
-  {
-   "fieldname": "custom_link",
-   "fieldtype": "Data",
-   "label": "Custom Link",
-   "read_only": 1
   },
   {
    "default": "open",

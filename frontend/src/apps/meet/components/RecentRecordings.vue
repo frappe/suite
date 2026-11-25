@@ -8,8 +8,6 @@ import { translate as __ } from '@/platform/translation'
 import { dayLabel, durationLabel } from '../utils/homeDates'
 
 const recordings = useQuery(api.meet.recordings.list)
-// Recordings are filed into the owner's "Meet Recordings" folder, so the newest
-// one's folder is where the rest of them are.
 const newest = computed(() => recordings.data?.[0]?.artifact)
 const newestNode = useQuery(api.drive.nodes.get, () =>
   newest.value ? { node: newest.value } : false,

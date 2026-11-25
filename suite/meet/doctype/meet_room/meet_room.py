@@ -18,7 +18,6 @@ class MeetRoom(Document):
     CONTROLLED_FIELDS: ClassVar[set[str]] = {
         "owner",
         "title",
-        "custom_link",
         "calendar_event",
         "allow_guest",
         "meeting_type",
@@ -78,8 +77,6 @@ class MeetRoom(Document):
 
     def validate_controlled_updates(self):
         if self.is_new():
-            if self.get("custom_link"):
-                frappe.throw(_("Use the dedicated meeting methods to set a custom link"))
             return
 
         allowed = set(getattr(self.flags, "meet_controlled_updates", None) or ())

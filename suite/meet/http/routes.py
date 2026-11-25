@@ -127,10 +127,6 @@ class LinkAvailability(TypedDict):
     status: links.LinkStatus
 
 
-class ResolvedRoom(TypedDict):
-    meeting: Room | None
-
-
 ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
@@ -151,16 +147,6 @@ ROUTES: tuple[Route, ...] = (
         errors=(frappe.RateLimitExceededError,),
         kind="query",
         public_name="rooms.linkAvailability",
-    ),
-    Route(
-        "GET",
-        "rooms/resolve",
-        "room_resolve",
-        query=LinkRef,
-        output=ResolvedRoom,
-        allow_guest=True,
-        kind="query",
-        public_name="rooms.resolve",
     ),
     Route(
         "POST",
@@ -377,14 +363,6 @@ def room_link_availability(link: str) -> LinkAvailability:
     return {"status": links.link_status(link)}
 
 
-@frappe.whitelist(allow_guest=True, methods=["GET"])
-# Guests can resolve, so cap it per IP: short guessable links must not be enumerable.
-@rate_limit(limit=60, seconds=60)
-def room_resolve(link: str) -> ResolvedRoom:
-    code = links.resolve_link(link)
-    return {"meeting": {"code": code, "url": links.meeting_url(code)} if code else None}
-
-
 @frappe.whitelist(methods=["POST"])
 def scheduled_meetings_post(
     title: Given = None,
@@ -559,29 +537,18 @@ class MyRoom(TypedDict):
     meeting_type: Literal["open", "restricted"]
     owner: str
     modified: str
-    custom_link: str | None
     url: str
 
 
 @frappe.whitelist(methods=["GET"])
 def my_rooms() -> list[MyRoom]:
-    """The rooms the signed-in user owns or co-hosts, most recently used first.
-
-    Filters on ownership itself rather than leaning on read permission, which a
-    System Manager holds for every room.
-    """
     user = frappe.session.user
     if user == "Guest":
         frappe.throw(_("Authentication required"), frappe.AuthenticationError)
-    cohosted = frappe.get_all(
-        "Meet Room User",
-        filters={"parenttype": "Meet Room", "parentfield": "co_hosts", "user": user},
-        pluck="parent",
-    )
     rooms = frappe.get_all(
         "Meet Room",
-        fields=["name", "title", "meeting_type", "owner", "modified", "custom_link"],
-        or_filters={"owner": user, **({"name": ["in", cohosted]} if cohosted else {})},
+        fields=["name", "title", "meeting_type", "owner", "modified"],
+        or_filters=schedule.invite_room_filters(user),
         order_by="modified desc",
         limit=3,
     )
@@ -592,8 +559,7 @@ def my_rooms() -> list[MyRoom]:
             "meeting_type": room.meeting_type,
             "owner": room.owner,
             "modified": str(room.modified),
-            "custom_link": room.custom_link or None,
-            "url": links.meeting_url(room.name, current_link=room.custom_link or ""),
+            "url": links.meeting_url(room.name),
         }
         for room in rooms
     ]

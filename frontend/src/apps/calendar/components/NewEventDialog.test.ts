@@ -9,10 +9,19 @@ import { format } from '@/platform/translation/format'
 // A closed dialog's fade, held until a test lets it finish.
 const fading = vi.hoisted(() => ({ finish: () => {} }))
 
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', {
+    configurable: true,
+    value: vi.fn(),
+  })
+})
+
 // frappe-ui's dialogs and buttons as plain elements: a dialog is its title, message, body and
 // actions while open, teleported to <body> as frappe-ui's are, and its own close (Escape, the
 // backdrop) is a button. Closing it fades until `fading.finish()`.
 vi.mock('frappe-ui', async () => {
+  const { default: Combobox } =
+    await import('../../../../../node_modules/frappe-ui/src/components/Combobox/Combobox.vue')
   const { defineComponent, h, Teleport, watch } = await import('vue')
   const passthrough = defineComponent({
     inheritAttrs: false,
@@ -63,14 +72,12 @@ vi.mock('frappe-ui', async () => {
     }),
     Avatar: passthrough,
     BottomSheet: passthrough,
-    Combobox: passthrough,
-    // The trigger's label, then each option as a button, so a choice can be made by name.
+    Combobox,
     Dropdown: defineComponent({
       props: ['button', 'options'],
       setup: (props) => () =>
         h('div', [
           h('span', { 'data-trigger': '' }, props.button?.label ?? ''),
-          // Groups flatten into their options; a group's heading shows when it isn't hidden.
           ...(Array.isArray(props.options) ? props.options : []).flatMap(
             (item: {
               label?: string
@@ -296,8 +303,7 @@ const dialogs = () => [...document.querySelectorAll('[role="dialog"]')]
 const form = () =>
   dialogs().find((dialog) => dialog.querySelector('input[placeholder="Add title"]'))
 const titleField = () => form()?.querySelector<HTMLInputElement>('input[placeholder="Add title"]')
-// The label on the Meet card's dropdown button.
-const trigger = () => form()?.querySelector('[data-trigger]')?.textContent
+const trigger = () => form()?.querySelector('[data-meet-picker]')?.textContent
 const button = (label: string) =>
   [...document.querySelectorAll('button')].find((candidate) => candidate.textContent === label)
 const click = async (target: Element | null | undefined) => {
@@ -314,7 +320,6 @@ const selectedWhole = (field: HTMLInputElement | null | undefined) =>
 const loadingFrame = () => document.querySelector('[role="dialog"] [role="status"]')
 const created = () => server.writes.filter((write) => write.to === 'calendar.events.create')
 const roomUrl = (room: string) => `${window.location.origin}/meet/${room}`
-// The default room, plus any rooms that were the default before.
 const defaultInvite = (
   ...past: { room: string; title: string | null; meeting_url?: string }[]
 ) => ({
@@ -396,7 +401,6 @@ describe("Calendar's new-event form opened over another area's page", () => {
     const meetSwitch = () => form()?.querySelector('[aria-label="Frappe Meet video call"]')
 
     expect(trigger()).toBe('meet/team-meet-room')
-    // Joining waits until the event is saved; a new event is still being scheduled.
     expect(button('Join')).toBeUndefined()
     await click(meetSwitch())
     expect(form()?.textContent).not.toContain('meet/team-meet-room')
@@ -425,6 +429,7 @@ describe("Calendar's new-event form opened over another area's page", () => {
     void open(draft)
     await opened()
 
+    await click(button('meet/team-meet-room'))
     await click(button('New link for this event'))
     expect(trigger()).toBe('New link')
 
@@ -434,28 +439,52 @@ describe("Calendar's new-event form opened over another area's page", () => {
     expect(JSON.stringify(server.writes[0].input)).not.toContain('team-meet-room')
   })
 
-  it('offers rooms that were the default before by name, and saves the one picked', async () => {
-    server.replies.set(
-      'meet.rooms.defaultInvite',
-      defaultInvite({
-        room: 'sale-stea-mroo',
-        title: 'Sales team',
-        meeting_url: roomUrl('sales-team'),
-      }),
-    )
+  it('searches owned or co-hosted rooms and remembers the one picked', async () => {
+    server.replies.set('meet.rooms.defaultInvite', {
+      ...defaultInvite({ room: 'sales-team', title: 'Sales team' }),
+      room: null,
+      meeting_url: null,
+    })
     void open(draft)
     await opened()
 
-    expect(form()?.textContent).toContain('Your meets')
-    // A titled meet shows its link under the title; an untitled one is listed by its link.
-    expect(button('Sales team')?.nextElementSibling?.textContent).toBe('meet/sales-team')
-    expect(button('meet/team-meet-room')).toBeTruthy()
-    await click(button('Sales team'))
+    await click(form()?.querySelector('[aria-label="Frappe Meet video call"]'))
+    await click(button('New link'))
+    const search = document.querySelector<HTMLInputElement>('input[placeholder="Search meets"]')!
+    const searchFor = async (query: string) => {
+      search.value = query
+      search.dispatchEvent(new Event('input', { bubbles: true }))
+      await settle()
+    }
+    const options = () => [...document.querySelectorAll('[role="option"]')]
+    await searchFor('Sales team')
+    expect(options()).toHaveLength(1)
+    expect(options()[0].textContent).toContain('meet/sales-team')
+    await searchFor('meet/sales-team')
+    expect(options()).toHaveLength(1)
+    await searchFor('no such room')
+    expect(options()).toHaveLength(0)
+    expect(button('New link for this event')).toBeTruthy()
+    await searchFor('meet/sales-team')
+    await click(options()[0])
     expect(trigger()).toBe('meet/sales-team')
+
+    await click(button('meet/sales-team'))
+    const selected = document.querySelector('[role="option"][aria-selected="true"]')
+    expect(selected?.textContent).toContain('Sales team')
+    expect(selected?.querySelector('.lucide-check')).not.toBeNull()
+    await click(button('meet/sales-team'))
 
     await click(button('Save'))
     await click(button('Send Email'))
-    expect(server.writes.map((write) => write.to)).toEqual(['calendar.events.create'])
+    expect(server.writes[0]).toEqual({
+      to: 'meet.rooms.setDefaultInvite',
+      input: { room: 'sales-team' },
+    })
+    expect(server.writes.map((write) => write.to)).toEqual([
+      'meet.rooms.setDefaultInvite',
+      'calendar.events.create',
+    ])
     expect(created()[0].input.links).toEqual([
       expect.objectContaining({ href: roomUrl('sales-team') }),
     ])

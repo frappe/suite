@@ -203,7 +203,7 @@ def _build_guest_connection_details(
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 @dynamic_rate_limit()
 def create(
     meeting_type: str = "open",
@@ -211,8 +211,12 @@ def create(
     title: str | None = None,
     link: str | None = None,
 ) -> str:
-    """Create a meet and optionally claim its custom link in the same transaction."""
-    from suite.meet.links import change_link
+    from suite.meet.links import link_status, refuse_link
+
+    if link is not None:
+        status = link_status(link)
+        if status != "available":
+            refuse_link(status)
 
     global_settings = frappe.get_cached_doc("Meet Settings")
     if not global_settings.allow_guest:
@@ -227,10 +231,13 @@ def create(
                 "meeting_type": meeting_type,
                 "allow_guest": allow_guest,
             }
-        ).insert()
-        if link is not None:
-            change_link(meeting.name, link, user=frappe.session.user)
+        ).insert(set_name=link)
         return meeting.name
+    except frappe.DuplicateEntryError:
+        frappe.db.rollback(save_point="meet_create")
+        if link is not None:
+            refuse_link("taken")
+        raise
     except Exception:
         frappe.db.rollback(save_point="meet_create")
         raise

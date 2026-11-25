@@ -77,7 +77,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   state.query.mockResolvedValue({ status: 'available' })
   state.create.mockResolvedValue({
-    code: 'abcd-efgh-ijkl',
+    code: 'sales-team',
   })
 })
 

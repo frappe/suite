@@ -39,7 +39,7 @@ export const routes: RouteRecordRaw[] = [
       {
         path: ':meetingId',
         name: 'meet-meeting',
-        component: () => import('@/apps/meet/pages/MeetingRoute.vue'),
+        component: () => import('@/apps/meet/pages/Meeting.vue'),
         // A call stays outside the shell: fixed, dark, full screen [T010].
         meta: { allowGuest: true, frame: 'none' },
       },

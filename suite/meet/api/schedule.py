@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Literal, TypedDict
 
 import frappe
@@ -13,10 +12,6 @@ from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.links import meeting_url
 
 DEFAULT_INVITE_ROOM = "meet_default_invite_room"
-# Rooms the user has made their default before, newest first. Calendar offers them
-# beside the current default, so a room joins the list by once being the default.
-PAST_INVITE_ROOMS = "meet_past_invite_rooms"
-PAST_INVITE_ROOMS_KEPT = 3
 
 
 class InviteRoom(TypedDict):
@@ -28,7 +23,6 @@ class InviteRoom(TypedDict):
 class DefaultInviteRoom(TypedDict):
     room: str | None
     meeting_url: str | None
-    # The default first, then up to three rooms that were the default before.
     rooms: list[InviteRoom]
 
 
@@ -47,35 +41,32 @@ def _can_use_invite_room(room: str, user: str) -> bool:
     return doc.is_host_or_cohost(user)
 
 
-def _past_invite_rooms(user: str) -> list[str]:
-    stored = frappe.defaults.get_defaults_for(user).get(PAST_INVITE_ROOMS)
-    try:
-        rooms = json.loads(stored) if stored else []
-    except ValueError:
-        return []
-    return [room for room in rooms if isinstance(room, str)] if isinstance(rooms, list) else []
-
-
-def _invite_room(room: str) -> InviteRoom:
-    return {
-        "room": room,
-        "title": frappe.db.get_value("Meet Room", room, "title"),
-        "meeting_url": meeting_url(room),
-    }
+def invite_room_filters(user: str) -> dict:
+    cohosted = frappe.get_all(
+        "Meet Room User",
+        filters={"parenttype": "Meet Room", "parentfield": "co_hosts", "user": user},
+        pluck="parent",
+    )
+    return {"owner": user, **({"name": ["in", cohosted]} if cohosted else {})}
 
 
 @frappe.whitelist(methods=["GET"])
 def default_invite_room() -> DefaultInviteRoom:
     user = _invite_user()
     stored = frappe.defaults.get_defaults_for(user).get(DEFAULT_INVITE_ROOM)
-    default = stored if stored and _can_use_invite_room(stored, user) else None
-    past = [
-        room for room in _past_invite_rooms(user) if room != default and _can_use_invite_room(room, user)
-    ][:PAST_INVITE_ROOMS_KEPT]
+    rooms = frappe.get_all(
+        "Meet Room",
+        fields=["name", "title"],
+        or_filters=invite_room_filters(user),
+        order_by="modified desc",
+    )
+    default = next((room.name for room in rooms if room.name == stored), None)
     return {
         "room": default,
         "meeting_url": meeting_url(default) if default else None,
-        "rooms": [_invite_room(room) for room in ([default] if default else []) + past],
+        "rooms": [
+            {"room": room.name, "title": room.title, "meeting_url": meeting_url(room.name)} for room in rooms
+        ],
     }
 
 
@@ -85,13 +76,8 @@ def set_default_invite_room(room: str | None = None) -> None:
     if room is not None and not _can_use_invite_room(room, user):
         frappe.throw(_("Choose a meet you own or co-host."), frappe.PermissionError)
 
-    # Serialize writes even when the user has no preference row yet.
     frappe.db.get_value("User", user, "name", for_update=True)
-    previous = frappe.defaults.get_defaults_for(user).get(DEFAULT_INVITE_ROOM)
     frappe.defaults.set_user_default(DEFAULT_INVITE_ROOM, room, user)
-    if previous and previous != room:
-        past = [previous, *(r for r in _past_invite_rooms(user) if r not in (previous, room))]
-        frappe.defaults.set_user_default(PAST_INVITE_ROOMS, json.dumps(past[:PAST_INVITE_ROOMS_KEPT]), user)
 
 
 @frappe.whitelist(methods=["POST"])

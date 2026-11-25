@@ -30,7 +30,7 @@ const effects = {
     invalidates: ['room_document', 'room_access', 'room_preview', 'get_waiting_room_details'],
   },
   rooms_post: {
-    invalidates: ['room_search', 'my_rooms', 'room_link_availability', 'room_resolve'],
+    invalidates: ['room_search', 'my_rooms', 'room_link_availability'],
   },
   scheduled_meetings_post: {
     invalidates: [

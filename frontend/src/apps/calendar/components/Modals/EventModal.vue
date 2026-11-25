@@ -29,6 +29,7 @@ import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { api, useMutation, useQuery } from '@/api'
 import ConflictNote from '@/apps/calendar/components/ConflictNote.vue'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
+import MeetRoomPicker from '@/apps/calendar/components/MeetRoomPicker.vue'
 import MobileEventForm from '@/apps/calendar/components/mobile/MobileEventForm.vue'
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -108,6 +109,7 @@ const isNew = computed(() => !selectedEvent?.calendarEvent)
 const defaultInvite = useQuery(api.meet.rooms.defaultInvite, () =>
   show.value && isNew.value ? {} : false,
 )
+const rememberInviteRoom = useMutation(api.meet.rooms.setDefaultInvite)
 const loading = computed(
   () =>
     loadingContext || (show.value && isNew.value && !defaultInvite.data && !defaultInvite.error),
@@ -367,30 +369,13 @@ const removeMeetLink = () => {
     (link) => typeof link.href !== 'string' || !link.href.includes('/meet/'),
   )
 }
-// One switch for the video call. Off drops a new event's link. On uses the default
-// room when there is one, so it never mints a room the user didn't ask for, and
-// otherwise asks the server for a fresh room as before.
-// The rooms a new event can use: the default first, then rooms that were the default before.
 const inviteRooms = computed(() => (isNew.value ? (defaultInvite.data?.rooms ?? []) : []))
-const defaultRoom = computed(() =>
-  isNew.value && defaultInvite.data?.room
-    ? inviteRooms.value.find((room) => room.room === defaultInvite.data?.room)
-    : undefined,
-)
-// A meet's address as people read it, e.g. meet/sales-team.
 const meetAddress = (url: string) => url.match(/\/meet\/[^/?#]+/)?.[0].slice(1)
-// The listed meet the event's link points at, if any. Matched on the whole URL, since a
-// custom link carries no code.
-const pickedRoom = computed(() =>
-  meetUrl.value ? inviteRooms.value.find((room) => room.meeting_url === meetUrl.value) : undefined,
-)
 const useRoom = (url: string) => {
   removeMeetLink()
   event.addMeetLink = false
   event.links = [...(event.links || []), { href: url, content_type: 'text/html' }]
 }
-// A new room is minted by the server when the event is created, so until then the
-// event carries the request (addMeetLink) and no link.
 const useNewRoom = () => {
   removeMeetLink()
   event.addMeetLink = true
@@ -401,40 +386,20 @@ const setMeet = (on: boolean) => {
     event.addMeetLink = false
     return
   }
-  if (defaultRoom.value) useRoom(defaultRoom.value.meeting_url)
+  const url = defaultInvite.data?.meeting_url
+  if (isNew.value && url) useRoom(url)
   else event.addMeetLink = true
 }
-// Only a new event with rooms on offer has a choice to make.
-const roomOptions = computed(() =>
-  inviteRooms.value.length
-    ? [
-        {
-          group: __('Your meets'),
-          hideLabel: inviteRooms.value.length < 2,
-          options: inviteRooms.value.map((room) => ({
-            // An untitled meet is known by its link alone, so it shows the link once.
-            label: room.title || meetAddress(room.meeting_url) || room.room,
-            description: room.title ? meetAddress(room.meeting_url) : undefined,
-            selected: pickedRoom.value?.room === room.room,
-            onClick: () => useRoom(room.meeting_url),
-          })),
-        },
-        {
-          group: __('New link'),
-          hideLabel: true,
-          options: [
-            {
-              label: __('New link for this event'),
-              selected: !meetUrl.value && !!event.addMeetLink,
-              onClick: useNewRoom,
-            },
-          ],
-        },
-      ]
-    : [],
-)
-// The button names the link the event will carry, so a chosen meet and a new link take
-// the same single line.
+const pickInviteRoom = (url: string | null) => {
+  if (url === null) {
+    useNewRoom()
+    return
+  }
+  const room = inviteRooms.value.find((option) => option.meeting_url === url)
+  if (!room) return
+  useRoom(url)
+  void rememberInviteRoom.run({ room: room.room }).catch(() => {})
+}
 const roomChoiceLabel = computed(() => meetAddress(meetUrl.value) || __('New link'))
 const joinMeet = () => {
   if (meetUrl.value) window.open(meetUrl.value, '_blank', 'noopener')
@@ -467,8 +432,6 @@ watch(
   (val) => {
     if (!val) return
     Object.assign(event, getEventData())
-    // Reopening the same event leaves the start untouched, so the watcher below
-    // won't fire — seed the baseline here or the first edit has nothing to move from.
     previousStart = {
       date: event.startDate,
       time: event.startTime,
@@ -477,8 +440,6 @@ watch(
   },
   { immediate: true },
 )
-// Filled in under a dialog already open, the title gets the caret its autofocus gave to nothing,
-// selected as autofocus would have it, so typing replaces a title the event came in with.
 watch(loading, (now, before) => {
   if (before && !now && show.value && isNew.value && !isMobile.value)
     void nextTick(() => {
@@ -1296,20 +1257,16 @@ const recurringScopeModalProps = computed(() => ({
             <div
               class="mt-4 flex items-center gap-3 rounded-6 border border-outline-gray-2 px-3.5 py-3"
             >
-              <!-- A new event with meets to pick from: one line whose button names the link and
-                   opens the choice; joining waits until the event is saved. -->
-              <template v-if="isNew && roomOptions.length && (meetUrl || event.addMeetLink)">
+              <template v-if="isNew && inviteRooms.length && (meetUrl || event.addMeetLink)">
                 <MeetIcon class="size-6 shrink-0 text-[#E54E17]" />
                 <div class="flex min-w-0 flex-1 items-center gap-1">
                   <span class="sr-only">{{ __('Frappe Meet') }}</span>
                   <div class="-ms-2 min-w-0">
-                    <Dropdown
-                      :button="{
-                        label: roomChoiceLabel,
-                        variant: 'ghost',
-                        iconRight: 'lucide-chevron-down',
-                      }"
-                      :options="roomOptions"
+                    <MeetRoomPicker
+                      :label="roomChoiceLabel"
+                      :url="meetUrl"
+                      :rooms="inviteRooms"
+                      @pick="pickInviteRoom"
                     />
                   </div>
                   <Button
@@ -1352,7 +1309,6 @@ const recurringScopeModalProps = computed(() => ({
                 />
               </template>
               <template v-else>
-                <!-- As tall as the button row above, so switching the call off doesn't shift the form. -->
                 <MeetIcon class="size-6 shrink-0 text-[#E54E17]" />
                 <span class="flex-1 text-base leading-7">{{
                   __('Add Frappe Meet video call')
@@ -1548,8 +1504,9 @@ const recurringScopeModalProps = computed(() => ({
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"
-    :room-options="roomOptions"
+    :invite-rooms="inviteRooms"
     :room-choice-label="roomChoiceLabel"
+    @pick-invite-room="pickInviteRoom"
     @cancel="cancel"
     @save="handleSaveClick"
     @toggle-repeat="toggleRepeat"

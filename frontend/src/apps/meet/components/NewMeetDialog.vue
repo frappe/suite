@@ -110,7 +110,6 @@ const submit = async () => {
         link: hasCustomLink ? link : undefined,
       })
     } catch {
-      // The client reports server refusals, including links claimed after the availability check.
       return
     }
 
@@ -118,7 +117,7 @@ const submit = async () => {
     connection.justCreated = true
     await router.push({
       name: 'meet-meeting',
-      params: { meetingId: hasCustomLink ? link : meet.code },
+      params: { meetingId: meet.code },
     })
   } finally {
     saving.value = false
@@ -143,7 +142,26 @@ const submit = async () => {
         autofocus
       />
 
-      <div v-if="custom" class="mt-3">
+      <div class="mt-4 divide-y divide-outline-gray-1" :class="{ '-mb-2': !custom }">
+        <Switch
+          v-model="restricted"
+          class="py-2.5"
+          icon="lucide-lock"
+          :label="__('Restricted')"
+          :description="__('Only people you allow or admit can join')"
+          :disabled="saving"
+        />
+        <Switch
+          v-model="custom"
+          class="py-2.5"
+          icon="lucide-pencil-line"
+          :label="__('Custom link')"
+          :description="__('Choose a link that is easy to share')"
+          :disabled="saving"
+        />
+      </div>
+
+      <div v-if="custom" class="mt-2">
         <div
           class="flex h-8 min-w-0 items-center rounded-4 border border-outline-gray-3 bg-surface-base px-2.5 text-base shadow-sm focus-within:border-outline-gray-5"
         >
@@ -177,24 +195,6 @@ const submit = async () => {
         </div>
       </div>
 
-      <div class="-mb-2 mt-4 divide-y divide-outline-gray-1">
-        <Switch
-          v-model="restricted"
-          class="py-2.5"
-          icon="lucide-lock"
-          :label="__('Restricted')"
-          :description="__('Only people you invite can join')"
-          :disabled="saving"
-        />
-        <Switch
-          v-model="custom"
-          class="py-2.5"
-          icon="lucide-pencil-line"
-          :label="__('Custom link')"
-          :description="__('Choose a link that is easy to share')"
-          :disabled="saving"
-        />
-      </div>
       <button type="submit" class="hidden" :disabled="disabled" />
     </form>
     <template #actions>

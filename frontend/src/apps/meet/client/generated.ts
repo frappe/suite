@@ -47,29 +47,6 @@ const operationRoomLinkAvailability: QueryRef<
   loadValidators: async () => (await import('./validators')).operationRoomLinkAvailability,
 }
 
-export type RoomResolveOutputRoom = { code: string; url: string }
-
-export type RoomResolveInput = { link: string }
-
-export type RoomResolveOutput = { meeting: RoomResolveOutputRoom | null }
-
-export type RoomResolveError = never
-
-const operationRoomResolve: QueryRef<RoomResolveInput, RoomResolveOutput, RoomResolveError> = {
-  id: 'room_resolve',
-  owner: 'meet',
-  kind: 'query',
-  publicName: 'rooms.resolve',
-  method: 'GET',
-  path: 'rooms/resolve',
-  prefix: '/api/suite/meet/',
-  pathParams: [],
-  nodeParams: [],
-  entity: null,
-  errors: [],
-  loadValidators: async () => (await import('./validators')).operationRoomResolve,
-}
-
 export type ScheduledMeetingsPostInputAttendee = { email: string; name?: string }
 
 export type ScheduledMeetingsPostOutputRoom = { code: string; url: string }
@@ -718,7 +695,6 @@ export type MyRoomsOutputMyRoom = {
   meeting_type: 'open' | 'restricted'
   owner: string
   modified: string
-  custom_link: string | null
   url: string
 }
 
@@ -1014,7 +990,6 @@ export const api = {
   rooms: {
     create: operationRoomsPost,
     linkAvailability: operationRoomLinkAvailability,
-    resolve: operationRoomResolve,
     preview: operationRoomPreview,
     access: operationRoomAccess,
     connect: operationRoomConnection,

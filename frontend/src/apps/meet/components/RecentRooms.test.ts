@@ -11,7 +11,6 @@ const state = vi.hoisted(() => ({
   writeText: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   rooms: new Array<unknown>(),
-  inviteRoom: ((): string | null => null)(),
 }))
 
 vi.mock('vue-router', () => ({
@@ -33,7 +32,6 @@ vi.mock('@/api', async () => {
   const { api } = await vi.importActual<typeof import('@/api')>('@/api')
   const { createApiClient } = await import('@/platform/server-state')
   const engine = createApiClient(
-    // Reads always refetch; writes use Meet's real effects, so they refresh what they affect.
     {
       meet: async () => {
         const { registration } = await import('../client/policy')
@@ -52,19 +50,6 @@ vi.mock('frappe-ui', () => ({
   Dialog: { render: () => null },
   Switch: { render: () => null },
   TextInput: { render: () => null },
-  // Each option as a button, so the menu can be read and used by label.
-  Dropdown: defineComponent({
-    props: ['options'],
-    setup: (props) => () =>
-      h(
-        'div',
-        { role: 'menu' },
-        (Array.isArray(props.options) ? props.options : []).map(
-          (option: { label: string; disabled?: boolean; onClick: () => void }) =>
-            h('button', { disabled: option.disabled, onClick: option.onClick }, option.label),
-        ),
-      ),
-  }),
   Badge: defineComponent({ props: ['label'], setup: (props) => () => h('span', props.label) }),
   Tooltip: defineComponent({
     setup:
@@ -94,22 +79,10 @@ beforeEach(() => {
     configurable: true,
   })
   state.request.mockReset()
-  state.inviteRoom = null
-  state.request.mockImplementation(
-    async (reference: { id: string }, input?: { room: string | null }) => {
-      if (reference.id === 'set_default_invite_room') {
-        state.inviteRoom = input?.room ?? null
-        return null
-      }
-      if (reference.id === 'default_invite_room')
-        return { room: state.inviteRoom, meeting_url: null, rooms: [] }
-      return state.rooms
-    },
-  )
+  state.request.mockImplementation(async () => state.rooms)
   state.rooms = [
     {
-      name: 'sale-stea-mroo',
-      custom_link: 'sales-team',
+      name: 'sales-team',
       url: `${window.location.origin}/meet/sales-team`,
       title: 'Sales team',
       meeting_type: 'open',
@@ -118,7 +91,6 @@ beforeEach(() => {
     },
     {
       name: 'abcd-efgh-ijkl',
-      custom_link: null,
       url: `${window.location.origin}/meet/abcd-efgh-ijkl`,
       title: null,
       meeting_type: 'restricted',
@@ -151,31 +123,12 @@ const button = (root: HTMLElement, label: string) =>
   root.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!
 
 describe('Recent meets', () => {
-  it('offers to use a meet for calendar invites, and to stop once it is used', async () => {
-    const root = await mount()
-    const menu = (row: number) => root.querySelectorAll('li')[row].querySelector('[role="menu"]')!
-    const item = (row: number) => menu(row).querySelector('button')!
-
-    expect(item(1).textContent).toBe('Use for calendar invites')
-    item(1).click()
-    await vi.waitFor(() => expect(item(1).textContent).toBe('Stop using for calendar invites'))
-    expect(item(0).textContent).toBe('Use for calendar invites')
-    const row = (index: number) => root.querySelectorAll('li')[index].textContent
-    expect(row(1)).toContain('Used for calendar invites')
-    expect(row(0)).not.toContain('Used for calendar invites')
-
-    item(1).click()
-    await vi.waitFor(() => expect(item(1).textContent).toBe('Use for calendar invites'))
-    expect(row(1)).not.toContain('Used for calendar invites')
-  })
-
   it('names each room, marks co-hosted and restricted rooms, and when it was last used', async () => {
     const [sales, untitled] = [...(await mount()).querySelectorAll('li')]
 
     expect(sales!.textContent).toContain('Sales team')
     expect(sales!.textContent).toContain('Co-host')
     expect(sales!.textContent).toContain('sales-team')
-    expect(sales!.textContent).not.toContain('sale-stea-mroo')
     expect(sales!.textContent).not.toContain('/meet/')
     expect(sales!.textContent).toContain('Today')
 

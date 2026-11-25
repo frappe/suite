@@ -60,7 +60,6 @@ const participantsByEvent = computed(
                 class="isolate flex items-center -space-x-1.5"
                 :aria-label="__('Invited people')"
               >
-                <!-- The first person sits on top; each next one tucks behind. -->
                 <span
                   v-for="(participant, index) in participantsByEvent.get(event.id)?.slice(0, 5)"
                   :key="participant.email"

@@ -2,7 +2,6 @@ import dayjs from 'dayjs/esm'
 
 import { translate as __ } from '@/platform/translation'
 
-/** "Today", "Yesterday", or a short weekday date for a server timestamp. */
 export const dayLabel = (value: string | null | undefined, now = dayjs()) => {
   if (!value) return ''
   const day = dayjs(value)
@@ -12,7 +11,6 @@ export const dayLabel = (value: string | null | undefined, now = dayjs()) => {
   return day.format(day.isSame(now, 'year') ? 'ddd, D MMM' : 'D MMM YYYY')
 }
 
-/** A recording's length as "42 min" or "1 h 5 min". */
 export const durationLabel = (seconds: number | null | undefined) => {
   if (!seconds || seconds < 60) return seconds ? __('Under a minute') : ''
   const minutes = Math.round(seconds / 60)

@@ -31,8 +31,6 @@
           :key="calendarStore.accountId"
           ref="upcomingMeetingsRef"
         />
-        <!-- Side by side when both have rows, so the page fits without scrolling;
-             auto-fit lets a lone section take the full width. -->
         <div
           class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] gap-x-6 gap-y-8 empty:hidden"
         >

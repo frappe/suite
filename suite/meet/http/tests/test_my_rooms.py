@@ -1,11 +1,13 @@
+from unittest.mock import patch
+
 import frappe
 from frappe.tests import IntegrationTestCase
 
+from suite.meet.api.meeting import get_public_meeting_preview
 from suite.meet.http.routes import (
     default_invite_room,
     my_rooms,
     room_link_availability,
-    room_resolve,
     rooms_post,
     set_default_invite_room,
 )
@@ -97,48 +99,18 @@ class IntegrationTestMyRooms(IntegrationTestCase):
         frappe.set_user(self.cohost)
         self.assertIsNone(default_invite_room()["meeting_url"])
 
-    def test_rooms_that_were_the_default_are_offered_after_it_newest_first(self):
-        first, second, third, fourth, current = (
-            self._room(self.owner, title=title) for title in ("One", "Two", "Three", "Four", "Now")
-        )
-
-        frappe.set_user(self.owner)
-        self.assertEqual(default_invite_room()["rooms"], [])
-        for room in (first, second, third, fourth, current):
-            set_default_invite_room(room.name)
-
-        rooms = default_invite_room()["rooms"]
-        self.assertEqual(
-            [room["room"] for room in rooms], [current.name, fourth.name, third.name, second.name]
-        )
-        self.assertEqual(rooms[0]["title"], "Now")
-        self.assertTrue(rooms[1]["meeting_url"].endswith(f"/meet/{fourth.name}"))
-
-        # Going back to an old default moves it to the front instead of listing it twice.
-        set_default_invite_room(second.name)
-        self.assertEqual(
-            [room["room"] for room in default_invite_room()["rooms"]],
-            [second.name, current.name, fourth.name, third.name],
-        )
-
-    def test_clearing_the_default_keeps_it_on_offer_and_lost_rooms_drop_out(self):
-        kept = self._room(self.owner, title="Kept")
+    def test_calendar_offers_all_eligible_rooms_before_a_pick(self):
+        owned = [self._room(self.owner, title=title) for title in ("One", "Two", "Three", "Four")]
         shared = self._room(self.cohost, title="Shared")
         shared.add_user_to_table("co_hosts", self.owner, save=True, ignore_permissions=True)
+        unrelated = self._room(self.outsider)
+        unrelated.add_user_to_table("members", self.owner, save=True, ignore_permissions=True)
 
         frappe.set_user(self.owner)
-        set_default_invite_room(shared.name)
-        set_default_invite_room(kept.name)
-        set_default_invite_room(None)
-        self.assertEqual([room["room"] for room in default_invite_room()["rooms"]], [kept.name, shared.name])
-
-        frappe.set_user(self.cohost)
-        shared.allow_controlled_update("co_hosts")
-        shared.set("co_hosts", [])
-        shared.save(ignore_permissions=True)
-
-        frappe.set_user(self.owner)
-        self.assertEqual([room["room"] for room in default_invite_room()["rooms"]], [kept.name])
+        invite = default_invite_room()
+        self.assertIsNone(invite["room"])
+        self.assertCountEqual([room["room"] for room in invite["rooms"]], [r.name for r in [*owned, shared]])
+        self.assertEqual(len(my_rooms()), 3)
 
     def test_invalid_and_reserved_links_cannot_create_a_meet(self):
         frappe.set_user(self.owner)
@@ -178,7 +150,8 @@ class IntegrationTestMyRooms(IntegrationTestCase):
     def test_a_claimed_link_opens_its_meet_and_stays_bound_to_it(self):
         frappe.set_user(self.owner)
         code = rooms_post("restricted", title="Sales team", link="sales-team-link")["code"]
-        self.assertEqual(my_rooms()[0]["custom_link"], "sales-team-link")
+        self.assertEqual(code, "sales-team-link")
+        self.assertEqual(my_rooms()[0]["name"], code)
         set_default_invite_room(code)
         self.assertTrue(default_invite_room()["meeting_url"].endswith("/meet/sales-team-link"))
         self.assertTrue(default_invite_room()["rooms"][0]["meeting_url"].endswith("/meet/sales-team-link"))
@@ -189,13 +162,21 @@ class IntegrationTestMyRooms(IntegrationTestCase):
             rooms_post("open", link="sales-team-link")
         self.assertEqual(my_rooms(), [])
 
-        frappe.set_user("Guest")
-        for address in (code, "sales-team-link"):
-            with self.subTest(address=address):
-                resolved = room_resolve(address)["meeting"]
-                self.assertEqual(resolved["code"], code)
-                self.assertTrue(resolved["url"].endswith("/meet/sales-team-link"))
-        self.assertEqual(room_resolve("unclaimed-sales-link"), {"meeting": None})
+        frappe.set_user(self.owner)
+        self.assertEqual(get_public_meeting_preview("sales-team-link"), {"title": "Sales team"})
+
+    def test_concurrent_link_claim_is_rejected_without_creating_a_room(self):
+        frappe.set_user(self.owner)
+        rooms_post("open", title="Original room", link="shared-address")
+
+        frappe.set_user(self.outsider)
+        with patch("suite.meet.links.link_status", return_value="available"):
+            with self.assertRaisesRegex(LinkError, "Already taken"):
+                rooms_post("open", link="shared-address")
+
+        self.assertEqual(my_rooms(), [])
+        frappe.set_user(self.owner)
+        self.assertEqual(get_public_meeting_preview("shared-address"), {"title": "Original room"})
 
     def _user(self, email: str, roles: tuple[str, ...] = ()) -> str:
         if not frappe.db.exists("User", email):
@@ -204,8 +185,7 @@ class IntegrationTestMyRooms(IntegrationTestCase):
             ).insert(ignore_permissions=True)
         user = frappe.get_doc("User", email)
         user.add_roles("Suite User", *roles)
-        for key in ("meet_default_invite_room", "meet_past_invite_rooms"):
-            frappe.defaults.clear_user_default(key, email)
+        frappe.defaults.clear_user_default("meet_default_invite_room", email)
         for room in frappe.get_all("Meet Room", filters={"owner": email}, pluck="name"):
             frappe.delete_doc("Meet Room", room, force=True, ignore_permissions=True)
         return email
