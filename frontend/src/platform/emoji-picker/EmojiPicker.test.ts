@@ -13,19 +13,20 @@ vi.mock('frappe-ui', async () => ({
       return () => h('button', { 'data-plus': '', ...attrs }, 'plus')
     },
   }),
-  FormControl: defineComponent({
+}))
+vi.mock('./EmojiGrid.vue', () => ({
+  default: defineComponent({
     setup() {
-      return () => h('input', { 'data-search': '' })
+      return () => h('button', { 'data-emoji-grid': '' }, 'Full emoji grid')
     },
   }),
 }))
-vi.mock('gemoji', () => ({ gemoji: [] }))
 
 const pointer = (type: string, pointerType: string) =>
   Object.assign(new Event(type, { bubbles: type === 'click' }), { pointerType })
 
 const paletteIsOpen = () => document.body.textContent?.includes('🙏') ?? false
-const fullListIsOpen = () => !!document.body.querySelector('[data-search]')
+const fullListIsOpen = () => !!document.body.querySelector('[data-emoji-grid]')
 
 let cleanup: (() => void) | undefined
 beforeEach(() => vi.useFakeTimers())
