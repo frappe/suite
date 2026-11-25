@@ -134,10 +134,17 @@ class TestMailIdentitySettings(StalwartIntegrationTestCase):
 
             update_vacation_response(self.account, enabled=0)
             self.assertFalse(get_vacation_response(self.account)["enabled"])
+
             (automation,) = SieveScript._get_sieve_scripts(
                 self.account, [scripts[AUTOMATION_SCRIPT_NAME]["id"]], download_content=True
             )
             self.assertNotIn("vacation :", automation["content"])
+
+        # A stored reply is listed to its own account's user only.
+        with self.set_user(self.member.email):
+            self.assertIn(self.account, frappe.get_list("Vacation Response", pluck="name"))
+        with self.set_user(self.create_member().email):
+            self.assertNotIn(self.account, frappe.get_list("Vacation Response", pluck="name"))
 
         # From/to validation.
         with self.set_user(self.member.email):

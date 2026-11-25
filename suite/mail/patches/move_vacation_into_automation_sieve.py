@@ -46,10 +46,8 @@ def move_vacation_responses() -> None:
 
 
 def move_vacation_response(account: str) -> None:
-    """Move one account's auto-reply. Safe to run again: an account already moved is left alone."""
-
-    if frappe.db.exists("Vacation Response", account):
-        return
+    """Move one account's auto-reply. Safe to run again: a reply already saved here is kept, and
+    only Stalwart's is turned off, so a reply saved off before this ran stops sending."""
 
     user = get_enabled_account_user(account)
     if not user:
@@ -62,31 +60,8 @@ def move_vacation_response(account: str) -> None:
         items = h.result.items
         vr = items[0].to_wire() if items else {}
 
-        if not (vr.get("isEnabled") or vr.get("subject") or vr.get("textBody") or vr.get("htmlBody")):
-            return
-
-        enabled = bool(vr.get("isEnabled")) and _is_vacation_script_active(account)
-
-        # Saving a reply that is on builds the automation script with the Vacation block and
-        # activates it, which deactivates Stalwart's script. One that is off leaves the script as it
-        # is: a rebuild drops any rule the script holds that Mailbox Settings has no copy of.
-        doc = frappe.new_doc("Vacation Response")
-        doc.update(
-            {
-                "account": account,
-                "enabled": int(enabled),
-                "from_date": from_utc_z(normalize_utc_z(vr.get("fromDate"))),
-                "to_date": from_utc_z(normalize_utc_z(vr.get("toDate"))),
-                "subject": vr.get("subject"),
-                "text_body": vr.get("textBody"),
-                "html_body": vr.get("htmlBody"),
-            }
-        )
-        if enabled:
-            doc.insert(ignore_permissions=True)
-        else:
-            with pause_automation_sieve_build():
-                doc.insert(ignore_permissions=True)
+        if not frappe.db.exists("Vacation Response", account):
+            _insert_vacation_response(account, vr)
 
         if vr.get("isEnabled"):
             with client.batch() as b:
@@ -94,6 +69,34 @@ def move_vacation_response(account: str) -> None:
             if "singleton" not in h.result.updated:
                 frappe.throw(f"Stalwart's vacation response of {account} could not be turned off.")
             _keep_automation_active(account)
+
+
+def _insert_vacation_response(account: str, vr: dict) -> None:
+    if not (vr.get("isEnabled") or vr.get("subject") or vr.get("textBody") or vr.get("htmlBody")):
+        return
+
+    enabled = bool(vr.get("isEnabled")) and _is_vacation_script_active(account)
+
+    # Saving a reply that is on builds the automation script with the Vacation block and
+    # activates it, which deactivates Stalwart's script. One that is off leaves the script as it
+    # is: a rebuild drops any rule the script holds that Mailbox Settings has no copy of.
+    doc = frappe.new_doc("Vacation Response")
+    doc.update(
+        {
+            "account": account,
+            "enabled": int(enabled),
+            "from_date": from_utc_z(normalize_utc_z(vr.get("fromDate"))),
+            "to_date": from_utc_z(normalize_utc_z(vr.get("toDate"))),
+            "subject": vr.get("subject"),
+            "text_body": vr.get("textBody"),
+            "html_body": vr.get("htmlBody"),
+        }
+    )
+    if enabled:
+        doc.insert(ignore_permissions=True)
+    else:
+        with pause_automation_sieve_build():
+            doc.insert(ignore_permissions=True)
 
 
 def _is_vacation_script_active(account: str) -> bool:

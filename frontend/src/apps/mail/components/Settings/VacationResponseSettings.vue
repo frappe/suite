@@ -163,6 +163,8 @@ async function updateVacationResponseSubmit() {
   }
   await updateVacationResponse.run(input)
 
+  // Turned on, the reply activates the automation script, so the active script may have changed
+  if (draft.enabled) store.sieveScripts.refetch()
   await vacationResponse.refetch()
   raiseToast(__('Auto-reply updated'))
   emit('saved')

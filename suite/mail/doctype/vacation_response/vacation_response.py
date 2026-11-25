@@ -8,9 +8,10 @@ from frappe import _
 from frappe.model.document import Document
 from frappe.utils import cint, get_datetime
 
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account, get_user_jmap_accounts
 from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
 from suite.mail.utils.html_to_text import html_to_text
+from suite.utils.user import is_suite_admin, is_system_manager
 
 
 class VacationResponse(Document):
@@ -135,6 +136,18 @@ def get_vacation_reply(account: str) -> frappe._dict | None:
     vr.from_date = to_utc_z(vr.from_date)
     vr.to_date = to_utc_z(vr.to_date)
     return vr
+
+
+def get_permission_query_condition(user: str | None = None) -> str | None:
+    user = user or frappe.session.user
+    if is_system_manager(user) or is_suite_admin(user):
+        return ""
+
+    accounts = get_user_jmap_accounts(user)
+    if not accounts:
+        return "1=0"
+
+    return f"""`tabVacation Response`.account in ({", ".join(frappe.db.escape(account) for account in accounts)})"""
 
 
 def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:
