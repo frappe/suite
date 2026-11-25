@@ -217,7 +217,7 @@ export class Reads {
       this.setValue(record, value, [value])
       if (record.status === 'pending') record.status = 'success'
     } catch {
-      // A storage failure or obsolete response must not prevent the request.
+      return
     }
   }
 
@@ -236,7 +236,7 @@ export class Reads {
         JSON.stringify(Object.fromEntries(Object.entries(cache).slice(-RELOAD_CACHE_LIMIT))),
       )
     } catch {
-      // Storage is optional.
+      return
     }
   }
 
@@ -245,7 +245,7 @@ export class Reads {
     try {
       sessionStorage.removeItem(RELOAD_CACHE_KEY)
     } catch {
-      // Storage is optional.
+      return
     }
   }
 
