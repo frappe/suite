@@ -236,7 +236,7 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         frappe.set_user("Guest")
         with (
             patch.object(frappe.local, "request", request, create=True),
-            patch.object(frappe.local, "request_ip", ip, create=True),
+            patch.object(frappe.local, "request_ip", ip),
             patch.object(frappe.local, "form_dict", frappe._dict()),
         ):
             room_preview(self.meeting.name)
