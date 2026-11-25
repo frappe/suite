@@ -2,7 +2,6 @@ import type { Socket } from 'socket.io';
 import { loggers } from '../../utils/logger';
 import type { HandlerDeps } from './Handler';
 
-/** Registers per-socket caption subscription controls. */
 export function registerSttHandlers(deps: HandlerDeps) {
 	return (socket: Socket) => {
 		socket.on('stt:toggle', async (data, callback) => {

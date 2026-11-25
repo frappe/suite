@@ -83,7 +83,6 @@ export function sourceId(value: string): string {
 	return value;
 }
 
-/** Private durable audio, deliberately outside the video cleanup tree. */
 export class TranscriptionStore {
 	private pending: Promise<unknown> = Promise.resolve();
 	private faulted = new Set<string>();
@@ -561,7 +560,6 @@ export class TranscriptionStore {
 			return manifest;
 		});
 	}
-	/** Node-local retention remains bounded even while the owning site is offline. */
 	async sweep(now = Date.now()): Promise<number> {
 		return this.serialize(async () => {
 			let removed = 0;

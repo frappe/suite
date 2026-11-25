@@ -1,4 +1,3 @@
-/** Compare direct endpoint and rendered Meet predictions against one frozen corpus. */
 import { createHash } from 'node:crypto';
 import { readFile, mkdir, writeFile, chmod } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';

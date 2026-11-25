@@ -32,7 +32,6 @@ async function findChromium(): Promise<string | undefined> {
 			await access(candidate, constants.X_OK);
 			return candidate;
 		} catch {
-			// Try the next conventional executable location.
 		}
 	}
 	return undefined;

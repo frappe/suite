@@ -44,7 +44,6 @@ def _backfill(recording) -> None:
     reserved_bytes = _reserved_bytes(recording)
 
     if reserved_bytes is None:
-        # Terminal recording: release the charge and provision nothing.
         drive.release_storage_reservation(None, key)
         return
 

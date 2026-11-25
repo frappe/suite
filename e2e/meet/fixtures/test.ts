@@ -137,7 +137,6 @@ async function joinFromPreview(page: Page): Promise<void> {
 	await waitForMeetingReady(page);
 }
 
-/** Host and guest join the same open meeting concurrently. */
 async function joinHostAndGuest(
 	hostPage: Page,
 	guest: Participant,

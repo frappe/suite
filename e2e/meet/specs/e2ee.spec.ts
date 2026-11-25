@@ -22,7 +22,6 @@ async function expectParticipantsAndVideo(hostPage: Page, guestPage: Page, guest
 async function openMeetingAccessSettings(page: Page): Promise<void> {
 	await page.getByRole("button", { name: "More options" }).click();
 	await page.getByRole("menuitem", { name: "Settings" }).click();
-	// Tab renamed to "Controls"; SettingsNavItem is role=tab (frappe-ui TabsTrigger)
 	await page.getByRole("tab", { name: "Controls" }).click();
 }
 

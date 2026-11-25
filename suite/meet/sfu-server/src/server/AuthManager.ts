@@ -53,7 +53,6 @@ export class AuthManager {
 
 			const decoded = parseParticipantClaims(jwt.verify(token, this.jwtSecret));
 
-			// Attach user info to socket
 			socket.speechContext = decoded.speech_context;
 			socket.userId = decoded.user_id;
 			socket.userName = decoded.user_name;

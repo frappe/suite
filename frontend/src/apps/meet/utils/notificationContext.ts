@@ -1,8 +1,3 @@
-/**
- * Notification Context Manager
- * Determines when to play notification sounds based on user context
- */
-
 interface NotificationContext {
   isTabVisible: boolean
   isChatOpen: boolean
@@ -22,7 +17,7 @@ class NotificationContextManager {
     joinedUsers: new Set(),
   }
 
-  private readonly MIN_NOTIFICATION_INTERVAL = 5000 // 5 seconds between same type
+  private readonly MIN_NOTIFICATION_INTERVAL = 5000
 
   constructor() {
     this.setupVisibilityListener()
@@ -68,7 +63,6 @@ class NotificationContextManager {
   ): boolean {
     const now = Date.now()
 
-    // If tab is not visible, only play each notification type once
     if (!this.context.isTabVisible) {
       if (this.context.playedNotificationsWhenHidden[type]) {
         return false
@@ -80,12 +74,10 @@ class NotificationContextManager {
       return false
     }
 
-    // only play for local user leaving
     if (type === 'leave' && !options?.isLocalUser) {
       return false
     }
 
-    // suppress join noise when screen sharing
     if (type === 'join') {
       if (this.context.isScreenSharing) {
         return false
@@ -101,7 +93,6 @@ class NotificationContextManager {
       }
     }
 
-    // suppress chat sounds when chat is open
     if (type === 'chat' && this.context.isChatOpen) {
       return false
     }

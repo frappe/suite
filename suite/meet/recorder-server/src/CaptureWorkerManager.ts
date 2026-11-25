@@ -160,7 +160,6 @@ export class CaptureWorkerManager implements RendererBridge {
 				});
 			},
 		});
-		// Claim capacity before asynchronous initialization so concurrent reserves cannot overbook.
 		managed = { worker, command, generation, active: false };
 		this.workers.set(command.job, managed);
 		try {

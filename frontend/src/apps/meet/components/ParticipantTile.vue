@@ -59,7 +59,6 @@
       </template>
     </NamePill>
 
-    <!-- Reaction -->
     <div
       v-if="showReaction && currentReaction"
       class="absolute top-1 px-2 py-1 rounded-4 text-2xl pointer-events-none animate-pop"
@@ -70,7 +69,6 @@
       <span class="text-3xl">{{ currentReaction.emoji }}</span>
     </div>
 
-    <!-- Raised Hand -->
     <div
       v-if="showRaisedHand && isHandRaised"
       class="absolute top-2 left-2 px-2 py-1 rounded-full !bg-[#e54e17] text-white pointer-events-none flex items-center justify-center"
@@ -89,7 +87,6 @@
       :is-local="isLocal"
     />
 
-    <!-- Participant action toolbar -->
     <div
       v-if="showActionToolbar"
       class="absolute bottom-2 right-2 flex items-center gap-0.5 rounded-full bg-gray-700 p-0.5 text-white opacity-0 group-hover:opacity-70 hover:!opacity-100 transition-opacity ring-1 ring-gray-800"
@@ -334,7 +331,6 @@ video.remote-video::-moz-focus-inner {
   border: 0;
 }
 
-/* Reaction animation */
 .animate-pop {
   animation: pop 360ms cubic-bezier(0.2, 0.9, 0.3, 1);
 }
@@ -353,7 +349,6 @@ video.remote-video::-moz-focus-inner {
   }
 }
 
-/* Raised-hand wave */
 .wave {
   display: inline-block;
   transform-origin: 70% 70%;

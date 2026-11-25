@@ -1242,7 +1242,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
           return
         }
 
-        // Ensure audio producer is available
         const audioProducer = manager.getLocalProducerState('audio')
         const micTrack = mediaState.localStream?.getAudioTracks?.()[0]
         if (micTrack) {
@@ -1352,7 +1351,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     }
   }
 
-  // Watch noise cancellation toggle
   watch(prefNoiseCancellationEnabled, (enabled) => {
     void enqueueMicrophoneTransition(async () => {
       const operation = createCameraOperation()
@@ -1385,7 +1383,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     })
   })
 
-  // Watch chat state for notification context
   watch(
     () => mediaState.isScreenSharing,
     (isSharing) => {

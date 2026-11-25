@@ -1,7 +1,3 @@
-/**
- * Device Management Utilities
- */
-
 interface MediaDevice {
   deviceId: string
   label: string
@@ -26,10 +22,6 @@ class DeviceManager {
     this.setupDeviceChangeListener()
   }
 
-  /**
-   * Detect what type of devices changed by comparing current vs new device lists
-   * Returns { video: boolean, audio: boolean } indicating what changed
-   */
   async detectDeviceChanges(): Promise<{
     videoChanged: boolean
     audioChanged: boolean

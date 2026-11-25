@@ -576,7 +576,6 @@ describe('PiP denial and teardown regressions', () => {
     expect(handlers.get('enterpictureinpicture')).toBeNull()
     expect(vi.getTimerCount()).toBe(0)
     expect(test.manager.setPictureInPictureParticipant).toHaveBeenLastCalledWith(null)
-    // A browser callback queued before unregistering must not reopen after teardown.
     callback()
     await flush()
     expect(requestWindow).toHaveBeenCalledOnce()

@@ -1,4 +1,3 @@
-/** Independent reference-based scoring for browser microphone caption evaluations. */
 export function words(text) {
   return text.normalize('NFKC').toLocaleLowerCase('und').replaceAll('’', "'")
     .replace(/[^\p{L}\p{N}\p{M}']/gu, ' ').split(/\s+/u)
@@ -117,7 +116,6 @@ export function assertThresholds(report, thresholds) {
   return {passed: !failures.length, failures};
 }
 
-/** Validate exact one-room-per-clip mapping before any browser capture. */
 export function validateRooms(manifest, value) {
   validateManifest(manifest);
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Room map must be an object');

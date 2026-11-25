@@ -1,6 +1,4 @@
 import { fromPartial } from '@total-typescript/shoehorn';
-// Smoke tests for stale pending E2EE join cleanup on disconnect. Run via:
-//   yarn test
 
 import { describe, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
@@ -109,7 +107,6 @@ function makeRelay() {
 }
 
 async function main(): Promise<void> {
-	// -------- Test 1: batched joiner disconnects before window fires --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
 		await roster.add(
@@ -127,7 +124,6 @@ async function main(): Promise<void> {
 		relay.clearRoom('meeting-1');
 	}
 
-	// -------- Test 2: pending commit request loses its last joiner --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
 		await roster.add(
@@ -148,7 +144,6 @@ async function main(): Promise<void> {
 		relay.clearRoom('meeting-1');
 	}
 
-	// -------- Test 3: multiple joiners, one disconnects --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
 		await roster.add(
@@ -170,7 +165,6 @@ async function main(): Promise<void> {
 		relay.clearRoom('meeting-1');
 	}
 
-	// -------- Test 4: current committer disconnects with no replacement --------
 	{
 		const { relay, testRelay, roster, sent } = makeRelay();
 		await roster.add(
@@ -196,7 +190,6 @@ async function main(): Promise<void> {
 		relay.clearRoom('meeting-1');
 	}
 
-	// -------- Test 5: removed senderId stays in removedSenderIds --------
 	{
 		const { relay, testRelay } = makeRelay();
 		const pending: PendingCommitRequest = {

@@ -60,7 +60,6 @@
     />
 
     <template v-else>
-      <!-- Preview mode -->
       <MeetingPreview
         v-if="showPreview"
         :meeting-id="meetingId"
@@ -88,7 +87,6 @@
         @device-changed="handleDeviceChanged"
       />
 
-      <!-- Main meeting interface -->
       <template v-else>
         <div class="relative grid flex-1 min-h-0 grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
           <div
@@ -99,7 +97,6 @@
             }"
           >
             <div class="flex flex-col min-h-0 relative">
-              <!-- Video area -->
               <div class="p-2.5 flex flex-col flex-1 min-h-0 text-white relative">
                 <div
                   v-if="e2eeJoinPendingMessage"
@@ -132,7 +129,6 @@
               </div>
             </div>
 
-            <!-- Panel Container -->
             <Transition
               enter-active-class="transition-opacity duration-300 ease-out"
               enter-from-class="opacity-0"
@@ -151,7 +147,6 @@
                 }"
                 :style="{ width: isMobile ? '100%' : '24rem' }"
               >
-                <!-- Chat Panel -->
                 <ChatPanel
                   v-if="activePanel === 'chat'"
                   :open="true"
@@ -174,7 +169,6 @@
                   @unpin="unpinChatMessage"
                 />
 
-                <!-- People Panel -->
                 <PeoplePanel
                   v-if="activePanel === 'people'"
                   :open="true"
@@ -200,7 +194,6 @@
 
           <!-- Meeting controls live in their own row so tiles resize without JS padding -->
           <div class="pointer-events-none min-h-0">
-            <!-- Meeting controls -->
             <MeetingToolbar
               :is-chat-open="chatStore.isChatOpen"
               :is-people-open="isPeopleOpen"
@@ -271,7 +264,6 @@
       @leave="confirmAndEndCall"
     />
 
-    <!-- Join request notifications -->
     <JoinRequestNotifications
       :waiting-users="lobbyUsersForNotifications"
       @approve-user="lobby.approveUser"
@@ -370,7 +362,6 @@ import { refusalOr } from '../utils/error'
 import { deviceManager } from '../utils/media/DeviceManager'
 import type { Participant } from '../utils/media/ParticipantManager'
 
-// Router
 const route = useRoute()
 const router = useRouter()
 const meetingId = computed(() =>
@@ -408,7 +399,6 @@ const unregisterPaletteGroups = useRootStore().registerPaletteGroups('meet-meeti
 ])
 onScopeDispose(unregisterPaletteGroups)
 
-// --- Stores (singletons) ---
 const connectionState = useConnectionState()
 // Read before the first render and before resetting the shared connection store.
 const isPreparingAutoJoin = ref(session.isLoggedIn && connectionState.justCreated)
@@ -422,7 +412,6 @@ const reactionStore = useReactionStore()
 const raiseHandStore = useRaiseHandStore()
 const gridLayout = useGridLayout(mediaState)
 
-// --- Lobby notification tracking ---
 const notifiedLobbyUsers = ref(new Set<string>())
 
 const isCurrentUserHost = ref(false)
@@ -456,7 +445,6 @@ const givenTitle = computed(() => previewDetails.data?.title || '')
 const meetingTitle = computed(() => givenTitle.value || meetingId.value)
 usePageMeta(() => appPageMeta(meetingTitle.value, 'Meet'))
 
-// --- Lobby notification conversion ---
 const lobbyUsersForNotifications = computed(() => {
   return lobbyStore.lobbyUsers
     .filter((user) => !notifiedLobbyUsers.value.has(user.userId))
@@ -521,7 +509,6 @@ function getE2EEJoinPendingMessage(detail: { reason?: string; message?: string }
   return detail.message || __('Waiting for someone already in the encrypted meeting to let you in.')
 }
 
-// --- Guest session ---
 const isGuestSession = computed(
   () =>
     !session.isLoggedIn &&
@@ -530,7 +517,6 @@ const isGuestSession = computed(
       currentUser.currentUser.value?.is_guest === true),
 )
 
-// --- SFU Connection ---
 const sfuConnection = useSFUConnection({
   connectionState,
   currentUser,
@@ -611,7 +597,6 @@ const sfuConnection = useSFUConnection({
   },
 })
 
-// --- Background effects & noise cancellation ---
 const backgroundEffects = useBackgroundEffects({
   autoCleanupOnUnmount: false,
   mediaAttachments: sfuConnection,
@@ -632,7 +617,6 @@ const localNetworkQuality = computed(() => {
   return networkHealth.value.status === 'good' ? 'good' : 'unknown'
 })
 
-// --- Media Controls ---
 const mediaControls = useMediaControls({
   mediaState,
   connectionState,
@@ -655,7 +639,6 @@ watch(
   },
 )
 
-// --- Chat ---
 const chat = useChat({
   chatStore,
   currentUser,
@@ -667,22 +650,18 @@ function unpinChatMessage() {
   if (messageId) chat.pinMessage(messageId, 'unpin')
 }
 
-// --- Poll ---
-
 const poll = usePoll({
   pollStore,
   currentUser,
   sfuClient: sfuConnection.sfuClient,
 })
 
-// --- Reactions ---
 const reactions = useReactions({
   reactionStore,
   currentUser,
   sfuClient: sfuConnection.sfuClient,
 })
 
-// --- Raise Hand ---
 const raiseHand = useRaiseHand({
   raiseHandStore,
   currentUser,
@@ -698,12 +677,10 @@ const {
   toggleCaptions,
 } = captions
 
-// --- Lobby ---
 const lobby = useLobby({
   lobbyStore,
   meetingId,
 })
-// --- Provide meeting context for child components ---
 provideMeetingContext({
   mediaState,
   participantStore,
@@ -746,7 +723,6 @@ provide(
 )
 provide(pollKey, poll)
 
-// --- Computed properties ---
 const isConnecting = sfuConnection.isConnecting
 const hasConnectionError = computed(() => !!connectionState.connectionError)
 // The screen gives a plain title; the reason, which can be setup detail, goes to the console.
@@ -912,7 +888,6 @@ const isHandRaised = computed(() => {
   return currentUserId ? !!raiseHandStore.raisedHands?.[currentUserId] : false
 })
 
-// --- Refs ---
 const isInitializingPreview = ref(true)
 const isReactionPickerOpen = ref(false)
 const isFullscreen = ref(false)
@@ -921,7 +896,6 @@ const headerVisible = computed(
   () => showPreview.value || isConnecting.value || !autoHideToolbar.value || isToolbarVisible.value,
 )
 
-// --- Extracted handlers ---
 const handlers = useMeetingHandlers({
   connectionState,
   mediaState,
@@ -1038,7 +1012,6 @@ watch(
   },
 )
 
-// --- Local UI state ---
 const togglePeople = () => {
   isPeopleOpen.value = !isPeopleOpen.value
   if (isPeopleOpen.value) {
@@ -1075,9 +1048,7 @@ const handleE2EENeedsMediaRepublish = async (event: Event) => {
   }
 }
 
-// --- Lifecycle ---
 onMounted(async () => {
-  // Reset all stores
   connectionState.$reset()
   mediaState.$reset()
   participantStore.$reset()
@@ -1095,7 +1066,6 @@ onMounted(async () => {
   document.addEventListener('meet:e2ee-join-status', handleE2EEJoinStatus)
   syncFullscreenState()
 
-  // Check meeting access for unauthenticated users
   if (!session.isLoggedIn) {
     try {
       const accessData = await client.query(api.meet.rooms.access, {
@@ -1116,13 +1086,10 @@ onMounted(async () => {
     }
   }
 
-  // Setup event handlers
   chat.setupChatEvents(showMeetingNotification)
   reactions.setupReactionEvents()
   raiseHand.setupRaiseHandEvents()
   poll.setupPollEvents(showMeetingNotification)
-
-  // Setup notification context watchers
 
   if (!session.isLoggedIn) {
     await mediaControls.initializeCamera()
@@ -1140,7 +1107,6 @@ onMounted(async () => {
     }
   }
 
-  // Initialize camera
   await mediaControls.initializeCamera()
   if (selectedSpeakerId.value) {
     await mediaControls.applySpeakerDevice()
@@ -1167,7 +1133,6 @@ watch(selectedSpeakerId, async (newSpeakerId) => {
   }
 })
 
-// Watch lobby users for notification tracking
 watch(
   () => lobbyStore.lobbyUsers,
   (newUsers, oldUsers) => {

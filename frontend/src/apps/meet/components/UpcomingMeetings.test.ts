@@ -22,7 +22,6 @@ const state = vi.hoisted(() => ({
   events: fromPartial<MeetingEvent[]>([]),
 }))
 
-// The window the component last asked the calendar for.
 const requested = () => state.request.mock.lastCall?.[1]
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: state.push }) }))
@@ -368,7 +367,6 @@ describe('Meet upcoming list', () => {
     vi.advanceTimersByTime(30_000)
     await nextTick()
 
-    // The date badges and request window follow the same clock.
     await vi.waitFor(() =>
       expect(requested()).toMatchObject({
         from_date: new Date('2026-10-01T00:00:00').toISOString(),

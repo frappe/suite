@@ -48,7 +48,6 @@ describe('suggestEmojis', () => {
     expect(hits).toHaveLength(5)
     expect(hits[0]).toEqual({ name: 'thumbsup', emoji: '👍' })
     expect(hits[1]).toEqual({ name: 'fire', emoji: '🔥' })
-    // No duplicate glyphs when padding.
     const glyphs = hits.map((h) => h.emoji)
     expect(new Set(glyphs).size).toBe(glyphs.length)
   })

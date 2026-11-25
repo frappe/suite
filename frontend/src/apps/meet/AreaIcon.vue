@@ -1,4 +1,3 @@
-<!-- Meet's area icon: a video camera, with its lens as the accent. -->
 <template>
   <DuotoneIcon>
     <rect data-tone="tint" x="2.5" y="6" width="13" height="12" rx="2.5" />

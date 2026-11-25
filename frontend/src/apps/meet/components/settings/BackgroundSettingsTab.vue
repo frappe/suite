@@ -256,7 +256,7 @@ let previewSession: {
   updateOptions: (opts: BackgroundEffectOptions) => Promise<void>
   stream: MediaStream
 } | null = null
-let previewInputStream: MediaStream | null = null // Raw stream feeding the preview pipeline
+let previewInputStream: MediaStream | null = null
 let isPreviewStreamDedicated = false // Track if preview stream is dedicated (not meeting's processed stream; needed when cam is off in meeting)
 let previewRequestId = 0
 let isMounted = false
@@ -531,7 +531,6 @@ function handleImageError(event: Event) {
   const checkedEventTarget = event.target
   if (!(checkedEventTarget instanceof HTMLImageElement)) return
 
-  // Replace broken image with a placeholder
   const target = checkedEventTarget
   target.style.display = 'none'
   const parent = target.parentElement
@@ -568,7 +567,6 @@ function handleBackgroundImageToggle(enabled: boolean) {
 
   setBackgroundImageEnabled(enabled)
 
-  // Auto-select first image if enabling and none selected
   if (enabled && !selectedBackgroundImageLocal.value && availableBackgroundImages.length > 0) {
     const firstImage = availableBackgroundImages[0]
     selectedBackgroundImageLocal.value = firstImage.name
@@ -576,7 +574,6 @@ function handleBackgroundImageToggle(enabled: boolean) {
   }
 }
 
-// Watch for background effects changes to update preview
 watch(
   [
     backgroundBlurEnabledLocal,

@@ -190,7 +190,6 @@ class LoadTest(unittest.TestCase):
 
             async with serve(server, "127.0.0.1", 0) as listener:
                 port = listener.sockets[0].getsockname()[1]
-                # A 20 ms clip repeated with a 20 ms gap.
                 rows = await run_stream(
                     f"ws://127.0.0.1:{port}/v1/realtime", "key", b"\0" * 960, 0, 3, 0.02, 3, time.monotonic()
                 )

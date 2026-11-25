@@ -1,4 +1,3 @@
-// Compositing utilities for background effects
 import type { WebGLManager } from './webglShaders'
 
 export class CompositingError extends Error {
@@ -17,9 +16,6 @@ interface CompositingOptions {
   webglManager?: WebGLManager
 }
 
-/**
- * Apply background blur effect using person segmentation mask
- */
 export function applyBlurEffect(
   source: HTMLCanvasElement,
   mask: TexImageSource,
@@ -43,9 +39,6 @@ export function applyBlurEffect(
   }
 }
 
-/**
- * Apply virtual background effect using person segmentation mask with light wrapping
- */
 export function applyVirtualBackground(
   source: HTMLCanvasElement,
   mask: TexImageSource,
@@ -75,9 +68,6 @@ export function applyVirtualBackground(
   }
 }
 
-/**
- * Get background image data with proper orientation
- */
 export function getBackgroundImageData(
   backgroundImg: HTMLImageElement,
   width: number,

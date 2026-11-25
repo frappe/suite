@@ -123,7 +123,6 @@ watch(
   () => resolvedWaitingUsers.value,
   (newUsersArray, oldUsersArray) => {
     if (oldUsersArray && newUsersArray.length < oldUsersArray.length) {
-      // Some users were removed, clear dismissed list
       const currentUserIds = new Set(newUsersArray.map((u) => u.user_id))
       dismissedRequests.value = dismissedRequests.value.filter((id) => currentUserIds.has(id))
     }

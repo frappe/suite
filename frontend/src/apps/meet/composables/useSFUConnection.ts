@@ -779,8 +779,6 @@ export function useSFUConnection(deps: {
     socket.on('meeting:cohost_promoted', handleCohostPromoted)
     socket.on('meeting:e2ee_enabled', handleMeetingE2EEEnabled)
 
-    // SFU signal channel handlers and document listeners live in the
-    // E2EE handshake composable; see useE2EEConnectionHandshake.
     e2eeHandshake.setupRealtimeEventListeners()
 
     realtimeListenersSetup.value = true

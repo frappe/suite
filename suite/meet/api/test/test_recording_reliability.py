@@ -138,8 +138,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         with self.assertRaisesRegex(frappe.ValidationError, "Room Owner already has"):
             start(other.name, str(uuid.uuid4()))
 
-        # A refused start keeps nothing: no recording row for the second room,
-        # no reservation for it, and no bytes charged to the owner root.
         self.assertEqual(frappe.db.count("Meet Recording", {"meet_room": other.name}), 0)
         self.assertEqual(frappe.db.count("Drive Storage Reservation", {"root": root}), reservations)
         self.assertEqual(drive.get_storage_usage(root)["used_bytes"], charged_bytes)

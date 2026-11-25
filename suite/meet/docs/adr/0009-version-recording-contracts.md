@@ -12,3 +12,5 @@ Recording-specific messages crossing process Seams use immutable, language-neutr
 - Behavioral reasons use a finite `reason_code`; an optional bounded `diagnostic` may aid operations but never drives domain behavior.
 - Lifecycle event timestamps use canonical UTC RFC 3339 with exactly millisecond precision and `Z`. JWT `iat` and `exp` remain integer epoch seconds.
 - Every production Adapter parses the same vectors. Accepted vectors normalize to the same semantic JSON; rejected vectors fail with a contract-version or validation category before side effects; coverage verifies every finite state and reason appears in a vector.
+
+Recorder progress is cumulative and idempotent. Retries sign a fresh callback token even when the site may already have committed the previous delivery. A refusal still applies when its response body cannot be read. Callback logs omit raw parser errors because the error text can contain response bytes.

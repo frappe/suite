@@ -366,7 +366,6 @@ async def replay(args, clips):
     key = os.environ.get("STT_API_KEY")
     if not key:
         raise ValueError("Set STT_API_KEY for the isolated replica")
-    # Preflight every clip before opening any connection.
     audio = {clip["id"]: read_pcm(clip["audio_path"]) for clip in clips}
     for clip in clips:
         duration = len(audio[clip["id"]]) / (SAMPLE_RATE * 2)

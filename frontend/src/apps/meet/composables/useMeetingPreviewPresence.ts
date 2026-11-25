@@ -27,7 +27,6 @@ export function useMeetingPreviewPresence(meetingId: string) {
       clearTimeout(refreshTimer)
     }
 
-    // refresh at 90% of token expires
     const refreshAfter = Math.max(Math.floor(expiresIn * 0.9), 10) * 1000
 
     refreshTimer = setTimeout(async () => {
@@ -73,20 +72,17 @@ export function useMeetingPreviewPresence(meetingId: string) {
       return
     }
 
-    // not initial connection, just update token and reconnect
     if (socket) {
       socket.auth = { token: tokenData.auth_token }
       socket.disconnect()
       socket.connect()
 
-      // schedule next refresh
       if (tokenData.expires_in) {
         scheduleTokenRefresh(tokenData.expires_in)
       }
       return
     }
 
-    // initial connection (socket doesn't exist)
     let sfuUrl: string
     const urlObj = new URL(tokenData.sfu_url)
     const isSecured = urlObj.protocol === 'https:'
@@ -102,8 +98,6 @@ export function useMeetingPreviewPresence(meetingId: string) {
       transports: ['websocket', 'polling'],
     })
 
-    // ts doesn't understand that socket is non-null in callbacks
-    // we use a local reference to avoid null checks
     const currentSocket = socket
 
     currentSocket.on('connect', () => {
@@ -121,7 +115,6 @@ export function useMeetingPreviewPresence(meetingId: string) {
             video_enabled: false,
           },
         },
-        // keep callback since we do evoke it
         (joinResponse: PresenceJoinResponse) => {
           if (!joinResponse.success) {
             console.error('Failed to join room for presence preview:', joinResponse.error)
@@ -179,7 +172,6 @@ export function useMeetingPreviewPresence(meetingId: string) {
       }
     })
 
-    // schedule the first token refresh
     if (tokenData.expires_in) {
       scheduleTokenRefresh(tokenData.expires_in)
     }

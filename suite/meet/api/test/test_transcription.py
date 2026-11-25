@@ -407,7 +407,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     self.assertEqual(
                         frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready"
                     )
-            # Ready delivery survives recorder failure; cleanup remains retryable.
             with (
                 patch("frappe.sendmail") as notify,
                 patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")),
@@ -477,12 +476,12 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertTrue(self.room.has_active_recording())
             with self.assertRaises(frappe.ValidationError):
                 self.room.enable_e2ee()
-            frappe.db.commit()  # End the rejected policy request and release its lock.
+            frappe.db.commit()
             self.assertEqual(
                 start(self.room.name, "83f02efe-9b50-4fcf-8665-a267f9345876", False, True)["name"],
                 recording["name"],
             )
-            frappe.db.commit()  # Finish the idempotent start request.
+            frappe.db.commit()
             stop(self.room.name)
             state = get_state(self.room.name)
             self.assertEqual(state.status, "Stopping")

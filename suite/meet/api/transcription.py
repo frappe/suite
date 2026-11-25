@@ -136,8 +136,6 @@ def claim(worker_id: str) -> dict:
     _authenticate()
     if not isinstance(worker_id, str) or not 1 <= len(worker_id) <= 128:
         raise ValueError("Invalid worker identity")
-    # Row locking plus a rechecked state serializes competing workers. Scheduling
-    # across sites belongs to the shared pool's round-robin coordinator.
     candidates = frappe.get_all(
         "Meet Transcription Job",
         filters={"status": "Queued", "retry_at": ["<=", now_datetime()]},
@@ -375,8 +373,6 @@ def maintenance():
                 reconcile_capture(doc)
             elif doc.status == "Processing" and get_datetime(doc.lease_expires_at) <= now:
                 _failure(doc, "worker_lost", True)
-            # Persist processing recovery independently of notification and
-            # recorder cleanup. Either downstream service may be unavailable.
             frappe.db.commit()
             doc = _locked(name)
             reconcile_purged_artifact(doc)

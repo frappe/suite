@@ -1,8 +1,3 @@
-/**
- * Consumer Manager
- * Handles MediaSoup consumer lifecycle and stream management
- */
-
 import type { AppData, Consumer, MediaKind } from 'mediasoup-client/types'
 
 export interface ConsumerEntry {
@@ -197,7 +192,6 @@ export class ConsumerManager {
   clear(): void {
     const consumerIds = Array.from(this.consumers.keys())
 
-    // Close all consumers
     for (const consumerId of consumerIds) {
       this.localCloseInProgress.add(consumerId)
     }
@@ -216,7 +210,6 @@ export class ConsumerManager {
 
     this.consumers.clear()
 
-    // Notify event handlers
     if (this.eventHandlers.onAllConsumersCleared) {
       this.eventHandlers.onAllConsumersCleared(consumerIds)
     }

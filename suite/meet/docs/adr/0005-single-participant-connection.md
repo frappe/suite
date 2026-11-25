@@ -9,3 +9,5 @@ An authenticated participant has at most one active Participant Connection in a 
 - Confirmed takeover atomically changes ownership, notifies and disconnects the exact old socket, and does not create participant-left/joined presence churn.
 - Ownership generations guard cleanup so stale sockets and stale confirmations cannot release or successively evict newer owners.
 - Mediasoup peer IDs remain socket-specific; recorder and presence-preview connections are outside this ownership rule.
+
+An admitted join bundles the SFU token and endpoint data so the client can connect without a second site request. A lobby-only response carries no media token.

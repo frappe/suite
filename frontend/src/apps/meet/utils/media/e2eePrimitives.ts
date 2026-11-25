@@ -1,12 +1,7 @@
-// E2EE primitives: shared base64 codec, HKDF info-string helpers, and
-// the security domain separator constants.
-//
 // The "meet-e2ee|" prefix is a security domain separator for HKDF
 // calls. It lives in this one module. Any future Layer 3 epoch
 // transition, chain-tip wipe event, or new key-derivation site must
 // add a constant here, not introduce a new literal at a call site.
-
-// --- Base64 codec ---
 
 export function bufferToBase64(buffer: ArrayBuffer | Uint8Array): string {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer)
@@ -26,8 +21,6 @@ export function bytesFromBase64(b64: string): Uint8Array<ArrayBuffer> {
   }
   return bytes
 }
-
-// --- HKDF info strings (domain separators) ---
 
 export const INFO_FRAME_AT = (senderId: number, mediaType: string, generation: number): string =>
   `meet-e2ee|frame|${senderId}|${mediaType}|${generation}`

@@ -83,7 +83,6 @@ export function useTileAdaptiveStreaming() {
     const widthChanged = !last || Math.abs(last.width - width) >= SIZE_DELTA_THRESHOLD
     const visibilityChanged = !last || last.visible !== visible
 
-    // Skip if no meaningful change
     if (!controller.forceNext) {
       if (!visibilityChanged && visible && !widthChanged) return
       if (!visibilityChanged && !visible) return
@@ -173,7 +172,6 @@ export function useTileAdaptiveStreaming() {
 
     bindControllerToManager(controller)
 
-    // to check size of the tile
     controller.resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0]
       if (!entry) return
@@ -182,7 +180,6 @@ export function useTileAdaptiveStreaming() {
 
       controller.width = newWidth
       controller.height = newHeight
-      // Update visibility check when dimensions become valid
       if (newWidth > 0 && newHeight > 0) {
         controller.visible = isElementInViewport(element)
       } else {
@@ -192,7 +189,6 @@ export function useTileAdaptiveStreaming() {
     })
     controller.resizeObserver.observe(element)
 
-    // to check visibility
     controller.intersectionObserver = new IntersectionObserver(
       (entries) => {
         const entry = entries[0]

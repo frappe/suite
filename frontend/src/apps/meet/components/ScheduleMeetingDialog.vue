@@ -1,4 +1,3 @@
-<!-- Owns Calendar account readiness, meeting participants and scheduling for both home screens. -->
 <template>
   <Dialog v-model:open="open" :title="__('Schedule meet')" dismissible>
     <template #default>

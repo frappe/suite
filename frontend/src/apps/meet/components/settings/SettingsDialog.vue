@@ -66,7 +66,6 @@ import MeetingAccessSettingsTab from './MeetingAccessSettingsTab.vue'
 type MeetTabId = (typeof meetSettings.tabs)[number]['id']
 
 const CONTROLS_TAB = 'meeting-access'
-// The media tabs report a device switch, so the call can apply it.
 const DEVICE_TABS: readonly MeetTabId[] = ['meet.devices', 'meet.audio', 'meet.video']
 
 const props = defineProps<{
@@ -74,7 +73,6 @@ const props = defineProps<{
   isPreview?: boolean
 }>()
 
-// What DeviceSettingsTab emits when the person picks a device.
 type DeviceChange = { type: string; deviceId: string }
 
 const emit = defineEmits<{
@@ -137,7 +135,6 @@ const bodies = new Map<MeetTabId, Component>(
   ]),
 )
 
-// The props a tab body takes. Only the video tab and the device tabs take any.
 type TabBodyProps = {
   isVisible?: boolean
   onDeviceChanged?: (event: DeviceChange) => void

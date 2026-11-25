@@ -38,7 +38,6 @@
         </div>
       </div>
 
-      <!-- Join details -->
       <div class="flex w-full items-center lg:w-[24rem] lg:shrink-0">
         <div class="flex w-full flex-col">
           <p v-if="props.meetingTitle" class="mb-3 truncate text-base-medium text-ink-gray-7">

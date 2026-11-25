@@ -523,7 +523,7 @@ def deliver_recording_notification(recording_name: str):
                     "message_id": message_id,
                     "now": False,
                 },
-                request_key=message_id,  # each try sends it once
+                request_key=message_id,
             )
         recording = _locked_recording(recording_name)
         recording.notification_pending = 0

@@ -111,8 +111,7 @@ describe('camera publisher quality control', () => {
         setMaxSpatialLayer: async (layer: number) => {
           cached = layer
           if (layer === 0) active = [true, false, false]
-          else if (failUpgrade)
-            failUpgrade = false // Browser ignored the upgrade.
+          else if (failUpgrade) failUpgrade = false
           else active = [true, true, true]
         },
       }),

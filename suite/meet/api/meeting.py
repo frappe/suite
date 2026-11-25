@@ -300,11 +300,8 @@ def join_meeting(meeting_id: str) -> dict:
                 }
             elif result.get("status") == "joined":
                 user = frappe.session.user
-                # Full media token only after membership is real (not lobby).
                 if user not in meeting.get_members():
                     frappe.throw(_("Not a meeting member"), frappe.PermissionError)
-                # Bundle SFU JWT so the client can skip a second
-                # get_sfu_connection_details round-trip on the critical path.
                 details = _build_sfu_connection_details(meeting, user)
                 return {
                     "status": "joined",

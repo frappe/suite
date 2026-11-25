@@ -509,8 +509,6 @@ export class E2EEEpochRelay {
 		).toString('base64');
 
 		if (existing) {
-			// Merge: clear the in-flight timer (the picker will set a new
-			// one). The committer gets a fresh window.
 			clearTimeout(existing.timer);
 			for (const id of joiningSenderIds) {
 				if (!existing.joiningSenderIds.includes(id)) {
@@ -544,7 +542,7 @@ export class E2EEEpochRelay {
 			rosterHash: membershipDeltaHash,
 			alreadyTried: [],
 			attempts: 0,
-			timer: setTimeout(() => undefined, 0), // placeholder; replaced below
+			timer: setTimeout(() => undefined, 0),
 		};
 		this.pendingCommitRequests.set(key, pending);
 		await this.persistPendingCommitRequest(roomId, pending);
@@ -628,7 +626,6 @@ export class E2EEEpochRelay {
 		const key = `${roomId}:${epochNumber}`;
 		const pending = this.pendingCommitRequests.get(key);
 		if (!pending) {
-			// Already cleared (e.g. the committer responded). Nothing to do.
 			return;
 		}
 		if (pending.attempts >= MAX_REDESIGNATIONS) {
@@ -815,8 +812,6 @@ export class E2EEEpochRelay {
 	}
 
 	private flushPendingCommitRequests(roomId: string): void {
-		// Cancel any pending batch timers for this room so they don't fire
-		// after the room is gone. The buffer map is also cleared.
 		const prefix = `${roomId}:`;
 		for (const [key, batch] of this.commitRequestBatches) {
 			if (!key.startsWith(prefix)) continue;
@@ -826,8 +821,6 @@ export class E2EEEpochRelay {
 	}
 
 	private flushPendingCommitRequestsForRoom(roomId: string): void {
-		// Cancel any pending committer redesignation timers for this room
-		// so they don't fire after the room is gone.
 		const prefix = `${roomId}:`;
 		for (const [key, pending] of this.pendingCommitRequests) {
 			if (!key.startsWith(prefix)) continue;

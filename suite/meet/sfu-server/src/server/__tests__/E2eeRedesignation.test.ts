@@ -1,17 +1,4 @@
 import { fromPartial } from '@total-typescript/shoehorn';
-// Smoke tests for the committer redesignation timer. Run via:
-//   yarn test
-//
-// Verifies that:
-//
-//   1. When the designated committer doesn't respond with a commit within
-//      COMMITTER_TIMEOUT_MS, the SFU emits a second commit-request to a
-//      different committer.
-//   2. When a commit envelope arrives for the matching delta, the
-//      redesignation timer is cleared and no further commit-requests are
-//      emitted.
-//   3. After MAX_REDESIGNATIONS attempts, the SFU gives up and stops
-//      emitting commit-requests.
 
 import { describe, expect, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
@@ -152,7 +139,6 @@ async function main(): Promise<void> {
 	relay.setRoster(roster);
 	const testRelay = relay;
 
-	// -------- Test 0: host genesis ack admits the host and retries pending joins --------
 	await testRelay['requestCommitFromHost']('meeting-empty', [13], 1);
 	expect(
 		sent,
@@ -184,7 +170,6 @@ async function main(): Promise<void> {
 	relay.clearRoom('meeting-empty');
 	sent.splice(0, sent.length);
 
-	// -------- Test 1: admitted member key-package is not treated as a joiner --------
 	await testRelay['relayKeyPackage']('meeting-1', 'host-1', 7, {
 		type: 'key-package',
 		epochNumber: 1,
@@ -224,7 +209,6 @@ async function main(): Promise<void> {
 	);
 	sent.splice(0, sent.length);
 
-	// -------- Test 2: redesignation after timeout --------
 	await testRelay['requestCommitFromHost']('meeting-1', [13], 1);
 	expect(
 		sent,
@@ -332,7 +316,6 @@ async function main(): Promise<void> {
 	);
 	relay.clearRoom('meeting-1');
 
-	// -------- Test 2: relay commit clears pending --------
 	sent.splice(0, sent.length);
 	await testRelay['requestCommitFromHost']('meeting-1', [15], 2);
 	expect(

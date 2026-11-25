@@ -2481,13 +2481,11 @@ describe('SocketHandlerManager characterization', () => {
 		emitJoin(lateGuest, { userId: 'guest-stale-1', name: 'StaleGuest' });
 		await new Promise((r) => setImmediate(r));
 
-		// The late joiner is synced to the live restriction ...
 		expect(lateGuest.emitCalls).toContainEqual({
 			event: 'chat:restriction_updated',
 			data: { enabled: true },
 		});
 
-		// ... and the restriction still blocks non-hosts.
 		lateGuest.emitCalls.length = 0;
 		lateGuest.fire('chat:send', { message: 'still blocked' });
 		const err = lateGuest.emitCalls.find((c) => c.event === 'sfu_error');

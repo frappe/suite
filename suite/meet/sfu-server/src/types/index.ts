@@ -74,7 +74,6 @@ import type {
 } from '../../../types';
 import type { CameraLayerDemand } from '../../../types/cameraLayers';
 
-// Types shared with other SFU modules
 export type {
 	AppData,
 	ChatMessage,
@@ -112,7 +111,6 @@ export type {
 	WorkerSettings,
 };
 
-// Socket.IO types
 export interface ServerToClientEvents {
 	'producer:camera_layers': (data: CameraLayerDemand) => void;
 	'recording:challenge': (data: RecordingProofChallenge) => void;
@@ -466,7 +464,6 @@ export interface ExistingProducer {
 	isScreen: boolean;
 }
 
-// Mediasoup Manager types
 export interface Room {
 	speechContext?: import('../speechHints').SpeechScope;
 	id: string;
@@ -520,7 +517,6 @@ export interface ConsumerData {
 	consumer: Consumer;
 }
 
-// Configuration types
 export interface MediasoupConfig {
 	numWorkers: number;
 	worker: WorkerSettings;
@@ -544,7 +540,6 @@ export interface WebRTCServerOptions {
 	basePort: number;
 }
 
-// JWT types
 export interface JWTPayload {
 	speech_context?: import('../speechHints').SpeechScope;
 	user_id: string;
@@ -599,7 +594,6 @@ interface PollPayloadFE {
 	hasVoted?: boolean;
 	createdAt: string;
 }
-// Socket.IO module augmentation
 declare module 'socket.io' {
 	interface Socket {
 		speechContext?: import('../speechHints').SpeechScope;

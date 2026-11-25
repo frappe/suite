@@ -1,4 +1,3 @@
-/** Verify publication, including silence, from actual outbound audio counters. */
 export function verifyAudioPublication(before, after) {
   const counts = connection => (connection?.reports ?? [])
     .filter(report => report.type === 'outbound-rtp')

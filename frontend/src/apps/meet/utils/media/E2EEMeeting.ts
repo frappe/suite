@@ -1,10 +1,3 @@
-// E2EE meeting state manager.
-//
-// Holds all per-meeting E2EE state: the meeting secret, per-sender key
-// chains, active transforms, and the chat key cache.  Access via the
-// module-level singleton (E2EEMeeting.instance) or instantiate directly
-// in tests.
-
 import {
   createDecryptionTransformStream,
   createEncryptionTransformStream,

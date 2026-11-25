@@ -12,9 +12,6 @@ import {
   MIN_SIGNED_ENCRYPTED_FRAME_SIZE,
 } from './frameCodec'
 
-// Worker uses a longer replay window than the main thread (3). The
-// main thread is on the realtime path; the worker is on a separate
-// thread with more headroom. See frameCodec.ts for the rationale.
 const REPLAY_WINDOW = 100
 
 const SENDER_KEY_CACHE_MAX = 64

@@ -1,11 +1,3 @@
-// E2EE connection handshake — Vue composable wrapper.
-//
-// The state machine lives in E2EEHandshakeController; this composable
-// wires Vue reactivity, DOM events, and Frappe Realtime events around it.
-//
-// The only consumer is useSFUConnection.ts.  Internal state refs that
-// no caller reads are removed from the return type.
-
 import { onUnmounted, type Ref } from 'vue'
 
 import { E2EEEpochSignalingController } from '../utils/media/E2EEEpochSignalingController'
@@ -67,7 +59,6 @@ export function useE2EEConnectionHandshake(
     controller.setMeetingContext(detail.meetingSecret, detail.keyVersion, detail.signingPrivateKey)
   }
 
-  // ── pagehide ──────────────────────────────────────────────────────
   let pagehideHandlerAttached = false
   const teardownForDisconnect = () => {
     epochSignalingController.clearPendingKeyPackages()
@@ -75,7 +66,6 @@ export function useE2EEConnectionHandshake(
   }
   const onPageHide = () => teardownForDisconnect()
 
-  // ── event routing ─────────────────────────────────────────────────
   let realtimeListenersAttached = false
 
   const handleEpochMessageBound = (data: unknown) => {

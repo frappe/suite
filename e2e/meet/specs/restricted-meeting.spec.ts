@@ -12,7 +12,6 @@ test.describe("Restricted meeting", () => {
 		const guest = await createParticipant();
 		const guestName = `Guest Restricted ${test.info().parallelIndex}`;
 
-		// Host must be in the meeting before admit controls appear.
 		await hostPage.goto(appUrl(`/meet/${meetingId}`));
 		await joinFromPreview(hostPage);
 

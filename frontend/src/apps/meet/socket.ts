@@ -13,7 +13,6 @@ export function useSocket(): Socket | null {
   return socket
 }
 
-/** Close the socket `initSocket` opened. MeetLayout calls it on unmount. */
 export function disposeSocket(): void {
   socket?.disconnect()
   socket = null

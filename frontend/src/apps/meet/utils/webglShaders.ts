@@ -16,7 +16,6 @@ interface FrameTextureCache {
   blurFbo: WebGLFramebuffer | null
 }
 
-// WebGL shader management for background effects
 const SHADERS = {
   vertex: `
     attribute vec2 a_position;
@@ -253,7 +252,6 @@ export class WebGLManager {
   private flippedPositionBuffer: WebGLBuffer | null = null
   private texCoordBuffer: WebGLBuffer | null = null
 
-  // Cached locations for blur program
   private texCoordLocation = -1
   private resolutionLocation: WebGLUniformLocation | null = null
   private directionLocation: WebGLUniformLocation | null = null
@@ -320,7 +318,6 @@ export class WebGLManager {
       throw new WebGLError('Failed to create shader program')
     }
 
-    // Cache locations
     this.texCoordLocation = this.gl.getAttribLocation(this.program, 'a_texCoord')
     this.resolutionLocation = this.gl.getUniformLocation(this.program, 'u_resolution')
     this.directionLocation = this.gl.getUniformLocation(this.program, 'u_direction')
@@ -333,7 +330,6 @@ export class WebGLManager {
     this.flippedPositionBuffer = this.gl.createBuffer()
     this.texCoordBuffer = this.gl.createBuffer()
 
-    // Setup position buffer with quad vertices
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer)
     this.gl.bufferData(
       this.gl.ARRAY_BUFFER,
@@ -347,7 +343,6 @@ export class WebGLManager {
       this.gl.STATIC_DRAW,
     )
 
-    // Setup texture coordinate buffer
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer)
     this.gl.bufferData(
       this.gl.ARRAY_BUFFER,
@@ -509,9 +504,7 @@ export class WebGLManager {
 
     this.gl.useProgram(this.program)
 
-    // Set up attributes
-    // Position attribute is bound to location 0
-    const positionLocation = 0 // a_position is bound to location 0
+    const positionLocation = 0
     this.gl.enableVertexAttribArray(positionLocation)
     this.gl.bindBuffer(
       this.gl.ARRAY_BUFFER,
@@ -523,17 +516,14 @@ export class WebGLManager {
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.texCoordBuffer)
     this.gl.vertexAttribPointer(this.texCoordLocation, 2, this.gl.FLOAT, false, 0, 0)
 
-    // Set uniforms
     this.gl.uniform2f(this.resolutionLocation, width, height)
     this.gl.uniform2f(this.directionLocation, direction[0], direction[1])
     this.gl.uniform1f(this.sigmaLocation, sigma)
 
-    // Bind image texture to unit 0
     this.gl.activeTexture(this.gl.TEXTURE0)
     this.gl.bindTexture(this.gl.TEXTURE_2D, texture)
     this.gl.uniform1i(this.imageLocation, 0)
 
-    // Bind mask texture to unit 1
     this.gl.activeTexture(this.gl.TEXTURE1)
     this.gl.bindTexture(this.gl.TEXTURE_2D, maskTexture)
     this.gl.uniform1i(this.maskLocation, 1)
@@ -788,7 +778,6 @@ export class WebGLManager {
     return this.renderBlur(blur, maskTexture, width, height, sigma, [0, 1])
   }
 
-  // used to apply the light wrap effect on the source image using the mask and background image
   applyLightWrap(
     source: HTMLCanvasElement,
     mask: TexImageSource,
@@ -840,7 +829,7 @@ export class WebGLManager {
 
     this.gl.useProgram(this.lightWrapProgram)
 
-    const positionLocation = 0 // a_position is bound to location 0
+    const positionLocation = 0
     this.gl.enableVertexAttribArray(positionLocation)
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.positionBuffer)
     this.gl.vertexAttribPointer(positionLocation, 2, this.gl.FLOAT, false, 0, 0)

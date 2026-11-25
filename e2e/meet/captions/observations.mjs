@@ -1,4 +1,3 @@
-/** Aggregate rendered finals, retaining their first appearance for latency. */
 export function predictionFromObservations(clip, result) {
   const finals = new Map();
   for (const line of result.observations) {

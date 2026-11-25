@@ -1,15 +1,3 @@
-// Smoke tests for the file-backed RosterPersistence. Run via:
-//   yarn test
-//
-// Verifies that:
-//
-//   1. A fresh FileRosterPersistence against a missing file yields an empty
-//      hydration.
-//   2. Writes are persisted to disk and survive a "process restart" (i.e.
-//      a second FileRosterPersistence instance pointed at the same file).
-//   3. Atomic write: a stray .tmp file is not consumed on load.
-//   4. Schema mismatch: a corrupt or wrong-version file throws on load.
-
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -32,7 +20,6 @@ async function main(): Promise<void> {
 	const filePath = join(dir, 'roster.json');
 
 	try {
-		// 1. Fresh file -> empty.
 		assert(!existsSync(filePath), 'file should not exist yet');
 		const fresh = new FileRosterPersistence(filePath);
 		const freshAll = await fresh.loadAll();
@@ -41,7 +28,6 @@ async function main(): Promise<void> {
 			`fresh file should hydrate empty, got ${freshAll.size} rooms`,
 		);
 
-		// 2. Writes survive a "process restart".
 		await fresh.addEntry('meeting-1', {
 			participantId: 'user-1',
 			senderId: 7,
@@ -73,7 +59,6 @@ async function main(): Promise<void> {
 			'non-host entry should be at index 1',
 		);
 
-		// 3. removeEntry persists.
 		await restarted.removeEntry('meeting-1', 9);
 		const after = new FileRosterPersistence(filePath);
 		const afterList = (await after.loadAll()).get('meeting-1') ?? [];
@@ -82,7 +67,6 @@ async function main(): Promise<void> {
 			'remove should have dropped sender 9',
 		);
 
-		// 4. clearRoom persists.
 		await after.clearRoom('meeting-1');
 		const final = new FileRosterPersistence(filePath);
 		const finalList = await final.loadAll();
@@ -93,16 +77,12 @@ async function main(): Promise<void> {
 			'clearRoom should have wiped meeting-1',
 		);
 
-		// 5. Atomic write: a stray .tmp file from a crashed write is not
-		// consumed on load.
 		const { writeFileSync } = await import('node:fs');
 		writeFileSync(`${filePath}.tmp`, '{"garbage":true}');
 		const afterTmp = new FileRosterPersistence(filePath);
 		const afterTmpList = await afterTmp.loadAll();
 		assert(afterTmpList.size === 0, '.tmp file should be ignored on load');
 
-		// 6. In-memory and file-backed agree on semantics: a write followed
-		// by a load returns the same data, regardless of backing store.
 		const mem = new InMemoryRosterPersistence();
 		const file = new FileRosterPersistence(
 			join(dir, 'roster-mem-vs-file.json'),

@@ -1,8 +1,3 @@
-/**
- * Participant Manager
- * Handles participant state management and updates
- */
-
 import { isUnknownRecord } from '../../types'
 
 export interface Participant {

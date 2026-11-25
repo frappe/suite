@@ -75,7 +75,6 @@ const floatingReactions = computed<ReactionWithPosition[]>(() => {
     }
   }
 
-  // Assigning positions to new reactions
   for (const reaction of props.reactions) {
     const reactionKey = getReactionKey(reaction)
     if (!positionAssignments.value.has(reactionKey)) {
@@ -96,7 +95,6 @@ const floatingReactions = computed<ReactionWithPosition[]>(() => {
       top: 0,
     }
 
-    // staggered positions near the bottom-right
     const baseX = containerRect.width - 120
     const baseY = containerRect.height - 100
 
@@ -161,7 +159,6 @@ const floatingReactions = computed<ReactionWithPosition[]>(() => {
   animation: bounce-in 0.6s ease-out;
 }
 
-/* Transition for entering/leaving reactions */
 .floating-reaction-enter-active {
   transition: all 0.3s ease-out;
 }

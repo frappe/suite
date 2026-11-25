@@ -1,13 +1,3 @@
-/**
- * SFU Meeting Manager
- * Orchestrates SFU connection, media, and participant management
- *
- * This is a thin facade that coordinates the focused managers:
- * - ParticipantConnection: Participant connection lifecycle and event handling
- * - SFUMediaManager: Producer/consumer operations
- * - SFURecoveryManager: ICE restart and recovery logic
- */
-
 import type { Producer } from 'mediasoup-client/types'
 
 import type { User } from '../composables/useCurrentUser'
@@ -423,7 +413,6 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     return this.connectionManager.reconcileExpectedMedia()
   }
 
-  /** Restarts playback, then reconciles expected media after browser resume. */
   async recoverBrowserLifecycle(): Promise<void> {
     await this.videoManager.retryPlayback()
     await this.reconcileExpectedMedia()

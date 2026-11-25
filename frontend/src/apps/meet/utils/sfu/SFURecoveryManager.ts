@@ -1,8 +1,3 @@
-/**
- * SFU Recovery Manager
- * Handles ICE restart and connection recovery logic
- */
-
 import type { TransportIceRestartResult, TransportManager } from '../media/TransportManager'
 import type { SFUClient } from '../SFUClient'
 

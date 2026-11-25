@@ -16,20 +16,11 @@ export class RateLimiter {
 		this.cleanupInterval = setInterval(() => this.cleanup(), cleanupIntervalMs);
 	}
 
-	/**
-	 * Check if a request is allowed under the rate limit
-	 * @param key Unique identifier for the rate limit (e.g., 'user:123' or 'ip:192.168.1.1')
-	 * @param maxRequests Maximum requests allowed in the time window
-	 * @param windowMs Time window in milliseconds
-	 * @returns true if request is allowed, false if rate limited
-	 */
 	checkRateLimit(key: string, maxRequests: number, windowMs: number): boolean {
 		const now = Date.now();
 		const existing = this.limits.get(key);
 
 		if (!existing || now > existing.resetTime) {
-			// First request or window expired
-			// clean up expired entry if it exists
 			if (existing && now > existing.resetTime) {
 				this.limits.delete(key);
 			}

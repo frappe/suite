@@ -32,7 +32,6 @@ export class ConsumerManager {
 		rtpParameters: RtpParameters;
 		paused: boolean;
 	}> {
-		// Validate transport is not closed or failed
 		if (transport.closed) {
 			throw new Error(
 				`Transport ${transport.id} is closed - cannot create consumer`,
@@ -60,7 +59,7 @@ export class ConsumerManager {
 			const consumer = await transport.consume({
 				producerId,
 				rtpCapabilities,
-				paused: true, // Consumers should start paused by default
+				paused: true,
 			});
 			createdConsumer = consumer;
 

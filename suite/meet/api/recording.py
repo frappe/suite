@@ -47,8 +47,6 @@ MAX_SECONDS = 4 * 60 * 60
 DEFAULT_ESTIMATE_SECONDS = 60 * 60
 BYTES_PER_SECOND = int(((5_000_000 + 128_000) / 8) * 1.1)
 MAX_BUDGET_BYTES = MAX_SECONDS * BYTES_PER_SECOND
-# Successor-gated adoption, validation, and callback shutdown can leave up to
-# three full segments in flight before capture stops.
 MINIMUM_BUDGET_BYTES = BYTES_PER_SECOND * 90 + 5 * 1024 * 1024
 RECONCILIATION_GRACE_SECONDS = 5 * 60
 FAILED_RETENTION_DAYS = 30
@@ -582,8 +580,6 @@ def start(
     if _active_audio_capture(meeting_id):
         return get_active_recording_state(meeting_id)
     _lock_room_owner(room.owner)
-    # Recordings are filed below the owner's Personal root, the node every
-    # byte of this recording is charged to.
     drive_root = _get_drive_root(room.owner)
     owner_limit = max(1, cint(frappe.conf.get("recorder_max_concurrent_per_owner") or 1))
     preflight = get_preflight(meeting_id, video_enabled, transcription_enabled, language)
@@ -829,8 +825,6 @@ def stop(meeting_id: str) -> dict | None:
         try:
             stop_audio(recording)
         except Exception:
-            # Durable Stopping state lets the capture reconciler retry audio;
-            # an unavailable SFU must not prevent stopping paired video.
             frappe.logger("meet_transcription").warning("Audio stop deferred")
     if not _fixture_enabled() and recording.video_enabled and recording.status in ("Cancelled", "Stopping"):
         _client().stop(
@@ -1014,8 +1008,6 @@ def _apply_segment_progress(recording_id: str, captured_bytes: int, *, grow_budg
     reservation = drive.get_storage_reservation(reservation_key)
     if not reservation:
         frappe.throw(_("The recording has no storage reservation"))
-    # The reservation names the root it was charged to at start. That root may
-    # since have been archived by offboarding; the growth stays on it.
     free_bytes = _get_free_bytes_for_root(reservation.root)
     budget_bytes = min(MAX_BUDGET_BYTES, cint(recording.budget_bytes) + free_bytes)
     if budget_bytes > cint(recording.budget_bytes):
@@ -1539,9 +1531,6 @@ def recorder_failed(
 
 
 def reconcile_pending_recordings():
-    # Pending/Stopping reconciliation needs the recorder server. Without one configured,
-    # skip those phases instead of erroring per recording; the stale sweep below fails
-    # such recordings with "recorder_unavailable" once they pass max_ends_at.
     utc_now = _utc_now_naive()
     fixture_enabled = _fixture_enabled()
     recorder_available = not fixture_enabled and _recorder_available()

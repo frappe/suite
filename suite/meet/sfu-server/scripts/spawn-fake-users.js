@@ -201,7 +201,7 @@ function createOpusPacket(seq, ts, ssrc, isSpeaking) {
 
 	// RTP fixed header
 	header.writeUInt8(0x90, 0); // Version 2, no padding, HAS extension (X=1), no CSRC
-	header.writeUInt8(111, 1);  // Payload type 111 (Opus), Marker=0
+	header.writeUInt8(111, 1);
 	header.writeUInt16BE(seq % 65536, 2);
 	header.writeUInt32BE(ts % 4294967296, 4);
 	header.writeUInt32BE(ssrc, 8);
@@ -214,8 +214,8 @@ function createOpusPacket(seq, ts, ssrc, isSpeaking) {
 	// Format: 4-bit ID | 4-bit length-1, then data bytes
 	header.writeUInt8(0x10, 16);       // ID=1, Length=0 (means 1 byte)
 	header.writeUInt8(0x80 | audioLevel, 17); // V=1 (voice activity), Level
-	header.writeUInt8(0x00, 18);       // Padding
-	header.writeUInt8(0x00, 19);       // Padding
+	header.writeUInt8(0x00, 18);
+	header.writeUInt8(0x00, 19);
 
 	// Opus payload: TOC byte + minimal data
 	const opus = isSpeaking
@@ -226,7 +226,6 @@ function createOpusPacket(seq, ts, ssrc, isSpeaking) {
 }
 
 async function startProducers(socket, audioTransport, videoTransport, index) {
-	// Create audio producer
 	const audioRtp = {
 		codecs: [{ mimeType: "audio/opus", clockRate: 48000, payloadType: 111, channels: 2 }],
 		headerExtensions: [
@@ -248,7 +247,6 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	});
 	console.log(`[#${index}] 🎤 Audio Producer created`);
 
-	// Create video producer
 	const videoRtp = {
 		codecs: [{ mimeType: "video/VP8", clockRate: 90000, payloadType: 96 }],
 		encodings: [{ ssrc: 222222 + index }],
@@ -279,12 +277,11 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	let nextToggle = Date.now() + 1000 + Math.random() * 3000;
 
 	const audioInterval = setInterval(() => {
-		// Toggle speaking state randomly
 		if (Date.now() > nextToggle) {
 			isSpeaking = !isSpeaking;
 			const duration = isSpeaking
-				? 2000 + Math.random() * 4000  // Talk 2-6s
-				: 3000 + Math.random() * 6000; // Pause 3-9s
+				? 2000 + Math.random() * 4000
+				: 3000 + Math.random() * 6000;
 			nextToggle = Date.now() + duration;
 			if (isSpeaking) console.log(`[#${index}] 🗣️ Speaking...`);
 		}
@@ -310,7 +307,7 @@ async function startProducers(socket, audioTransport, videoTransport, index) {
 	];
 
 	const videoFfmpeg = spawn("ffmpeg", videoArgs, { stdio: ["pipe", "pipe", "pipe"] });
-	videoFfmpeg.stderr.on("data", () => {}); // Suppress output
+	videoFfmpeg.stderr.on("data", () => {});
 	console.log(`[#${index}] 📺 Video streaming started`);
 
 	return {
@@ -358,11 +355,9 @@ async function spawnUser(index) {
 				if (response.success) {
 					console.log(`[#${index}] ✅ Joined room ${meetingId}`);
 
-					// Only half the users get producers (odd-indexed users)
 					const hasMedia = allProducers || index % 2 === 1;
 					if (withProducers && hasMedia) {
 						try {
-							// Request Audio PlainTransport
 							const audioTransport = await new Promise((resolve, reject) => {
 								socket.emit("create_plain_transport", {}, (resp) => {
 									if (resp.success) resolve(resp);
@@ -371,7 +366,6 @@ async function spawnUser(index) {
 							});
 							console.log(`[#${index}] 🔊 Audio PlainTransport on port ${audioTransport.port}`);
 
-							// Request Video PlainTransport
 							const videoTransport = await new Promise((resolve, reject) => {
 								socket.emit("create_plain_transport", {}, (resp) => {
 									if (resp.success) resolve(resp);

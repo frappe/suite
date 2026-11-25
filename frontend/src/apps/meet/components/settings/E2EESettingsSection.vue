@@ -84,7 +84,6 @@ watch(
 
     isConvertingToE2EE.value = true
     try {
-      // Register the device identity used to sign epoch key packages.
       const identity = await getIdentity()
       await registerE2EEDeviceCall.run({
         device_id: identity.deviceId,

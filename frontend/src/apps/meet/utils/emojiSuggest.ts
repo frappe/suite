@@ -59,12 +59,10 @@ function writeRecentStore(items: EmojiSuggestion[]) {
   }
 }
 
-/** Most recently used first, up to 5. */
 function getRecentEmojis(): EmojiSuggestion[] {
   return readRecentStore()
 }
 
-/** Push an emoji to the front of recents (deduped by glyph). */
 export function rememberEmoji(item: EmojiSuggestion): void {
   const next = [
     { name: item.name, emoji: item.emoji },
@@ -73,7 +71,6 @@ export function rememberEmoji(item: EmojiSuggestion): void {
   writeRecentStore(next)
 }
 
-/** Substring filter + ranking: exact name → prefix → shorter names; cap at limit. */
 function filterEmojis(query: string, limit: number): EmojiSuggestion[] {
   const needle = query.toLowerCase()
   return EMOJIS.filter((item) => item.name.toLowerCase().includes(needle))
@@ -123,7 +120,6 @@ export function insertEmojiAtQuery(
   return { text: next, caret: nextCaret }
 }
 
-/** Test helper — clear recents without poking localStorage from callers. */
 export function clearRecentEmojis(): void {
   try {
     remove(RECENT_STORAGE_KEY)

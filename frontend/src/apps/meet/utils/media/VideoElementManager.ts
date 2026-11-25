@@ -1,4 +1,3 @@
-/** Owns MediaStream attachment and playback recovery for Meet media elements. */
 import { selectedSpeakerId } from '../../data/mediaPreferences'
 
 type MediaAttachmentRole =
@@ -187,7 +186,6 @@ export class VideoElementManager implements MediaAttachmentFacade {
     return this.playElement(element, participantId)
   }
 
-  /** Retries every registered role after browser lifecycle resume. */
   async retryPlayback(): Promise<void> {
     const registered = new Map<HTMLMediaElement, string>()
     for (const attachment of this.attachments.values()) {

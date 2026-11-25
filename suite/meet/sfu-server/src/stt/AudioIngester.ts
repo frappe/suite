@@ -42,14 +42,11 @@ interface AudioIngesterOptions {
 	onTranscript: (text: string, isFinal: boolean, durationMs: number) => void;
 }
 
-// ── VAD / Streaming Config ───────────────────────────────────────────────────
 const SAMPLE_RATE = 24000;
-const BYTES_PER_SAMPLE = 2; // s16le
+const BYTES_PER_SAMPLE = 2;
 const OUTPUT_CHANNELS = 1; // ASR input is mono; Meet still publishes stereo Opus.
 
-/** Duration of each decoded-audio speech check (ms) */
 const VAD_CHECK_MS = 100;
-/** Bytes of audio per VAD check */
 const BYTES_PER_CHECK = (SAMPLE_RATE * BYTES_PER_SAMPLE * VAD_CHECK_MS) / 1000;
 const MAX_UTTERANCE_BYTES =
 	(SAMPLE_RATE * BYTES_PER_SAMPLE * MAX_STT_UTTERANCE_MS) / 1000;
@@ -79,7 +76,6 @@ const SHORT_UTTERANCE_SILENCE_CHECKS = Math.max(
 	),
 );
 
-/** Captures one producer, decodes its audio, and streams VAD-delimited speech to STT. */
 export class AudioIngester {
 	private readonly onPcm?: (pcm: Buffer) => void;
 	private roomId: string;
@@ -107,7 +103,6 @@ export class AudioIngester {
 	private sdpPath = '';
 	private running = false;
 
-	// ── VAD state ──────────────────────────────────────────────────────────────
 	private vadQueue: Buffer[] = [];
 	private vadQueueBytes = 0;
 	private speechCheckCount = 0;
@@ -373,8 +368,6 @@ export class AudioIngester {
 		loggers.stt.info('AudioIngester stopped for %s', this.participantId);
 	}
 
-	// ── Mediasoup plumbing ─────────────────────────────────────────────────────
-
 	private async setupPlainTransport(generation: number): Promise<void> {
 		const transport = await this.router.createPlainTransport({
 			listenInfo: { protocol: 'udp', ip: '127.0.0.1' },
@@ -530,8 +523,6 @@ export class AudioIngester {
 		void sample();
 	}
 
-	// ── VAD loop ───────────────────────────────────────────────────────────────
-
 	private startVadLoop(): void {
 		const generation = this.vadGeneration;
 		const run = () => {
@@ -662,7 +653,6 @@ export class AudioIngester {
 	}
 
 	private shouldFlush(): boolean {
-		// Flush on silence after enough speech
 		if (
 			this.isInSpeech &&
 			this.silenceCheckCount >= SILENCE_CHECKS_TO_FLUSH &&
@@ -739,8 +729,6 @@ export class AudioIngester {
 		this.failureNotified = true;
 		this.onUnexpectedStreamClose();
 	}
-
-	// ── Helpers ────────────────────────────────────────────────────────────────
 
 	/**
 	 * Read exactly `n` bytes from the front of the vad queue.

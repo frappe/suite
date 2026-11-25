@@ -276,7 +276,6 @@ export class RoomRegistry {
 		return true;
 	}
 
-	/** Returns the single active participant socket, if ownership is currently held. */
 	getParticipantSocketIds(roomId: string, participantId: string): string[] {
 		const owner = this.participantConnections.get(roomId)?.get(participantId);
 		return owner ? [owner.socket.id] : [];
@@ -372,7 +371,6 @@ export class RoomRegistry {
 		this.recentChatMessages[roomId] = buffer;
 	}
 
-	/** Resolve a message that is still eligible for pinning. */
 	getRecentChatMessage(
 		roomId: string,
 		messageId: string,
@@ -388,7 +386,6 @@ export class RoomRegistry {
 		else this.pinnedChatMessage[roomId] = pinned;
 	}
 
-	/** Return the current room-wide pin, if one exists. */
 	getPinnedChatMessage(roomId: string): PinnedChatMessage | null {
 		return this.pinnedChatMessage[roomId] ?? null;
 	}

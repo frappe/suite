@@ -93,7 +93,6 @@ test("audio reaches rendered captions and meets corpus thresholds", async ({ bro
 			}
 			console.log(JSON.stringify(observation));
 		} catch (error) {
-			// No raw caption text or private paths are written to the report.
 			const category = error instanceof CaptionCaseError ? error.category : "browser-or-service";
 			const phase = error instanceof CaptionCaseError ? error.phase : undefined;
 			failureCategories.push({ id: clip.id, category, phase });

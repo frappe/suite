@@ -91,7 +91,6 @@ export function useLayout(
     }
     return maxColumns.value * 4
   })
-  // ── Priority ──────────────────────────────────────────────────────────────
 
   const getPriority = (
     p: Participant,
@@ -164,8 +163,6 @@ export function useLayout(
   let personalOverflowSlot: number | undefined
   const stripSlots = new Map<string, number>()
   let vacancies: number[] = []
-
-  // ── Display participants ──────────────────────────────────────────────────
 
   const projection = shallowRef<{
     display: DisplayParticipantsResult

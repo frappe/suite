@@ -22,7 +22,6 @@ interface CaptionSegment {
   isFinal?: boolean
 }
 
-/** Owns this participant's caption preference, recent lines, and SFU subscription. */
 export function useCaptions(deps: { sfuClient: SFUClient }) {
   const { sfuClient } = deps
   const { isContextReady: isE2EEContextReady } = useE2EEState()

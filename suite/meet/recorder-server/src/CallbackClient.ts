@@ -346,8 +346,6 @@ export class CallbackClient {
 	): Promise<number> {
 		if (!Number.isSafeInteger(capturedBytes) || capturedBytes < 0)
 			throw new Error('invalid captured byte count');
-		// Progress is cumulative and idempotent. Each retry signs a fresh JWT,
-		// including when Frappe committed progress before the response was lost.
 		for (let attempt = 1; ; attempt++) {
 			try {
 				const response = await this.json(
@@ -685,7 +683,6 @@ export class CallbackClient {
 				signal: AbortSignal.timeout(timeoutMs),
 			});
 			if (!response.ok) {
-				// A refusal remains authoritative even if its body cannot be read.
 				void response.body?.cancel().catch(() => undefined);
 				throw new CallbackRequestError(
 					`Frappe callback failed with HTTP ${response.status}`,
@@ -712,7 +709,6 @@ export class CallbackClient {
 		try {
 			parsed = JSON.parse(text);
 		} catch {
-			// SyntaxError messages can echo response bytes into the capture logs.
 			throw new Error('invalid Frappe callback response');
 		}
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {

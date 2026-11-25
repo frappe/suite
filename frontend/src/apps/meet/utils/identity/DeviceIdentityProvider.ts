@@ -1,27 +1,3 @@
-// E2EE device identity: per-device ed25519 auth keypair + device_id.
-//
-// The host's ed25519 public key is the device's identity anchor. The
-// server stores it in `tabE2EE Device Key` and uses it to verify the
-// host's signature when enabling E2EE on a meeting (see
-// docs/adr/0003-per-device-host-identity.md).
-//
-// A separate per-device ed25519 *signing* keypair is used to sign
-// media frames (sender authenticity under threat model B). The
-// private signing key is stored in IndexedDB alongside the auth key.
-// The signing public key is delivered to other participants via the
-// host-signed envelope and cached per sender_id on the receiver.
-//
-// The private keys never leave the device; they're stored in
-// IndexedDB as non-extractable CryptoKeys. Older JWK entries are migrated
-// in place when read.
-//
-// Meeting secrets and X25519 meeting private keys are deliberately not
-// persisted. Per ADR 0006, pagehide/reload requires a fresh ECDH.
-//
-// This module owns the DeviceIdentityProvider port. Two implementations
-// live here: the production IndexedDB-backed provider and an in-memory
-// provider for tests.
-
 import { readString, writeString } from '@/utils/localStorage'
 
 import { ed25519KeyPair, exportEd25519PublicKey } from '../media/e2ee'

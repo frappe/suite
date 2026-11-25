@@ -21,10 +21,10 @@ describe('frameCodec: constants', () => {
     expect(FRAME_HEADER_FIXED_SIZE).toBe(28)
     expect(FRAME_HEADER_TOTAL).toBe(92)
     expect(FRAME_MAGIC.length).toBe(4)
-    expect(FRAME_MAGIC[0]).toBe(0x4d) // M
-    expect(FRAME_MAGIC[1]).toBe(0x45) // E
-    expect(FRAME_MAGIC[2]).toBe(0x32) // 2
-    expect(FRAME_MAGIC[3]).toBe(0x45) // E
+    expect(FRAME_MAGIC[0]).toBe(0x4d)
+    expect(FRAME_MAGIC[1]).toBe(0x45)
+    expect(FRAME_MAGIC[2]).toBe(0x32)
+    expect(FRAME_MAGIC[3]).toBe(0x45)
   })
 
   it('MIN_SIGNED_ENCRYPTED_FRAME_SIZE accounts for magic + header + tag + 1 byte of plaintext', () => {

@@ -237,7 +237,6 @@ function setDocumentVideo(el: unknown) {
   documentVideo.value = el as HTMLVideoElement | null
   if (documentVideo.value) documentVideo.value.srcObject = stream
 }
-// The shared stage supplies active speaker IDs, but no per-turn timestamps.
 const speakerStartedAt = new Map<string, number>()
 watch(
   () => [...context.participantStore.activeSpeakerIds],

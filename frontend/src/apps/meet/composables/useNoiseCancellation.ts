@@ -45,7 +45,6 @@ export function useNoiseCancellation(): UseNoiseCancellationReturn {
   let preloadPromise: Promise<PreloadedWorklet | null> | null = null
   let disposed = false
 
-  // Active session
   let sessionContext: AudioContext | null = null
   let sessionRawSource: MediaStreamAudioSourceNode | null = null
   let sessionDenoiseSource: MediaStreamAudioSourceNode | null = null

@@ -1,8 +1,3 @@
-/**
- * SFU Media Manager
- * Handles producer/consumer operations and media track management
- */
-
 import type { Producer } from 'mediasoup-client/types'
 
 import type { ConsumerEntry, ConsumerManager } from '../media/ConsumerManager'
@@ -438,7 +433,6 @@ export class SFUMediaManager {
 
       const enhancedConsumer = this.consumerManager.addConsumer(consumer, participantId)
 
-      // for adaptive streaming
       if (enhancedConsumer && enhancedConsumer.kind === 'video') {
         this.eventTarget.dispatchEvent(
           new CustomEvent('consumerReady', {

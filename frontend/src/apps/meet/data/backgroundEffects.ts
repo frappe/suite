@@ -20,7 +20,6 @@ import {
   validateImageFile,
 } from '../utils/customImages'
 
-// Types and interfaces
 interface BackgroundImage {
   name: string
   label: string
@@ -35,7 +34,6 @@ interface BackgroundImage {
   }
 }
 
-/** Read background-effect preferences with the caller's existing intensity default. */
 export function readBackgroundEffectPreferences(blurIntensityFallback = 4) {
   const blurEnabled = readBoolean('backgroundEffects.blur')
   const imageEnabled = readBoolean('backgroundEffects.image')
@@ -57,7 +55,6 @@ export function readBackgroundEffectPreferences(blurIntensityFallback = 4) {
 
 const storedPreferences = readBackgroundEffectPreferences()
 
-// Background effects preferences
 export const backgroundBlurEnabled: Ref<boolean> = ref(storedPreferences.blurEnabled)
 export const backgroundImageEnabled: Ref<boolean> = ref(storedPreferences.imageEnabled)
 export const selectedBackgroundImage: Ref<string> = ref(storedPreferences.selectedImage)
@@ -99,10 +96,8 @@ export const autoFramingPaused: Ref<boolean> = ref(
 )
 export const framingCrop: Ref<FramingCropSnapshot | null> = ref(readFramingCrop())
 
-// Custom background images
 export const customBackgroundImages: Ref<BackgroundImage[]> = ref([])
 
-// Available background images (predefined set)
 export const availableBackgroundImages: BackgroundImage[] = [
   {
     name: 'beach',
@@ -126,7 +121,6 @@ export const availableBackgroundImages: BackgroundImage[] = [
   },
 ]
 
-// Combined background options (none + blur + built-in + custom + add new)
 export const allBackgroundOptions = computed(() => [
   {
     name: 'none',
@@ -156,7 +150,6 @@ export const allBackgroundOptions = computed(() => [
   },
 ])
 
-// Load custom images on module initialization
 loadCustomImages()
   .then((images: BackgroundImage[]) => {
     customBackgroundImages.value = images
@@ -206,14 +199,12 @@ export function setFramingCrop(crop: FramingCropSnapshot | null): void {
   }
 }
 
-// Add a custom background image
 export async function addCustomBackgroundImage(file: File): Promise<BackgroundImage> {
   try {
     validateImageFile(file)
 
     const metadata = await getImageMetadata(file)
 
-    // WebP conversion
     let processedFile = file
     try {
       processedFile = await convertToWebP(file)
@@ -221,10 +212,8 @@ export async function addCustomBackgroundImage(file: File): Promise<BackgroundIm
       console.warn('WebP conversion failed, using original file:', error)
     }
 
-    // Convert to base64 data URL
     const dataUrl = await fileToDataUrl(processedFile)
 
-    // Save to IndexedDB
     const savedImage = await saveCustomImage(dataUrl, {
       name: processedFile.name,
       originalName: file.name,

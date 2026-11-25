@@ -1,18 +1,3 @@
-// E2EE frame codec: shared per-frame encode/decode/sign/verify
-// routines, frame-header constants, and chain-key derivations.
-//
-// Both the main-thread `TransformStream` (in e2ee.ts) and the
-// RTCRtpScriptTransform worker (in e2eeTransformWorker.ts) import
-// from this module so the cryptographic invariants — header size,
-// signature scheme, domain separators, replay window — are
-// byte-for-byte identical.
-//
-// REPLAY_WINDOW asymmetry: the main thread uses a short window (3)
-// to keep the hot path lean; the worker uses a longer window (100)
-// because it has more headroom. The default exported value is the
-// main-thread conservative value; the worker overrides locally.
-// The intent is deliberate, not a bug.
-
 import { encodeInfo, INFO_FRAME_AT } from './e2eePrimitives'
 
 export const FRAME_HEADER_FIXED_SIZE = 28

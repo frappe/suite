@@ -9,7 +9,6 @@ from frappe.model.document import Document
 
 def execute():
     if not frappe.db.has_column("Meet Room", "members"):
-        # The legacy JSON columns never existed on this site — nothing to migrate.
         return
 
     meetings = frappe.get_all("Meet Room", fields=["name", "members", "waiting_room"])

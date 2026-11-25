@@ -10,3 +10,7 @@ Frappe treats Meet Media Deployment configuration, cached Recorder Readiness, ad
 - Reservation remains immediate and unqueued. Capacity, recorder storage, readiness, recovery state, policy, and invalid-request rejections use distinct typed reason codes from ADR-0009.
 - The Frappe recorder Adapter preserves typed outcomes. Participant presentation maps safe reason codes to specific messages while retaining generic treatment for invalid or security-sensitive requests.
 - Tests cover stale probes, configured-but-unready deployment, capacity races in both directions, disk admission, recovery-required state, typed presentation, and the invariant that no result queues a Recording Startup.
+
+The recorder claims capacity before initializing a worker so simultaneous reservations cannot overbook it. On the site, reconciliation skips Pending and Stopping work when the recorder is unconfigured. The stale sweep can still fail those sessions as recorder-unavailable after their deadline.
+
+A recording's storage reservation stays charged to its original Personal root, including after that root is archived. Capture planning allows for up to three full segments in flight during a stop because segment adoption depends on its successor and must pass validation before callback shutdown.

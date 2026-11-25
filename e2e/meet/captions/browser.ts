@@ -312,8 +312,6 @@ export async function runCaptionCase(options: {
 		await observer.getByRole("button", { name: "More options" }).click();
 		await expect(observer.getByText("Disable captions", { exact: true })).toBeVisible();
 		await observer.keyboard.press("Escape");
-		// Subscription acknowledgement precedes async FFmpeg/stream setup. This
-		// settling period keeps the fixture's first words out of startup races.
 		await speaker.waitForTimeout(3000);
 		const snapshot = () => speaker.evaluate(() => window.__captionAudio.diagnostics());
 		const beforePlayback = await snapshot();

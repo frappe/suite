@@ -1,6 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router'
 
-// Meet's startup work runs when this module first loads (./runtime.ts).
 import '@/apps/meet/runtime'
 
 /**

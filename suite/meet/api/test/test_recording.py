@@ -518,8 +518,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertIsNotNone(completed.terminal_acknowledged_at)
             self.assertTrue(completed.notification_pending)
 
-            # The reservation became the file: it is gone, and the owner's root
-            # is charged the artifact's bytes exactly once.
             self.assertIsNone(
                 drive.get_storage_reservation(recording_storage_reservation_key(recording.name))
             )
@@ -801,7 +799,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             get_state(self.room.name)
 
     def test_a_guest_without_a_session_cannot_read_state(self):
-        # A guest learns of a recording from its join answer and its own realtime room instead.
         started = start(self.room.name, str(uuid.uuid4()))
         self.assertEqual(get_state(self.room.name)["name"], started["name"])
 
@@ -1430,8 +1427,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         # administration workflow until the HTTP routes land (ticket 21), and
         # this owner cannot be deleted while a Meet Room links to them, so the
         # fixture writes the archive directly. Recorded in BASELINE_DEBT.
-        # The quota leaves room for exactly 123 bytes beyond what the root already
-        # holds: this recording's reservation plus any files stored under it.
         used_bytes = cint(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"))
         stored_bytes = used_bytes - cint(recording.budget_bytes)
         frappe.db.set_value(
@@ -1481,9 +1476,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(frappe.db.get_value("Drive Root", self.drive_root, "used_bytes"), stored_bytes)
             self.assertEqual(frappe.db.get_value("Drive Root", replacement_root, "used_bytes"), 0)
         finally:
-            # The archived root stays archived: that is what an offboarded
-            # identity looks like, and it leaves exactly one Active Personal
-            # Root for this owner.
             release_test_reservations(replacement_root)
 
     def test_reconciliation_continues_after_one_recording_fails(self):
@@ -1681,7 +1673,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         url = frappe.conf.pop("recorder_server_url")
         try:
             with patch("suite.meet.api.recording._client") as client_factory:
-                # Pending past its deadline is left alone instead of erroring per recording.
                 reconcile_pending_recordings()
                 self.assertEqual(frappe.db.get_value("Meet Recording", name, "status"), "Starting")
 

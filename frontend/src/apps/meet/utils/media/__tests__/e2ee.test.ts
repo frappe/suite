@@ -225,9 +225,7 @@ describe('Transform streams (T1.5 + T1.6)', () => {
           if (done) break
           decrypted.push(new Uint8Array(value.data))
         }
-      } catch {
-        // cancelled
-      }
+      } catch {}
     })()
 
     const pipePromise = encrypt.readable.pipeTo(decrypt.writable)
@@ -423,9 +421,7 @@ describe('Transform streams (T1.5 + T1.6)', () => {
           if (done) break
           decrypted.push(new Uint8Array(value.data))
         }
-      } catch {
-        // closed
-      }
+      } catch {}
     })()
     const pipePromise = encrypt.readable.pipeTo(decrypt.writable, {
       preventClose: false,

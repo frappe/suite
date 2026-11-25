@@ -124,7 +124,6 @@ export class MediasoupManager {
 				scores: Array<{ score: number }>,
 			) => {
 				if (!scores || scores.length === 0) return;
-				// take avg of scores
 				const total = scores.reduce((sum, s) => sum + s.score, 0);
 				const avg = total / scores.length;
 				for (const listener of this.mediaScoreListeners) {
@@ -596,7 +595,6 @@ export class MediasoupManager {
 		peer.producers.set(result.id, producer);
 		this.cameraLayers.addProducer(producer, roomId, peerId);
 
-		// Add audio producers to the audio level observer for active speaker detection
 		if (kind === 'audio') {
 			room.audioLevelObserver.addProducer({ producerId: result.id });
 		}
@@ -673,7 +671,6 @@ export class MediasoupManager {
 			throw new Error(`Room ${roomId} not found`);
 		}
 
-		// Validate router can consume
 		if (!room.router.canConsume({ producerId, rtpCapabilities })) {
 			throw new Error(
 				`Router cannot consume producer ${producerId} - RTP capabilities mismatch`,
@@ -757,7 +754,6 @@ export class MediasoupManager {
 			}
 		}
 
-		// Close related consumers
 		const removedConsumers: CloseProducerResult['removedConsumers'] = [];
 		const consumersToClose =
 			this.consumerManager.getConsumersByProducer(producerId);
@@ -968,7 +964,6 @@ export class MediasoupManager {
 				options.height,
 			);
 
-			// Only update layers if spatialLayer is valid and different
 			if (spatialLayer !== null && spatialLayer !== currentlyPreferred) {
 				const layerResult =
 					await this.consumerManager.setConsumerPreferredLayers(
@@ -987,8 +982,6 @@ export class MediasoupManager {
 					previousSpatial = currentLayers?.spatialLayer ?? null;
 				}
 			} else {
-				// Even if we didn't change layers, return the current state
-				// This happens when spatialLayer is null (single layer) or matches current
 				if (spatialLayer !== null || currentlyPreferred !== null) {
 					appliedLayers = {
 						spatialLayer: spatialLayer ?? currentlyPreferred,
@@ -1061,9 +1054,6 @@ export class MediasoupManager {
 			return 0;
 		}
 
-		// Layer 2 (high): typical 1280x720, switch if container > 640px
-		// Layer 1 (mid): typical 640x360, switch if container > 320px
-		// Layer 0 (low): typical 320x180
 		let desiredLayer = 0;
 		if (primaryDimension >= 640) {
 			desiredLayer = 2;
@@ -1148,7 +1138,6 @@ export class MediasoupManager {
 		}
 
 		for (const peer of room.peers.values()) {
-			// Exclude requester
 			if (peer.info.userId === userId) continue;
 
 			for (const producer of peer.producers.values()) {
@@ -1200,7 +1189,6 @@ export class MediasoupManager {
 				const isScreen =
 					(producer.appData && producer.appData.type === 'screen') || false;
 				if (producer.kind === 'audio' && !producer.paused) audioEnabled = true;
-				// Count video as enabled only if it's NOT a screen share producer
 				if (producer.kind === 'video' && !producer.paused && !isScreen)
 					videoEnabled = true;
 			}
@@ -1346,15 +1334,12 @@ export class MediasoupManager {
 			);
 		}
 
-		// Close all rooms (this will also close peers, transports, producers, consumers)
 		await this.roomManager.cleanup();
 
-		// Close all remaining managers
 		this.consumerManager.cleanup();
 		this.producerManager.cleanup();
 		this.transportManager.cleanup();
 
-		// Close all workers
 		await this.workerManager.cleanup();
 
 		const finalStats = {

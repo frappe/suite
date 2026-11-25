@@ -1,12 +1,7 @@
-/**
- * Audio Notification Utility
- * Generates notification tones using Web Audio API
- */
-
 import { notificationChimesEnabled } from '../data/notificationPreferences'
 import notificationContextManager from './notificationContext'
 
-type FrequencyPoint = [number, number] // [frequency, timeOffset]
+type FrequencyPoint = [number, number]
 type FrequencyInput = number | FrequencyPoint[]
 
 declare global {
@@ -43,7 +38,6 @@ class AudioNotificationManager {
 
       oscillator.type = 'sine'
 
-      // Handle single frequency or frequency sweep
       if (Array.isArray(frequencies)) {
         for (const [freq, time] of frequencies) {
           const startTime = this.audioContext?.currentTime + (time || 0)
@@ -56,7 +50,7 @@ class AudioNotificationManager {
       }
 
       // prevent speaker popping using smooth attack and decay
-      const attackTime = 0.01 // 10ms fade-in
+      const attackTime = 0.01
       gainNode.gain.setValueAtTime(0, this.audioContext.currentTime)
       gainNode.gain.linearRampToValueAtTime(volume, this.audioContext.currentTime + attackTime)
       gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime + attackTime)
@@ -79,10 +73,10 @@ class AudioNotificationManager {
     }
     await this.playTone(
       [
-        [262, 0], // C4 (warmer start)
-        [392, 0.08], // G4
-        [659, 0.16], // E5
-        [523, 0.24], // C5 (resolution)
+        [262, 0],
+        [392, 0.08],
+        [659, 0.16],
+        [523, 0.24],
       ],
       0.5,
       0.075,
@@ -100,9 +94,9 @@ class AudioNotificationManager {
     }
     await this.playTone(
       [
-        [392, 0], // G4
-        [330, 0.1], // E4
-        [262, 0.2], // C4
+        [392, 0],
+        [330, 0.1],
+        [262, 0.2],
       ],
       0.4,
       0.075,
@@ -116,10 +110,10 @@ class AudioNotificationManager {
     }
     await this.playTone(
       [
-        [349, 0], // F4
-        [440, 0.1], // A4
-        [349, 0.2], // F4 (back)
-        [523, 0.3], // C5 (final)
+        [349, 0],
+        [440, 0.1],
+        [349, 0.2],
+        [523, 0.3],
       ],
       0.6,
       0.25,
@@ -133,8 +127,8 @@ class AudioNotificationManager {
     }
     await this.playTone(
       [
-        [330, 0], // E4
-        [392, 0.1], // G4
+        [330, 0],
+        [392, 0.1],
       ],
       0.25,
       0.2,
@@ -148,9 +142,9 @@ class AudioNotificationManager {
     }
     await this.playTone(
       [
-        [523.25, 0], // C5
-        [659.25, 0.08], // E5
-        [783.99, 0.16], // G5
+        [523.25, 0],
+        [659.25, 0.08],
+        [783.99, 0.16],
       ],
       0.5,
       0.2,

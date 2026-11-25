@@ -10,7 +10,6 @@ const {
   actionLabel,
   actionIcon,
 } = defineProps<{
-  /** A `lucide-*` class. */
   icon: string
   tone?: 'neutral' | 'danger' | 'warning'
   title: string

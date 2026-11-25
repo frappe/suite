@@ -2,9 +2,6 @@ import type { ProducerCodecOptions } from 'mediasoup-client/types'
 
 // Keep the base camera layer inexpensive so several moving faces fit alongside
 // audio on a constrained receiver. The SFU selects layers per receiver.
-// layer 0: low quality (120 kbps)
-// layer 1: medium quality (500 kbps)
-// layer 2: high quality (1800 kbps)
 
 interface VideoEncodingLayer {
   maxBitrate: number

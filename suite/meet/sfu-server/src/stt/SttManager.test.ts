@@ -322,13 +322,13 @@ describe('SttManager', () => {
 
 	it('resets backoff after a minute of stable operation', async () => {
 		const { manager, start, fail } = await recoveryFixture();
-		await fail(); // immediate first replacement
+		await fail();
 		await fail();
 		await vi.advanceTimersByTimeAsync(1000);
 		expect(start).toHaveBeenCalledTimes(3);
 		await vi.advanceTimersByTimeAsync(60_000);
 		await fail();
-		expect(start).toHaveBeenCalledTimes(4); // stable capture earns immediate retry
+		expect(start).toHaveBeenCalledTimes(4);
 		await manager.stopRoom('room-1');
 	});
 

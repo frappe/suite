@@ -216,9 +216,7 @@ const speakerSelectOptions = computed(() =>
   })),
 )
 
-// Watch for device changes like plug/unplug or bluetooth connect
 watch(selectedCameraIdLocal, (newDeviceId) => {
-  // Handle both string and object formats from autocomplete :/
   const deviceId = typeof newDeviceId === 'object' ? newDeviceId?.value : newDeviceId
 
   if (deviceId && deviceId !== selectedCameraId.value) {
@@ -229,7 +227,6 @@ watch(selectedCameraIdLocal, (newDeviceId) => {
 })
 
 watch(selectedMicIdLocal, (newDeviceId) => {
-  // Handle both string and object formats from autocomplete
   const deviceId = typeof newDeviceId === 'object' ? newDeviceId?.value : newDeviceId
 
   if (deviceId && deviceId !== selectedMicId.value) {
@@ -240,7 +237,6 @@ watch(selectedMicIdLocal, (newDeviceId) => {
 })
 
 watch(selectedSpeakerIdLocal, (newDeviceId) => {
-  // Handle both string and object formats from autocomplete
   const deviceId = typeof newDeviceId === 'object' ? newDeviceId?.value : newDeviceId
 
   if (deviceId && deviceId !== selectedSpeakerId.value) {
@@ -361,7 +357,6 @@ const loadDevices = async () => {
     micOptions.value = deviceManager.getMicrophones()
     speakerOptions.value = deviceManager.getSpeakers()
 
-    // auto select the first available device if none selected
     if (!selectedCameraIdLocal.value && cameraOptions.value.length > 0) {
       selectedCameraIdLocal.value = cameraOptions.value[0].deviceId
       setSelectedCameraId(selectedCameraIdLocal.value)
@@ -392,7 +387,6 @@ const handleDeviceChange = () => {
   micOptions.value = deviceManager.getMicrophones()
   speakerOptions.value = deviceManager.getSpeakers()
 
-  // check for newly connected devices
   const newCameras = cameraOptions.value.filter(
     (cam) => !oldCameraOptions.some((oldCam) => oldCam.deviceId === cam.deviceId),
   )
@@ -409,7 +403,6 @@ const handleDeviceChange = () => {
     speakers: newSpeakers.map((s) => ({ id: s.deviceId, label: s.label })),
   })
 
-  // clear selection if the selected device is no longer available
   if (
     selectedCameraIdLocal.value &&
     !deviceManager.findDeviceById(getDeviceId(selectedCameraIdLocal.value), 'camera')

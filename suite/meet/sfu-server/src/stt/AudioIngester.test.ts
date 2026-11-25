@@ -405,7 +405,6 @@ describe('AudioIngester', () => {
 				expect(stream.sendAudio).not.toHaveBeenCalled();
 				expect(stream.close).not.toHaveBeenCalled();
 				expect(onFailure).not.toHaveBeenCalled();
-				// Subsequent speech uses the same stream and contains no old fragment.
 				const nextSpeech = Buffer.from(speechFrame());
 				nextSpeech.writeInt16LE(123, 2);
 				internals.handleDecodedAudio(Buffer.concat([nextSpeech, nextSpeech]));

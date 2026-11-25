@@ -1,9 +1,3 @@
-/**
- * SignalChannel
- * Transport seam between SFU domain logic and raw socket implementation.
- * One adapter = hypothetical seam. Two adapters = real seam.
- */
-
 import { io, type Socket } from 'socket.io-client'
 
 interface SignalChannelConfig {
@@ -70,7 +64,6 @@ export class SocketIOSignalChannel implements SignalChannel {
       this.socket?.once('connect_error', onConnectError)
       this.socket?.connect()
 
-      // Safety timeout
       setTimeout(() => {
         if (!this.isConnected()) {
           this.socket?.off('connect', onConnect)

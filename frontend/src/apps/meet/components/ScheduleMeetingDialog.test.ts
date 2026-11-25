@@ -245,7 +245,6 @@ describe('Shared meeting scheduler', () => {
     )
     expect(root.textContent).not.toContain('private')
     expect(scheduled).not.toHaveBeenCalled()
-    // The alert in the open dialog is the one message; no toast repeats it.
     expect(toast.error).not.toHaveBeenCalled()
     expect(root.querySelector<HTMLInputElement>('input[aria-label="Title"]')?.value).toBe(
       'Design review',

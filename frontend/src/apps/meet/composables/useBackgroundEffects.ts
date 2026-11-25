@@ -26,7 +26,6 @@ declare global {
     typeof import('@mediapipe/selfie_segmentation').SelfieSegmentation | undefined
 }
 
-// Types and interfaces
 export interface BackgroundEffectOptions {
   autoFramingEnabled?: boolean
   autoFramingPaused?: boolean
@@ -82,7 +81,6 @@ interface UseBackgroundEffectsOptions {
   >
 }
 
-// MediaPipe Selfie Segmentation instance
 let selfieSegmentation: SelfieSegmentation | null = null
 let selfieSegmentationCtor:
   (new (options: { locateFile: (file: string) => string }) => SelfieSegmentation) | null = null
@@ -332,8 +330,6 @@ export function useBackgroundEffects({
 
     await haltProcessing({ disposeWebGL: false })
     assertOwnerActive(signal)
-    // reset segmentation state only if model is not initialized
-    // or if there was a previous error
     const shouldReset = !selfieSegmentation || modelInitializationPromise
     if (shouldReset) {
       const modelToReset = selfieSegmentation
@@ -451,12 +447,10 @@ export function useBackgroundEffects({
         }
       }
 
-      // Get track settings to determine canvas size
       const trackSettings = videoTrack.getSettings()
       const width = trackSettings.width || 640
       const height = trackSettings.height || 480
 
-      // Create canvas for processing
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d', { willReadFrequently: true })
       if (!ctx) throw new Error('Failed to get canvas context')
@@ -623,7 +617,6 @@ export function useBackgroundEffects({
         outputCanvas.height = canvas.height
       }
 
-      // Helper to apply background effects (blur or virtual background)
       const applyEffectsToFrame = async (maskBitmap?: TexImageSource) => {
         if (settings.backgroundBlurEnabled && maskBitmap) {
           if (webglManager) {
@@ -685,7 +678,7 @@ export function useBackgroundEffects({
           try {
             bitmap = outputCanvas.transferToImageBitmap()
             videoFrame = new VideoFrame(bitmap, {
-              timestamp: performance.now() * 1000, // convert to microseconds
+              timestamp: performance.now() * 1000,
             })
             await trackWriter.write(videoFrame)
             assertOwnerActive(signal)
@@ -788,7 +781,7 @@ export function useBackgroundEffects({
       }
 
       let lastFrameTime = 0
-      const targetFrameRate = 1000 / 30 // 30 FPS
+      const targetFrameRate = 1000 / 30
 
       const processFrameWithRAF = async (currentTime = 0) => {
         try {
@@ -796,7 +789,6 @@ export function useBackgroundEffects({
             return
           }
 
-          // skip frames if we're processing too fast
           if (currentTime - lastFrameTime < targetFrameRate) {
             animationId = requestAnimationFrame(processFrameWithRAF)
             return
@@ -834,7 +826,6 @@ export function useBackgroundEffects({
             return
           }
 
-          // clear output canvas
           outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height)
           await applyEffectsToFrame(results.segmentationMask)
           assertOwnerActive(signal)
@@ -891,7 +882,6 @@ export function useBackgroundEffects({
         }
       }
 
-      // Start processing
       processFrame()
 
       let outputStream: MediaStream
@@ -910,17 +900,15 @@ export function useBackgroundEffects({
       } else {
         if (!(outputCanvas instanceof HTMLCanvasElement))
           throw new Error('Canvas capture requires an HTML canvas')
-        outputStream = outputCanvas.captureStream(30) // 30 FPS
+        outputStream = outputCanvas.captureStream(30)
       }
 
-      // Replace video track
       processedVideoTrack = outputStream.getVideoTracks()[0]
       const newStream = new MediaStream([processedVideoTrack])
       resultStream = newStream
 
       processedStream.value = newStream
 
-      // Cleanup function
       const cleanup = (): void => {
         isProcessing.value = false
         cleanupProvisionalResources()
@@ -1004,7 +992,6 @@ export function useBackgroundEffects({
     }
   }
 
-  // Gracefully stop the current processing loop and wait for in-flight operations
   async function haltProcessing(options: HaltProcessingOptions = {}): Promise<void> {
     const { disposeWebGL = false } = options
     const cleanupSession = activeSessionCleanup
@@ -1036,7 +1023,6 @@ export function useBackgroundEffects({
       webglManager = null
     }
 
-    // Clear cached results so the next run starts fresh
     latestResults = null
   }
 

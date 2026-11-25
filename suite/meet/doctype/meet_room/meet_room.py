@@ -233,7 +233,6 @@ class MeetRoom(Document):
 
         joined = self.add_user_to_table("members", user)
 
-        # Add user if not already in room
         if joined:
             self.remove_from_waiting_room(user)
 
@@ -296,7 +295,6 @@ class MeetRoom(Document):
         if save:
             self.save()
 
-        # for signed-in users
         frappe.publish_realtime(
             "meeting_join_approved",
             user=user,

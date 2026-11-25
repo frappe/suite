@@ -1,13 +1,4 @@
 import { fromPartial } from '@total-typescript/shoehorn';
-// Smoke tests for the commit-request batching window. Run via:
-//   yarn test
-//
-// Verifies that:
-//
-//   1. Two rapid-fire `enqueueCommitRequest` calls in the same room+epoch
-//      collapse into a single batched commit-request after the window.
-//   2. The batched request has joiningSenderIds = [first, second].
-//   3. flushPendingCommitRequests cancels pending timers.
 
 import { describe, expect, it } from 'vitest';
 import { E2EEEpochRelay } from '../E2EEEpochRelay';
@@ -83,18 +74,14 @@ async function main(): Promise<void> {
 	relay.setRoster(roster);
 	const testRelay = relay;
 
-	// Two rapid key-package events for the same room+epoch.
 	testRelay['enqueueCommitRequest']('meeting-1', [9], 1);
-	// Second joiner arrives within the batching window.
 	testRelay['enqueueCommitRequest']('meeting-1', [11], 1);
 
-	// Within the window, no commit-request should have been emitted yet.
 	expect(
 		sent,
 		`expected no commit-request yet, got ${sent.length}`,
 	).toHaveLength(0);
 
-	// Wait for the window to close.
 	await new Promise((resolve) => setTimeout(resolve, 400));
 
 	expect(
@@ -105,7 +92,6 @@ async function main(): Promise<void> {
 	assert(first.room === 'meeting-1', 'commit-request should target meeting-1');
 	relay.clearRoom('meeting-1');
 
-	// flushPendingCommitRequests cancels the timer.
 	sent.splice(0, sent.length);
 	testRelay['enqueueCommitRequest']('meeting-1', [13], 2);
 	testRelay['flushPendingCommitRequests']('meeting-1');

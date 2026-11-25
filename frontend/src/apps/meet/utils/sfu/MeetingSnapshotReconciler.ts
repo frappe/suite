@@ -27,7 +27,6 @@ interface MeetingSnapshot<Participant extends ReconciledParticipant> {
   producers?: readonly ReconciledProducer[]
 }
 
-/** Creates empty current state and empty tombstone sets. */
 export function createMeetingReconciliationState<
   Participant extends ReconciledParticipant,
 >(): MeetingReconciliationState<Participant> {

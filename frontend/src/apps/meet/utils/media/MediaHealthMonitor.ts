@@ -9,7 +9,6 @@ import {
 
 export type NetworkQuality = 'unknown' | 'good' | 'poor' | 'critical'
 
-/** Current uplink, downlink, and transport health exposed to the UI. */
 export interface MediaHealthState {
   networkQuality: NetworkQuality
   downlinkQuality: NetworkQuality
@@ -28,7 +27,6 @@ interface MediaHealthNetworkStats {
   downlink?: NetworkPathStats | null
 }
 
-/** Media inspection, recovery, and telemetry operations used by the monitor. */
 export interface MediaHealthPort {
   onRecoveryVerified?(reason: string): void
   hasMissingExpectedReceiveMedia?(): boolean
@@ -68,7 +66,6 @@ type LifecycleEvent = 'offline' | 'online' | 'pageshow'
 type ScheduledPoll = () => void | Promise<void>
 type PollTimer = ReturnType<typeof setInterval> | number
 
-/** Injectable browser lifecycle and timer boundary used by the monitor. */
 export interface MediaHealthEnvironment {
   now(): number
   isHidden(): boolean
@@ -163,14 +160,12 @@ export class MediaHealthMonitor {
     return this.stateValue
   }
 
-  /** Subscribes to state changes and immediately emits the current state. */
   subscribe(listener: (state: MediaHealthState) => void): () => void {
     this.listeners.add(listener)
     listener(this.stateValue)
     return () => this.listeners.delete(listener)
   }
 
-  /** Starts polling and browser lifecycle observation. */
   start(): void {
     if (this.active) return
     this.active = true
@@ -184,7 +179,6 @@ export class MediaHealthMonitor {
     this.interval = this.environment.setInterval(() => this.pollStats(), POLL_INTERVAL_MS)
   }
 
-  /** Stops polling, removes lifecycle listeners, and clears health baselines. */
   stop(): void {
     if (!this.active) return
     this.active = false

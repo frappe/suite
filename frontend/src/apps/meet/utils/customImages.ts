@@ -1,9 +1,7 @@
-// IndexedDB utilities for custom background images
 const DB_NAME = 'Meet_Backgrounds'
 const DB_VERSION = 1
 const STORE_NAME = 'custom_images'
 
-// Types and interfaces
 interface ImageMetadata {
   width: number
   height: number
@@ -14,7 +12,7 @@ interface CustomImageRecord {
   id: string
   name: string
   originalName: string
-  data: string // Base64 data URL
+  data: string
   size: number
   width: number
   height: number
@@ -73,7 +71,7 @@ export async function saveCustomImage(
       id: `custom_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       name: metadata.name,
       originalName: metadata.originalName,
-      data: imageData, // Base64 data URL
+      data: imageData,
       size: metadata.size,
       width: metadata.width,
       height: metadata.height,
@@ -151,7 +149,7 @@ export async function deleteCustomImage(imageId: string): Promise<void> {
 }
 
 export function validateImageFile(file: File): boolean {
-  const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+  const MAX_SIZE = 5 * 1024 * 1024
   const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
 
   if (!ALLOWED_TYPES.includes(file.type)) {
@@ -172,7 +170,6 @@ export async function convertToWebP(file: File): Promise<File> {
     const img = new Image()
 
     img.onload = () => {
-      // Check dimensions
       const MAX_WIDTH = 4096
       const MAX_HEIGHT = 4096
 
@@ -181,11 +178,9 @@ export async function convertToWebP(file: File): Promise<File> {
         return
       }
 
-      // Set canvas size
       canvas.width = img.width
       canvas.height = img.height
 
-      // Draw and convert
       ctx?.drawImage(img, 0, 0)
 
       canvas.toBlob(
@@ -201,7 +196,7 @@ export async function convertToWebP(file: File): Promise<File> {
           }
         },
         'image/webp',
-        0.8, // 80% quality
+        0.8,
       )
     }
 

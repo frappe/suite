@@ -408,8 +408,6 @@ export class SFUClient {
     this.ownSenderId = senderId
   }
 
-  // ==================== CONNECTION MANAGEMENT ====================
-
   async connect(
     meetingId: string,
     guestAuthToken: string | null = null,
@@ -562,7 +560,7 @@ export class SFUClient {
 
     // If the URL has a pathname (e.g. /sfu), use it as the socket.io path prefix.
     // Otherwise fall back to the default /socket.io/.
-    const basePath = urlObj.pathname.replace(/\/$/, '') // strip trailing slash
+    const basePath = urlObj.pathname.replace(/\/$/, '')
     const socketPath = basePath ? `${basePath}/socket.io` : '/socket.io'
 
     return { origin, socketPath }
@@ -588,8 +586,6 @@ export class SFUClient {
     this.tokenRefreshGeneration += 1
     this.tokenRefreshPromise = null
   }
-
-  // ==================== TOKEN MANAGEMENT ====================
 
   clearTokenRefreshTimer(): void {
     if (this.tokenRefreshTimer) {
@@ -776,8 +772,6 @@ export class SFUClient {
     }
   }
 
-  // ==================== EVENT HANDLING ====================
-
   setupDefaultHandlers(): void {
     const defaultHandlers = {
       connect: () => {
@@ -893,8 +887,6 @@ export class SFUClient {
       }
     })
   }
-
-  // ==================== WEBRTC OPERATIONS ====================
 
   async getRouterRtpCapabilities(): Promise<RtpCapabilities> {
     const response = requireObject(
@@ -1038,8 +1030,6 @@ export class SFUClient {
     })
   }
 
-  // ==================== ROOM OPERATIONS ====================
-
   async getExistingProducers(roomId: string | null = null): Promise<SFUExistingProducer[]> {
     const requestData = roomId ? { roomId } : {}
     const response = requireObject(
@@ -1062,8 +1052,6 @@ export class SFUClient {
       .map(normalizeParticipantData)
       .filter((participant): participant is ParticipantData => participant !== null)
   }
-
-  // ==================== ROOM MANAGEMENT ====================
 
   async joinRoom(
     roomId: string,
@@ -1118,7 +1106,6 @@ export class SFUClient {
     return getE2EETransformCapability() !== 'none'
   }
 
-  // ==================== SIGNALING OPERATIONS ====================
   sendClientTelemetry(event: ClientTelemetryEvent): void {
     this.sendEvent('client_telemetry', event)
   }
@@ -1139,8 +1126,6 @@ export class SFUClient {
     this.sendEvent('e2ee:epoch', envelope)
   }
 
-  // ==================== MEDIA CONTROL ====================
-
   sendMediaControl(action: unknown): void {
     this.sendEvent('media_control', { action })
   }
@@ -1154,8 +1139,6 @@ export class SFUClient {
     }
     this.sendEvent('screen_share', { action, shareData })
   }
-
-  // ==================== CHAT OPERATIONS ====================
 
   async sendChatMessage(
     message: string,
@@ -1181,7 +1164,6 @@ export class SFUClient {
     return result
   }
 
-  /** Pin or explicitly unpin a room chat message. */
   async sendChatPin(
     messageId: string,
     action: 'pin' | 'unpin' = 'pin',
@@ -1198,8 +1180,6 @@ export class SFUClient {
     return this.sendRequest('chat:pin', payload)
   }
 
-  // ==================== REACTION OPERATIONS ====================
-
   sendReaction(reactionType: string): void {
     if (!this.connected) {
       throw new Error('Not connected to SFU')
@@ -1214,8 +1194,6 @@ export class SFUClient {
     }
     return this.sendRequest('raise_hand', { raised })
   }
-
-  // ==================== UTILITY METHODS ====================
 
   async sendRequest(
     event: string,
