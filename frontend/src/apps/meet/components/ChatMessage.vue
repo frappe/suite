@@ -117,11 +117,11 @@ import { watch } from 'vue'
 import { translate as __ } from '@/platform/translation'
 
 import {
-  QUICK_CHAT_REACTIONS,
   type ChatReactionRequest,
   type ChatReactionsUpdated,
 } from '../../../../../suite/meet/types/chatReactions'
 import type { ChatMessage } from '../composables/useChatStore'
+import { quickReactions } from '../data/quickReactionPreferences'
 import { tokenizeChatMessage } from '../utils/chatMessageTokens'
 import { emojiLabel, loadEmojiCatalog } from '../utils/emojiSuggest'
 import ChatReactionPicker from './ChatReactionPicker.vue'
@@ -147,11 +147,12 @@ const emit = defineEmits<{
   react: [request: ChatReactionRequest]
 }>()
 
-const quickReactions: readonly string[] = QUICK_CHAT_REACTIONS.slice(0, 3)
 watch(
-  () => props.reactions.some(({ emoji }) => !quickReactions.includes(emoji)),
-  (hasOtherReactions) => {
-    if (hasOtherReactions) void loadEmojiCatalog()
+  () =>
+    quickReactions.value.some((emoji) => emojiLabel(emoji) === emoji) ||
+    props.reactions.some(({ emoji }) => emojiLabel(emoji) === emoji),
+  (needsLabels) => {
+    if (needsLabels) void loadEmojiCatalog()
   },
   { immediate: true },
 )
