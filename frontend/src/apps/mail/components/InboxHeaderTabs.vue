@@ -78,6 +78,7 @@ const { scroller, fade } = useOverflowFade()
 
 // Room for the row with every name, against the space the header gives it
 const named = useTemplateRef<ComponentPublicInstance>('named')
+// SAFETY: the ref is on a TabList, whose root is one element.
 const namedEl = computed(() => named.value?.$el as HTMLElement | undefined)
 const namedWidth = ref(0)
 const room = ref(Infinity)

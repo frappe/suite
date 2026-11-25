@@ -23,6 +23,7 @@ vi.mock('@/shell/settings/SettingsTabContent.vue', () => ({
     setup:
       (_: unknown, { slots }: { slots: { default?: () => unknown } }) =>
       () =>
+        // SAFETY: a slot's vnodes are valid children; `never` only quiets the stub's loose slot type.
         h('div', slots.default?.() as never),
   },
 }))

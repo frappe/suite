@@ -7,6 +7,7 @@ import ProfileSettings from './ProfileSettings.vue'
 // one saves.
 const state = vi.hoisted(() => ({
   user: { data: { first_name: 'Maya', last_name: 'Kim', email: 'maya@example.com' } },
+  // SAFETY: an empty array, typed for the saves the mock pushes later.
   saves: [] as { input: Record<string, string>; done: () => void }[],
 }))
 vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
@@ -62,6 +63,7 @@ vi.mock('frappe-ui', () => ({
         h('input', {
           'aria-label': props.label,
           value: props.modelValue,
+          // SAFETY: the listener is on an <input>, so its target is one.
           onInput: (event: Event) =>
             emit('update:modelValue', (event.target as HTMLInputElement).value),
           onBlur: () => emit('blur'),

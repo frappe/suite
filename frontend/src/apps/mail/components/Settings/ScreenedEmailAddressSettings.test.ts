@@ -51,7 +51,9 @@ const choices = await vi.hoisted(async () => {
   return defineComponent({
     props: {
       open: Boolean,
+      // SAFETY: Vue's runtime prop type is Array; PropType only names what the component passes in it.
       options: { type: Array as PropType<(Choice | { options: Choice[] })[]>, default: () => [] },
+      // SAFETY: as above, a runtime Array named for the type checker.
       actions: { type: Array as PropType<Choice[]>, default: () => [] },
     },
     setup:

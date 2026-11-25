@@ -321,12 +321,16 @@ const pickedOptions = computed(() => {
   const email = picked.value
   const current = screenedAddresses.data?.find((address) => address.email === email)?.action
   return [
-    ...(['Accepted', 'Spam'] satisfies ScreeningAction[])
-      .filter((action) => action !== current)
-      .map((action) => ({
-        label: ACTION_LABELS[action] ?? action,
-        onClick: () => email && setAction([email], action),
-      })),
+    ...(['Accepted', 'Spam'] satisfies ScreeningAction[]).flatMap((action) =>
+      action === current
+        ? []
+        : [
+            {
+              label: ACTION_LABELS[action] ?? action,
+              onClick: () => email && setAction([email], action),
+            },
+          ],
+    ),
     {
       label: __('Remove'),
       theme: 'red' as const,
