@@ -15,7 +15,7 @@ const state = vi.hoisted(() => {
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'personal',
-    sieveScripts: { data: [] },
+    sieveScripts: { data: [], refetch: vi.fn() },
   }),
 }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: vi.fn() }))
