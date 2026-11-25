@@ -68,7 +68,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { liftToastsOver, usePhoneBarsAway } from '@/apps/mail/composables/phoneBarsAway'
 import { userStore } from '@/apps/mail/stores/user'
-import { getIcon } from '@/apps/mail/utils'
+import { getIcon, getIconClass } from '@/apps/mail/utils'
 import { useMobileSearch, useMobileSelection } from '@/apps/mail/utils/composables'
 import {
   INBOX_FOLDER,
@@ -151,7 +151,7 @@ const tabs = computed(() => [
   {
     key: 'folder',
     label: folderLabel.value,
-    icon: `lucide-${folderIcon.value}`,
+    icon: getIconClass(folderIcon.value),
     active: inFolder.value,
     open: openFolders,
   },
