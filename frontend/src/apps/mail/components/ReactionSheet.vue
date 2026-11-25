@@ -14,12 +14,12 @@
         </p>
         <EmojiGrid v-else-if="picker" class="!w-full" :picker :auto-focus="false" @select="pick" />
         <!-- Its first emoji starts where the full list's first one does -->
-        <div v-else class="grid grid-cols-[repeat(5,3.5rem)] justify-between gap-y-4">
+        <div v-else class="grid grid-cols-[repeat(5,3rem)] justify-between gap-y-6">
           <button
             v-for="emoji in PHONE_REACTIONS"
             :key="emoji"
             type="button"
-            class="active:bg-surface-gray-3 flex size-14 items-center justify-center rounded-full text-4xl transition active:scale-95"
+            class="active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full text-3xl transition active:scale-95"
             :class="{ 'bg-surface-gray-2': mine.has(emojiKey(emoji)) }"
             :aria-pressed="mine.has(emojiKey(emoji))"
             @click="pick(emoji)"
@@ -29,7 +29,7 @@
           <button
             type="button"
             :aria-label="__('More reactions')"
-            class="text-ink-gray-6 active:bg-surface-gray-3 flex size-14 items-center justify-center rounded-full transition active:scale-95"
+            class="text-ink-gray-6 active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition active:scale-95"
             @click="showEvery"
           >
             <Plus class="size-6" />
@@ -43,14 +43,14 @@
         :class="{ 'mt-4 border-t pt-4': !readonly }"
       >
         <li v-for="group in groups" :key="group.emoji" class="flex items-baseline">
-          <span class="w-14 shrink-0 text-center text-4xl" aria-hidden="true">
+          <span class="w-12 shrink-0 text-center text-3xl" aria-hidden="true">
             {{ group.emoji }}
           </span>
           <p class="text-p-base text-ink-gray-8 min-w-0 flex-1">
             <span class="sr-only">{{ group.emoji }}</span>
             {{ group.who }}
           </p>
-          <span class="text-ink-gray-5 w-14 shrink-0 text-center text-base">
+          <span class="text-ink-gray-5 w-12 shrink-0 text-center text-base">
             {{ group.count }}
           </span>
         </li>
