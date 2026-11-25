@@ -250,7 +250,7 @@ import MailRowActions from '@/apps/mail/components/MailRowActions.vue'
 import { openComposePage } from '@/apps/mail/composables/composeHandoff'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { useRowActions, type RowActionKey } from '@/apps/mail/composables/useRowActions'
-import type { SwipeSide } from '@/apps/mail/composables/useRowSwipe'
+import type { RowSwipeAction, SwipeSide } from '@/apps/mail/composables/useRowSwipe'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { getAttachmentUrl } from '@/apps/mail/resources'
 import { userStore } from '@/apps/mail/stores/user'
@@ -402,17 +402,17 @@ const binLabel = () => {
   if (drafts) return __('Discard')
   return deletesForever.value ? __('Delete') : __('Trash')
 }
-const swipes = computed(() => ({
+const swipes = computed<Partial<Record<SwipeSide, RowSwipeAction | undefined>>>(() => ({
   left: binning.value && {
     icon: binning.value.icon,
     label: binLabel(),
-    tone: 'bg-surface-red-7',
+    tone: 'red',
     asks: deletesForever.value,
   },
   right: filing.value && {
     icon: filing.value.icon,
     label: filing.value.key === 'unarchive' ? __('Unarchive') : __('Archive'),
-    tone: 'bg-surface-gray-7',
+    tone: 'gray',
   },
 }))
 const onSwipe = (side: SwipeSide) => {

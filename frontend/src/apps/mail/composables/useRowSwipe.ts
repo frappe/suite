@@ -17,10 +17,10 @@ export type SwipeSide = 'left' | 'right'
 /** What a swipe one way does, as the row shows it behind itself. */
 export interface RowSwipeAction {
   icon: Component
-  /** A word or two for it, under the icon. */
+  /** A word or two for it, beside the icon. */
   label: string
-  /** The fill behind the row, a surface class. */
-  tone: string
+  /** The colour behind the row: red for what lets go of the mail, grey for what files it. */
+  tone: 'red' | 'gray'
   /**
    * It asks before it does anything (deleting for good): the row comes back while it asks, and only
    * leaves the list if the answer is yes.
@@ -125,6 +125,8 @@ export function useRowSwipe({
       state.height = 0
       after(ROW_SWIPE_MS, () => {
         commit(to)
+        // Done with the finger: another row can swipe while this one waits to leave or comes back
+        if (moving === me) moving = null
         // The list lets go of the row once its copy of the list is updated, a frame to half a second
         // later. One still here long after that is a row this list keeps (a folder that also holds
         // it): it opens up again and comes back.
@@ -142,7 +144,9 @@ export function useRowSwipe({
   function onTouchStart(e: TouchEvent) {
     dragged = false
     const touch = e.touches[0]
-    if (!enabled() || moving || !el.value || !touch) return gesture.cancel()
+    // Nor while this row is on its way somewhere
+    const busy = state.settling || state.height !== null
+    if (!enabled() || moving || busy || !el.value || !touch) return gesture.cancel()
     width = el.value.offsetWidth
     gesture.start(touch.clientX, touch.clientY, performance.now(), e.touches.length)
   }
