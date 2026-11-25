@@ -4534,8 +4534,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-static@1.31.0:
-    resolution: {integrity: sha512-XFX9NO+gcLsOkXISmeQZYGJa2siGWZc/lgT/BK1b83h9RdOiz3cj1eQP5nWhELiB1KhW5ryk0nmMopOgm/CuSA==}
+  lucide-static@1.33.0:
+    resolution: {integrity: sha512-jNGgvTNcLUfVRX4N9PH9pVVTJzoph/BmYmgU838bYBQodkUJL4nAThkuymFz1x3OUYMhJxPndC7rdg1sxOPYKg==}
 
   lucide-vue-next@1.0.0:
     resolution: {integrity: sha512-V6SPvx1IHTj/UY+FrIYWV5faISsPSb8BnWSFDxAtezWKvWc9ZZ40PDrdu1/Qb5vg4lHWr1hs1BAMGVGm6V1Xdg==}
@@ -9691,7 +9691,7 @@ snapshots:
       highlight.js: 11.11.1
       idb-keyval: 6.2.5
       lowlight: 3.3.0
-      lucide-static: 1.31.0
+      lucide-static: 1.33.0
       magic-string: 0.30.21
       marked: 15.0.12
       reka-ui: 2.10.1(vue@3.5.39(typescript@6.0.3))
@@ -10354,7 +10354,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-static@1.31.0: {}
+  lucide-static@1.33.0: {}
 
   lucide-vue-next@1.0.0(vue@3.5.39(typescript@6.0.3)):
     dependencies:

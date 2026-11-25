@@ -190,7 +190,6 @@ import { translate as __ } from '@/platform/translation'
 import { useAudioStream } from '../composables/useAudioLevels'
 import { useMeetingContext } from '../composables/useMeetingContext'
 import { defaultVideoFit, type VideoFit } from '../data/mediaPreferences'
-import SquareDimensionsIcon from '../icons/SquareDimensionsIcon.vue'
 import { confirmRemoveParticipant } from '../utils/confirmRemoveParticipant'
 import type { Participant } from '../utils/media/ParticipantManager'
 import AudioIndicator from './AudioIndicator.vue'
@@ -306,7 +305,7 @@ const tileActions = computed(() => {
   if (props.pinType === 'participant' && props.isVideoEnabled && !props.isVideoPaused) {
     actions.push({
       label: videoFit.value === 'fit' ? __('Fill tile') : __('Fit video to tile'),
-      icon: SquareDimensionsIcon,
+      icon: 'lucide-square-dimensions',
       onClick: () => (videoFitOverride.value = videoFit.value === 'fit' ? 'fill' : 'fit'),
     })
   }
