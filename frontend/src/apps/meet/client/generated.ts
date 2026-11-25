@@ -1,11 +1,11 @@
 // Generated from src/apps/meet/client/contract.json. Do not edit.
 import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
-export type RoomsPostInput = { type: 'open' | 'restricted' }
+export type RoomsPostInput = { type: 'open' | 'restricted'; title?: string; link?: string }
 
 export type RoomsPostOutput = { code: string; url: string }
 
-export type RoomsPostError = 'BadRequest'
+export type RoomsPostError = 'BadRequest' | 'LinkError'
 
 const operationRoomsPost: MutationRef<RoomsPostInput, RoomsPostOutput, RoomsPostError> = {
   id: 'rooms_post',
@@ -18,8 +18,33 @@ const operationRoomsPost: MutationRef<RoomsPostInput, RoomsPostOutput, RoomsPost
   pathParams: [],
   nodeParams: [],
   entity: null,
-  errors: ['BadRequest'],
+  errors: ['BadRequest', 'LinkError'],
   loadValidators: async () => (await import('./validators')).operationRoomsPost,
+}
+
+export type RoomLinkAvailabilityInput = { link: string }
+
+export type RoomLinkAvailabilityOutput = { status: 'available' | 'invalid' | 'reserved' | 'taken' }
+
+export type RoomLinkAvailabilityError = 'RateLimitExceededError'
+
+const operationRoomLinkAvailability: QueryRef<
+  RoomLinkAvailabilityInput,
+  RoomLinkAvailabilityOutput,
+  RoomLinkAvailabilityError
+> = {
+  id: 'room_link_availability',
+  owner: 'meet',
+  kind: 'query',
+  publicName: 'rooms.linkAvailability',
+  method: 'GET',
+  path: 'rooms/link-availability',
+  prefix: '/api/suite/meet/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['RateLimitExceededError'],
+  loadValidators: async () => (await import('./validators')).operationRoomLinkAvailability,
 }
 
 export type ScheduledMeetingsPostInputAttendee = { email: string; name?: string }
@@ -603,6 +628,97 @@ const operationRecordingList: QueryRef<
   loadValidators: async () => (await import('./validators')).operationRecordingList,
 }
 
+export type DefaultInviteRoomOutputInviteRoom = {
+  room: string
+  title: string | null
+  meeting_url: string
+}
+
+export type DefaultInviteRoomInput = Record<string, never>
+
+export type DefaultInviteRoomOutput = {
+  room: string | null
+  meeting_url: string | null
+  rooms: Array<DefaultInviteRoomOutputInviteRoom>
+}
+
+export type DefaultInviteRoomError = never
+
+const operationDefaultInviteRoom: QueryRef<
+  DefaultInviteRoomInput,
+  DefaultInviteRoomOutput,
+  DefaultInviteRoomError
+> = {
+  id: 'default_invite_room',
+  owner: 'meet',
+  kind: 'query',
+  publicName: 'rooms.defaultInvite',
+  method: 'GET',
+  path: 'rooms/default-invite',
+  prefix: '/api/suite/meet/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationDefaultInviteRoom,
+}
+
+export type SetDefaultInviteRoomInput = { room: string | null }
+
+export type SetDefaultInviteRoomOutput = null
+
+export type SetDefaultInviteRoomError = 'PermissionError'
+
+const operationSetDefaultInviteRoom: MutationRef<
+  SetDefaultInviteRoomInput,
+  SetDefaultInviteRoomOutput,
+  SetDefaultInviteRoomError
+> = {
+  id: 'set_default_invite_room',
+  owner: 'meet',
+  kind: 'mutation',
+  publicName: 'rooms.setDefaultInvite',
+  empty: true,
+  method: 'POST',
+  path: 'rooms/default-invite',
+  prefix: '/api/suite/meet/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError'],
+  loadValidators: async () => (await import('./validators')).operationSetDefaultInviteRoom,
+}
+
+export type MyRoomsOutputMyRoom = {
+  name: string
+  title: string | null
+  meeting_type: 'open' | 'restricted'
+  owner: string
+  modified: string
+  url: string
+}
+
+export type MyRoomsInput = Record<string, never>
+
+export type MyRoomsOutput = Array<MyRoomsOutputMyRoom>
+
+export type MyRoomsError = never
+
+const operationMyRooms: QueryRef<MyRoomsInput, MyRoomsOutput, MyRoomsError> = {
+  id: 'my_rooms',
+  owner: 'meet',
+  kind: 'query',
+  publicName: 'rooms.mine',
+  method: 'GET',
+  path: 'rooms/mine',
+  prefix: '/api/suite/meet/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationMyRooms,
+}
+
 export type RoomSearchOutputRoomSummary = { name: string; title: string | null }
 
 export type RoomSearchInput = { q: string }
@@ -873,6 +989,7 @@ const operationUpdateSettings: MutationRef<
 export const api = {
   rooms: {
     create: operationRoomsPost,
+    linkAvailability: operationRoomLinkAvailability,
     preview: operationRoomPreview,
     access: operationRoomAccess,
     connect: operationRoomConnection,
@@ -880,6 +997,9 @@ export const api = {
     join: operationRoomJoin,
     refreshToken: operationRoomToken,
     createLink: operationRoomLink,
+    defaultInvite: operationDefaultInviteRoom,
+    setDefaultInvite: operationSetDefaultInviteRoom,
+    mine: operationMyRooms,
     search: operationRoomSearch,
     get: operationRoomDocument,
     approve: operationApproveJoinRequest,

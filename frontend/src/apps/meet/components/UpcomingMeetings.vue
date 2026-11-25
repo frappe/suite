@@ -233,10 +233,18 @@ defineExpose({ reload })
 
 <template>
   <section
-    v-if="meetings.length || accountError || upcomingEvents.error"
+    v-if="meetings.length || accountError || upcomingEvents.error || upcomingEvents.data"
     :aria-label="__('Scheduled meetings')"
   >
-    <h2 class="mb-3 text-base font-medium text-ink-gray-8">{{ __('Upcoming meetings') }}</h2>
+    <div class="mb-3 flex h-7 items-center justify-between">
+      <h2 class="text-base font-medium text-ink-gray-8">{{ __('Upcoming meetings') }}</h2>
+      <Button
+        variant="ghost"
+        :label="__('Open Calendar')"
+        icon-right="lucide-chevron-right"
+        :route="{ path: '/calendar' }"
+      />
+    </div>
     <div
       v-if="accountError || upcomingEvents.error"
       class="rounded-5 border border-dashed border-outline-gray-2 px-4 py-8 text-center text-base text-ink-gray-5"
@@ -245,6 +253,9 @@ defineExpose({ reload })
       {{ __('Could not load meetings.') }}
       <Button variant="outline" :label="__('Retry')" @click="reload" />
     </div>
+    <p v-else-if="!meetings.length" class="text-base text-ink-gray-5">
+      {{ __('No upcoming meetings') }}
+    </p>
     <UpcomingEventList
       v-else
       :events="meetingRows"

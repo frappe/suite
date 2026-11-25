@@ -26,9 +26,10 @@ import {
 import { DialogDescription, DialogTitle } from 'reka-ui'
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 
-import { api, useMutation } from '@/api'
+import { api, useMutation, useQuery } from '@/api'
 import ConflictNote from '@/apps/calendar/components/ConflictNote.vue'
 import EventAlertList from '@/apps/calendar/components/EventAlertList.vue'
+import MeetRoomPicker from '@/apps/calendar/components/MeetRoomPicker.vue'
 import MobileEventForm from '@/apps/calendar/components/mobile/MobileEventForm.vue'
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import EventRepeatSettingsModal from '@/apps/calendar/components/Modals/EventRepeatSettingsModal.vue'
@@ -66,14 +67,19 @@ import {
   scopeOptions,
   type RecurringScope,
 } from '@/apps/calendar/utils/recurringScope'
+import { MeetIcon } from '@/apps/meet'
 import { useScreenSize } from '@/composables/useScreenSize'
-import { meetLogo } from '@/platform/brand'
 import { userTimeZone } from '@/platform/time-zone'
 import { translate as __ } from '@/platform/translation'
 import { TransportError } from '@/platform/transport'
 
 const show = defineModel<boolean>()
-const { selectedEvent, createdAction, askBeforeLeaving, loading } = defineProps<{
+const {
+  selectedEvent,
+  createdAction,
+  askBeforeLeaving,
+  loading: loadingContext,
+} = defineProps<{
   selectedEvent: any
   /** What the toast for a new event offers, once it is saved and sent. */
   createdAction?: (created: CreatedEvent) => { label: string; onClick: () => void }
@@ -100,6 +106,14 @@ const user = store.userResource
 const { participantIdentities, calendars } = store
 const { isMobile } = useScreenSize()
 const isNew = computed(() => !selectedEvent?.calendarEvent)
+const defaultInvite = useQuery(api.meet.rooms.defaultInvite, () =>
+  show.value && isNew.value ? {} : false,
+)
+const rememberInviteRoom = useMutation(api.meet.rooms.setDefaultInvite)
+const loading = computed(
+  () =>
+    loadingContext || (show.value && isNew.value && !defaultInvite.data && !defaultInvite.error),
+)
 // A saved draft: the server holds it but has sent nothing. Only a new event can become
 // one (the server refuses to turn a published event back into a draft), and saving it
 // as a draft again or publishing it are the two ways out of the modal.
@@ -225,7 +239,9 @@ const getDefaultEventData = () => {
     endDate,
     endTime,
     locations: [],
-    links: [],
+    links: defaultInvite.data?.meeting_url
+      ? [{ href: defaultInvite.data.meeting_url, content_type: 'text/html' }]
+      : [],
     alerts: [defaultAlert(isAllDay, startDate)],
     followsDefaults: false,
     description: '',
@@ -348,6 +364,45 @@ const meetUrl = computed(() => {
   if (!href) return ''
   return getMeetUrl(href) || href.replace(/\W+$/, '')
 })
+const removeMeetLink = () => {
+  event.links = event.links?.filter(
+    (link) => typeof link.href !== 'string' || !link.href.includes('/meet/'),
+  )
+}
+const inviteRooms = computed<NonNullable<typeof defaultInvite.data>['rooms']>((previous) =>
+  show.value ? (isNew.value ? (defaultInvite.data?.rooms ?? []) : []) : (previous ?? []),
+)
+const meetAddress = (url: string) => url.match(/\/meet\/[^/?#]+/)?.[0].slice(1)
+const useRoom = (url: string) => {
+  removeMeetLink()
+  event.addMeetLink = false
+  event.links = [...(event.links || []), { href: url, content_type: 'text/html' }]
+}
+const useNewRoom = () => {
+  removeMeetLink()
+  event.addMeetLink = true
+}
+const setMeet = (on: boolean) => {
+  if (!on) {
+    if (isNew.value) removeMeetLink()
+    event.addMeetLink = false
+    return
+  }
+  const url = defaultInvite.data?.meeting_url
+  if (isNew.value && url) useRoom(url)
+  else event.addMeetLink = true
+}
+const pickInviteRoom = (url: string | null) => {
+  if (url === null) {
+    useNewRoom()
+    return
+  }
+  const room = inviteRooms.value.find((option) => option.meeting_url === url)
+  if (!room) return
+  useRoom(url)
+  void rememberInviteRoom.run({ room: room.room }).catch(() => {})
+}
+const roomChoiceLabel = computed(() => meetAddress(meetUrl.value) || __('New link'))
 const joinMeet = () => {
   if (meetUrl.value) window.open(meetUrl.value, '_blank', 'noopener')
 }
@@ -373,30 +428,27 @@ const meetLinkDisplay = computed(() =>
 // hasn't been set — or one the start has overtaken — falls back to the default.
 let previousStart: { date?: string; time?: string } | null = null
 // The form opens once it is shown and has what it reads.
-const formOpen = computed(() => !!show.value && !loading)
-watch(formOpen, (val) => {
-  if (!val) return
-  Object.assign(event, getEventData())
-  // Reopening the same event leaves the start untouched, so the watcher below
-  // won't fire — seed the baseline here or the first edit has nothing to move from.
-  previousStart = {
-    date: event.startDate,
-    time: event.startTime,
-  }
-  originalParams = JSON.parse(JSON.stringify(eventParams.value))
-})
-// Filled in under a dialog already open, the title gets the caret its autofocus gave to nothing,
-// selected as autofocus would have it, so typing replaces a title the event came in with.
+const formOpen = computed(() => !!show.value && !loading.value)
 watch(
-  () => loading,
-  (now, before) => {
-    if (before && !now && show.value && isNew.value && !isMobile.value)
-      void nextTick(() => {
-        titleInput.value?.focus()
-        titleInput.value?.select()
-      })
+  formOpen,
+  (val) => {
+    if (!val) return
+    Object.assign(event, getEventData())
+    previousStart = {
+      date: event.startDate,
+      time: event.startTime,
+    }
+    originalParams = JSON.parse(JSON.stringify(eventParams.value))
   },
+  { immediate: true },
 )
+watch(loading, (now, before) => {
+  if (before && !now && show.value && isNew.value && !isMobile.value)
+    void nextTick(() => {
+      titleInput.value?.focus()
+      titleInput.value?.select()
+    })
+})
 // The phone's screen leaves at once; the dialog says so itself, once it has faded.
 watch(show, (val) => {
   if (!val && isMobile.value) void nextTick(() => emit('afterLeave'))
@@ -745,7 +797,7 @@ const createdId = (result: unknown) =>
 const isDirty = computed(() => Object.keys(patch.value).length > 0 || pendingMeetAttach.value)
 const showDiscardModal = ref(false)
 const cancel = () => {
-  if (!loading && isDirty.value) showDiscardModal.value = true
+  if (!loading.value && isDirty.value) showDiscardModal.value = true
   else show.value = false
 }
 
@@ -763,7 +815,7 @@ const discardChanges = () => {
   show.value = false
 }
 const leave = () => {
-  if (loading || !isDirty.value) {
+  if (loading.value || !isDirty.value) {
     show.value = false
     return
   }
@@ -1207,8 +1259,36 @@ const recurringScopeModalProps = computed(() => ({
             <div
               class="mt-4 flex items-center gap-3 rounded-6 border border-outline-gray-2 px-3.5 py-3"
             >
-              <template v-if="meetUrl">
-                <img :src="meetLogo" :alt="__('Frappe Meet')" class="size-7 shrink-0" />
+              <template v-if="isNew && inviteRooms.length && (meetUrl || event.addMeetLink)">
+                <MeetIcon class="size-6 shrink-0 text-[#E54E17]" />
+                <div class="flex min-w-0 flex-1 items-center gap-1">
+                  <span class="sr-only">{{ __('Frappe Meet') }}</span>
+                  <div class="-ms-2 min-w-0">
+                    <MeetRoomPicker
+                      :label="roomChoiceLabel"
+                      :url="meetUrl"
+                      :rooms="inviteRooms"
+                      @pick="pickInviteRoom"
+                    />
+                  </div>
+                  <Button
+                    v-if="meetUrl"
+                    variant="ghost"
+                    class="shrink-0"
+                    :tooltip="__('Copy Frappe Meet link')"
+                    @click="copyMeetLink"
+                  >
+                    <template #icon><Copy :size="14" class="icon text-ink-gray-5" /></template>
+                  </Button>
+                </div>
+                <Switch
+                  :model-value="true"
+                  :aria-label="__('Frappe Meet video call')"
+                  @update:model-value="setMeet"
+                />
+              </template>
+              <template v-else-if="meetUrl">
+                <MeetIcon class="size-6 shrink-0 text-[#E54E17]" />
                 <div class="min-w-0 flex-1">
                   <div class="text-sm font-medium text-ink-gray-8 mb-0.5">
                     {{ __('Frappe Meet') }}
@@ -1223,11 +1303,23 @@ const recurringScopeModalProps = computed(() => ({
                   <template #icon><Copy :size="14" class="icon text-ink-gray-5" /></template>
                 </Button>
                 <Button :label="__('Join')" @click="joinMeet" />
+                <Switch
+                  v-if="isNew"
+                  :model-value="true"
+                  :aria-label="__('Frappe Meet video call')"
+                  @update:model-value="setMeet"
+                />
               </template>
               <template v-else>
-                <img :src="meetLogo" :alt="__('Frappe Meet')" class="size-[18px] shrink-0" />
-                <span class="flex-1 text-base">{{ __('Add Frappe Meet video call') }}</span>
-                <Switch v-model="event.addMeetLink" />
+                <MeetIcon class="size-6 shrink-0 text-[#E54E17]" />
+                <span class="flex-1 text-base leading-7">{{
+                  __('Add Frappe Meet video call')
+                }}</span>
+                <Switch
+                  :model-value="event.addMeetLink"
+                  :aria-label="__('Frappe Meet video call')"
+                  @update:model-value="setMeet"
+                />
               </template>
             </div>
 
@@ -1414,12 +1506,16 @@ const recurringScopeModalProps = computed(() => ({
     :calendar-choices="eventCalendarOptions"
     :meet-url="meetUrl"
     :meet-link-display="meetLinkDisplay"
+    :invite-rooms="inviteRooms"
+    :room-choice-label="roomChoiceLabel"
+    @pick-invite-room="pickInviteRoom"
     @cancel="cancel"
     @save="handleSaveClick"
     @toggle-repeat="toggleRepeat"
     @set-all-day="setAllDay"
     @set-alerts="setAlerts"
     @join-meet="joinMeet"
+    @set-meet="setMeet"
   />
   <EventRepeatSettingsModal
     v-if="event?.startDate"

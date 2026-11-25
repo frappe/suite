@@ -8,7 +8,13 @@ export function meetingCodeFrom(value: string, origin: string): string {
     const url = new URL(code, origin)
     if (url.origin !== origin) return ''
     const match = url.pathname.match(/^\/meet\/([^/]+)\/?$/)
-    return match && pattern.test(match[1]) ? match[1] : ''
+    const address = match?.[1]
+    if (!address || ['scheduled', 'recordings'].includes(address.toLowerCase())) return ''
+    const custom = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+    return pattern.test(address) ||
+      (address.length >= 3 && address.length <= 40 && custom.test(address))
+      ? address
+      : ''
   } catch {
     return ''
   }

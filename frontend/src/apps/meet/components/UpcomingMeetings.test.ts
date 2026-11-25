@@ -263,9 +263,14 @@ describe('Meet upcoming list', () => {
     expect(root.textContent).not.toContain('Outside horizon')
   })
 
-  it('hides the section when there are no events', async () => {
+  it('says nothing is coming up and links to Calendar when there are no events', async () => {
     state.events = []
-    expect((await mount()).querySelector('section')).toBeNull()
+    const root = await mount()
+    await vi.waitFor(() => expect(root.textContent).toContain('No upcoming meetings'))
+    expect(root.querySelector('[role="alert"]')).toBeNull()
+    expect([...root.querySelectorAll('button')].map((button) => button.textContent)).toContain(
+      'Open Calendar',
+    )
   })
 
   it('shows a failed request and lets the user retry', async () => {
@@ -328,7 +333,9 @@ describe('Meet upcoming list', () => {
       },
     ]
     const root = await mount()
-    expect(root.querySelector('section')).toBeNull()
+    await vi.waitFor(() => expect(root.textContent).toContain('No upcoming meetings'))
+    for (const title of ['Ended', 'Unsafe', 'Not a room'])
+      expect(root.textContent).not.toContain(title)
   })
 
   it('shows today’s Meet events with date badges and participants and joins the selected room', async () => {
