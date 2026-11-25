@@ -337,7 +337,7 @@ describe('Home page', () => {
     const root = mount()
     const people = root.querySelector('[aria-label="Open Crowd"] [aria-label="Invited people"]')
     expect(people?.querySelectorAll('[aria-label^="Guest "]')).toHaveLength(5)
-    expect(people?.textContent).toContain('2+')
+    expect(people?.textContent).toContain('+2')
     expect(people?.querySelector('[title="Guest 4"]')).not.toBeNull()
     expect(people?.querySelector('[title="Guest 5"]')).toBeNull()
   })
