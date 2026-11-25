@@ -3,7 +3,7 @@ import { readonly } from 'vue'
 
 import { isChatReaction, QUICK_CHAT_REACTIONS } from '../../../../../suite/meet/types/chatReactions'
 
-const defaults = QUICK_CHAT_REACTIONS.slice(0, 3)
+const defaults = QUICK_CHAT_REACTIONS.slice(0, 4)
 const preferences = useStorage<string[]>('meet.quickReactions', defaults.slice(), undefined, {
   serializer: {
     read(value) {
@@ -11,11 +11,14 @@ const preferences = useStorage<string[]>('meet.quickReactions', defaults.slice()
         const emojis: unknown = JSON.parse(value)
         if (
           Array.isArray(emojis) &&
-          emojis.length === defaults.length &&
+          (emojis.length === defaults.length - 1 || emojis.length === defaults.length) &&
           emojis.every(isChatReaction) &&
           new Set(emojis).size === emojis.length
         ) {
-          return emojis
+          return [...new Set([...emojis, QUICK_CHAT_REACTIONS[3], ...defaults])].slice(
+            0,
+            defaults.length,
+          )
         }
       } catch {
         return defaults.slice()
@@ -37,8 +40,4 @@ export function setQuickReaction(slot: number, emoji: string) {
   if (existingSlot !== -1) next[existingSlot] = previous
   next[slot] = emoji
   preferences.value = next
-}
-
-export function resetQuickReactions() {
-  preferences.value = defaults.slice()
 }
