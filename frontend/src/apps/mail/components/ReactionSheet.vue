@@ -13,45 +13,51 @@
           {{ refusal }}
         </p>
         <EmojiGrid v-else-if="picker" class="!w-full" :picker :auto-focus="false" @select="pick" />
-        <div v-else class="grid grid-cols-[repeat(5,3rem)] justify-between gap-y-1">
+        <!-- Square cells, so the rows sit as far apart as the columns at any width. A whole cell
+             takes the tap; the circle in it shows the press and a reaction of yours. -->
+        <div v-else class="grid grid-cols-5">
           <button
             v-for="emoji in PHONE_REACTIONS"
             :key="emoji"
             type="button"
-            class="active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full text-2xl transition active:scale-95"
-            :class="{ 'bg-surface-gray-2': mine.has(emojiKey(emoji)) }"
+            class="group flex aspect-square items-center justify-center text-2xl"
             :aria-pressed="mine.has(emojiKey(emoji))"
             @click="pick(emoji)"
           >
-            {{ emoji }}
+            <span
+              class="group-active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition group-active:scale-95"
+              :class="{ 'bg-surface-gray-2': mine.has(emojiKey(emoji)) }"
+            >
+              {{ emoji }}
+            </span>
           </button>
           <button
             type="button"
             :aria-label="__('More reactions')"
-            class="text-ink-gray-6 active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition active:scale-95"
+            class="group text-ink-gray-6 flex aspect-square items-center justify-center"
             @click="showEvery"
           >
-            <Plus class="size-6" />
+            <span
+              class="group-active:bg-surface-gray-3 flex size-12 items-center justify-center rounded-full transition group-active:scale-95"
+            >
+              <Plus class="size-6" />
+            </span>
           </button>
         </div>
       </template>
-      <!-- Each row's emoji and count sit under the grid's first and last columns -->
+      <!-- On the grid's columns: the emoji under the first, the count under the last -->
       <ul
         v-if="groups.length && !picker"
         class="space-y-3"
-        :class="{ 'mt-4 border-t pt-4': !readonly }"
+        :class="{ 'mt-2 border-t pt-4': !readonly }"
       >
-        <li v-for="group in groups" :key="group.emoji" class="flex items-baseline">
-          <span class="w-12 shrink-0 text-center text-xl" aria-hidden="true">
-            {{ group.emoji }}
-          </span>
-          <p class="text-p-base text-ink-gray-8 min-w-0 flex-1">
+        <li v-for="group in groups" :key="group.emoji" class="grid grid-cols-5 items-baseline">
+          <span class="text-center text-xl" aria-hidden="true">{{ group.emoji }}</span>
+          <p class="text-p-base text-ink-gray-8 col-span-3 min-w-0">
             <span class="sr-only">{{ group.emoji }}</span>
             {{ group.who }}
           </p>
-          <span class="text-ink-gray-5 w-12 shrink-0 text-center text-base">
-            {{ group.count }}
-          </span>
+          <span class="text-ink-gray-5 text-center text-base">{{ group.count }}</span>
         </li>
       </ul>
     </div>
