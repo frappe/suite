@@ -19,7 +19,7 @@ const folderRoute = computed(() =>
 const rows = computed(() =>
   (recordings.data ?? []).slice(0, 3).map((recording) => ({
     name: recording.name,
-    title: recording.room_title || __('Meeting recording'),
+    title: recording.room_title || recording.meet_room,
     detail: [dayLabel(recording.started_at), durationLabel(recording.artifact_duration)]
       .filter(Boolean)
       .join(' ・ '),
