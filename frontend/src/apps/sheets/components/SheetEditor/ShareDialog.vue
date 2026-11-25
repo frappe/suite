@@ -107,7 +107,7 @@
           <Avatar :label="s.initials" :image="s.user_image || undefined" size="lg" :tooltip="s.full_name" />
           <div class="sd-member-info">
             <span class="sd-primary-text">{{ s.full_name }}</span>
-            <span class="sd-secondary-text">{{ s.user }}</span>
+            <span class="sd-secondary-text">{{ s.email }}</span>
           </div>
           <div class="shrink-0">
             <Select

@@ -148,7 +148,7 @@ def get_sheet_shares(name: str) -> list:
             continue
         identity = _user_identity(row["user"])
         row.update(identity)
-        row["user_image"] = frappe.db.get_value("User", row["user"], "user_image") or ""
+        row["email"] = frappe.db.get_value("User", row["user"], "email")
     return rows
 
 
