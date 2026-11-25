@@ -13,7 +13,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 
-import EmojiPicker from '@/components/EmojiPicker.vue'
+import EmojiPicker from '@/platform/emoji-picker/EmojiPicker.vue'
 import { translate as __ } from '@/platform/translation'
 
 import { isChatReaction } from '../../../../../suite/meet/types/chatReactions'
