@@ -1,8 +1,8 @@
 <!--
   A phone's reactions to one message, as a sheet: emoji to react with, then who reacted with each.
   A computer says who in a chip's tooltip, which a touch has no way to reach. The grid starts with
-  the desktop's palette; its last cell swaps the grid and the list for every emoji, at the sheet's
-  full width. A message that can't be reacted to says why in the grid's place, and still lists who
+  the desktop's palette; its last cell trades this sheet for one of every emoji, at that list's own
+  height. A message that can't be reacted to says why in the grid's place, and still lists who
   reacted. A read-only view lists who reacted alone.
 -->
 <template>
@@ -12,7 +12,6 @@
         <p v-if="refusal" class="text-p-base text-ink-gray-6 px-2 pb-2 text-center">
           {{ refusal }}
         </p>
-        <EmojiGrid v-else-if="picker" class="!w-full" :picker :auto-focus="false" @select="pick" />
         <!-- Its first emoji starts where the full list's first one does -->
         <div v-else class="grid grid-cols-[repeat(5,3rem)] justify-between gap-y-6">
           <button
@@ -37,11 +36,7 @@
         </div>
       </template>
       <!-- Each row's emoji and count sit under the grid's first and last columns -->
-      <ul
-        v-if="groups.length && !picker"
-        class="space-y-3"
-        :class="{ 'mt-4 border-t pt-4': !readonly }"
-      >
+      <ul v-if="groups.length" class="space-y-3" :class="{ 'mt-4 border-t pt-4': !readonly }">
         <li v-for="group in groups" :key="group.emoji" class="flex items-baseline">
           <span class="w-12 shrink-0 text-center text-3xl" aria-hidden="true">
             {{ group.emoji }}
@@ -57,13 +52,18 @@
       </ul>
     </div>
   </BottomSheet>
+  <BottomSheet v-model:open="everyOpen" :title="__('Emoji')">
+    <div class="px-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+      <EmojiGrid class="!w-full" :picker :auto-focus="false" @select="pick" />
+    </div>
+  </BottomSheet>
 </template>
 
 <script setup lang="ts">
 import type { Picker } from 'emoji-mart'
 import { BottomSheet } from 'frappe-ui'
 import { Plus } from 'lucide-vue-next'
-import { computed, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef } from 'vue'
 
 import { emojiKey, type ReactionGroup } from '@/apps/mail/utils/reactions'
 import EmojiGrid from '@/platform/emoji-picker/EmojiGrid.vue'
@@ -84,20 +84,22 @@ const PHONE_REACTIONS = [...QUICK_REACTIONS, '🎉', '🔥', '👏']
 
 const mine = computed(() => new Set(groups.filter((g) => g.mine).map((g) => emojiKey(g.emoji))))
 
-// Every emoji, once More has loaded them. It opens on the grid each time.
+// Every emoji, in a sheet of its own once More has loaded them. A failed load says so there.
 const picker = shallowRef<typeof Picker>()
-watch(open, (isOpen) => {
-  if (isOpen) picker.value = undefined
-})
+const everyOpen = ref(false)
 let request = 0
 async function showEvery() {
   const asked = ++request
   const loaded = await prepareEmojiPicker()
-  if (asked === request && open.value) picker.value = loaded
+  if (asked !== request || !open.value) return
+  picker.value = loaded
+  open.value = false
+  everyOpen.value = true
 }
 
 function pick(emoji: string) {
   emit('pick', emoji)
   open.value = false
+  everyOpen.value = false
 }
 </script>
