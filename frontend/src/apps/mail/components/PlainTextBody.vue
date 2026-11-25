@@ -3,7 +3,7 @@
     <template v-for="(segment, index) in segments" :key="index">
       <template v-if="segment.kind === 'quote'">
         <button
-          class="bg-surface-gray-2 text-ink-gray-6 hover:bg-surface-gray-3 my-3 rounded-6 px-1.5 leading-4"
+          class="bg-surface-gray-2 text-ink-gray-6 hover:bg-surface-gray-3 active:bg-surface-gray-3 my-3 rounded-6 px-1.5 leading-4 [-webkit-tap-highlight-color:transparent]"
           :aria-expanded="expanded.has(index)"
           :aria-label="__('Show quoted text')"
           @click="toggle(index)"

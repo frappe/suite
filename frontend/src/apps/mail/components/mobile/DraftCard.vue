@@ -25,12 +25,7 @@
           <!-- The stop is on the wrapper, which lets the tap reach the sheet's own trigger. -->
           <div class="ml-auto flex shrink-0" @click.stop>
             <AdaptiveDropdown :options align="end">
-              <Button
-                variant="ghost"
-                class="touch-target !size-[30px]"
-                :tooltip="__('More')"
-                :aria-label="__('More')"
-              >
+              <Button variant="ghost" class="touch-target !size-[30px]" :aria-label="__('More')">
                 <template #icon>
                   <Ellipsis class="text-ink-gray-5 icon !size-[17px]" />
                 </template>

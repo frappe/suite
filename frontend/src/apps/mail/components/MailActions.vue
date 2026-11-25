@@ -7,7 +7,7 @@
       <Button
         variant="ghost"
         class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target"
-        :tooltip="__('More')"
+        :tooltip="isMobile ? undefined : __('More')"
         :aria-label="__('More')"
       >
         <template #icon>
@@ -22,7 +22,7 @@
     :key="action.label"
     variant="ghost"
     class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target"
-    :tooltip="action.label"
+    :tooltip="isMobile ? undefined : action.label"
     :aria-label="action.label"
     @click.stop="action.onClick"
   >
@@ -38,7 +38,7 @@
     :key="action.label"
     variant="ghost"
     class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target"
-    :tooltip="action.label"
+    :tooltip="isMobile ? undefined : action.label"
     :aria-label="action.label"
     @click.stop="action.onClick"
   >

@@ -323,9 +323,20 @@ const srcdoc = computed(() => {
 					border-radius: 8px;
 					transition: background .2s;
 					margin: 12px 0;
+					/* iOS paints its own tap highlight over a pressed button, which shows blue on a
+					   phone; the press is shown by the button's own shade instead. */
+					-webkit-tap-highlight-color: transparent;
 				}
 
-				.quote-toggle:hover {
+				/* A phone keeps :hover on whatever was tapped last, which held the button shaded after
+				   a tap: there the shade lasts as long as the press. */
+				@media (hover: hover) {
+					.quote-toggle:hover {
+						background: ${colors.value.buttonHover};
+					}
+				}
+
+				.quote-toggle:active {
 					background: ${colors.value.buttonHover};
 				}
 

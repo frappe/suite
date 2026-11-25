@@ -725,19 +725,10 @@ const onFilesSelected = async (files: File[]) => {
   }
 }
 
+// Two rows need no line between them, so they are one group.
 const ACTIONS = [
-  {
-    group: '',
-    options: [
-      { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
-    ],
-  },
-  {
-    group: '',
-    options: [
-      { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
-    ],
-  },
+  { label: __('Schedule send'), onClick: () => openScheduleModal(), icon: CalendarClock },
+  { label: __('Discard'), onClick: () => discardMail(), icon: Trash2, theme: 'red' as const },
 ]
 
 const now = useMinuteClock()

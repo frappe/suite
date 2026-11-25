@@ -11,8 +11,9 @@
     <BottomSheet v-model:open="open" :title="title">
       <div class="px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
         <template v-for="(group, gi) in groups" :key="gi">
-          <!-- Mirror the desktop Dropdown's separators between label-less groups. -->
-          <div v-if="gi && !group.label" class="mx-3 my-2 border-t" />
+          <!-- Mirror the desktop Dropdown's separators between label-less groups, where there
+               are rows enough for one to sort: between two rows a line only adds weight. -->
+          <div v-if="gi && !group.label && rowCount > 2" class="mx-3 my-2 border-t" />
           <div v-if="group.label" class="text-ink-gray-5 px-3 pb-1 pt-3 text-sm">
             {{ group.label }}
           </div>
@@ -134,6 +135,9 @@ const groups = computed(() => {
   const flatVisible = visible(flat)
   return [...(flatVisible.length ? [{ label: '', items: flatVisible }] : []), ...grouped]
 })
+const rowCount = computed(() =>
+  groups.value.reduce((count, group) => count + group.items.length, 0),
+)
 
 // Dropdown option icons come in three shapes across the app: a feather name
 // string, a component, or a prebuilt vnode (h(Icon, ...)). Normalize all three
