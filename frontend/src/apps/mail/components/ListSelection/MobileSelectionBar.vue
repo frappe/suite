@@ -34,11 +34,17 @@
         <button
           type="button"
           :aria-label="__('Clear selection')"
-          class="bg-surface-gray-3 active:bg-surface-gray-4 flex h-11 shrink-0 items-center gap-2 rounded-full pl-3 pr-4 transition active:scale-95"
+          class="bg-surface-gray-3 active:bg-surface-gray-4 flex h-11 shrink-0 items-center gap-1 rounded-full px-3 transition active:scale-95"
           @click="emit('toggleAll', false)"
         >
           <X class="text-ink-gray-7 size-5" />
-          <span class="text-ink-gray-8 text-base !font-medium tabular-nums" aria-live="polite">
+          <!-- Three digits' room, so the pill and the actions after it hold still from 1 to 999:
+               a tabular digit is about 9.3px here, a little wider than a ch, so the room is set in
+               pixels. -->
+          <span
+            class="text-ink-gray-8 min-w-7 text-center text-base !font-medium tabular-nums"
+            aria-live="polite"
+          >
             {{ count }}
           </span>
         </button>

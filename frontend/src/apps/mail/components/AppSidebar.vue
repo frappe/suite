@@ -456,7 +456,7 @@ const mailboxItems = computed(
 )
 
 // The folder list of "All accounts", grouped as an account's is: system folders and Starred, then the
-// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, New Folder —
+// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, New folder —
 // has a merged form, so none of it is offered here.
 const unifiedSidebarItems = computed(() => {
   const folders: UnifiedFolder[] = unifiedFolders.data ?? []
@@ -494,7 +494,7 @@ const unifiedSidebarItems = computed(() => {
   ]
 })
 
-// The one thing a section's heading offers to do, if anything (only the folders' "New Folder").
+// The one thing a section's heading offers to do, if anything (only the folders' "New folder").
 type SectionAction = { label: string; onClick: () => void }
 interface SidebarSection {
   key?: string
@@ -585,9 +585,9 @@ const sidebarItems = computed<SidebarSection[]>(() => {
     key: 'folders',
     items: yourFolders.length
       ? yourFolders
-      : [{ label: __('New Folder'), icon: Plus, to: undefined, onClick: newFolder }],
+      : [{ label: __('New folder'), icon: Plus, to: undefined, onClick: newFolder }],
   }
-  if (yourFolders.length) folders.action = { label: __('New Folder'), onClick: newFolder }
+  if (yourFolders.length) folders.action = { label: __('New folder'), onClick: newFolder }
   const groups = [{ label: '', key: 'lead', items: withMore(leadItems, secondaryItems) }, folders]
 
   return groups

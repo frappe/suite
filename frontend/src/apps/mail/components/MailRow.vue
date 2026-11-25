@@ -43,15 +43,15 @@
       :class="[
         ROW_BOX_CLASS,
         {
-          // The grey under a finger says a long press will pick the row. Picking is a tap already
-          // while selecting, and the grey there blinked: on as the finger landed, off as it lifted,
-          // then on again as the tap picked the row.
-          '!bg-surface-gray-1': isSelected || (isTouching && !pressBeganSelecting),
-          // A press while selecting toggles the row, and the row's own grey says which way it went; the
-          // press grey on top of that flashed a deselected row darker than it ends up. Taken from when
-          // the press began: deselecting the last row ends selecting while the finger is still down.
-          // Nor while it is dragged sideways, which is no press.
-          'max-sm:active:bg-surface-gray-2': !pressBeganSelecting && !swiping.side,
+          // The grey under a finger says a long press will pick the row. A tap picks it already
+          // while selecting, or on the avatar, and the grey there blinked: on as the finger landed,
+          // off as it lifted, then on again as the tap picked the row.
+          '!bg-surface-gray-1': isSelected || (isTouching && !pressPicks),
+          // A press that picks (while selecting, or on the avatar) toggles the row, and the row's own
+          // grey says which way it went; the press grey on top of that flashed a deselected row darker
+          // than it ends up. Taken from when the press began: deselecting the last row ends selecting
+          // while the finger is still down. Nor while it is dragged sideways, which is no press.
+          'max-sm:active:bg-surface-gray-2': !pressPicks && !swiping.side,
           // Moved off its place, it covers what it does behind it.
           'bg-surface-base': swiping.side,
           '!py-1': isFullWidth,
@@ -107,7 +107,7 @@
         >
           <Check class="text-ink-base m-auto h-5 w-5 stroke-[4px]" />
         </div>
-        <div v-show="showAvatar" class="relative">
+        <div v-show="showAvatar" ref="avatarBox" class="relative">
           <Avatar
             :label="avatarLabel"
             :image="avatarImage"
@@ -425,6 +425,13 @@ const onRowClick = (e: MouseEvent) => {
     e.stopPropagation()
     return
   }
+  // The long press picked the row already. iOS still clicks as the finger lifts, which put it back
+  if (longPressed) {
+    longPressed = false
+    e.preventDefault()
+    e.stopPropagation()
+    return
+  }
   if (!selectionMode) return
   if (checkedEventTarget.closest('button')) return
   e.preventDefault()
@@ -445,21 +452,28 @@ let touchStartX = 0
 let touchStartY = 0
 let touchMoved = false
 let touchTimer: ReturnType<typeof setTimeout> | null = null
+let longPressed = false
 
 const isTouching = ref(false)
-const pressBeganSelecting = ref(false)
+// Whether a tap on this press picks the row: while selecting, or on the avatar
+const pressPicks = ref(false)
+const avatarBox = useTemplateRef<HTMLElement>('avatarBox')
 
 const onTouchStart = (e: TouchEvent) => {
   rowSwipe.onTouchStart(e)
   touchMoved = false
-  pressBeganSelecting.value = selectionMode
+  longPressed = false
+  pressPicks.value =
+    selectionMode || (e.target instanceof Node && !!avatarBox.value?.contains(e.target))
   touchStartX = e.touches[0].clientX
   touchStartY = e.touches[0].clientY
   isTouching.value = true
   document.addEventListener('touchmove', onTouchMove, { passive: true })
 
   touchTimer = setTimeout(() => {
-    if (!touchMoved) emit('setSelected', !isSelected)
+    if (touchMoved) return
+    longPressed = true
+    emit('setSelected', !isSelected)
   }, 450)
 }
 

@@ -826,7 +826,7 @@
                 <Button
                   variant="ghost"
                   size="lg"
-                  class="text-ink-gray-5 min-w-0 flex-1 !justify-start !rounded-full"
+                  class="text-ink-gray-5 !text-md-medium min-w-0 flex-1 !justify-start !rounded-full"
                   :label="replyLabel"
                   @click="replyToNewest"
                 >
