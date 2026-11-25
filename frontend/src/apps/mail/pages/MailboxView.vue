@@ -256,6 +256,7 @@
                     :unarchive="true"
                     :threads="row.threads"
                     :expanded="row.expanded"
+                    :selection-mode="mobileSelectionMode"
                     :is-selected="isStackSelected(row.threads.map((t) => t.thread_id))"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"

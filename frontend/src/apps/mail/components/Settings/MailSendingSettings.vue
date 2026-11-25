@@ -1,7 +1,10 @@
 <template>
   <AppSettingsHeader :title="__('Outgoing')" />
   <AppSettingsBody>
-    <div class="flex flex-col gap-10">
+    <!-- Shown once what it says is read, all of it at once: the rows that need the preferences and
+         the auto-reply's line would otherwise come in after the rest. Hidden, not left out, so every
+         part starts reading as the page opens rather than once it shows. -->
+    <div v-show="settled && autoReply.status !== 'pending'" class="flex flex-col gap-10">
       <SettingsSection :title="__('Identity')">
         <div class="divide-y divide-outline-gray-1">
           <SettingsDialogRow
@@ -90,7 +93,7 @@ import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
-const { preferences, flag } = useAccountPreferences()
+const { preferences, settled, flag } = useAccountPreferences()
 const dropSentMail = flag('destroy_email_after_submit')
 const dropSentNewsletters = flag('destroy_newsletter_after_submit')
 
