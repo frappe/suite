@@ -356,14 +356,12 @@ const swiping = reactive({
   armed: rowSwipe.armed,
   boxStyle: rowSwipe.boxStyle,
 })
-// What shows behind a swiped row: a tint while the swipe is short of the threshold, solid past it.
-// frappe-ui's subtle and solid Button pairs.
+// What shows behind a swiped row: a tint while the swipe is short of the threshold, a deeper one
+// past it. frappe-ui's subtle Button fills, at rest and pressed. The icon and its word are the
+// same grey on either: only the fill says which it is.
 const TONES = {
-  red: {
-    idle: 'bg-surface-red-2 text-ink-red-7',
-    armed: 'bg-surface-red-7 text-ink-base dark:text-ink-red-9',
-  },
-  gray: { idle: 'bg-surface-gray-2 text-ink-gray-8', armed: 'bg-surface-gray-7 text-ink-base' },
+  red: { idle: 'bg-surface-red-2 text-ink-gray-7', armed: 'bg-surface-red-4 text-ink-gray-9' },
+  gray: { idle: 'bg-surface-gray-2 text-ink-gray-7', armed: 'bg-surface-gray-4 text-ink-gray-9' },
 }
 // The gap the row leaves on the side it goes, for what it does to stand in. It moves as the row
 // does, on its way back or out too.
