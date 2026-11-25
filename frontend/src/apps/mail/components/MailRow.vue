@@ -4,7 +4,7 @@
   <!-- On a phone the row swipes (see useRowSwipe): this box holds it in place, clips it as it goes,
        and shows what the swipe does behind it. The row's own attributes go on the row. -->
   <div ref="box" :class="{ 'relative overflow-x-clip': swipeEnabled }" :style="swiping.boxStyle">
-    <!-- A tint of what the swipe does, solid once letting go would do it. The icon and its
+    <!-- A tint of what the swipe does, deeper once letting go would do it. The icon and its
          word come in a fixed way off the row's edge, in the gap it leaves, and once all in stay in
          the middle of it: the middle of the row once it is out, while its space closes up. -->
     <!-- One per side (the key), and no fade: a drag that crosses over, or back over the threshold,
