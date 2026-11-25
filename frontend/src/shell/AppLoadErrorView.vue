@@ -5,25 +5,15 @@
   On a phone, a page of an app of its own (Mail) leads back to that app, not to the Suite.
 -->
 <template>
-  <section
+  <StatusPage
     role="alert"
-    class="flex h-full flex-col items-center justify-center gap-4 p-8 text-center"
-    aria-labelledby="load-error-title"
+    icon="lucide-cloud-off"
+    :title="__('This page did not load')"
+    :description="__('Check your connection, then reload the page.')"
   >
-    <span class="lucide-cloud-off size-10 text-ink-gray-5" aria-hidden="true" />
-    <div class="flex flex-col gap-1.5">
-      <h1 id="load-error-title" class="text-2xl-semibold text-ink-gray-9">
-        {{ __('This page did not load') }}
-      </h1>
-      <p class="text-p-base text-ink-gray-6">
-        {{ __('Check your connection, then reload the page.') }}
-      </p>
-    </div>
-    <div class="flex items-center gap-3">
-      <Button variant="solid" @click="reload">{{ __('Reload') }}</Button>
-      <a :href="home.to" class="text-sm text-ink-gray-6 hover:underline">{{ home.label }}</a>
-    </div>
-  </section>
+    <Button variant="solid" size="md" @click="reload">{{ __('Reload') }}</Button>
+    <Button variant="subtle" size="md" @click="goHome">{{ home.label }}</Button>
+  </StatusPage>
 </template>
 
 <script setup lang="ts">
@@ -32,6 +22,7 @@ import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 import { translate as __ } from '@/platform/translation'
+import StatusPage from '@/shell/StatusPage.vue'
 import { isMobile } from '@/shell/useIsMobile'
 
 const props = defineProps<{ phoneApp?: { to: string; label: () => string } }>()
@@ -49,5 +40,10 @@ function reload() {
   const target = route.query.redirect
   const path = typeof target === 'string' && /^\/(?!\/)/.test(target) ? target : '/home'
   window.location.assign(path)
+}
+
+// A page load, not the router: the code this page could not load may be the router's next page.
+function goHome() {
+  window.location.assign(home.value.to)
 }
 </script>

@@ -103,6 +103,9 @@ describe('a page whose code fails to load', () => {
     return { router, root }
   }
 
+  const button = (root: Element, label: string) =>
+    [...root.querySelectorAll('button')].find((each) => each.textContent?.trim() === label)
+
   async function open(router: ReturnType<typeof mountRouter>['router'], path: string) {
     await router.push(path).catch(() => {})
     await vi.waitFor(() => expect(router.currentRoute.value.matched.length).toBeGreaterThan(0))
@@ -161,13 +164,14 @@ describe('a page whose code fails to load', () => {
     const { router, root } = mountRouter(new TypeError('Failed to fetch'))
 
     await open(router, '/mail?compose=1')
-    const home = root.querySelector('a')
-    expect([home?.textContent, home?.getAttribute('href')]).toEqual(['Go to Mail', '/mail'])
+    button(root, 'Go to Mail')?.click()
+    expect(assign).toHaveBeenLastCalledWith('/mail')
 
     // A page of no app of its own still leads to the Suite.
     cleanup?.()
     const other = mountRouter(new TypeError('Failed to fetch'))
     await open(other.router, '/broken')
-    expect(other.root.querySelector('a')?.getAttribute('href')).toBe('/home')
+    button(other.root, 'Go to Home')?.click()
+    expect(assign).toHaveBeenLastCalledWith('/home')
   })
 })
