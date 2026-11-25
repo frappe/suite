@@ -201,7 +201,7 @@ describe('Upload tracker rows', () => {
     const alert = shown.root.querySelector("[data-slot='alert']")!
     expect(alert.textContent).toBe('Storage is fullFree up space, then retry.Manage storage')
     alert.querySelector('button')!.click()
-    expect(settings.openSettings).toHaveBeenCalledWith('drive.statistics')
+    expect(settings.openSettings).toHaveBeenCalledWith('account.storage')
     const header = shown.root.querySelector('header')!
     expect(
       [...header.querySelectorAll('button')].map((button) => button.textContent),

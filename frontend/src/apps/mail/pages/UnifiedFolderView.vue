@@ -2,19 +2,12 @@
   <!-- Mobile title header. The toolbar below carries the bottom border, matching the
 	     mailbox structure. -->
   <!-- In a category other than Primary the title names it and leads back to Primary. -->
-  <!-- Every account's Inbox is named so, since nothing else on a phone's list says the accounts
-       are merged; another merged folder keeps its own name. -->
+  <!-- A merged folder is named as one account's is: Inbox, Sent. -->
   <MobileTitleHeader
     v-if="isMobile"
     :with-back="!!inboxTab && inboxTab !== 'primary'"
     :with-menu="!inboxTab || inboxTab === 'primary'"
-    :title="
-      inboxTab && inboxTab !== 'primary'
-        ? tabName(inboxTab)
-        : folder === INBOX_FOLDER
-          ? __('All Inboxes')
-          : folderLabel
-    "
+    :title="inboxTab && inboxTab !== 'primary' ? tabName(inboxTab) : folderLabel"
     @back="router.push(routeForTab('primary'))"
   >
     <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
@@ -982,7 +975,7 @@ type PaneCommand =
 
 function runPaneCommand(command: PaneCommand, account?: string) {
   const acting = account ?? openRow.value?.account
-  if (!acting) return Promise.reject(new Error(__('Thread is no longer in the list.')))
+  if (!acting) return Promise.reject(new Error(__('Conversation is no longer in the list.')))
   switch (command.kind) {
     case 'add':
       return client.mutation(api.mail.messages.addToFolder, {
@@ -1073,13 +1066,19 @@ const handleAddToMailbox = (mailboxId: string) => {
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, false)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), {
-      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+      onClick: folder
+        ? __('Conversation removed from {0}', [folder])
+        : __('Conversation removed from folder'),
     })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
-    { onClick: folder ? __('Thread added to {0}', [folder]) : __('Thread added to folder') },
+    {
+      onClick: folder
+        ? __('Conversation added to {0}', [folder])
+        : __('Conversation added to folder'),
+    },
     undoAction,
   )
 }
@@ -1107,14 +1106,16 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, true)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), {
-      onClick: __('Thread added back'),
+      onClick: __('Conversation added back'),
     })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
     {
-      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+      onClick: folder
+        ? __('Conversation removed from {0}', [folder])
+        : __('Conversation removed from folder'),
     },
     undoAction,
   )
@@ -1171,7 +1172,7 @@ const fileMail = (mail: Mail, account: string | undefined, action: Filing, targe
         mailbox: target ?? null,
         screen_action: action === 'not_junk' ? 'Accepted' : null,
       })
-    : Promise.reject(new Error(__('Thread is no longer in the list.')))
+    : Promise.reject(new Error(__('Conversation is no longer in the list.')))
 const handleMailMove = (mail: Mail, target: string) => {
   const account = openRow.value?.account
   const folder = folderName(target)
@@ -1228,7 +1229,7 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
   // The auto mark-as-read on opening a thread is silent (no toast); still roll back on failure.
   if (silent) return void request.catch(() => {})
   raiseOptimisticToast(request, {
-    onClick: __('Thread marked as {0}', [seen ? __('read') : __('unread')]),
+    onClick: __('Conversation marked as {0}', [seen ? __('read') : __('unread')]),
   })
 }
 
@@ -1344,18 +1345,23 @@ const fileThreads = (
   const one = threads.length === 1
   const folderOfTarget = target ? folderName(target) : undefined
   const said = () => {
-    if (action === 'archive') return one ? __('Thread archived') : __('Threads archived')
-    if (action === 'unarchive') return one ? __('Thread unarchived') : __('Threads unarchived')
-    if (action === 'trash') return one ? __('Thread moved to Trash') : __('Threads moved to Trash')
+    if (action === 'archive')
+      return one ? __('Conversation archived') : __('Conversations archived')
+    if (action === 'unarchive')
+      return one ? __('Conversation unarchived') : __('Conversations unarchived')
+    if (action === 'trash')
+      return one ? __('Conversation moved to Trash') : __('Conversations moved to Trash')
     if (action === 'junk' || action === 'not_junk') {
       const state = action === 'junk' ? __('Junk') : __('Not Junk')
-      return one ? __('Thread marked as {0}', [state]) : __('Threads marked as {0}', [state])
+      return one
+        ? __('Conversation marked as {0}', [state])
+        : __('Conversations marked as {0}', [state])
     }
     return folderOfTarget
       ? one
-        ? __('Thread moved to {0}', [folderOfTarget])
-        : __('Threads moved to {0}', [folderOfTarget])
-      : __('Thread moved')
+        ? __('Conversation moved to {0}', [folderOfTarget])
+        : __('Conversations moved to {0}', [folderOfTarget])
+      : __('Conversation moved')
   }
   // Said on the click, but for an archive from a list the rows stay on: only the answer says whether
   // it left the Inbox or was only added to Archive.
@@ -1371,15 +1377,15 @@ const fileThreads = (
   const undone =
     action === 'junk'
       ? one
-        ? __('Thread marked as Not Junk')
-        : __('Threads marked as Not Junk')
+        ? __('Conversation marked as Not Junk')
+        : __('Conversations marked as Not Junk')
       : action === 'not_junk'
         ? one
-          ? __('Thread marked as Junk')
-          : __('Threads marked as Junk')
+          ? __('Conversation marked as Junk')
+          : __('Conversations marked as Junk')
         : one
-          ? __('Thread moved back')
-          : __('Threads moved back')
+          ? __('Conversation moved back')
+          : __('Conversations moved back')
   actPerAccount(
     threads,
     (account, rows) =>
@@ -1449,8 +1455,14 @@ const snoozeTo = (threads: Thread[], until: string) => {
     { onClick: snoozedMessage(threads.length, until) },
     // Rows that left come back on the Undo's click; a list that kept them reads them again.
     leaves
-      ? { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') }
-      : { onAnswer: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
+      ? {
+          onClick:
+            threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+        }
+      : {
+          onAnswer:
+            threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+        },
     { putBack },
   )
 }
@@ -1464,8 +1476,13 @@ const unsnoozeThreads = (threads: Thread[]) => {
       client
         .mutation(api.mail.messages.unsnooze, { account, ids: copyIds(rows), leaves: folder })
         .then((answer) => waited.set(account, answer.waited)),
-    { onClick: threads.length === 1 ? __('Thread unsnoozed') : __('Threads unsnoozed') },
-    { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
+    {
+      onClick: threads.length === 1 ? __('Conversation unsnoozed') : __('Conversations unsnoozed'),
+    },
+    {
+      onClick:
+        threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+    },
     { putBack, restore: (account) => resnooze(account, waited.get(account) ?? []) },
   )
 }
@@ -1571,7 +1588,7 @@ const setThreadsSeen = (threads: Thread[], seen: boolean) => {
         applySeen(seen ? 0 : 1) // revert the optimistic update
         throw error
       }),
-    { onClick: __('Threads marked as {0}', [seen ? __('read') : __('unread')]) },
+    { onClick: __('Conversations marked as {0}', [seen ? __('read') : __('unread')]) },
   )
 }
 
@@ -1723,7 +1740,7 @@ const handleDelete = (rows: Thread[]) => {
       refreshThreads()
       throw error
     }),
-    { onClick: rows.length === 1 ? __('Thread deleted') : __('Threads deleted') },
+    { onClick: rows.length === 1 ? __('Conversation deleted') : __('Conversations deleted') },
   )
 }
 

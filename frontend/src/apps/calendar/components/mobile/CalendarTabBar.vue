@@ -18,7 +18,7 @@
         aria-hidden="true"
       />
     </MobileNavItem>
-    <MobileNavItem :label="__('Profile')" :active="onProfile" @click="openProfile">
+    <MobileNavItem :label="__('Settings')" :active="onProfile" @click="openProfile">
       <Avatar :image="session.user.value?.avatar ?? undefined" :label="accountLabel" size="md" />
     </MobileNavItem>
   </MobileNav>

@@ -42,6 +42,8 @@ export const calendarSettings = {
       id: 'calendar.advanced',
       label: () => __('Advanced'),
       icon: 'lucide-wrench',
+      // Files and mail apps are set up from a computer, not a phone.
+      onPhone: false,
       body: scoped(() => import('@/apps/calendar/components/Settings/AdvancedSettings.vue')),
       sections: [
         {

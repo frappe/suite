@@ -180,7 +180,7 @@ async function mount() {
   root = document.createElement('div')
   app = createApp({ render: () => h(SuiteSettingsDialog, { open: isOpen.value }) })
   app.config.globalProperties.__ = (text: string) => text
-  app.provide(SETTINGS_GROUPS_KEY, [async () => account, async () => mail])
+  app.provide(SETTINGS_GROUPS_KEY, [account, mail])
   // On the page, so its parts can take focus
   document.body.append(root)
   app.mount(root)
@@ -239,11 +239,6 @@ afterEach(() => {
   root.remove()
 })
 
-// Stays first: the groups load once, and the box shows late only on that first open
-it('puts the cursor in the search box when the groups load on the first open', async () => {
-  await mount()
-  expect(document.activeElement).toBe(searchBox())
-})
 it('lists every tab, and no section, until something is searched for', async () => {
   await mount()
   expect(sidebar()).toEqual(['tab Profile', 'tab Sending', 'tab Import and export', 'tab Advanced'])

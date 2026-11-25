@@ -13,11 +13,11 @@ export const useThreadPin = () => {
   const said = (pinned: boolean, many = false) =>
     many
       ? pinned
-        ? __('Threads pinned')
-        : __('Threads unpinned')
+        ? __('Conversations pinned')
+        : __('Conversations unpinned')
       : pinned
-        ? __('Thread pinned')
-        : __('Thread unpinned')
+        ? __('Conversation pinned')
+        : __('Conversation unpinned')
 
   const pinMails = (account: string, ids: string[], pinned: boolean, mailbox: string) =>
     raiseOptimisticToast(

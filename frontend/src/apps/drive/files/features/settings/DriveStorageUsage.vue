@@ -1,16 +1,11 @@
 <!--
   How much the caller's personal Drive holds, against its quota, and what
   those bytes are: totals by type and the largest items, both named as a
-  Drive listing shows them. One request answers all three, so the tab loads
-  once, and every state shares one layout.
+  Drive listing shows them. One request answers all three, so the section loads
+  once, and every state shares one layout. It is Drive's part of the Storage tab.
 -->
 <template>
-  <!-- The server folds a document's media into the document, so every listed
-       item is one Drive shows. The description says so: those bytes are real. -->
-  <SettingsPage
-    :title="__('Storage')"
-    :description="__('Pictures and videos inside a document count towards that document.')"
-  >
+  <div>
     <LoadFailed
       v-if="failed"
       variant="section"
@@ -21,6 +16,11 @@
       <div class="flex flex-col gap-2">
         <Progress :value="percent" size="md" :aria-label="__('Storage used')" />
         <p class="text-base text-ink-gray-7">{{ summary }}</p>
+        <!-- The server folds a document's media into the document, so every listed item is one
+             Drive shows. This says so: those bytes are real. -->
+        <p class="text-p-sm text-ink-gray-5">
+          {{ __('Pictures and videos inside a document count towards that document.') }}
+        </p>
       </div>
 
       <div class="grid gap-6 border-t pt-6 sm:grid-cols-2">
@@ -84,7 +84,7 @@
         </section>
       </div>
     </div>
-  </SettingsPage>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -96,7 +96,6 @@ import { formatBytes } from '@/apps/drive/files/internal/format'
 import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
-import SettingsPage from './SettingsPage.vue'
 import { storageTypeIcon, storageTypeTint } from './storageTypes'
 
 const discovered = useQuery(api.drive.roots.list, {})

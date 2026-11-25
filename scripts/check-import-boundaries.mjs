@@ -95,7 +95,6 @@ const moduleGraphDebtGroups = [
       'mail/components/Settings/MailAdvancedSettings.vue|@/components/settings/AppSettingsBody.vue',
       'mail/components/Settings/MailAdvancedSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'mail/components/Settings/MailClientSettings.vue|@/components/CopyControl.vue',
-      'mail/components/Settings/MailGeneralSettings.vue|@/components/StorageMeter.vue',
       'mail/components/Settings/MailGeneralSettings.vue|@/components/settings/AppSettingsBody.vue',
       'mail/components/Settings/MailGeneralSettings.vue|@/components/settings/AppSettingsHeader.vue',
       'mail/components/Settings/MailImportExportSettings.vue|@/components/settings/AppSettingsBody.vue',

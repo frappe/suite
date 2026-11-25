@@ -18,17 +18,12 @@
     @switch-account="onSwitchAccount"
     @switch-to-all="onSwitchToAll"
   >
-    <!-- Same title row AND the same header box as the other tab destinations — this is
-		     one of the four, not a pushed page. The wrapper's paddings are copied verbatim
-		     from ScreenerView rather than trimmed to what this view needs: the two headers
-		     are reached from the same sheet, so they have to measure the same. Its sub-pages
-		     keep the compact back-chevron bar. -->
+    <!-- The title bar every tab of Mail's opens on (Inbox, Search): no line under it. -->
     <template #header>
-      <header
-        class="flex shrink-0 items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
-      >
-        <MobileTitleHeader class="min-w-0 flex-1" :title="__('Profile')" />
-      </header>
+      <MobileTitleHeader :title="__('Settings')" />
+    </template>
+    <template #account>
+      <MailStorageCard />
     </template>
   </MobileProfilePage>
 </template>
@@ -36,6 +31,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 
+import MailStorageCard from '@/apps/mail/components/mobile/MailStorageCard.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'

@@ -1,108 +1,105 @@
 <template>
-  <!-- One address, edited in place of the list: the arrow goes back to it -->
-  <div v-if="draft" class="flex flex-col gap-4">
-    <SettingsDialogBack
-      :title="draft.identity.email"
-      :label="__('Back to addresses')"
-      @back="showList"
-    />
-    <FormControl v-model="draft.name" :label="__('Display name')" variant="outline" />
+  <!-- One address, new or saved, edited in place of the list on a computer, where the arrow goes back
+       to it; on a phone, in a sheet over the list, as the other forms that open from a settings page
+       are. -->
+  <component
+    :is="isMobile ? AdaptiveDialog : 'div'"
+    v-if="draft"
+    v-bind="isMobile ? draftSheet : {}"
+  >
+    <div class="flex flex-col gap-4">
+      <SettingsDialogBack
+        v-if="!isMobile"
+        :title="formTitle"
+        :label="__('Back to addresses')"
+        @back="showList"
+      />
+      <!-- A saved address keeps its email: only a new one is asked for it -->
+      <FormControl
+        v-if="!draft.identity"
+        v-model="draft.email"
+        :label="__('Email address')"
+        placeholder="johndoe@example.com"
+        type="email"
+        variant="outline"
+        :required="true"
+        :error="emailError"
+      />
+      <FormControl
+        v-model="draft.name"
+        :label="__('Display name')"
+        :placeholder="draft.identity ? undefined : 'John Doe'"
+        variant="outline"
+      />
 
-    <FormControl
-      type="select"
-      :model-value="signatureChoice"
-      :label="__('Signature')"
-      :options="signatureChoices"
-      variant="outline"
-      @update:model-value="chooseSignature"
-    />
-    <MailRichTextField
-      v-if="isWritingSignature"
-      v-model="draft.signature"
-      :placeholder="__('Write your signature here')"
-    />
-    <!-- Last of the fields, as the two fewest addresses use -->
-    <template v-if="showsReplyAndBcc">
+      <FormControl
+        type="select"
+        :model-value="signatureChoice"
+        :label="__('Signature')"
+        :options="signatureChoices"
+        variant="outline"
+        @update:model-value="chooseSignature"
+      />
+      <MailRichTextField
+        v-if="isWritingSignature"
+        v-model="draft.signature"
+        :placeholder="__('Write your signature here')"
+      />
+      <!-- Last of the fields, as the two fewest addresses use -->
       <NamedAddressList
+        v-if="shows.replyTo"
         v-model="draft.replyTo"
+        :autofocus="revealed === 'replyTo'"
         :label="__('Reply-to')"
         :description="__('Replies to your mail go to these addresses.')"
         :is-checked="isChecked"
       />
       <NamedAddressList
+        v-if="shows.bcc"
         v-model="draft.bcc"
+        :autofocus="revealed === 'bcc'"
         :label="__('Bcc')"
         :description="__('These addresses get a hidden copy of each message you send.')"
         :is-checked="isChecked"
       />
-    </template>
-    <Button
-      v-else
-      icon-left="lucide-plus"
-      :label="__('Add reply-to or Bcc')"
-      :size="buttonSize"
-      class="self-start"
-      @click="showReplyAndBcc"
-    />
-    <ErrorMessage :message="saveError" />
-    <SettingsDialogActions>
-      <!-- At the dialog's other end from Save, so neither is pressed for the other -->
+      <!-- Each list waits behind its own button, so adding one doesn't bring the other -->
+      <div v-if="!shows.replyTo || !shows.bcc" class="flex gap-2">
+        <Button
+          v-if="!shows.replyTo"
+          icon-left="lucide-plus"
+          :label="__('Add reply-to')"
+          :size="buttonSize"
+          @click="revealList('replyTo')"
+        />
+        <Button
+          v-if="!shows.bcc"
+          icon-left="lucide-plus"
+          :label="__('Add Bcc')"
+          :size="buttonSize"
+          @click="revealList('bcc')"
+        />
+      </div>
+      <ErrorMessage :message="saveError" />
+      <SettingsDialogActions v-if="!isMobile">
+        <Button
+          :label="__('Save')"
+          variant="solid"
+          :size="buttonSize"
+          :disabled="isSaveBlocked"
+          :loading="isSaving"
+          @click="save"
+        />
+      </SettingsDialogActions>
+    </div>
+  </component>
+  <!-- On a phone the list stays under an address's sheet -->
+  <div v-if="isMobile || !draft" class="flex flex-col gap-3">
+    <SettingsDialogActions bar>
       <Button
-        v-if="draft.identity.may_delete"
-        :label="__('Delete')"
-        theme="red"
-        :size="buttonSize"
-        class="me-auto"
-        @click="askToDelete(draft.identity)"
-      />
-      <Button
-        :label="__('Save')"
-        variant="solid"
-        :size="buttonSize"
-        :disabled="isSaveBlocked"
-        :loading="saveIdentity.isPending"
-        @click="save"
-      />
-    </SettingsDialogActions>
-  </div>
-  <div v-else-if="newAddress" class="flex flex-col gap-4">
-    <SettingsDialogBack
-      :title="__('New address')"
-      :label="__('Back to addresses')"
-      @back="showList"
-    />
-    <FormControl
-      v-model="newAddress.email"
-      :label="__('Email address')"
-      placeholder="johndoe@example.com"
-      type="email"
-      variant="outline"
-      :required="true"
-      :error="emailError"
-    />
-    <FormControl
-      v-model="newAddress.name"
-      :label="__('Display name')"
-      placeholder="John Doe"
-      variant="outline"
-    />
-    <SettingsDialogActions>
-      <Button
-        :label="__('Save')"
-        variant="solid"
-        :size="buttonSize"
-        :disabled="isCreateBlocked"
-        :loading="addIdentity.isPending"
-        @click="createAddress"
-      />
-    </SettingsDialogActions>
-  </div>
-  <div v-else class="flex flex-col gap-3">
-    <SettingsDialogActions>
-      <Button
-        variant="solid"
         icon-left="lucide-plus"
-        :label="__('New address')"
+        :label="__('New')"
+        :aria-label="__('New address')"
+        :variant="isMobile ? 'ghost' : 'subtle'"
         :size="buttonSize"
         @click="addAddress"
       />
@@ -113,16 +110,21 @@
         :key="identity.name"
         class="hover:bg-surface-gray-1 -mx-2 flex items-center rounded-4 px-3 max-sm:-mx-4 max-sm:px-4"
       >
+        <!-- The address goes under the name, as a contact's does, so neither is cut short -->
         <button
           type="button"
-          class="flex min-w-0 flex-1 items-baseline gap-2 py-2 text-left text-base"
+          class="flex min-w-0 flex-1 flex-col items-start gap-0.5 py-2.5 text-left text-base"
           @click="editAddress(identity)"
         >
-          <span class="text-ink-gray-8 truncate">{{ titleOf(identity) }}</span>
-          <span v-if="identity._name" class="text-ink-gray-5 truncate">{{ identity.email }}</span>
-          <Badge v-if="isDefault(identity)" :label="__('Default')" size="sm" class="self-center" />
+          <span class="flex min-w-0 max-w-full items-center gap-2">
+            <span class="text-ink-gray-8 truncate">{{ titleOf(identity) }}</span>
+            <Badge v-if="isDefault(identity)" :label="__('Default')" size="sm" />
+          </span>
+          <span v-if="identity._name" class="text-ink-gray-5 max-w-full truncate">
+            {{ identity.email }}
+          </span>
         </button>
-        <AdaptiveDropdown :options="addressOptions(identity)" :title="titleOf(identity)">
+        <AdaptiveDropdown :options="addressOptions(identity)" :title="identity.email">
           <Button variant="ghost" :aria-label="__('More for {0}', [identity.email])">
             <template #icon>
               <Ellipsis class="text-ink-gray-5 h-4 w-4" />
@@ -139,8 +141,8 @@
       "
     />
   </div>
-  <!-- Outside the pages above: the list and an open address both ask it -->
-  <Dialog
+  <!-- Asked from a row's menu -->
+  <AdaptiveDialog
     v-model:open="showDeleteDialog"
     v-bind="{
       title: __('Delete this address?'),
@@ -159,9 +161,9 @@
 </template>
 
 <script setup lang="ts">
-import { Badge, Button, Dialog, ErrorMessage, FormControl } from 'frappe-ui'
+import { Badge, Button, ErrorMessage, FormControl } from 'frappe-ui'
 import { Edit2, Ellipsis, Pin, Trash2 } from 'lucide-vue-next'
-import { computed, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import MailRichTextField from '@/apps/mail/components/Controls/MailRichTextField.vue'
@@ -172,6 +174,7 @@ import type { Identity } from '@/apps/mail/types'
 import { isEmail, raiseToast } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import SettingsDialogBack from '@/platform/settings/SettingsDialogBack.vue'
@@ -197,9 +200,10 @@ function rowsOf(addresses?: Identity['reply_to']) {
   }))
 }
 
-/** The address that is open, and what its form holds. */
+/** The address that is open, and what its form holds. A new one has no identity yet. */
 interface Draft {
-  identity: Identity
+  identity?: Identity
+  email: string
   name: string
   replyTo: Address[]
   bcc: Address[]
@@ -211,6 +215,7 @@ interface Draft {
 function draftOf(identity: Identity): Draft {
   return {
     identity,
+    email: identity.email,
     name: identity._name ?? '',
     replyTo: rowsOf(identity.reply_to),
     bcc: rowsOf(identity.bcc),
@@ -221,17 +226,19 @@ function draftOf(identity: Identity): Draft {
 // Unset, the list shows
 const draft = ref<Draft>()
 // Few addresses have a reply-to or a Bcc, so the two lists wait behind a button until one is used
-const showsReplyAndBcc = ref(false)
-function showReplyAndBcc() {
+const shows = reactive({ replyTo: false, bcc: false })
+// The list just asked for, which opens on its row ready to type in
+const revealed = ref<'replyTo' | 'bcc'>()
+function revealList(list: 'replyTo' | 'bcc') {
   const form = draft.value
   if (!form) {
     return
   }
 
-  // Each opens on a row to type in
-  form.replyTo.push({ email: '', display_name: '' })
-  form.bcc.push({ email: '', display_name: '' })
-  showsReplyAndBcc.value = true
+  // It opens on a row to type in
+  form[list].push({ email: '', display_name: '' })
+  shows[list] = true
+  revealed.value = list
 }
 
 // The rows of a list that hold something: one left empty is no address
@@ -262,16 +269,25 @@ function changesOf(form: Draft) {
 const isChecked = ref(false)
 function editAddress(identity: Identity) {
   draft.value = draftOf(identity)
+  isSheetOpen.value = true
   isChecked.value = false
-  showsReplyAndBcc.value = draft.value.replyTo.length + draft.value.bcc.length > 0
+  revealed.value = undefined
+  shows.replyTo = draft.value.replyTo.length > 0
+  shows.bcc = draft.value.bcc.length > 0
   saveIdentity.reset()
 }
 
-const newAddress = ref<{ email: string; name: string }>()
 function addAddress() {
-  newAddress.value = { email: '', name: '' }
+  draft.value = { email: '', name: '', replyTo: [], bcc: [], signature: '' }
+  isSheetOpen.value = true
+  isChecked.value = false
+  revealed.value = undefined
+  shows.replyTo = false
+  shows.bcc = false
   triedEmail.value = undefined
+  addIdentity.reset()
 }
+const formTitle = computed(() => draft.value?.identity?.email ?? __('New address'))
 
 function titleOf(identity: Identity) {
   return identity._name || identity.email
@@ -280,19 +296,53 @@ function titleOf(identity: Identity) {
 const isListRead = computed(() => !identities.isFetching)
 function showList() {
   draft.value = undefined
-  newAddress.value = undefined
 }
 
-// Nothing to save until the form differs from the address as it was read. Read again as the saved
-// signatures arrive, which tell which one the address uses
+// A phone's sheets: Save under the fields, the width of the sheet. Delete is on the row's menu
+// A phone's sheet slides away before its form goes: the form is cleared once it is out of sight
+const isSheetOpen = ref(false)
+function closeForm() {
+  if (isMobile.value) {
+    isSheetOpen.value = false
+  } else {
+    showList()
+  }
+}
+const draftSheet = computed(() => ({
+  open: isSheetOpen.value,
+  title: formTitle.value,
+  'onUpdate:open': (open: boolean) => !open && closeForm(),
+  onAfterLeave: showList,
+  actions: [
+    {
+      label: __('Save'),
+      variant: 'solid' as const,
+      disabled: isSaveBlocked.value,
+      loading: isSaving.value,
+      onClick: () => save(),
+    },
+  ],
+}))
+
+// A new address needs its email. A saved one has nothing to save until the form differs from it as
+// it was read, read again as the saved signatures arrive, which tell which one the address uses
 const isSaveBlocked = computed(() => {
   const form = draft.value
-  if (!form || identities.isFetching) {
+  if (!form) {
+    return true
+  }
+
+  if (!form.identity) {
+    return !form.email.trim()
+  }
+
+  if (identities.isFetching) {
     return true
   }
 
   return JSON.stringify(changesOf(form)) === JSON.stringify(changesOf(draftOf(form.identity)))
 })
+const isSaving = computed(() => saveIdentity.isPending || addIdentity.isPending)
 
 // A refused save is said on the page that was saved, where the eyes are, so no toast says it too
 const saveIdentity = useMutation(api.mail.identities.save, { silent: true })
@@ -305,16 +355,28 @@ async function save() {
 
   const changes = changesOf(form)
   isChecked.value = true
+  const email = form.email.trim()
+  if (!form.identity) {
+    triedEmail.value = form.email
+  }
   // A row that is no address says so, and nothing is sent
-  if (![...changes.reply_to, ...changes.bcc].every((address) => isEmail(address.email))) {
+  const addresses = [...changes.reply_to, ...changes.bcc]
+  if (!addresses.every((address) => isEmail(address.email)) || !isEmail(email)) {
     return
   }
 
-  await saveIdentity.run({ account: form.identity.account, id: form.identity.id, ...changes })
-  raiseToast(__('Address updated'))
+  if (form.identity) {
+    await saveIdentity.run({ account: form.identity.account, id: form.identity.id, ...changes })
+    raiseToast(__('Address updated'))
+  } else {
+    // A new address takes the saved signature's words; linking it to that signature waits for a save
+    const { signature: _linked, ...content } = changes
+    await addIdentity.run({ account: store.accountId, email, ...content })
+    raiseToast(__('Address created'))
+  }
   // A slow save can end after another page was opened, and that page stays
   if (draft.value === form) {
-    showList()
+    closeForm()
   }
 }
 
@@ -345,7 +407,9 @@ function savedSignatureOf(form: Draft) {
   const matching = savedSignatures.value.filter(({ html_body }) => html_body === form.signature)
   return (
     matching.find(({ name }) => SAVED + name === form.picked) ??
-    matching.find((signature) => signature.identities.includes(form.identity.name)) ??
+    matching.find(
+      (signature) => !!form.identity && signature.identities.includes(form.identity.name),
+    ) ??
     matching[0]
   )
 }
@@ -376,12 +440,11 @@ function chooseSignature(choice: unknown) {
 }
 
 const addIdentity = useMutation(api.mail.identities.create, { silent: true })
-const isCreateBlocked = computed(() => !newAddress.value?.email)
 // The email Save was last pressed on. What is wrong with it is said under its field until it is
 // changed: that it is no email address, or the reason the server refused it
 const triedEmail = ref<string>()
 const emailError = computed(() => {
-  const email = newAddress.value?.email
+  const email = draft.value?.identity ? undefined : draft.value?.email
   if (email === undefined || email !== triedEmail.value) {
     return undefined
   }
@@ -392,24 +455,6 @@ const emailError = computed(() => {
 
   return failureLine(addIdentity.error)
 })
-async function createAddress() {
-  const form = newAddress.value
-  if (!form) {
-    return
-  }
-
-  triedEmail.value = form.email
-  if (!isEmail(form.email)) {
-    return
-  }
-
-  await addIdentity.run({ account: store.accountId, ...form })
-  raiseToast(__('Address created'))
-  if (newAddress.value === form) {
-    showList()
-  }
-}
-
 // The address a new message starts from, found as the composer finds it: the saved one, or the
 // first when none is saved
 const { preferences, change } = useAccountPreferences()
@@ -444,8 +489,6 @@ async function deleteIdentitySubmit() {
   await deleteIdentity.run({ names: [deleting.value.name] })
   raiseToast(__('Address deleted'))
   showDeleteDialog.value = false
-  // Deleted from its own page, the address has no page left to show
-  showList()
 }
 
 function addressOptions(identity: Identity) {

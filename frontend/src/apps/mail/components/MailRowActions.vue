@@ -142,19 +142,21 @@ const starrable = computed(
 const actions = computed(() =>
   [
     {
-      label: many.value ? __('Mark {0} threads as Unread', [count.value]) : __('Mark as Unread'),
+      label: many.value
+        ? __('Mark {0} conversations as Unread', [count.value])
+        : __('Mark as Unread'),
       onClick: () => emit('setSeen', false),
       icon: Mail,
       condition: !drafts && !someUnread.value,
     },
     {
-      label: many.value ? __('Mark {0} threads as Read', [count.value]) : __('Mark as Read'),
+      label: many.value ? __('Mark {0} conversations as Read', [count.value]) : __('Mark as Read'),
       onClick: () => emit('setSeen', true),
       icon: MailOpen,
       condition: !drafts && someUnread.value,
     },
     {
-      label: many.value ? __('Archive {0} threads', [count.value]) : __('Archive'),
+      label: many.value ? __('Archive {0} conversations', [count.value]) : __('Archive'),
       onClick: () => emit('archive'),
       icon: Archive,
       // Lists that don't file by the rules yet (All Inboxes) keep the old test: their rows span
@@ -172,7 +174,7 @@ const actions = computed(() =>
           : !everyIn(archiveId.value)),
     },
     {
-      label: many.value ? __('Unarchive {0} threads', [count.value]) : __('Unarchive'),
+      label: many.value ? __('Unarchive {0} conversations', [count.value]) : __('Unarchive'),
       onClick: () => emit('unarchive'),
       icon: ArchiveRestore,
       condition:
@@ -187,13 +189,15 @@ const actions = computed(() =>
         ),
     },
     {
-      label: many.value ? __('Move {0} threads to Trash', [count.value]) : __('Move to Trash'),
+      label: many.value
+        ? __('Move {0} conversations to Trash', [count.value])
+        : __('Move to Trash'),
       onClick: () => emit('trash'),
       icon: Trash2,
       condition: !drafts && !someIn(trashId.value),
     },
     {
-      label: many.value ? __('Delete {0} threads', [count.value]) : __('Delete Thread'),
+      label: many.value ? __('Delete {0} conversations', [count.value]) : __('Delete Conversation'),
       onClick: () => emit('delete'),
       icon: Trash2,
       condition: !drafts && everyIn(trashId.value),

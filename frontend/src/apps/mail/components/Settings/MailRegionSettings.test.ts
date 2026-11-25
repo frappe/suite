@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
+import { createApp, defineComponent, h, reactive } from 'vue'
 
 import { requireTestElement } from '@/platform/testing/dom'
 
-import MailGeneralSettings from './MailGeneralSettings.vue'
+import MailRegionSettings from './MailRegionSettings.vue'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
@@ -23,7 +23,6 @@ vi.mock('@/apps/mail/stores/user', () => ({
     userResource: { data: { is_suite_cloud_configured: state.provider } },
   }),
 }))
-vi.mock('@/apps/mail/composables/useQuota', () => ({ useQuota: () => ({}) }))
 vi.mock('@/apps/mail/utils/composables', () => ({ useScreenSize: () => ({ isMobile: false }) }))
 vi.mock('@/api', async () => {
   const { api } = await import('@/apps/mail/client/generated')
@@ -90,7 +89,7 @@ vi.mock('frappe-ui', () => ({
 let app: ReturnType<typeof createApp>
 function mount() {
   const root = document.createElement('div')
-  app = createApp(MailGeneralSettings)
+  app = createApp(MailRegionSettings)
   app.config.globalProperties.__ = (text: string) => text
   app.config.errorHandler = vi.fn()
   app.mount(root)
@@ -122,38 +121,16 @@ beforeEach(() => {
   state.save.mockReset().mockResolvedValue(undefined)
 })
 afterEach(() => app.unmount())
-it('saves a switch as it is flipped, sending only that preference', async () => {
-  const root = mount()
-  const remoteImages = control(root, 'Block remote images', HTMLButtonElement)
-  expect(remoteImages.getAttribute('aria-checked')).toBe('false')
-  remoteImages.click()
-  await nextTick()
-  expect(remoteImages.getAttribute('aria-checked')).toBe('true')
-  expect(state.save).toHaveBeenCalledWith('update_account_preferences', {
-    account: 'personal',
-    changes: { block_remote_images: 1 },
-  })
-})
-it('puts a switch back when its save is refused', async () => {
-  state.save.mockRejectedValue(new Error('Server refused the update'))
-  const root = mount()
-  const remoteImages = control(root, 'Block remote images', HTMLButtonElement)
-  remoteImages.click()
-  await new Promise((resolve) => setTimeout(resolve, 0))
-  expect(state.save).toHaveBeenCalledTimes(1)
-  expect(remoteImages.getAttribute('aria-checked')).toBe('false')
-})
 it('neither requests nor shows the provider region on a site without a provider', () => {
   state.provider = false
   const root = mount()
   expect(state.inputs.get('regional_preferences')?.()).toBe(false)
-  expect(root.textContent).not.toContain('Locale')
-  expect(root.textContent).toContain('Block remote images')
+  expect(root.textContent).not.toContain('Mail locale')
 })
 it('saves a regional choice as it is made, and shows what is read when the page opens again', async () => {
   const root = mount()
   expect(state.inputs.get('regional_preferences')?.()).toEqual({})
-  await choose(control(root, 'Locale', HTMLInputElement), 'fr-FR')
+  await choose(control(root, 'Mail locale', HTMLInputElement), 'fr-FR')
   expect(state.save).toHaveBeenCalledWith('update_regional_preferences', {
     locale: 'fr-FR',
     time_zone: 'UTC',
@@ -161,8 +138,8 @@ it('saves a regional choice as it is made, and shows what is read when the page 
   app.unmount()
   state.regional.data = { locale: 'fr-FR', time_zone: 'Europe/Paris', locales: [], time_zones: [] }
   const reopened = mount()
-  expect(control(reopened, 'Locale', HTMLInputElement).value).toBe('fr-FR')
-  expect(control(reopened, 'Time zone', HTMLInputElement).value).toBe('Europe/Paris')
+  expect(control(reopened, 'Mail locale', HTMLInputElement).value).toBe('fr-FR')
+  expect(control(reopened, 'Mail time zone', HTMLInputElement).value).toBe('Europe/Paris')
 })
 it('shows configured provider read failures', () => {
   state.regional.error = new Error('Provider unavailable')
@@ -171,7 +148,7 @@ it('shows configured provider read failures', () => {
 it('puts a regional choice back when its save is refused', async () => {
   state.save.mockRejectedValue(new Error('Provider refused the update'))
   const root = mount()
-  const locale = control(root, 'Locale', HTMLInputElement)
+  const locale = control(root, 'Mail locale', HTMLInputElement)
   await choose(locale, 'fr-FR')
   expect(state.save).toHaveBeenCalledTimes(1)
   expect(locale.value).toBe('en-US')

@@ -10,7 +10,7 @@
     :class="[
       split ? SPLIT_LIST_CLASS : 'w-full',
       // On a phone the list gives way a little to the left as the thread slides over it, and comes
-      // back as it goes: the same push a category makes over Primary (see pageSlide.ts).
+      // back as it goes: the same push a category makes over Primary (see platform/page-slide).
       isMobile && 'transition-transform duration-300 ease-[var(--page-slide-ease)]',
       { '-translate-x-1/4': isMobile && threadOpen },
       // A width saved on a wider window still leaves the pane what a drag would.

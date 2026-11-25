@@ -42,7 +42,7 @@ vi.mock('vue-router', () => ({
   useRouter: () => ({}),
   onBeforeRouteUpdate: (guard: RouteGuard) => state.guards.push(guard),
 }))
-vi.mock('@/apps/mail/utils/pageSlide', () => ({
+vi.mock('@/platform/page-slide', () => ({
   slideRouteChange: (_router: unknown, direction: string) => state.slides.push(direction),
 }))
 vi.mock('@/apps/mail/stores/user', () => ({ userStore: () => state.store }))

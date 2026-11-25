@@ -899,7 +899,7 @@
       <div class="flex flex-col items-center space-y-3">
         <NoMails class="text-ink-gray-2 h-16 w-16" />
         <p class="text-ink-gray-4">
-          {{ __('Select an email to view the thread.') }}
+          {{ __('Select an email to view the conversation.') }}
         </p>
       </div>
     </div>

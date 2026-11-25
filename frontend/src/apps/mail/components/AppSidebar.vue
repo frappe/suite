@@ -21,7 +21,14 @@
     />
     <!-- A section's own action (the folders' "+") sits over the right end of its heading:
 	     SidebarSection draws the heading itself and leaves no place in it for one. -->
-    <div v-for="section in sidebarItems" :key="section.key ?? section.label" class="relative mt-4">
+    <!-- Each section stands off what is above it; a phone's first has nothing above it but the
+         sheet's own top, so it starts there. -->
+    <div
+      v-for="(section, index) in sidebarItems"
+      :key="section.key ?? section.label"
+      class="relative"
+      :class="isMobile && index === 0 ? 'mt-0' : 'mt-4'"
+    >
       <!-- Small and muted, lined up with the folders' counts below it. On a touch screen its area
            is the heading's height, h-7, and stops short of the first folder row's ⋯ below. -->
       <Tooltip v-if="sectionAction(section)" :text="sectionAction(section)!.label">
