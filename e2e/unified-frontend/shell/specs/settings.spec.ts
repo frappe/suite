@@ -10,10 +10,15 @@ import { failRequest, MOBILE_VIEWPORT, patchAccount } from "../../helpers/shell"
 
 const FIRST_TABS = [
 	{ heading: "Account", tab: "Profile" },
-	{ heading: "Drive", tab: "Storage" },
-	{ heading: "Mail", tab: "General" },
+	{ heading: "Drive", tab: "External access" },
+	{ heading: "Mail", tab: "Layout" },
 	{ heading: "Calendar", tab: "Calendars" },
 ];
+
+// A phone leaves out the tabs for work done at a computer, such as Mail's list layout.
+const PHONE_FIRST_TABS = FIRST_TABS.map((first) =>
+	first.heading === "Mail" ? { heading: "Mail", tab: "Incoming" } : first,
+);
 
 const SETTINGS_SECTION = "section[aria-label]:has(> div > button)";
 
@@ -80,7 +85,7 @@ test.describe("desktop", () => {
 
 		for (const body of [
 			"PreferencesSettings.vue",
-			"StatisticsSettings.vue",
+			"StorageSettings.vue",
 			"MailGeneralSettings.vue",
 			"CalendarsSettings.vue",
 		]) {
@@ -89,7 +94,7 @@ test.describe("desktop", () => {
 
 		await settings.getByRole("tab", { name: "Storage" }).click();
 		await expect(settings.getByRole("tabpanel").getByRole("heading", { name: "Storage" })).toBeVisible();
-		expect(served.has("StatisticsSettings.vue")).toBe(true);
+		expect(served.has("StorageSettings.vue")).toBe(true);
 		expect(served.has("PreferencesSettings.vue")).toBe(false);
 	});
 
@@ -176,7 +181,7 @@ for (const phone of [false, true]) {
 			await page.getByRole("navigation", { name: "Account" }).getByRole("button", { name: "Settings" }).click();
 			const settings = page.getByRole("dialog", { name: "Settings" });
 			await settings
-				.getByRole("region", { name: "Drive", exact: true })
+				.getByRole("region", { name: "Account", exact: true })
 				.getByRole("button", { name: "Storage", exact: true })
 				.click();
 			return settings.getByRole("region", { name: "Storage", exact: true });
@@ -244,7 +249,7 @@ test.describe("phone", () => {
 		await page.goto("/home");
 		const settings = await openDrillIn(page);
 
-		for (const { heading, tab } of FIRST_TABS) {
+		for (const { heading, tab } of PHONE_FIRST_TABS) {
 			const section = settings.getByRole("region", { name: heading, exact: true });
 			await section.getByRole("button", { name: tab, exact: true }).click();
 			const tabPage = settings.getByRole("region", { name: tab, exact: true });

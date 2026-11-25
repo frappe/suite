@@ -1,5 +1,5 @@
 import { toast } from 'frappe-ui'
-import { computed, onMounted, onUnmounted, readonly, ref } from 'vue'
+import { computed, readonly, ref } from 'vue'
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 
 import { api, client } from '@/api'
@@ -7,7 +7,6 @@ import router from '@/apps/mail/router'
 import type { mailSettings } from '@/apps/mail/settings'
 import { userStore } from '@/apps/mail/stores/user'
 import type { ComposeMailData, Identity, Thread } from '@/apps/mail/types'
-import { createSwipeGesture } from '@/apps/mail/utils/swipeGesture'
 import {
   INBOX_FOLDER,
   isUnifiedRoute,
@@ -18,6 +17,7 @@ import {
 } from '@/apps/mail/utils/unifiedFolders'
 import { useScreenSize } from '@/composables/useScreenSize'
 import { useTheme as useSuiteTheme } from '@/composables/useTheme'
+import { watchOnScreenKeyboard } from '@/platform/keyboard-insets'
 import type { SettingsTabIds } from '@/platform/settings'
 import { openSettings as openSuiteSettings } from '@/shell/settings/useSettingsDialog'
 import { useRootStore } from '@/stores/root'
@@ -128,46 +128,6 @@ export const useAccountSwitch = () => {
   return { switchAccount, switchToAll }
 }
 
-// Horizontal swipe-to-page detection, shared by the mailbox thread pane and the screener
-// preview: left → onSwipe(1) (next), right → onSwipe(-1). The rule itself lives in
-// createSwipeGesture; this binds it to the touch events and to the view. Judged on
-// touchend (passive) so vertical scrolling is never delayed. Swipes over an email body
-// never reach the pane: EmailContent detects them inside its iframe and re-broadcasts
-// them as `email-swipe` window events, which this subscribes to as well. The time guard
-// dedupes those (every mounted EmailContent re-dispatches the same message) and paces
-// direct swipes alike.
-export const useSwipeNav = (enabled: () => boolean, onSwipe: (offset: 1 | -1) => void) => {
-  const gesture = createSwipeGesture()
-  let lastSwipeAt = 0
-  const swipe = (offset: 1 | -1) => {
-    if (!enabled()) return
-    const now = Date.now()
-    if (now - lastSwipeAt < 250) return
-    lastSwipeAt = now
-    onSwipe(offset)
-  }
-  const onTouchStart = (e: TouchEvent) => {
-    if (!enabled()) return gesture.cancel()
-    gesture.start(e.touches[0].clientX, e.touches[0].clientY, e.touches.length)
-  }
-  const onTouchMove = (e: TouchEvent) => {
-    const touch = e.touches[0]
-    if (touch) gesture.move(touch.clientX, touch.clientY)
-  }
-  const onTouchEnd = (e: TouchEvent) => {
-    const offset = gesture.end(e.changedTouches[0].clientX, e.changedTouches[0].clientY)
-    if (offset) swipe(offset)
-  }
-  const onEmailSwipe = (e: Event) => swipe('detail' in e && e.detail === 'left' ? 1 : -1)
-  onMounted(() => window.addEventListener('email-swipe', onEmailSwipe))
-  onUnmounted(() => window.removeEventListener('email-swipe', onEmailSwipe))
-  return {
-    onTouchStart,
-    onTouchMove,
-    onTouchEnd,
-  }
-}
-
 // The search page's address — the one place that knows it is the mailbox route with the virtual
 // 'search' mailbox — for whoever sends someone there: the palette, the results header, the phone.
 export const mailSearchRoute = (accountId: string, query: Record<string, string> = {}) => ({
@@ -195,11 +155,10 @@ export const useMobileSearch = () => {
     () => route.name === 'mail-mailbox' && route.params.mailbox === 'search',
   )
 
-  // Keep the search route behind the palette so browser Back dismisses search and the
-  // route watcher in DefaultLayout closes the palette.
-  const openSearch = async () => {
-    if (!isSearchRoute.value) await router.push(mailSearchRoute(store.accountId))
-    root.paletteOpen = true
+  // A phone searches on the search route itself, where the field is (see PhoneSearchBar): the tab
+  // only goes there. The keyboard comes up when the field is tapped, not before.
+  const openSearch = () => {
+    if (!isSearchRoute.value) void router.push(mailSearchRoute(store.accountId))
   }
 
   const hasSearchQuery = computed(() => hasMailSearchQuery(route.query))
@@ -218,71 +177,47 @@ export const useMobileSearch = () => {
   }
 }
 
-// Mobile selection mode — MailboxView owns the selection; the compose button
-// (mounted in DefaultLayout) hides behind the contextual action bar while it's on.
-const isMobileSelectionActive = ref(false)
+// Mobile selection mode — each list owns its selection; the bottom bar and Compose step aside for
+// the selection bar while any list has one. Held per list, so one list leaving (as another comes in
+// over it) doesn't turn off another's.
+const selectingLists = ref(new Set<symbol>())
+const isMobileSelectionActive = computed(() => selectingLists.value.size > 0)
+const defaultList = Symbol('list')
 export const useMobileSelection = () => {
-  const setMobileSelectionActive = (active: boolean) => (isMobileSelectionActive.value = active)
+  const setMobileSelectionActive = (active: boolean, list: symbol = defaultList) => {
+    const next = new Set(selectingLists.value)
+    if (active) next.add(list)
+    else next.delete(list)
+    selectingLists.value = next
+  }
   return {
     isMobileSelectionActive,
     setMobileSelectionActive,
   }
 }
 
-const keyboardOpen = ref(false)
-let watchingFocus = false
-
-// Input types that raise no on-screen keyboard: focusing one is not the keyboard coming up, and
-// treating it as such takes the bottom bar away for a tick with nothing covering where it was.
-// `shouldIgnoreKeypress` draws the same line for checkboxes.
-const NON_TEXT_INPUT_TYPES = new Set([
-  'button',
-  'checkbox',
-  'color',
-  'file',
-  'hidden',
-  'image',
-  'radio',
-  'range',
-  'reset',
-  'submit',
-])
-const isEditable = (el: Element | null) => {
-  if (!el) return false
-  if (el instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(el.type)
-  return el.tagName === 'TEXTAREA' || (el instanceof HTMLElement && el.isContentEditable)
-}
+let onScreenKeyboard: ReturnType<typeof watchOnScreenKeyboard> | undefined
+const NO_KEYBOARD = readonly(ref(false))
 
 /**
- * Whether the on-screen keyboard is up, read off what's focused rather than off the viewport.
+ * Whether the on-screen keyboard is up, for what steps aside for it, such as the phone's bottom
+ * bar: under `interactive-widget=resizes-content` (index.html) the keyboard pulls anything
+ * anchored to the bottom of the shell up above it. See `watchOnScreenKeyboard`.
  *
- * The viewport can't answer this under `interactive-widget=resizes-content` (index.html): the
- * keyboard shrinks the layout viewport itself, so the visual and layout viewports stay the same
- * size and `useKeyboardInsets` measures zero — the very case this is for. What the shrink DOES do
- * is pull anything anchored to the bottom of the shell up above the keyboard, which is why the
- * bottom bar has to be told to step aside.
- *
- * Mobile only: desktop has no on-screen keyboard, so a focused field there means nothing and the
- * listeners aren't worth attaching.
+ * Mobile only: desktop has no on-screen keyboard, and the listeners aren't worth attaching.
  */
 export const useKeyboardOpen = () => {
   const { isMobile } = useScreenSize()
-  if (!watchingFocus && isMobile.value) {
-    watchingFocus = true
-    // Re-read the focus on the next frame rather than trusting the event: moving between two
-    // fields fires focusout before focusin, and acting on the focusout would flash the nav back
-    // in between them.
-    const sync = () =>
-      requestAnimationFrame(() => (keyboardOpen.value = isEditable(document.activeElement)))
-    document.addEventListener('focusin', sync)
-    document.addEventListener('focusout', sync)
+  if (!onScreenKeyboard && isMobile.value) {
+    const keyboard = watchOnScreenKeyboard()
+    onScreenKeyboard = keyboard
     // A field torn down with its route never fires focusout — Chrome and Safari move focus to
     // <body> silently — so this would latch on and stay on. Compose is a page whose editor is
     // focused on mount and which closes by navigating away, i.e. exactly that shape: leaving it
     // left the bottom nav and the compose button hidden for the rest of the session.
-    router.afterEach(() => sync())
+    router.afterEach(() => requestAnimationFrame(keyboard.sync))
   }
-  return keyboardOpen
+  return onScreenKeyboard?.up ?? NO_KEYBOARD
 }
 const undoAction = ref<() => void>()
 
@@ -356,6 +291,9 @@ export const useComposeMail = () => ({
 // whichever list is on screen answers in its own terms — the mailbox resets Drafts and Sent, All
 // Inboxes refreshes in place, the screener reloads its senders.
 const listReloadRequest = ref(0)
+// A reply saved in a conversation the reader has since left, back on a list: the row there has to
+// count it, and name you among the people in it. Asked of whichever list holds that row.
+const rowReloadRequest = ref<{ threadId: string }>()
 
 // Drafts discarded from a composer and still inside their Undo window: deleted only once the toast
 // has passed, so the server still lists them. A list leaves out a row made of nothing else, so a
@@ -417,6 +355,8 @@ export const useDiscardingDrafts = () => ({
 export const useListReload = () => ({
   listReloadRequest,
   requestListReload: () => listReloadRequest.value++,
+  rowReloadRequest,
+  requestRowReload: (threadId: string) => (rowReloadRequest.value = { threadId }),
 })
 
 // The account's own addresses, lowercased — what a thread's senders are matched against to decide

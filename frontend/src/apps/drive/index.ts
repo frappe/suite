@@ -160,11 +160,13 @@ export const filesArea: AreaDefinition = {
   loadRoutes: () => import('@/apps/drive/files/pages/routes'),
 }
 
-/** Drive's Settings group. Loads when Settings opens. */
-export const loadDriveSettings = () =>
-  import('@/apps/drive/files/features/settings/settingsGroup').then((module) =>
-    module.driveSettings(),
-  )
+/** What the caller's Drive holds, for the Storage tab in Settings. */
+export const DriveStorageUsage = defineAsyncComponent(
+  () => import('@/apps/drive/files/features/settings/DriveStorageUsage.vue'),
+)
+
+/** Drive's Settings group. */
+export { driveSettings } from '@/apps/drive/files/features/settings/settingsGroup'
 
 export interface DriveDocumentCreation {
   readonly isPending: boolean

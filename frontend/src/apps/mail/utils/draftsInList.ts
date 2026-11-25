@@ -31,6 +31,9 @@ const key = (account: string, threadId: string) => `${account}|${threadId}`
 // What the server's preview_from_html says of a body: its text, the quoted trail left out.
 const previewOf = (html: string) => {
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  // A line or a paragraph ends in a space, as the server's text has it, not in the next word.
+  for (const br of doc.querySelectorAll('br')) br.replaceWith(' ')
+  for (const block of doc.querySelectorAll('p, div, li, h1, h2, h3, blockquote')) block.append(' ')
   const text = (root: Node) => (root.textContent ?? '').replace(/\s+/g, ' ').trim()
   const whole = text(doc.body)
   findQuoteRoots(doc).forEach((quote) => quote.remove())

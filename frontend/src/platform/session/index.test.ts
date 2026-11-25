@@ -126,6 +126,29 @@ describe('session', () => {
     expect(cleanup).not.toHaveBeenCalled()
   })
 
+  it('stays signed in while it reads a signed-in user again, and takes the new name', async () => {
+    document.cookie = 'user_id=user%40example.com; path=/'
+    let fullName = 'Old Name'
+    let answer!: () => void
+    const request = vi.fn(
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ name: 'user@example.com', full_name: fullName })
+        }),
+    )
+    const session = createSession(fromPartial<Transport>({ request }))
+    const first = session.refresh()
+    answer()
+    await first
+
+    fullName = 'New Name'
+    const again = session.refresh()
+    expect(session.status.value).toBe('authenticated')
+    answer()
+    await again
+    expect(session.user.value?.fullName).toBe('New Name')
+  })
+
   it('does not restore an expired identity from an earlier account response', async () => {
     document.cookie = 'user_id=alice'
     let resolveAccount!: (value: unknown) => void

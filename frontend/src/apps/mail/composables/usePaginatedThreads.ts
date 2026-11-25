@@ -1,5 +1,5 @@
 import { useIntersectionObserver } from '@vueuse/core'
-import { computed, nextTick, ref, useTemplateRef, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 
 import type { InfiniteQueryState } from '@/api'
 import type { Thread } from '@/apps/mail/types'
@@ -61,13 +61,24 @@ export function usePaginatedThreads({
   const threadByOffset = (offset: number, from = openThreadID()) =>
     threadIDs.value[threadIDs.value.indexOf(from ?? '') + offset]
   let pendingEdge = false
-  async function loadMore() {
-    if (!hasMore.value || isFetching.value) return
-    try {
-      await query().fetchNext()
-    } catch {
-      /* Query state holds the refusal. */
-    }
+  // The next window while it is on its way: asked for again meanwhile (Next at the last loaded
+  // thread, as it loads ahead), it is waited for rather than skipped.
+  let nextWindow: Promise<void> | undefined
+  function loadMore() {
+    if (nextWindow) return nextWindow
+    if (!hasMore.value || isFetching.value) return Promise.resolve()
+    const pending = (async () => {
+      try {
+        await query().fetchNext()
+      } catch {
+        /* Query state holds the refusal. */
+      }
+    })()
+    nextWindow = pending
+    void pending.then(() => {
+      if (nextWindow === pending) nextWindow = undefined
+    })
+    return pending
   }
   async function loadMoreThenOpenEdge(offset: number, action: 'open' | 'focus') {
     if (pendingEdge || offset < 0 || !hasMore.value) return
@@ -81,6 +92,16 @@ export function usePaginatedThreads({
       pendingEdge = false
     }
   }
+  // A thread open at the end of what is loaded brings in the next window, so the one after it is
+  // there to step or swipe to (see useThreadSwipe) before it is asked for. Once mounted: the caller
+  // may declare its rows further down.
+  onMounted(() =>
+    watch(
+      () => !!openThreadID() && threadIDs.value.at(-1) === openThreadID(),
+      (atEnd) => atEnd && void loadMore(),
+      { immediate: true },
+    ),
+  )
   /**
    * Read the list again from its first window. Every such read goes through here: its rows settle
    * the drafts shown on them (see beginListRead).
@@ -97,10 +118,15 @@ export function usePaginatedThreads({
   // A refresh asked while the list is being read waits for that read rather than being dropped: the
   // change that asked for it may have reached the server after the read went out.
   const refreshOwed = ref(false)
-  /** Read the list again, now or once the read under way is in. */
-  function refresh() {
-    if (isFetching.value) refreshOwed.value = true
-    else void refetch()
+  // Settles every refresh asked while the read under way was out, once the read owed them is in.
+  let settleOwed: (() => void) | undefined
+  let owed: Promise<void> | undefined
+  /** Read the list again, now or once the read under way is in; settles when that read is in. */
+  function refresh(): Promise<void> {
+    if (!isFetching.value) return refetch()
+    refreshOwed.value = true
+    owed ??= new Promise((resolve) => (settleOwed = resolve))
+    return owed
   }
   // Reads nothing of the query until a refresh is owed: the source runs at setup, and a caller may
   // declare its query further down.
@@ -109,7 +135,9 @@ export function usePaginatedThreads({
     (due) => {
       if (!due) return
       refreshOwed.value = false
-      void refetch()
+      const settle = settleOwed
+      owed = settleOwed = undefined
+      void refetch().then(settle)
     },
   )
   let fillWindows = 0

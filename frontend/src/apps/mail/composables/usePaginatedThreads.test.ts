@@ -33,7 +33,13 @@ const listOnServer = () => {
   return { query, answer }
 }
 
-const mountList = (server: ReturnType<typeof listOnServer>) => {
+// Every promise chained on an answer, through.
+const settle = () => new Promise((resolve) => setTimeout(resolve))
+
+const mountList = (
+  server: ReturnType<typeof listOnServer>,
+  { open, onEdgeThread = () => {} }: { open?: string; onEdgeThread?: (id: string) => void } = {},
+) => {
   let list!: ReturnType<typeof usePaginatedThreads>
   const app = createApp(
     defineComponent({
@@ -41,8 +47,8 @@ const mountList = (server: ReturnType<typeof listOnServer>) => {
         list = usePaginatedThreads({
           query: () => fromPartial(server.query),
           rows: () => server.query.rows,
-          openThreadID: () => undefined,
-          onEdgeThread: () => {},
+          openThreadID: () => open,
+          onEdgeThread,
         })
         return () => null
       },
@@ -82,6 +88,24 @@ describe('usePaginatedThreads reads the list again', () => {
     unmount()
   })
 
+  it('settles a refresh asked meanwhile only once the read owed to it is in', async () => {
+    const server = listOnServer()
+    const { list, unmount } = mountList(server)
+    list.refresh()
+    let settled = false
+    void list.refresh().then(() => (settled = true))
+
+    // The read under way went out before this refresh was asked: it doesn't answer it.
+    await server.answer()
+    await settle()
+    expect(settled).toBe(false)
+
+    await server.answer()
+    await settle()
+    expect(settled).toBe(true)
+    unmount()
+  })
+
   it('drops the Draft badge of a draft its rows came back without, as when it was sent elsewhere', async () => {
     const server = listOnServer()
     const { list, unmount } = mountList(server)
@@ -91,6 +115,41 @@ describe('usePaginatedThreads reads the list again', () => {
     await server.answer([row(['m1'])])
 
     expect(draftInList('acc', row(['m1']))).toBeUndefined()
+    unmount()
+  })
+})
+
+describe('usePaginatedThreads at the end of what is loaded', () => {
+  it('opens the next thread once the window on its way lands, when Next is asked for meanwhile', async () => {
+    const server = listOnServer()
+    const thread = (id: string) => fromPartial<Thread>({ thread_id: id, messages: [] })
+    server.query.rows = [thread('t1'), thread('t2')]
+    server.query.hasNext = true
+    let land!: () => void
+    server.query.fetchNext = () => {
+      server.query.isFetching = true
+      return new Promise<void>((resolve) => {
+        land = () => {
+          server.query.rows = [...server.query.rows, thread('t3')]
+          server.query.isFetching = false
+          resolve()
+        }
+      })
+    }
+    const opened: string[] = []
+    // The last loaded thread is open, so the next window is already on its way
+    const { list, unmount } = mountList(server, {
+      open: 't2',
+      onEdgeThread: (id) => opened.push(id),
+    })
+    await nextTick()
+
+    const next = list.loadMoreThenOpenEdge(1, 'open')
+    await nextTick()
+    land()
+    await next
+
+    expect(opened).toEqual(['t3'])
     unmount()
   })
 })

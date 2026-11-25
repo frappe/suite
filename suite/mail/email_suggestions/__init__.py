@@ -23,7 +23,8 @@ class EmailSuggestions:
         self.account = account
 
     def get_suggestions(self, text: str | None, limit: int = 10) -> list[dict]:
-        """Return up to `limit` {name, email} addresses matching `text`, most relevant first.
+        """Return up to `limit` {name, email} addresses matching `text`, most relevant first; with no
+        `text`, the addresses the account last sent mail to.
 
         The local sources — the site directory and the account's address index — answer first. JMAP
         contacts are asked only when they find nothing, and JMAP mail only when contacts find nothing
@@ -32,7 +33,9 @@ class EmailSuggestions:
         """
 
         query = (text or "").strip()
-        if not query or self.is_recent_miss(query):
+        if not query:
+            return self.get_recent_suggestions(limit)
+        if self.is_recent_miss(query):
             return []
 
         if suggestions := self.get_local_suggestions(query, limit):
@@ -51,6 +54,19 @@ class EmailSuggestions:
             frappe.cache.set_value(self.get_miss_key(query), True, expires_in_sec=MISS_TTL)
 
         return suggestions
+
+    def get_recent_suggestions(self, limit: int) -> list[dict]:
+        """With nothing typed: the people the account last sent mail to, most recent first."""
+
+        recent = get_email_address_index(self.account).get_recent_addresses(limit)
+        # Named as typing names them: a colleague the index has only as an address takes the
+        # directory's name.
+        sent_to = {(address.get("email") or "").lower() for address in recent}
+        directory = [a for a in get_directory_addresses() if (a.get("email") or "").lower() in sent_to]
+        return [
+            {"name": address["name"], "email": address["email"]}
+            for address in _deduplicate(recent + directory)
+        ]
 
     def get_local_suggestions(self, query: str, limit: int) -> list[dict]:
         """Directory users and accounts merged with the address index, ranked as one list."""

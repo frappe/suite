@@ -1,10 +1,11 @@
 import { useStorage } from '@vueuse/core'
 import { computed, shallowRef, watch } from 'vue'
-import { useRoute, type RouteLocationNamedRaw } from 'vue-router'
+import { onBeforeRouteUpdate, useRoute, useRouter, type RouteLocationNamedRaw } from 'vue-router'
 
 import { api, client, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { useScreenSize } from '@/apps/mail/utils/composables'
+import { slideRouteChange } from '@/platform/page-slide'
 
 export type InboxCategory = 'primary' | 'updates' | 'forums' | 'promotions' | 'social'
 
@@ -43,11 +44,11 @@ const LAST_TAB_KEY = 'mail-inbox-tab'
  * `undefined` when there are no tabs. `category` is what the list asks for: the open tab's, and none
  * in All mail or where there are no tabs.
  *
- * A phone has no tabs: its Inbox is one list of every category, whatever the split.
+ * A phone draws the categories other than Primary as cards over it (CategoryCards), not tabs.
  *
  * `listRoute` is the list the tabs belong to: a tab leads there, leaving any open thread behind,
- * since that thread may not be in the tab being opened. `onSwitch` refetches the list when another
- * tab opens, as a filter change does.
+ * since that thread may not be in the tab being opened. `onSwitch` starts the list over when another
+ * tab opens: unfiltered, and refetched.
  */
 export const useInboxTabs = (
   scope: () => 'account' | 'unified' | false,
@@ -56,8 +57,8 @@ export const useInboxTabs = (
 ) => {
   const route = useRoute()
   const store = userStore()
-  const { isMobile } = useScreenSize()
   const lastTab = useStorage<string>(LAST_TAB_KEY, '')
+  const { isMobile } = useScreenSize()
 
   // The whole Inbox's unread threads: the account's Inbox, or the Inbox merged across accounts (a
   // system folder's slug is its role).
@@ -69,7 +70,7 @@ export const useInboxTabs = (
 
   const tabs = computed<InboxTab[]>(() => {
     const where = scope()
-    if (!where || isMobile.value || !store.inboxTabs.length) return []
+    if (!where || !store.inboxTabs.length) return []
     const counts = (where === 'unified' ? store.unifiedTabCounts.data : store.tabCounts.data) ?? []
     const tab = (id: InboxTabId, unread: number): InboxTab => ({
       id,
@@ -88,7 +89,12 @@ export const useInboxTabs = (
   const active = computed<InboxTabId | undefined>(() => {
     if (!tabs.value.length) return undefined
     const named = (id: unknown) => tabs.value.find((tab) => tab.id === id)?.id
-    return named(route.query.category) ?? named(lastTab.value) ?? 'primary'
+    // A phone's Inbox is Primary, its other categories cards over it: it always opens there.
+    return (
+      named(route.query.category) ??
+      (isMobile.value ? undefined : named(lastTab.value)) ??
+      'primary'
+    )
   })
   const category = computed<InboxCategory | undefined>(() =>
     active.value === 'all' ? undefined : active.value,
@@ -109,6 +115,16 @@ export const useInboxTabs = (
   )
   watch(active, (tab, previous) => {
     if (tab && previous && tab !== previous) onSwitch?.()
+  })
+
+  // On a phone a category is a page pushed over Primary: it slides in from the right, and back out
+  // to it on the way back to Primary.
+  const router = useRouter()
+  onBeforeRouteUpdate((to, from) => {
+    const categoryOf = (query: typeof to.query) => String(query.category ?? 'primary')
+    const [left, going] = [categoryOf(from.query), categoryOf(to.query)]
+    if (!isMobile.value || to.path !== from.path || left === going) return
+    return slideRouteChange(router, going === 'primary' ? 'back' : 'forward')
   })
 
   return { tabs, active, category, routeFor }
@@ -204,36 +220,38 @@ export const useTabChoiceMenu = () => {
     switchValue: split.value,
     onClick: (on: boolean): void => void setSplit(on),
   }))
-  const tabsSubmenu = computed(() => {
+  // A switch per category, the last one on held on.
+  const categorySwitches = computed(() => {
     const onCount = choices.value.filter((choice) => choice.on).length
-    return {
-      label: __('Tabs'),
-      icon: 'lucide-panel-top',
-      submenu: [
-        ...choices.value.map((choice) => ({
-          label: choice.label,
-          icon: choice.icon,
-          switch: true as const,
-          switchValue: choice.on,
-          disabled: choice.on && onCount === 1,
-          onClick: (on: boolean) => void setTab(choice.category, on),
-        })),
-        {
-          label: TAB_LOOK.all.label(),
-          icon: TAB_LOOK.all.icon,
-          switch: true as const,
-          switchValue: allMail.value,
-          disabled: false,
-          onClick: (on: boolean) => void setAllMail(on),
-        },
-      ],
-    }
+    return choices.value.map((choice) => ({
+      label: choice.label,
+      icon: choice.icon,
+      switch: true as const,
+      switchValue: choice.on,
+      disabled: choice.on && onCount === 1,
+      onClick: (on: boolean) => void setTab(choice.category, on),
+    }))
   })
+  const tabsSubmenu = computed(() => ({
+    label: __('Tabs'),
+    icon: 'lucide-panel-top',
+    submenu: [
+      ...categorySwitches.value,
+      {
+        label: TAB_LOOK.all.label(),
+        icon: TAB_LOOK.all.icon,
+        switch: true as const,
+        switchValue: allMail.value,
+        disabled: false,
+        onClick: (on: boolean) => void setAllMail(on),
+      },
+    ],
+  }))
   const rows = computed(() => {
     if (!offered.value) return []
     return split.value ? [categoriesSwitch.value, tabsSubmenu.value] : [categoriesSwitch.value]
   })
-  return { rows }
+  return { rows, offered, split, categoriesSwitch, categorySwitches }
 }
 
 /** The name a tab goes by in the list's menu and toasts. */

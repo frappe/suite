@@ -10,7 +10,7 @@ export interface ReactionGroup {
 }
 
 /** ❤ and ❤️ differ only in how they ask to be drawn, so they are one chip. */
-const emojiKey = (emoji: string) => emoji.replaceAll('️', '')
+export const emojiKey = (emoji: string) => emoji.replaceAll('️', '')
 
 /**
  * The reactions on one message, as the chips a reader counts.

@@ -1,14 +1,14 @@
 <template>
-  <Dialog v-model:open="show" v-bind="dialogOptions" />
+  <AdaptiveDialog v-model:open="show" v-bind="dialogOptions" />
 </template>
 
 <script setup lang="ts">
-import { Dialog } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import { raiseToast, turnsOffLine } from '@/apps/mail/utils'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()

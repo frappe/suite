@@ -7,7 +7,7 @@ import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
 import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
 import { FOLDER_ICON_MAP } from '@/apps/mail/constants'
-import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
+import type { ComposeMailData, Mail, MailboxData, Recipient } from '@/apps/mail/types'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
 import { flattenMentions } from '@/apps/mail/utils/mentions'
@@ -352,6 +352,32 @@ export const extractQuotedContent = (htmlBody?: string) => {
   }
 
   return { quoted_content, html_body: doc.body.innerHTML }
+}
+
+/**
+ * A saved draft as a composer takes it up again: who it goes to, what it says in the editor, and
+ * what it quotes kept apart, as it was written.
+ */
+export const composeOfDraft = (mail: Mail): ComposeMailData => {
+  const { to, cc, bcc } = getGroupedRecipients(mail.recipients, false)
+  const asDraft = (recipients: Recipient[]) =>
+    recipients.map(({ email, display_name }) => ({
+      email,
+      display_name: display_name ?? undefined,
+    }))
+  return {
+    name: mail.name,
+    id: mail.id,
+    from_email: mail.from_email,
+    to: asDraft(to),
+    cc: asDraft(cc),
+    bcc: asDraft(bcc),
+    subject: mail.subject || '',
+    in_reply_to: mail.message_id,
+    in_reply_to_id: mail.id,
+    attachments: mail.attachments || [],
+    ...extractQuotedContent(mail.html_body),
+  }
 }
 
 export const isMac = navigator.platform.toUpperCase().includes('MAC')

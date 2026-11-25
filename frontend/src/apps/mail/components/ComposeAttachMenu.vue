@@ -11,7 +11,7 @@
 import { HardDrive, MonitorUp } from 'lucide-vue-next'
 import { useTemplateRef } from 'vue'
 
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { translate as __ } from '@/platform/translation'
 
 const emit = defineEmits<{

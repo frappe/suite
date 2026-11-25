@@ -16,7 +16,7 @@
  * Not every block in that markup is history the reader has already seen. A forward travels in
  * the same containers, and it is the message. A writer who answers inline types between the
  * quoted lines, inside the trail. And a mail can be nothing but a quote. Each of those stays on
- * view, or the reader opens a reply and finds it blank above a "Show trimmed content" button.
+ * view, or the reader opens a reply and finds it blank above a "Show quoted text" button.
  *
  * The backend's `preview_from_html` strips every trail it finds, forwards and inline answers
  * included, so the preview may say less than the reader shows but never shows what it hides.

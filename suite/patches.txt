@@ -145,3 +145,5 @@ suite.drive.patches.cleanup
 suite.drive.patches.grant_admin_creators_edit
 # A notification may point at a download instead of an activity.
 suite.drive.patches.optional_notification_activity
+# Screening is always on for a personal account: switch it back on where it was turned off.
+suite.mail.patches.screen_every_personal_account

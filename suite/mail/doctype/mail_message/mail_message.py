@@ -872,7 +872,18 @@ def query_threads(
     # Fetch every message in the page's threads once, then group them back by thread.
     threads: dict[str, list[dict]] = {thread_id: [] for thread_id in thread_email_ids}
     email_ids = [email_id for ids in thread_email_ids.values() for email_id in ids]
-    for message in get_messages(account, email_ids):
+    messages = get_messages(account, email_ids)
+    # A message destroyed between the query and that read is missing from it. A draft saved again
+    # meanwhile is: the save replaces it under a new id, in the same thread, which the query came
+    # too early to list, and the row dropped out of the list until the next read. A thread left
+    # short is asked again, the once.
+    held = {message["id"] for message in messages}
+    short = [thread_id for thread_id, ids in thread_email_ids.items() if not held.issuperset(ids)]
+    if short:
+        latest = get_thread_email_ids(account, short)
+        if missed := [email_id for ids in latest.values() for email_id in ids if email_id not in held]:
+            messages += get_messages(account, missed)
+    for message in messages:
         if message["thread_id"] in threads:
             threads[message["thread_id"]].append(message)
 

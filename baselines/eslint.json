@@ -185,7 +185,6 @@
   "frontend/src/apps/writer/extensions/components/TabView.vue|vue/block-lang": 1,
   "frontend/src/apps/writer/extensions/embed-extension.js|@typescript-eslint/no-unused-vars": 1,
   "frontend/src/apps/writer/extensions/page-break.ts|@typescript-eslint/no-explicit-any": 1,
-  "frontend/src/components/MobileProfilePage.vue|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/components/settings/types.ts|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/composition/DocumentHost.test.ts|@typescript-eslint/no-explicit-any": 1,
   "frontend/src/platform/feedback/index.test.ts|@typescript-eslint/no-explicit-any": 2,

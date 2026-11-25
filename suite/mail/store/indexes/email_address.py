@@ -130,3 +130,14 @@ class EmailAddressIndex(SearchStore):
 
         hits, _total = self.search_prefix(tokens, limit=None)
         return hits
+
+    def get_recent_addresses(self, limit: int) -> list[dict]:
+        """Return up to `limit` addresses the account has sent mail to, most recently sent first.
+
+        What a recipient field offers before anything is typed. The index cannot sort by
+        `last_sent_at` itself (it is not a fast field, and making it one would wipe the index), so
+        every sent-to address is read and sorted here: one read, as a sheet opens.
+        """
+
+        sent = self.search_range("last_sent_at", 1, 2**62)
+        return sorted(sent, key=lambda address: -(address.get("last_sent_at") or 0))[:limit]

@@ -1,5 +1,5 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     v-model:open="show"
     v-bind="{
       title: __('Delete {0}', [mailbox?._name]),
@@ -15,12 +15,11 @@
 </template>
 
 <script setup lang="ts">
-import { Dialog } from 'frappe-ui'
-
 import { api, useMutation, type InputOf } from '@/api'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()

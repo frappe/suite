@@ -346,15 +346,16 @@ describe('saving a draft', () => {
       .mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
       .mockResolvedValueOnce({ id: 'draft-3', status: 'Drafted', error: null })
     composer.mail.html_body = '<p>First.</p>'
-    const saving = composer.saveDraft()
+    void composer.saveDraft()
     await vi.waitFor(() => expect(server.updateDraft).toHaveBeenCalled())
 
     composer.mail.html_body = '<p>First. Second.</p>'
     open = false
     apps.splice(0).forEach((app) => app.unmount())
-    await composer.saveDraft() // The host's save on the way out, while the first is still out.
+    // The host's save on the way out, while the first is still out: done once what was typed since is.
+    const onTheWayOut = composer.saveDraft()
     answer({ id: 'draft-2', status: 'Drafted', error: null })
-    await saving
+    await onTheWayOut
 
     expect(server.updateDraft).toHaveBeenCalledTimes(2)
     expect(server.updateDraft.mock.calls[1][0]).toMatchObject({

@@ -7,6 +7,7 @@
         class="min-w-0 flex-1"
         :title="__('Outbox')"
         with-back
+        compact
         @back="backToList"
       />
       <!-- -ml-0.5 cancels the crumb's own padding so the title sits on the px-5 axis -->
@@ -165,14 +166,14 @@
       :initial-value="data?.send_at"
       :save="(sendAt: string) => rescheduleMailSubmit({ send_at: sendAt })"
     />
-    <Dialog v-model:open="showSendNow" v-bind="sendNowOptions" />
-    <Dialog v-model:open="showRetry" v-bind="retryOptions" />
-    <Dialog v-model:open="showCancel" v-bind="cancelOptions" />
+    <AdaptiveDialog v-model:open="showSendNow" v-bind="sendNowOptions" />
+    <AdaptiveDialog v-model:open="showRetry" v-bind="retryOptions" />
+    <AdaptiveDialog v-model:open="showCancel" v-bind="cancelOptions" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { Breadcrumbs, Button, Dialog, Skeleton, usePageMeta } from 'frappe-ui'
+import { Breadcrumbs, Button, Skeleton, usePageMeta } from 'frappe-ui'
 import { ArrowUpRight } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -198,6 +199,7 @@ import {
   type SubmissionDetails,
 } from '@/apps/mail/utils/submission'
 import { activityEntries, statusSummary, themeInkClass } from '@/apps/mail/utils/submissionActivity'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { appPageMeta } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 

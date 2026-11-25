@@ -1,35 +1,39 @@
 <template>
-  <AppSettingsHeader :title="__('Inbox')" />
+  <AppSettingsHeader :title="__('Incoming')" />
   <AppSettingsBody>
-    <div class="flex flex-col gap-10">
-      <!-- First, so the link from a screened sender's mail opens on it. -->
-      <SettingsSection :title="__('Screener')">
+    <!-- Shown once the preferences are read, so the row that needs them comes with the rest. Hidden,
+         not left out, so every part starts reading as the page opens. -->
+    <div v-show="settled" class="flex flex-col gap-10">
+      <InboxCategorySettings />
+      <!-- Who may reach the Inbox and what they may load as you read: the Screener's senders, and
+           remote images, which trusted senders' mail shows. -->
+      <SettingsSection :title="__('Senders')">
         <div class="divide-y divide-outline-gray-1">
           <ScreenedEmailAddressSettings />
+          <SettingsRow
+            v-if="preferences"
+            :title="__('Block remote images')"
+            :description="__(`Don’t load remote images from untrusted sources by default.`)"
+          >
+            <Switch v-model="blockRemoteImages" />
+          </SettingsRow>
         </div>
-      </SettingsSection>
-      <InboxCategorySettings />
-      <SettingsSection :title="__('Folders')">
-        <SettingsDialogRow
-          :title="__('Your folders')"
-          section="mail.inbox.folders"
-          :description="__('Rename, hide or delete your folders.')"
-          :action="__('Manage')"
-        >
-          <FolderSettings />
-        </SettingsDialogRow>
       </SettingsSection>
     </div>
   </AppSettingsBody>
 </template>
 
 <script setup lang="ts">
-import FolderSettings from '@/apps/mail/components/Settings/FolderSettings.vue'
+import { SettingsRow, Switch } from 'frappe-ui'
+
 import InboxCategorySettings from '@/apps/mail/components/Settings/InboxCategorySettings.vue'
 import ScreenedEmailAddressSettings from '@/apps/mail/components/Settings/ScreenedEmailAddressSettings.vue'
+import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import AppSettingsBody from '@/components/settings/AppSettingsBody.vue'
 import AppSettingsHeader from '@/components/settings/AppSettingsHeader.vue'
-import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
+
+const { preferences, settled, flag } = useAccountPreferences()
+const blockRemoteImages = flag('block_remote_images')
 </script>

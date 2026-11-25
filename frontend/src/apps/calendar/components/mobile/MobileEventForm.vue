@@ -469,8 +469,8 @@ import {
 } from '@/apps/calendar/utils/eventOptions'
 import { formatAlertPhrase, getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
 import { MeetIcon } from '@/apps/meet'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
+import { useKeyboardInsets } from '@/platform/keyboard-insets'
 
 const {
   event,

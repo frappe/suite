@@ -60,7 +60,7 @@
       </SettingsSection>
     </div>
 
-    <Dialog v-model:open="showSecret" :title="__('API access')">
+    <AdaptiveDialog v-model:open="showSecret" :title="__('API access')">
       <div class="flex flex-col gap-4">
         <p class="text-base text-ink-gray-7">
           {{ __('Copy the API secret now. You cannot see it again.') }}
@@ -68,22 +68,23 @@
         <CopyField v-if="keys" :label="__('API key')" :value="keys.api_key" />
         <CopyField v-if="keys" :label="__('API secret')" :value="keys.api_secret" />
       </div>
-    </Dialog>
+    </AdaptiveDialog>
   </SettingsPage>
 </template>
 
 <script setup lang="ts">
-import { Button, Dialog, SettingsRow, Switch } from 'frappe-ui'
+import { Button, SettingsRow, Switch } from 'frappe-ui'
 import { computed, ref, watch } from 'vue'
 
 import { api, useMutation, useQuery } from '@/api'
 import type { WebdavGetOutput } from '@/apps/drive/client/generated'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
+import SettingsPage from '@/platform/settings/SettingsPage.vue'
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
 import { locationLabel } from '../../internal/locations'
 import CopyField from './CopyField.vue'
-import SettingsPage from './SettingsPage.vue'
 
 type Connection = Extract<WebdavGetOutput, { server_url: string }>
 

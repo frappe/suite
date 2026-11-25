@@ -19,8 +19,9 @@ export const useRowLayout = (
   // line instead of a stacked block.
   const isFullWidth = computed(() => !(user.data.show_reading_pane || isMobile.value))
   const showCheckbox = computed(() => !isMobile.value && row().selectable)
+  // A phone keeps the avatar of a selected row, ticked; elsewhere a check circle takes its place.
   const showAvatar = computed(
-    () => !row().isSelected && (isMobile.value || !row().selectable) && !row().hideAvatar,
+    () => !row().hideAvatar && (isMobile.value || (!row().selectable && !row().isSelected)),
   )
   // With no checkbox, no check circle and no avatar there is nothing left to reserve space for.
   const showLeading = computed(() => showCheckbox.value || row().isSelected || showAvatar.value)

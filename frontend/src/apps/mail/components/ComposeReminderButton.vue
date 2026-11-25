@@ -13,7 +13,11 @@
       :tooltip="label"
     >
       <template #icon>
-        <component :is="remindAt ? Bell : BellPlus" class="text-ink-gray-8 h-4 w-4" />
+        <span
+          :class="remindAt ? 'lucide-bell' : 'lucide-bell-plus'"
+          class="text-ink-gray-8 size-4"
+          aria-hidden="true"
+        />
       </template>
     </Button>
   </ReminderMenu>
@@ -21,7 +25,6 @@
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
-import { Bell, BellPlus } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import ReminderMenu from '@/apps/mail/components/ReminderMenu.vue'

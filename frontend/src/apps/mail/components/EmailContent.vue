@@ -82,10 +82,35 @@ const handleMessage = (event: MessageEvent) => {
       height.value = reported
     return
   }
-  // Horizontal swipes detected inside the iframe, re-broadcast for the thread pane's
-  // swipe navigation (MailboxView listens; it dedupes across EmailContent instances).
-  if (event.data?.type === 'swipe') {
-    window.dispatchEvent(new CustomEvent('email-swipe', { detail: event.data.direction }))
+  // The message zoomed around the reader's fingers (see the frame's pinch): the frame is as tall as
+  // it now is at once, not at the next render, so the thread can scroll by as much as the point
+  // under the fingers moved, and it stays under them.
+  if (event.data?.type === 'zoom') {
+    const iframe = frame.value
+    if (!iframe || event.source !== iframe.contentWindow) return
+    const { height: reported, shift } = event.data
+    if (typeof reported !== 'number' || !Number.isFinite(reported) || reported < 0) return
+    height.value = reported
+    iframe.style.height = `${reported}px`
+    if (typeof shift === 'number' && Number.isFinite(shift)) {
+      const thread = scrollerOf(iframe)
+      if (thread) thread.scrollTop += shift
+    }
+    return
+  }
+  // Each touch point over the message, passed on for the thread's swipe-to-page (useThreadSwipe):
+  // touches never leave the frame, so the pane cannot see them. Only this message's own frame's,
+  // or every expanded message would pass on every frame's.
+  if (event.data?.type === 'swipe-point') {
+    if (event.source !== frame.value?.contentWindow) return
+    const { phase, x, y, count } = event.data
+    if (!['start', 'move', 'end', 'cancel'].includes(phase)) return
+    if (typeof x !== 'number' || typeof y !== 'number') return
+    window.dispatchEvent(
+      new CustomEvent('email-swipe-point', {
+        detail: { phase, x, y, count: typeof count === 'number' ? count : 1 },
+      }),
+    )
     return
   }
   // A date in the message the reader picked (see markMailDates), by its place in this render's list.
@@ -131,6 +156,17 @@ const handleMessage = (event: MessageEvent) => {
   document.dispatchEvent(keyboardEvent)
 }
 
+// How far in a pinch zooms a message: this many times its own size.
+const MAX_ZOOM = 3
+
+const scrollerOf = (from: Element) => {
+  for (let el = from.parentElement; el; el = el.parentElement) {
+    const { overflowY } = getComputedStyle(el)
+    if (overflowY === 'auto' || overflowY === 'scroll') return el
+  }
+  return null
+}
+
 onMounted(() => window.addEventListener('message', handleMessage))
 onUnmounted(() => window.removeEventListener('message', handleMessage))
 
@@ -141,16 +177,16 @@ const collapseQuotes = (doc: Document) => {
   findQuoteRoots(doc).forEach((quote) => {
     quote.classList.add('quote-hidden')
     // A labelled control, not a bare '···' chip — unlabelled, it was easy to miss
-    // that a reply hides a whole conversation underneath it.
+    // that a reply hides a whole conversation underneath it. Drawn as PlainTextBody's is.
     const button = doc.createElement('button')
     button.innerHTML =
-      '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h16M4 11h16M4 16h10"/></svg>'
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>'
     const label = doc.createElement('span')
-    label.textContent = __('Show trimmed content')
+    label.textContent = __('Show quoted text')
     // The toggle script runs inside the iframe, where __() doesn't exist — both
     // translations ride along as data attributes instead.
-    button.dataset.show = __('Show trimmed content')
-    button.dataset.hide = __('Hide trimmed content')
+    button.dataset.show = __('Show quoted text')
+    button.dataset.hide = __('Hide quoted text')
     button.appendChild(label)
     // Styled by the .quote-toggle rules in the srcdoc stylesheet — a class, not
     // inline styles, so the mobile variant can size the touch target up. The frame's script
@@ -276,37 +312,46 @@ const srcdoc = computed(() => {
 					display: none;
 				}
 
+				/* A quiet outlined pill: it says something is folded away without standing out more
+				   than the message it sits in. */
 				.quote-toggle {
 					display: inline-flex;
 					align-items: center;
 					gap: 6px;
-					background: ${colors.value.button};
-					color: ${colors.value.text};
-					padding: 4px 9px;
-					/* frappe-ui's standard button radius (rounded-4) */
-					border-radius: 8px;
+					height: 24px;
+					padding: 0 10px;
+					border: 1px solid ${colors.value.outline};
+					border-radius: 999px;
+					color: ${colors.value.muted};
+					font-size: 13px;
 					transition: background .2s;
 					margin: 12px 0;
+					/* iOS paints its own tap highlight over a pressed button, which shows blue on a
+					   phone; the press is shown by the button's own shade instead. */
+					-webkit-tap-highlight-color: transparent;
 				}
 
-				.quote-toggle:hover {
-					background: ${colors.value.buttonHover};
+				/* A phone keeps :hover on whatever was tapped last, which held the button shaded after
+				   a tap: there the shade lasts as long as the press. */
+				@media (hover: hover) {
+					.quote-toggle:hover {
+						background: ${colors.value.button};
+					}
 				}
 
-				/* A finger target on mobile — matches the app's 40px mobile buttons,
-				   with the lg radius that size takes. Keyed on the app's own isMobile,
-				   not an iframe media query: the iframe only knows the reading pane's
-				   width, and a desktop pane narrowed by the sidebar is not a phone. */
+				.quote-toggle:active {
+					background: ${colors.value.button};
+				}
+
+				/* A finger's size on a phone. Keyed on the app's own isMobile, not an iframe media
+				   query: the iframe only knows the reading pane's width, and a desktop pane narrowed
+				   by the sidebar is not a phone. */
 				${
           isMobile.value
             ? `.quote-toggle {
-						padding: 10px 14px;
-						gap: 8px;
-						border-radius: 10px;
-					}
-					.quote-toggle svg {
-						width: 14px;
-						height: 14px;
+						height: 32px;
+						padding: 0 12px;
+						font-size: 14px;
 					}`
             : ''
         }
@@ -474,7 +519,9 @@ const srcdoc = computed(() => {
 					Object.entries(heldOver).forEach(([name, saved]) => bodyStyle.setProperty(name, ...saved));
 					heldOver = null;
 				};
+				let fit = 1;
 				const fitToPane = () => {
+					fit = 1;
 					const pane = root.clientWidth;
 					const content = root.scrollWidth;
 					if (!pane || content <= pane + 1) return;
@@ -483,26 +530,61 @@ const srcdoc = computed(() => {
 					const width = document.body.getBoundingClientRect().width;
 					root.style.setProperty('width', ...rootWidth);
 					hold({ 'box-sizing': 'border-box', width: width + 'px', 'min-width': '0', 'max-width': 'none' });
-					hold({ zoom: String(pane / root.scrollWidth) });
+					fit = pane / root.scrollWidth;
+					hold({ zoom: String(fit) });
 				};
 
-				const normalizeAll = () => {
+				// The reader's own zoom on top of that (a pinch, a double tap, below): 1 is the message as
+				// fitted. A transform, not zoom: WebKit leaves out of a zoom the font sizes a mail sets
+				// on its own elements, so their text would stay as it was while the rest grew. A scaled
+				// body still reaches as wide and as low as it is drawn, so the frame scrolls sideways
+				// over it and messageHeight measures it as drawn.
+				let scale = 1;
+				const applyScale = () => {
+					if (scale === 1) {
+						bodyStyle.removeProperty('transform');
+						bodyStyle.removeProperty('transform-origin');
+						return;
+					}
+					bodyStyle.setProperty('transform-origin', '0 0', 'important');
+					bodyStyle.setProperty('transform', 'scale(' + scale + ')', 'important');
+				};
+				// Everything is measured unscaled, and a zoomed message is put back where it was scrolled to.
+				const unscaled = (measure) => () => {
+					const x = window.scrollX;
+					bodyStyle.removeProperty('transform');
+					measure();
+					applyScale();
+					if (scale !== 1) window.scrollTo(x, window.scrollY);
+				};
+
+				const normalizeAll = unscaled(() => {
 					// Release first: normalizeWidths writes the same properties the hold saved.
 					release();
 					normalizeWidths();
 					unsquashImages();
 					fitToPane();
-				};
+				});
 				normalizeAll();
-				window.addEventListener('resize', normalizeAll);
+				// Only a new width lays the message out again: the frame also resizes each time the
+				// message's height changes, as zooming does at every step. The root's box, not
+				// clientWidth: a collapsed message's frame keeps its window's width, but its root has
+				// no box, so a message first laid out when it is opened is laid out then.
+				let laidOutWidth = root.getBoundingClientRect().width;
+				window.addEventListener('resize', () => {
+					const width = root.getBoundingClientRect().width;
+					if (!width || width === laidOutWidth) return;
+					laidOutWidth = width;
+					normalizeAll();
+				});
 				// An image that fails changes the layout as surely as one that arrives, so both
 				// refit; the window's own load is the backstop once every image has settled.
-				const refit = () => {
+				const refit = unscaled(() => {
 					// Release first, so what follows measures the unheld layout.
 					release();
 					unsquashImages();
 					fitToPane();
-				};
+				});
 				document.querySelectorAll('img').forEach((img) => {
 					img.addEventListener('load', refit);
 					img.addEventListener('error', refit);
@@ -532,11 +614,22 @@ const srcdoc = computed(() => {
 				};
 				// Collapsed, the message is not laid out and has no height: the frame keeps the one
 				// it had, and hears again when the message is opened.
+				// Zoomed, the message is as tall as it is at its own size, times the zoom. Measuring that
+				// can walk every element, so it is measured once and kept for as long as the message
+				// stays as it is, not at each step of a pinch.
+				let natural;
+				const measureNatural = unscaled(() => {
+					natural = messageHeight();
+				});
+				const scaledHeight = () => Math.ceil(natural * scale);
 				let reported;
-				const reportHeight = () => {
+				// The frame resizes at each step of a zoom, to the height posted for it: what is drawn
+				// below the root's box can only have moved when the message is at its own size.
+				const reportHeight = (remeasure = true) => {
 					// Not clientWidth: a hidden frame keeps its window's width, but its root has no box.
 					if (!root.getBoundingClientRect().width) return;
-					const height = messageHeight();
+					if (remeasure || natural === undefined) measureNatural();
+					const height = scaledHeight();
 					if (height === reported) return;
 					reported = height;
 					window.parent.postMessage({ type: 'height', height }, '*');
@@ -544,12 +637,13 @@ const srcdoc = computed(() => {
 				// Whatever changes the root's box is seen here: an image or a font arriving, the
 				// quoted trail opening, the pane changing width. What is drawn below the box can
 				// change without it, when an image there arrives or the frame is resized.
-				new ResizeObserver(reportHeight).observe(root);
-				window.addEventListener('resize', reportHeight);
-				window.addEventListener('load', reportHeight);
+				const remeasureHeight = () => reportHeight();
+				new ResizeObserver(remeasureHeight).observe(root);
+				window.addEventListener('resize', () => reportHeight(scale === 1));
+				window.addEventListener('load', remeasureHeight);
 				document.querySelectorAll('img').forEach((img) => {
-					img.addEventListener('load', reportHeight);
-					img.addEventListener('error', reportHeight);
+					img.addEventListener('load', remeasureHeight);
+					img.addEventListener('error', remeasureHeight);
 				});
 
 				// Forward keyboard events to parent
@@ -655,10 +749,12 @@ const srcdoc = computed(() => {
 					if (!moved(e, mark) && document.getSelection()?.isCollapsed !== false) pickDate(mark);
 				});
 
-				// Forward horizontal swipes to the parent — touches never leave the iframe, so
-				// the thread pane's swipe navigation can't see them otherwise. A gesture that
-				// starts on horizontally scrollable content (incl. an overflowing body) means
-				// scroll, not navigate.
+				// Every touch point goes up to the page, which pulls the thread sideways under the finger
+				// (useThreadSwipe): touches never leave the frame, so the page cannot see them otherwise.
+				// Screen coordinates, as the page reads its own: the frame moves with the thread it is
+				// in, so a point inside it would shift under the finger. A gesture that starts on
+				// horizontally scrollable content (an overflowing body included) means scroll, and is
+				// not sent.
 				const inHorizontalScroller = (el) => {
 					const doc = document.documentElement;
 					if (doc.scrollWidth > doc.clientWidth + 1) return true;
@@ -670,36 +766,141 @@ const srcdoc = computed(() => {
 					}
 					return false;
 				};
-				// Same rule as useSwipeNav in the parent, and for the same reason: a gesture
-				// that has scrolled 24px vertically is a scroll and stays one, however it
-				// ends. Reading a message is mostly scrolling, so endpoint-only judgement
-				// paged the thread out from under the reader.
+				const sendPoint = (phase, touch, count) => window.parent.postMessage(
+					{ type: 'swipe-point', phase, x: touch.screenX, y: touch.screenY, count }, '*');
+				// The page decides what the gesture is by the same rule (LOCK_AT in swipeGesture.ts):
+				// this copy only knows when to stop the frame scrolling under a drag.
 				let swipeOrigin = null;
-				let swipeScrolling = false;
+				let swipeLock = null;
+				// A second finger makes it a pinch or a two-finger scroll for good: the page is told, and
+				// lets it go, and the frame leaves it to the browser.
 				document.addEventListener('touchstart', (e) => {
-					swipeScrolling = false;
-					swipeOrigin = e.touches.length === 1 && !inHorizontalScroller(e.target)
-						? { x: e.touches[0].clientX, y: e.touches[0].clientY }
-						: null;
+					swipeLock = e.touches.length > 1 ? 'scroll' : null;
+					swipeOrigin = !inHorizontalScroller(e.target) ? e.touches[0] : null;
+					if (swipeOrigin) sendPoint('start', swipeOrigin, e.touches.length);
 				}, { passive: true });
+				// Once it is a scroll the page has nothing more to do with it until it ends.
 				document.addEventListener('touchmove', (e) => {
-					if (!swipeOrigin || swipeScrolling) return;
 					const touch = e.touches[0];
-					if (!touch) return;
-					const dy = touch.clientY - swipeOrigin.y;
-					if (Math.abs(dy) > 24 && Math.abs(dy) > Math.abs(touch.clientX - swipeOrigin.x))
-						swipeScrolling = true;
-				}, { passive: true });
+					if (!swipeOrigin || !touch || swipeLock === 'scroll') return;
+					const dx = touch.screenX - swipeOrigin.screenX;
+					const dy = touch.screenY - swipeOrigin.screenY;
+					if (!swipeLock && Math.hypot(dx, dy) >= 10)
+						swipeLock = Math.abs(dx) > Math.abs(dy) ? 'drag' : 'scroll';
+					if (swipeLock === 'scroll') return;
+					if (swipeLock === 'drag' && e.cancelable) e.preventDefault();
+					sendPoint('move', touch);
+				}, { passive: false });
 				document.addEventListener('touchend', (e) => {
 					if (!swipeOrigin) return;
-					const dx = e.changedTouches[0].clientX - swipeOrigin.x;
-					const dy = e.changedTouches[0].clientY - swipeOrigin.y;
-					const wasScrolling = swipeScrolling;
 					swipeOrigin = null;
-					swipeScrolling = false;
-					if (wasScrolling) return;
-					if (Math.abs(dx) < 64 || Math.abs(dx) < Math.abs(dy) * 2) return;
-					window.parent.postMessage({ type: 'swipe', direction: dx < 0 ? 'left' : 'right' }, '*');
+					sendPoint('end', e.changedTouches[0]);
+				}, { passive: true });
+				document.addEventListener('touchcancel', (e) => {
+					if (!swipeOrigin) return;
+					swipeOrigin = null;
+					sendPoint('cancel', e.changedTouches[0]);
+				}, { passive: true });
+
+				// Pinch to zoom the message, as a phone's own mail app does: the app around it (its
+				// toolbar, the subject, the reply bar) stays as it is, so the browser's zoom is off for
+				// the page and this zooms the message alone, from fitted to ${MAX_ZOOM} times its size.
+				// Zoomed in, it is wider than the frame and scrolls sideways in it (which is also what
+				// stops a sideways drag paging the thread, above), and taller, so the frame grows and
+				// the thread scrolls by as much as the point under the fingers moved down: it stays
+				// under them. A double tap zooms in on where it lands, or back out.
+				const zoomAt = (next, x, y, panX = 0, panY = 0) => {
+					const before = scale;
+					const pageX = window.scrollX + x;
+					const pageY = window.scrollY + y;
+					scale = Math.min(Math.max(next, 1), Math.max(1, ${MAX_ZOOM} / fit));
+					applyScale();
+					const ratio = scale / before;
+					window.scrollTo(pageX * ratio - x - panX, window.scrollY);
+					if (natural === undefined) measureNatural();
+					const height = scaledHeight();
+					reported = height;
+					window.parent.postMessage({ type: 'zoom', height, shift: pageY * ratio - pageY - panY }, '*');
+					return ratio;
+				};
+				let pinch = null;
+				let animation = 0;
+				const between = (a, b) => ({
+					x: (a.clientX + b.clientX) / 2,
+					y: (a.clientY + b.clientY) / 2,
+					// Screen points for how far the fingers went: the frame moves under them as it zooms
+					screenX: (a.screenX + b.screenX) / 2,
+					screenY: (a.screenY + b.screenY) / 2,
+					apart: Math.hypot(a.screenX - b.screenX, a.screenY - b.screenY),
+				});
+				document.addEventListener('touchstart', (e) => {
+					cancelAnimationFrame(animation);
+					if (e.touches.length === 2) {
+						const at = between(e.touches[0], e.touches[1]);
+						pinch = { ...at, scale };
+					} else if (e.touches.length > 2) pinch = null;
+				}, { passive: true });
+				// Not passive: the browser would zoom the whole app with the same fingers. A finger
+				// left down once the other lifts goes on panning, as the browser won't take it over.
+				document.addEventListener('touchmove', (e) => {
+					if (!pinch) return;
+					if (e.cancelable) e.preventDefault();
+					if (e.touches.length === 2) {
+						const at = between(e.touches[0], e.touches[1]);
+						zoomAt(pinch.scale * (at.apart / pinch.apart), at.x, at.y, at.screenX - pinch.screenX, at.screenY - pinch.screenY);
+						Object.assign(pinch, { screenX: at.screenX, screenY: at.screenY });
+					} else {
+						const touch = e.touches[0];
+						zoomAt(scale, touch.clientX, touch.clientY, touch.screenX - pinch.screenX, touch.screenY - pinch.screenY);
+						Object.assign(pinch, { screenX: touch.screenX, screenY: touch.screenY });
+					}
+				}, { passive: false });
+				document.addEventListener('gesturestart', (e) => e.preventDefault());
+
+				const zoomTo = (target, x, y) => {
+					const from = scale;
+					const start = performance.now();
+					const step = (now) => {
+						const done = Math.min(1, (now - start) / 200);
+						const ratio = zoomAt(from + (target - from) * (1 - (1 - done) ** 3), x, y);
+						// The point zoomed around is where it was on screen, so lower in the grown frame
+						y = (window.scrollY + y) * ratio - window.scrollY;
+						if (done < 1) animation = requestAnimationFrame(step);
+					};
+					animation = requestAnimationFrame(step);
+				};
+				let tap = null;
+				let lastTap = null;
+				document.addEventListener('touchstart', (e) => {
+					const touch = e.touches[0];
+					tap = e.touches.length === 1 ? { x: touch.screenX, y: touch.screenY, t: e.timeStamp } : null;
+					if (!tap) lastTap = null;
+				}, { passive: true });
+				document.addEventListener('touchmove', (e) => {
+					const touch = e.touches[0];
+					if (tap && Math.hypot(touch.screenX - tap.x, touch.screenY - tap.y) > 10) tap = null;
+				}, { passive: true });
+				// Not passive: a double tap is the zoom's, not a second click on what it landed on
+				document.addEventListener('touchend', (e) => {
+					if (pinch) {
+						const left = e.touches[0];
+						if (left) Object.assign(pinch, { screenX: left.screenX, screenY: left.screenY });
+						else pinch = null;
+						return;
+					}
+					if (!tap || e.touches.length) return;
+					const touch = e.changedTouches[0];
+					const second = lastTap && tap.t - lastTap.t < 300 &&
+						Math.hypot(tap.x - lastTap.x, tap.y - lastTap.y) < 40;
+					lastTap = second ? null : tap;
+					tap = null;
+					if (!second || e.target.closest?.('a, button, input, select, textarea, label, summary, [data-mail-date]')) return;
+					if (e.cancelable) e.preventDefault();
+					zoomTo(scale > 1.01 ? 1 : 2, touch.clientX, touch.clientY);
+				}, { passive: false });
+				document.addEventListener('touchcancel', () => {
+					pinch = null;
+					tap = null;
 				}, { passive: true });
 			<\/script>
 		</body>
@@ -713,6 +914,10 @@ const THEME_CONFIG = {
     text: '#383838',
     button: '#F3F3F3',
     buttonHover: '#EDEDED',
+    // ink-gray-5 and outline-gray-2, for the quoted trail's toggle: an outlined button's, a step
+    // stronger than a card's edge, as a control's is
+    muted: '#7C7C7C',
+    outline: '#E2E2E2',
     link: '',
   },
   dark: {
@@ -723,6 +928,8 @@ const THEME_CONFIG = {
     text: '#D4D4D4',
     button: '#2B2B2B',
     buttonHover: '#343434',
+    muted: '#7A7A7A',
+    outline: '#383838',
     link: '#6CB6FF',
   },
 }

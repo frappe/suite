@@ -1,5 +1,5 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     v-model:open="show"
     v-bind="{
       title: __('Delete {0}?', [calendar?._name ?? '']),
@@ -20,11 +20,10 @@
 </template>
 
 <script setup lang="ts">
-import { Dialog } from 'frappe-ui'
-
 import { api, useMutation } from '@/api'
 import { raiseToast } from '@/apps/calendar/utils'
 import type { CalendarRow } from '@/apps/calendar/utils/calendars'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()

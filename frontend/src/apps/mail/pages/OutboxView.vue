@@ -69,7 +69,7 @@
                     <AdaptiveDropdown :options="rowOptions(row)" align="end">
                       <Button variant="ghost" :aria-label="__('More')" @click.stop.prevent>
                         <template #icon>
-                          <EllipsisVertical class="text-ink-gray-5 h-4 w-4" />
+                          <Ellipsis class="text-ink-gray-5 h-4 w-4" />
                         </template>
                       </Button>
                     </AdaptiveDropdown>
@@ -105,25 +105,17 @@
       :initial-value="selected?.send_at"
       :save="(sendAt: string) => rescheduleMailSubmit({ send_at: sendAt })"
     />
-    <Dialog v-model:open="showSendNow" v-bind="sendNowOptions" />
-    <Dialog v-model:open="showRetry" v-bind="retryOptions" />
-    <Dialog v-model:open="showCancel" v-bind="cancelOptions" />
+    <AdaptiveDialog v-model:open="showSendNow" v-bind="sendNowOptions" />
+    <AdaptiveDialog v-model:open="showRetry" v-bind="retryOptions" />
+    <AdaptiveDialog v-model:open="showCancel" v-bind="cancelOptions" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { refDebounced, useDebounceFn } from '@vueuse/core'
-import {
-  Badge,
-  Breadcrumbs,
-  Button,
-  Dialog,
-  LoadingIndicator,
-  Tooltip,
-  usePageMeta,
-} from 'frappe-ui'
+import { Badge, Breadcrumbs, Button, LoadingIndicator, Tooltip, usePageMeta } from 'frappe-ui'
 import { ListHeader, ListRow, ListRowItem, ListRows, ListView } from 'frappe-ui/experimental'
-import { EllipsisVertical, Mail } from 'lucide-vue-next'
+import { Ellipsis, Mail } from 'lucide-vue-next'
 import { computed, inject, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
@@ -149,8 +141,9 @@ import {
   type Submission,
   type SubmissionFilters,
 } from '@/apps/mail/utils/submission'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 import { DashboardListSkeleton } from '@/platform/dashboard'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import { appPageMeta } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 

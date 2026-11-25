@@ -15,7 +15,7 @@ describe('settings tab ids', () => {
     // @ts-expect-error A misspelled Mail tab id fails the type check.
     const typo: MailSettingsTabId = 'mail.inbx'
     // @ts-expect-error Another product's tab is not a Mail tab.
-    const other: MailSettingsTabId = 'drive.statistics'
+    const other: MailSettingsTabId = 'account.storage'
     expect([shared, typo, other]).toHaveLength(3)
   })
   it('a section is opened only on the tab that has it', () => {
