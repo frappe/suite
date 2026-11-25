@@ -2,7 +2,7 @@
   Shown when a page's code failed to load: the connection dropped, or the tab
   is older than the last deploy. Reload loads the page it was opening afresh.
   The router imports this view eagerly, so it shows when no chunk can load.
-  On a phone, a page of an app of its own (Mail) leads back to that app, not to the Suite.
+  On a phone, a page of an app of its own (Mail) leads to that app as its Home, not to the Suite.
 -->
 <template>
   <StatusPage
@@ -11,7 +11,7 @@
     :description="__('Check your connection, then reload the page.')"
   >
     <Button variant="solid" @click="reload">{{ __('Reload') }}</Button>
-    <Button variant="ghost" @click="goHome">{{ home.label }}</Button>
+    <Button variant="ghost" @click="goHome">{{ __('Go to Home') }}</Button>
   </StatusPage>
 </template>
 
@@ -24,15 +24,12 @@ import { translate as __ } from '@/platform/translation'
 import StatusPage from '@/shell/StatusPage.vue'
 import { isMobile } from '@/shell/useIsMobile'
 
-const props = defineProps<{ phoneApp?: { to: string; label: () => string } }>()
+const props = defineProps<{ phoneHome?: string }>()
 
 const route = useRoute()
 
-const home = computed(() =>
-  isMobile.value && props.phoneApp
-    ? { to: props.phoneApp.to, label: __('Go to {0}', [props.phoneApp.label()]) }
-    : { to: '/home', label: __('Go to Home') },
-)
+// On a phone, an app of its own is its own Home.
+const home = computed(() => (isMobile.value && props.phoneHome) || '/home')
 
 // Only a path on this site: the query is part of a URL anyone can send.
 function reload() {
@@ -43,6 +40,6 @@ function reload() {
 
 // A page load, not the router: the code this page could not load may be the router's next page.
 function goHome() {
-  window.location.assign(home.value.to)
+  window.location.assign(home.value)
 }
 </script>

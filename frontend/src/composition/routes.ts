@@ -32,17 +32,17 @@ function areaMeta(
 }
 
 /**
- * The app of its own on a phone (an area with its own phone bar, as Mail) that `path` is in. Its
- * error pages lead back into it: a phone app has no way out to the Suite.
+ * The home of the app of its own on a phone (an area with its own phone bar, as Mail) that `target`
+ * is in. Its error pages lead back there: a phone app has no way out to the Suite.
  */
-function phoneAppAt(target: unknown) {
+function phoneHomeAt(target: unknown) {
   if (typeof target !== 'string') return undefined
   // A failed page's address keeps its query and hash.
   const path = target.split(/[?#]/)[0]
   const area = areaDefinitions.find(
     ({ phoneNav, to }) => phoneNav && (path === to || path.startsWith(`${to}/`)),
   )
-  return area && { to: area.to, label: area.label }
+  return area?.to
 }
 
 function placeholder(
@@ -198,14 +198,14 @@ export const routes: RouteRecordRaw[] = [
     path: '/suite/load-error',
     name: 'app-load-error',
     component: AppLoadErrorView,
-    props: (to) => ({ phoneApp: phoneAppAt(to.query.redirect) }),
+    props: (to) => ({ phoneHome: phoneHomeAt(to.query.redirect) }),
     meta: { frame: 'none', scroll: 'content', allowGuest: true, title: 'Frappe Suite' },
   },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/shell/NotFoundView.vue'),
-    props: (to) => ({ phoneApp: phoneAppAt(to.path) }),
+    props: (to) => ({ phoneHome: phoneHomeAt(to.path) }),
     meta: {
       frame: 'none',
       scroll: 'content',

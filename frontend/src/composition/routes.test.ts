@@ -164,7 +164,7 @@ describe('a page whose code fails to load', () => {
     const { router, root } = mountRouter(new TypeError('Failed to fetch'))
 
     await open(router, '/mail?compose=1')
-    button(root, 'Go to Mail')?.click()
+    button(root, 'Go to Home')?.click()
     expect(assign).toHaveBeenLastCalledWith('/mail')
 
     // A page of no app of its own still leads to the Suite.

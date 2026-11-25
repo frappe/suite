@@ -1,4 +1,4 @@
-<!-- On a phone, a page of an app of its own (Mail) leads back to that app, not to the Suite. -->
+<!-- On a phone, a page of an app of its own (Mail) leads to that app as its Home, not to the Suite. -->
 <template>
   <StatusPage
     :title="__('Page not found')"
@@ -16,11 +16,11 @@ import { translate as __ } from '@/platform/translation'
 import StatusPage from '@/shell/StatusPage.vue'
 import { isMobile } from '@/shell/useIsMobile'
 
-const props = defineProps<{ phoneApp?: { to: string; label: () => string } }>()
+const props = defineProps<{ phoneHome?: string }>()
 
 const home = computed(() =>
-  isMobile.value && props.phoneApp
-    ? { to: props.phoneApp.to, label: __('Go to {0}', [props.phoneApp.label()]) }
+  isMobile.value && props.phoneHome
+    ? { to: props.phoneHome, label: __('Go to Home') }
     : { to: '/suite', label: __('Go to launcher') },
 )
 </script>
