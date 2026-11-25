@@ -408,14 +408,19 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     })
   }
 
-  setVisibleRemoteVideoParticipants(participantIds: Iterable<string>): Promise<void> {
+  setVisibleRemoteVideoParticipants(
+    participantIds: Iterable<string>,
+    pausedParticipantIds: Iterable<string> = [],
+  ): Promise<void> {
     this.visibleVideoParticipants = new Set(participantIds)
+    this.pausedVideoParticipants = new Set(pausedParticipantIds)
     return this.updatePictureInPictureSubscriptions()
   }
 
   private updatePictureInPictureSubscriptions(): Promise<void> {
     const participants = new Set(this.visibleVideoParticipants)
     for (const id of this.pipParticipantIds) participants.add(id)
+    for (const id of this.pausedVideoParticipants) participants.delete(id)
     return this.connectionManager.setVisibleCameraParticipants(participants)
   }
 
@@ -1033,6 +1038,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
   private pipConsumerIds = new Set<string>()
   private pipParticipantIds = new Set<string>()
   private visibleVideoParticipants = new Set<string>()
+  private pausedVideoParticipants = new Set<string>()
   private pipBasePreferences = new WeakMap<
     ConsumerEntry['consumer'],
     { visible: boolean; width: number; height: number }
@@ -1302,6 +1308,7 @@ export class SFUMeetingManager implements MediaAttachmentFacade {
     this.pipConsumerIds.clear()
     this.pipBasePreferences = new WeakMap()
     this.visibleVideoParticipants.clear()
+    this.pausedVideoParticipants.clear()
     this.screenPublicationGeneration += 1
     this.screenPublicationTrack = null
     return this.connectionManager.disconnect()

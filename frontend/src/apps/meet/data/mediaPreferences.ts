@@ -15,6 +15,19 @@ export const pushToTalkEnabled: Ref<boolean> = ref(readBoolean('mediaPref.pushTo
 
 export const autoHideToolbar: Ref<boolean> = ref(readBoolean('mediaPref.autoHideToolbar', false))
 
+export type VideoFit = 'fill' | 'fit'
+
+const videoFitPreferenceKey = 'mediaPref.defaultVideoFit'
+const savedVideoFit = readString(videoFitPreferenceKey)
+export const defaultVideoFit = ref<VideoFit | undefined>(
+  savedVideoFit === 'fill' || savedVideoFit === 'fit' ? savedVideoFit : undefined,
+)
+
+export function setDefaultVideoFit(value: VideoFit): void {
+  defaultVideoFit.value = value
+  writeString(videoFitPreferenceKey, value)
+}
+
 export function setNoiseCancellationEnabled(val: boolean): void {
   noiseCancellationEnabled.value = !!val
   writeBoolean('mediaPref.noiseCancellation', noiseCancellationEnabled.value)
