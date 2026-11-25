@@ -3,9 +3,8 @@
 	     title, an optional back button, and the actions slot on the right. In a folder
 	     (`withMenu`) the folder's name and a chevron are one button that opens the folders, as
 	     the folder tab in Mail's bottom bar (MailTabBar) does; the name starts 16px in, over the
-	     filter chips. Without a leading button the title gets pl-4 (4px row + 16px = 20px) to
-	     sit on the px-5 axis of the list content below it; with one, the button's own inset
-	     provides the offset. -->
+	     filter chips. Without a leading button the title gets pl-3 (4px row + 12px) to start
+	     16px in as well; with one, the button's own inset provides the offset. -->
   <!-- A flat h-14 (56px), not a min-height and no vertical padding: the row is the same
 	     height in every view and `items-center` centres against the whole of it. Anything
 	     taller than 56px in the actions slot would overflow rather than grow the row —
@@ -29,7 +28,7 @@
          folder name's size, so a category reads as a page like its Inbox and not as the small
          back link a thread opens under. `compact` is for a bar whose title only names where
          back leads. -->
-    <div v-else class="flex min-w-0 flex-1 items-center" :class="{ 'pl-4': !withBack }">
+    <div v-else class="flex min-w-0 flex-1 items-center" :class="{ 'pl-3': !withBack }">
       <button v-if="withBack" :aria-label="__('Back')" :class="ICON_SLOT" @click="emit('back')">
         <ChevronLeft class="size-5" />
       </button>

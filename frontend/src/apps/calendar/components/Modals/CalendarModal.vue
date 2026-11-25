@@ -1,5 +1,5 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     v-model:open="show"
     v-bind="{
       title: isNew ? __('New Calendar') : __('Edit Calendar'),
@@ -38,11 +38,11 @@
         />
       </div>
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 </template>
 
 <script setup lang="ts">
-import { Dialog, FormControl, type DialogAction } from 'frappe-ui'
+import { FormControl, type DialogAction } from 'frappe-ui'
 import { computed, reactive, watch } from 'vue'
 
 import { api, useMutation } from '@/api'
@@ -55,6 +55,7 @@ import {
 } from '@/apps/calendar/utils/calendars'
 import { eventColor } from '@/apps/calendar/utils/color'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()

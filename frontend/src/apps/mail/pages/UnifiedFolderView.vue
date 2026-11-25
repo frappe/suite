@@ -2,19 +2,12 @@
   <!-- Mobile title header. The toolbar below carries the bottom border, matching the
 	     mailbox structure. -->
   <!-- In a category other than Primary the title names it and leads back to Primary. -->
-  <!-- Every account's Inbox is named so, since nothing else on a phone's list says the accounts
-       are merged; another merged folder keeps its own name. -->
+  <!-- A merged folder is named as one account's is: Inbox, Sent. -->
   <MobileTitleHeader
     v-if="isMobile"
     :with-back="!!inboxTab && inboxTab !== 'primary'"
     :with-menu="!inboxTab || inboxTab === 'primary'"
-    :title="
-      inboxTab && inboxTab !== 'primary'
-        ? tabName(inboxTab)
-        : folder === INBOX_FOLDER
-          ? __('All Inboxes')
-          : folderLabel
-    "
+    :title="inboxTab && inboxTab !== 'primary' ? tabName(inboxTab) : folderLabel"
     @back="router.push(routeForTab('primary'))"
   >
     <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
@@ -69,6 +62,7 @@
         @touch-start="onThreadTouchStart"
         @touch-move="onThreadTouchMove"
         @touch-end="onThreadTouchEnd"
+        @touch-cancel="onThreadTouchCancel"
       >
         <template #list>
           <!-- On a phone these scroll with the list, at its top. -->
@@ -268,49 +262,56 @@
 				     opening a cross-account thread does NOT switch the active account.
 				     set-seen passes `seen` as `silent` too: the pane only marks read silently
 				     (on open), while its explicit action is Mark as Unread — as in MailboxView. -->
-        <MailThread
-          v-if="openRow || !threadID"
-          ref="mailThread"
-          :slide="threadSlide"
-          :account="openRow?.account"
-          :mailbox="openRow?.view_mailbox || ''"
-          :thread-i-d="threadID"
-          :threads="headerThreadIDs"
-          :can-go-next="canGoNext"
-          :messages="openRow?.messages"
-          :returned="!!openRow?.returned"
-          :no-reply="!!openRow?.no_reply"
-          :snoozed-at="openRow?.snoozed_at"
-          :returned-at="openRow?.returned_at"
-          @slide-done="threadSlide = ''"
-          @reload-mails="reloadPaneThread()"
-          @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
-          @set-flagged="
-            (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
-          "
-          @set-pinned="
-            (ids: string[], pinned: boolean, folder: string) =>
-              pinMails(openRow!.account!, ids, pinned, folder)
-          "
-          @snooze-thread="(until: string) => snoozeTo([openRow!], until)"
-          @unsnooze-thread="unsnoozeThreads([openRow!])"
-          @clear-returned="clearReturned([openRow!])"
-          @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
-          @delete-thread="
-            isTrashFolder || folder === 'drafts' ? confirmDelete([openRow!]) : handleTrash(openRow!)
-          "
-          @archive-thread="handleArchive(openRow!)"
-          @unarchive-thread="handleUnarchive(openRow!)"
-          @sync-unseen="handleSyncUnseen"
-          @add-thread-to-mailbox="handleAddToMailbox"
-          @remove-thread-from-mailbox="handleRemoveFromMailbox"
-          @set-spam-status="handleSetSpamStatus"
-          @move-mail="handleMailMove"
-          @mark-mail-spam="handleMailSpam"
-          @delete-mail="handleMailDelete"
-          @prev-thread="stepOpenThread(-1)"
-          @next-thread="stepOpenThread(1)"
-        />
+        <!-- On a phone, the threads either side of the open one too, ready for a swipe (see
+             ThreadSlot). Only the open one acts, so its handlers are the open row's. -->
+        <template v-if="openRow || !threadID">
+          <MailThread
+            v-for="pane in threadPanes"
+            :key="pane.key"
+            :ref="holdThreadPane(pane)"
+            :swipe="threadSwipe"
+            :beside="pane.beside"
+            :account="pane.row?.account"
+            :mailbox="pane.row?.view_mailbox || ''"
+            :thread-i-d="pane.row?.thread_id ?? threadID"
+            :threads="headerThreadIDs"
+            :can-go-next="canGoNext"
+            :messages="pane.row?.messages"
+            :returned="!!pane.row?.returned"
+            :no-reply="!!pane.row?.no_reply"
+            :snoozed-at="pane.row?.snoozed_at"
+            :returned-at="pane.row?.returned_at"
+            @reload-mails="reloadPaneThread()"
+            @set-seen="(seen: boolean) => handleSetSeen(openRow!, seen, seen)"
+            @set-flagged="
+              (ids: string[], flagged: boolean) => handleSetFlagged(openRow!, flagged, ids)
+            "
+            @set-pinned="
+              (ids: string[], pinned: boolean, folder: string) =>
+                pinMails(openRow!.account!, ids, pinned, folder)
+            "
+            @snooze-thread="(until: string) => snoozeTo([openRow!], until)"
+            @unsnooze-thread="unsnoozeThreads([openRow!])"
+            @clear-returned="clearReturned([openRow!])"
+            @move-thread="(mailboxId: string) => moveOpenThread(mailboxId)"
+            @delete-thread="
+              isTrashFolder || folder === 'drafts'
+                ? confirmDelete([openRow!])
+                : handleTrash(openRow!)
+            "
+            @archive-thread="handleArchive(openRow!)"
+            @unarchive-thread="handleUnarchive(openRow!)"
+            @sync-unseen="handleSyncUnseen"
+            @add-thread-to-mailbox="handleAddToMailbox"
+            @remove-thread-from-mailbox="handleRemoveFromMailbox"
+            @set-spam-status="handleSetSpamStatus"
+            @move-mail="handleMailMove"
+            @mark-mail-spam="handleMailSpam"
+            @delete-mail="handleMailDelete"
+            @prev-thread="stepOpenThread(-1)"
+            @next-thread="stepOpenThread(1)"
+          />
+        </template>
         <!-- The open thread's row is on its way with the list: the pane stands in outline until
              it lands, not a blank half. Its toolbar is the thread's own, which outlines its buttons
              while it has no thread. -->
@@ -366,17 +367,7 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
-import {
-  computed,
-  h,
-  inject,
-  onMounted,
-  onUnmounted,
-  reactive,
-  ref,
-  useTemplateRef,
-  watch,
-} from 'vue'
+import { computed, h, inject, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery } from '@/api'
@@ -417,6 +408,7 @@ import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePag
 import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { useThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
 import { userStore } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailboxData, MailCopy, Thread, UnifiedFolder } from '@/apps/mail/types'
 import {
@@ -435,7 +427,6 @@ import {
   useListReload,
   useReadingPane,
   useScreenSize,
-  useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { useListFilter } from '@/apps/mail/utils/listFilter'
@@ -756,31 +747,27 @@ const headerThreadIDs = computed(() => (threadRows.value ?? []).map((t: Thread) 
 
 // The loaded row the open thread belongs to. Every mutation reads its account/archive/trash
 // off the row, so the pane acts on the owning account without consulting the active one.
-const openRow = computed(() =>
-  openKey.value
-    ? (threadRows.value ?? []).find((t: Thread) => threadKey(t) === openKey.value)
-    : undefined,
-)
-
-// MailThread's slide name while a swipe navigation renders; cleared on its slide-done, and left
-// empty for every other thread change so taps and arrows keep swapping instantly.
-const threadSlide = ref('')
-let pendingThreadSlide = ''
+const rowByKey = (key?: string) =>
+  key ? (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key) : undefined
+const openRow = computed(() => rowByKey(openKey.value))
 
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
+  swipe: threadSwipe,
+  slots: threadPanes,
+  holdPane: holdThreadPane,
+  openPane: mailThread,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
-} = useSwipeNav(
-  () => isMobile.value && !!threadID,
-  (offset) => {
-    // Arms the paging animation for this navigation only — openThread consumes it.
-    pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
-    stepOpenThread(offset)
-    pendingThreadSlide = ''
-  },
-)
+  onTouchCancel: onThreadTouchCancel,
+} = useThreadSwipe<InstanceType<typeof MailThread>, Thread>({
+  enabled: () => isMobile.value && !!threadID,
+  open: () => openKey.value,
+  byOffset: threadByOffset,
+  rowOf: rowByKey,
+  step: (offset) => stepOpenThread(offset),
+})
 const stepOpenThread = (offset: number) => {
   const next = threadByOffset(offset)
   if (next) return openThread(next)
@@ -950,10 +937,9 @@ const goToEdge = (index: number) => {
   focusRow(navigableRows.value.at(index))
 }
 const openThread = (key: string) => {
-  threadSlide.value = pendingThreadSlide
   const row = (threadRows.value ?? []).find((t: Thread) => threadKey(t) === key)
   if (!row) return
-  router.push({
+  return router.push({
     name: UNIFIED_THREAD_ROUTE,
     // The row's own ids, which is what the key was made of — and what the pane, its actions and
     // the URL all need in their plain form.
@@ -1006,7 +992,7 @@ type PaneCommand =
 
 function runPaneCommand(command: PaneCommand, account?: string) {
   const acting = account ?? openRow.value?.account
-  if (!acting) return Promise.reject(new Error(__('Thread is no longer in the list.')))
+  if (!acting) return Promise.reject(new Error(__('Conversation is no longer in the list.')))
   switch (command.kind) {
     case 'add':
       return client.mutation(api.mail.messages.addToFolder, {
@@ -1036,14 +1022,6 @@ const handleSyncUnseen = (ids: string[]) => {
   if (changed) thread.seen = 0
   refreshCounts()
 }
-const mailThread = useTemplateRef<{
-  syncFlagged: (ids: string[], flagged: boolean) => void
-  syncMailboxMembership: (mailboxId: string, add: boolean) => void
-  removeMailFromView: (mailId: string) => {
-    emptied: boolean
-    rollback: () => void
-  }
-}>('mailThread')
 
 // Folder membership shows as tags on the row and in the pane. Neither refetches, so both have to be
 // told — mirroring syncListMailboxMembership plus MailThread's own syncMailboxMembership.
@@ -1105,13 +1083,19 @@ const handleAddToMailbox = (mailboxId: string) => {
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, false)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), {
-      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+      onClick: folder
+        ? __('Conversation removed from {0}', [folder])
+        : __('Conversation removed from folder'),
     })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
-    { onClick: folder ? __('Thread added to {0}', [folder]) : __('Thread added to folder') },
+    {
+      onClick: folder
+        ? __('Conversation added to {0}', [folder])
+        : __('Conversation added to folder'),
+    },
     undoAction,
   )
 }
@@ -1139,14 +1123,16 @@ const handleRemoveFromMailbox = (mailboxId: string) => {
   const undoAction = afterLanding(forward, () => {
     syncFolderTag(mailboxId, true)
     raiseOptimisticToast(restoreMails(thread.account, snapshot), {
-      onClick: __('Thread added back'),
+      onClick: __('Conversation added back'),
     })
   })
   setUndoAction(undoAction)
   raiseOptimisticToast(
     forward,
     {
-      onClick: folder ? __('Thread removed from {0}', [folder]) : __('Thread removed from folder'),
+      onClick: folder
+        ? __('Conversation removed from {0}', [folder])
+        : __('Conversation removed from folder'),
     },
     undoAction,
   )
@@ -1203,7 +1189,7 @@ const fileMail = (mail: Mail, account: string | undefined, action: Filing, targe
         mailbox: target ?? null,
         screen_action: action === 'not_junk' ? 'Accepted' : null,
       })
-    : Promise.reject(new Error(__('Thread is no longer in the list.')))
+    : Promise.reject(new Error(__('Conversation is no longer in the list.')))
 const handleMailMove = (mail: Mail, target: string) => {
   const account = openRow.value?.account
   const folder = folderName(target)
@@ -1260,7 +1246,7 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
   // The auto mark-as-read on opening a thread is silent (no toast); still roll back on failure.
   if (silent) return void request.catch(() => {})
   raiseOptimisticToast(request, {
-    onClick: __('Thread marked as {0}', [seen ? __('read') : __('unread')]),
+    onClick: __('Conversation marked as {0}', [seen ? __('read') : __('unread')]),
   })
 }
 
@@ -1376,18 +1362,23 @@ const fileThreads = (
   const one = threads.length === 1
   const folderOfTarget = target ? folderName(target) : undefined
   const said = () => {
-    if (action === 'archive') return one ? __('Thread archived') : __('Threads archived')
-    if (action === 'unarchive') return one ? __('Thread unarchived') : __('Threads unarchived')
-    if (action === 'trash') return one ? __('Thread moved to Trash') : __('Threads moved to Trash')
+    if (action === 'archive')
+      return one ? __('Conversation archived') : __('Conversations archived')
+    if (action === 'unarchive')
+      return one ? __('Conversation unarchived') : __('Conversations unarchived')
+    if (action === 'trash')
+      return one ? __('Conversation moved to Trash') : __('Conversations moved to Trash')
     if (action === 'junk' || action === 'not_junk') {
       const state = action === 'junk' ? __('Junk') : __('Not Junk')
-      return one ? __('Thread marked as {0}', [state]) : __('Threads marked as {0}', [state])
+      return one
+        ? __('Conversation marked as {0}', [state])
+        : __('Conversations marked as {0}', [state])
     }
     return folderOfTarget
       ? one
-        ? __('Thread moved to {0}', [folderOfTarget])
-        : __('Threads moved to {0}', [folderOfTarget])
-      : __('Thread moved')
+        ? __('Conversation moved to {0}', [folderOfTarget])
+        : __('Conversations moved to {0}', [folderOfTarget])
+      : __('Conversation moved')
   }
   // Said on the click, but for an archive from a list the rows stay on: only the answer says whether
   // it left the Inbox or was only added to Archive.
@@ -1403,15 +1394,15 @@ const fileThreads = (
   const undone =
     action === 'junk'
       ? one
-        ? __('Thread marked as Not Junk')
-        : __('Threads marked as Not Junk')
+        ? __('Conversation marked as Not Junk')
+        : __('Conversations marked as Not Junk')
       : action === 'not_junk'
         ? one
-          ? __('Thread marked as Junk')
-          : __('Threads marked as Junk')
+          ? __('Conversation marked as Junk')
+          : __('Conversations marked as Junk')
         : one
-          ? __('Thread moved back')
-          : __('Threads moved back')
+          ? __('Conversation moved back')
+          : __('Conversations moved back')
   actPerAccount(
     threads,
     (account, rows) =>
@@ -1481,8 +1472,14 @@ const snoozeTo = (threads: Thread[], until: string) => {
     { onClick: snoozedMessage(threads.length, until) },
     // Rows that left come back on the Undo's click; a list that kept them reads them again.
     leaves
-      ? { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') }
-      : { onAnswer: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
+      ? {
+          onClick:
+            threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+        }
+      : {
+          onAnswer:
+            threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+        },
     { putBack },
   )
 }
@@ -1496,8 +1493,13 @@ const unsnoozeThreads = (threads: Thread[]) => {
       client
         .mutation(api.mail.messages.unsnooze, { account, ids: copyIds(rows), leaves: folder })
         .then((answer) => waited.set(account, answer.waited)),
-    { onClick: threads.length === 1 ? __('Thread unsnoozed') : __('Threads unsnoozed') },
-    { onClick: threads.length === 1 ? __('Thread moved back') : __('Threads moved back') },
+    {
+      onClick: threads.length === 1 ? __('Conversation unsnoozed') : __('Conversations unsnoozed'),
+    },
+    {
+      onClick:
+        threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
+    },
     { putBack, restore: (account) => resnooze(account, waited.get(account) ?? []) },
   )
 }
@@ -1603,7 +1605,7 @@ const setThreadsSeen = (threads: Thread[], seen: boolean) => {
         applySeen(seen ? 0 : 1) // revert the optimistic update
         throw error
       }),
-    { onClick: __('Threads marked as {0}', [seen ? __('read') : __('unread')]) },
+    { onClick: __('Conversations marked as {0}', [seen ? __('read') : __('unread')]) },
   )
 }
 
@@ -1755,7 +1757,7 @@ const handleDelete = (rows: Thread[]) => {
       refreshThreads()
       throw error
     }),
-    { onClick: rows.length === 1 ? __('Thread deleted') : __('Threads deleted') },
+    { onClick: rows.length === 1 ? __('Conversation deleted') : __('Conversations deleted') },
   )
 }
 

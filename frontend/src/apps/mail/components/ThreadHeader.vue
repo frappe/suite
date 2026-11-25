@@ -178,8 +178,8 @@
       <div v-if="threads.includes(threadID) && !isMobile" class="!ml-auto flex space-x-2">
         <Button
           variant="ghost"
-          :tooltip="__('Previous Thread (↑/K)')"
-          :aria-label="__('Previous Thread')"
+          :tooltip="__('Previous Conversation (↑/K)')"
+          :aria-label="__('Previous Conversation')"
           aria-keyshortcuts="ArrowUp K"
           :disabled="threadID === threads[0]"
           @click="emit('prevThread')"
@@ -191,8 +191,8 @@
 
         <Button
           variant="ghost"
-          :tooltip="__('Next Thread (↓/J)')"
-          :aria-label="__('Next Thread')"
+          :tooltip="__('Next Conversation (↓/J)')"
+          :aria-label="__('Next Conversation')"
           aria-keyshortcuts="ArrowDown J"
           :disabled="threadID === threads.at(-1) && !canGoNext"
           @click="emit('nextThread')"
@@ -511,7 +511,7 @@ const moreActions = computed((): Action[] => [
     condition: () => inDrafts.value,
   },
   {
-    label: __('Delete Thread (Shift+Delete)'),
+    label: __('Delete Conversation (Shift+Delete)'),
     onClick: () => emit('deleteThread'),
     icon: Trash2,
     condition: () => threadMailboxes.value.includes(mailboxIds.value.trash),

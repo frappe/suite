@@ -1,24 +1,21 @@
+import { effectScope, shallowRef } from 'vue'
+
 import { api, useQuery } from '@/api'
 import { translate as __ } from '@/platform/translation'
 
 import { locationLabel } from '../../internal/locations'
 
 // Held for the session: the group condition and the External access body
-// read the same answer.
-const webdavAnswer = useQuery(api.drive.webdav.get, {})
+// read the same answer. Made the first time Settings opens, not as the app
+// starts, since this list is part of the app. In a scope of its own, so it outlives the page
+// that first opened Settings.
+const webdavAnswer = shallowRef<ReturnType<typeof askWebdav>>()
+const askWebdav = () => effectScope(true).run(() => useQuery(api.drive.webdav.get, {}))!
 
-const drive = {
+export const driveSettings = {
   label: () => __('Drive'),
   area: 'files',
   tabs: [
-    {
-      id: 'drive.statistics',
-      // The id stays, so saved links to the tab still open it.
-      label: () => __('Storage'),
-      icon: 'lucide-chart-pie',
-      description: () => __('Pictures and videos inside a document count towards that document.'),
-      body: () => import('./StatisticsSettings.vue'),
-    },
     {
       id: 'drive.external-access',
       label: () => __('External access'),
@@ -27,7 +24,7 @@ const drive = {
         __('Open your Drive files in Finder, Windows Explorer and other file apps.'),
       keywords: () => __('WebDAV, API key'),
       // The route answers `{}` when WebDAV is off and the caller is no admin.
-      condition: () => Object.keys(webdavAnswer.data ?? {}).length > 0,
+      condition: () => Object.keys(webdavAnswer.value?.data ?? {}).length > 0,
       body: () => import('./ExternalAccessSettings.vue'),
       sections: [
         {
@@ -39,10 +36,9 @@ const drive = {
       ],
     },
   ],
+  /** Asks for the WebDAV answer, or asks again on a later open. */
+  refresh: async () => {
+    if (webdavAnswer.value) await webdavAnswer.value.refetch()
+    else webdavAnswer.value = askWebdav()
+  },
 } as const
-
-/** Reads the WebDAV answer again, then resolves the Drive settings group. */
-export async function driveSettings() {
-  await webdavAnswer.refetch().catch(() => undefined)
-  return drive
-}

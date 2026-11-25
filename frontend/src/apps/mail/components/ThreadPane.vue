@@ -10,7 +10,7 @@
     :class="[
       split ? SPLIT_LIST_CLASS : 'w-full',
       // On a phone the list gives way a little to the left as the thread slides over it, and comes
-      // back as it goes: the same push a category makes over Primary (see pageSlide.ts).
+      // back as it goes: the same push a category makes over Primary (see platform/page-slide).
       isMobile && 'transition-transform duration-300 ease-[var(--page-slide-ease)]',
       { '-translate-x-1/4': isMobile && threadOpen },
       // A width saved on a wider window still leaves the pane what a drag would.
@@ -65,13 +65,14 @@
         hidden: !isMobile && !showReadingPane && !threadOpen,
       }"
       @touchstart.passive="emit('touchStart', $event)"
-      @touchmove.passive="emit('touchMove', $event)"
+      @touchmove="emit('touchMove', $event)"
       @touchend.passive="emit('touchEnd', $event)"
+      @touchcancel.passive="emit('touchCancel', $event)"
     >
-      <!-- The swipe slide lives inside MailThread (its toolbar must not move), armed via
-			     `slide` per swipe and cleared on slide-done. The scroll wrapper must be h-full on
-			     desktop too, or the empty state's h-full collapses. -->
-      <div class="h-full overflow-y-auto">
+      <!-- A swipe moves the thread inside MailThread, whose toolbar must not move. The scroll
+			     wrapper must be h-full on desktop too, or the empty state's h-full collapses. It holds
+			     the threads beside the open one (see ThreadSlot), over it, below the phone's inset. -->
+      <div class="relative h-full overflow-y-auto">
         <slot />
       </div>
     </div>
@@ -105,11 +106,12 @@ const { threadOpen } = defineProps<{
 }>()
 
 // Swipe-to-page on the open thread is per-view (what "next thread" means differs), so the pane only
-// forwards the touches. `.passive` stays on the listener here, where the native event is bound.
+// forwards the touches. Its touchmove is not passive: a sideways drag stops the page scrolling.
 const emit = defineEmits<{
   touchStart: [TouchEvent]
   touchMove: [TouchEvent]
   touchEnd: [TouchEvent]
+  touchCancel: [TouchEvent]
 }>()
 
 const { isMobile } = useScreenSize()

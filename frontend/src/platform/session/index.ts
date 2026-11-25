@@ -85,7 +85,9 @@ export function createSession(client: Transport = defaultTransport): Session {
       status.value = 'guest'
       return
     }
-    status.value = 'loading'
+    // Reading again who is signed in keeps them signed in meanwhile: the shell draws itself only
+    // for a signed-in user, and a name saved in Profile would blank it for the length of the read.
+    if (status.value !== 'authenticated') status.value = 'loading'
     const refreshGeneration = generation
     const read: Promise<AccountResponse | null> =
       client === defaultTransport && accountReader

@@ -145,7 +145,7 @@ body {
   width: fit-content;
 }
 
-/* A phone's page pushed over the one it came from, and popped off it (apps/mail/utils/pageSlide.ts):
+/* A phone's page pushed over the one it came from, and popped off it (platform/page-slide):
    the new page slides in from the right while the old one gives way a little to the left, and
    back the other way. Each image is drawn as it is, not blended, since both are opaque. Whatever
    carries its own view-transition-name (the tab bar) stays where it is. */

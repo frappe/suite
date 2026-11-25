@@ -66,7 +66,6 @@
           variant="outline"
           class="w-full"
           autocomplete="given-name"
-          :disabled="updateUser.isPending"
           @blur="saveName"
         />
         <FormControl
@@ -75,7 +74,6 @@
           variant="outline"
           class="w-full"
           autocomplete="family-name"
-          :disabled="updateUser.isPending"
           @blur="saveName"
         />
       </div>
@@ -86,58 +84,13 @@
     </div>
   </SettingsTabContent>
 
-  <Dialog v-model:open="showPasswordDialog" v-bind="passwordDialogOptions">
-    <template #default>
-      <form class="space-y-4" @submit.prevent>
-        <!-- Capture username here so Chrome doesn't fill profile last name -->
-        <input
-          type="text"
-          name="username"
-          autocomplete="username"
-          tabindex="-1"
-          aria-hidden="true"
-          :value="userId || ''"
-          readonly
-          class="pointer-events-none absolute h-0 w-0 opacity-0"
-        />
-        <FormControl
-          v-model="currentPassword"
-          type="password"
-          name="current-password"
-          autocomplete="current-password"
-          :label="__('Current password')"
-          variant="outline"
-          placeholder="••••••••"
-        />
-        <FormControl
-          v-model="newPassword"
-          type="password"
-          name="new-password"
-          autocomplete="new-password"
-          :label="__('New password')"
-          variant="outline"
-          placeholder="••••••••"
-        />
-        <FormControl
-          v-model="confirmPassword"
-          type="password"
-          name="confirm-password"
-          autocomplete="new-password"
-          :label="__('Confirm new password')"
-          variant="outline"
-          placeholder="••••••••"
-        />
-        <ErrorMessage :message="passwordError" />
-      </form>
-    </template>
-  </Dialog>
+  <ChangePasswordDialog v-model:open="showPasswordDialog" />
 </template>
 
 <script setup lang="ts">
 import {
   Avatar,
   Button,
-  Dialog,
   Dropdown,
   ErrorMessage,
   FileUploader,
@@ -147,10 +100,11 @@ import {
 } from 'frappe-ui'
 import { computed, reactive, ref, watch } from 'vue'
 
-import { api, useMutation, useQuery } from '@/api'
+import { api, client, useMutation, useQuery } from '@/api'
 import { useSession } from '@/platform/session'
 import { onSettingsSectionAsked } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
+import ChangePasswordDialog from '@/shell/settings/ChangePasswordDialog.vue'
 import SettingsTabContent from '@/shell/settings/SettingsTabContent.vue'
 import SettingsTabHeader from '@/shell/settings/SettingsTabHeader.vue'
 
@@ -162,24 +116,24 @@ const userId = session.user.value?.id ?? ''
 const user = useQuery(api.suite.preferences.get)
 const updateUser = useMutation(api.suite.preferences.update, { silent: true })
 const nameDraft = reactive({ first_name: '', last_name: '' })
+// The saved name fills the fields, but not one being typed in: the other field's save brings the
+// user back while it is.
 watch(
   () => user.data,
-  (doc) => {
-    if (doc)
-      Object.assign(nameDraft, { first_name: doc.first_name || '', last_name: doc.last_name || '' })
+  (doc, before) => {
+    if (!doc) return
+    for (const field of ['first_name', 'last_name'] as const) {
+      if (!before || nameDraft[field] === (before[field] || '')) nameDraft[field] = doc[field] || ''
+    }
   },
   { immediate: true },
 )
 
 const showPasswordDialog = ref(false)
-function showPassword() {
-  showPasswordDialog.value = true
-}
-
-onSettingsSectionAsked(() => 'account.profile.password', showPassword)
-const currentPassword = ref('')
-const newPassword = ref('')
-const confirmPassword = ref('')
+onSettingsSectionAsked(
+  () => 'account.profile.password',
+  () => (showPasswordDialog.value = true),
+)
 
 const displayName = computed(() => {
   const doc = user.data
@@ -210,8 +164,18 @@ function validateAvatarFile(file: File) {
   }
 }
 
+// Saved as a field loses focus, which leaving the page while typing in it also does: so not with
+// the page's mutation, which is cancelled when the page goes. The fields stay open while it saves,
+// as closing them would push the caret out of the field just moved to; a change made meanwhile is
+// saved once this save is done.
+let savingName = false
+let nameChangedMeanwhile = false
 async function saveName() {
-  if (!user.data || updateUser.isPending) return
+  if (!user.data) return
+  if (savingName) {
+    nameChangedMeanwhile = true
+    return
+  }
 
   const nextFirst = nameDraft.first_name.trim()
   const nextLast = nameDraft.last_name.trim()
@@ -225,15 +189,23 @@ async function saveName() {
   const prevLast = user.data?.last_name || ''
   if (nextFirst === prevFirst && nextLast === prevLast) return
 
+  savingName = true
   try {
-    await updateUser.run({
-      first_name: nextFirst,
-      last_name: nextLast,
-    })
+    await client.mutation(
+      api.suite.preferences.update,
+      { first_name: nextFirst, last_name: nextLast },
+      { silent: true },
+    )
     await session.refresh()
     toast.success(__('Name saved'), { id: AUTOSAVE_TOAST_ID })
   } catch {
     toast.error(__('Could not save name'))
+  } finally {
+    savingName = false
+  }
+  if (nameChangedMeanwhile) {
+    nameChangedMeanwhile = false
+    await saveName()
   }
 }
 
@@ -258,45 +230,4 @@ async function removeAvatar() {
     toast.error(__('Could not remove profile picture'))
   }
 }
-
-const passwordError = computed(() => {
-  if (confirmPassword.value && confirmPassword.value !== newPassword.value)
-    return __('Passwords do not match')
-  const error: unknown = updatePassword.error
-  return error instanceof Error ? error : undefined
-})
-
-const passwordDialogOptions = computed(() => ({
-  title: __('Change password'),
-  actions: [
-    {
-      label: __('Change password'),
-      variant: 'solid' as const,
-      onClick: () => changePassword(),
-      disabled:
-        !(currentPassword.value.length && newPassword.value.length) ||
-        confirmPassword.value !== newPassword.value,
-      loading: updatePassword.isPending,
-    },
-  ],
-}))
-
-const updatePassword = useMutation(api.suite.account.changePassword)
-async function changePassword() {
-  await updatePassword.run({
-    old_password: currentPassword.value,
-    new_password: newPassword.value,
-  })
-  showPasswordDialog.value = false
-  toast.success(__('Password updated'))
-}
-
-watch(showPasswordDialog, (open) => {
-  if (!open) {
-    currentPassword.value = ''
-    newPassword.value = ''
-    confirmPassword.value = ''
-    updatePassword.reset()
-  }
-})
 </script>

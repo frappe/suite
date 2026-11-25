@@ -41,9 +41,10 @@ export const useListSelection = ({
   // contextual, and the action bar covers the bottom nav.
   const { isMobile } = useScreenSize()
   const { setMobileSelectionActive } = useMobileSelection()
+  const list = Symbol('list')
   const mobileSelectionMode = computed(() => isMobile.value && selections.value.length > 0)
-  watch(mobileSelectionMode, (active) => setMobileSelectionActive(active))
-  onUnmounted(() => setMobileSelectionActive(false))
+  watch(mobileSelectionMode, (active) => setMobileSelectionActive(active, list))
+  onUnmounted(() => setMobileSelectionActive(false, list))
 
   const isAllSelected = computed(() => !!keys().length && selections.value.length === keys().length)
 

@@ -7,9 +7,10 @@ import SignatureSettings from './SignatureSettings.vue'
 
 const state = vi.hoisted(() => ({ run: vi.fn(), toast: vi.fn(), failureToast: vi.fn() }))
 vi.mock('@/apps/mail/utils', () => ({ raiseToast: state.toast }))
-vi.mock('@/apps/mail/utils/composables', () => ({
-  useScreenSize: () => ({ isMobile: { value: false } }),
-}))
+vi.mock('@/apps/mail/utils/composables', async () => {
+  const { ref } = await import('vue')
+  return { useScreenSize: () => ({ isMobile: ref(false) }) }
+})
 // The menu of a signature's line, which these tests don't open
 vi.mock('@/platform/feedback', () => ({
   Dropdown: { render: () => null },
@@ -43,6 +44,7 @@ vi.mock('@/api', async () => {
   }
 })
 vi.mock('frappe-ui', () => ({
+  FormLabel: { render: () => null },
   ErrorMessage: defineComponent({
     props: { message: { type: String, default: undefined } },
     setup(props) {
