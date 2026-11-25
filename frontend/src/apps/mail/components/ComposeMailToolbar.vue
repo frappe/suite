@@ -115,10 +115,10 @@ import { computed } from 'vue'
 
 import ComposeAttachMenu from '@/apps/mail/components/ComposeAttachMenu.vue'
 import ComposeReminderButton from '@/apps/mail/components/ComposeReminderButton.vue'
-import EmojiPicker from '@/components/EmojiPicker.vue'
 import { isMac } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import { useEditorMenu } from '@/apps/mail/utils/editorMenu'
+import EmojiPicker from '@/components/EmojiPicker.vue'
 
 const { isRecipientsEmpty, isUploading, isSending, saveFailed, remindAt } = defineProps<{
   isRecipientsEmpty: boolean
