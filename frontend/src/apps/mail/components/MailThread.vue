@@ -579,10 +579,11 @@
 												     growing the row. -->
                           <!-- A phone's open card: More, Reply and the star, as a desktop's. -->
                           <!-- isolate: each button's grown hit area lies under the buttons (see
-                               MailActions), so a tap on one's own box is never its neighbour's. -->
+                               MailActions), so a tap on one's own box is never its neighbour's.
+                               32px buttons 8px apart, as the thread's toolbar has them. -->
                           <div
                             v-if="isMobile && !isCollapsed(mail) && !readonly"
-                            class="isolate -mr-2 flex items-center"
+                            class="isolate -mr-2 flex items-center gap-2"
                           >
                             <MailActions
                               :mailbox

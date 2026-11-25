@@ -15,7 +15,7 @@
     <div class="flex items-start gap-3 pb-4">
       <Avatar :label="sender" :image="mail.user_image" size="2xl" />
       <div class="flex min-w-0 flex-1 flex-col text-sm">
-        <!-- A 30px button on the 24px name line, overhanging it as an open message's do. -->
+        <!-- A 32px button on the 24px name line, overhanging it as an open message's do. -->
         <div class="-mr-2 flex h-6 items-center gap-2">
           <!-- Name and recipients in the thread's own ink, as a sent message's header has them. -->
           <span class="min-w-0 truncate text-[15px] !font-semibold">
@@ -25,9 +25,9 @@
           <!-- The stop is on the wrapper, which lets the tap reach the sheet's own trigger. -->
           <div class="ml-auto flex shrink-0" @click.stop>
             <AdaptiveDropdown :options align="end">
-              <Button variant="ghost" class="touch-target !size-[30px]" :aria-label="__('More')">
+              <Button variant="ghost" class="touch-target !size-8" :aria-label="__('More')">
                 <template #icon>
-                  <Ellipsis class="text-ink-gray-5 icon !size-[17px]" />
+                  <Ellipsis class="text-ink-gray-5 icon !size-[18px]" />
                 </template>
               </Button>
             </AdaptiveDropdown>

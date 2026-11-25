@@ -3,17 +3,17 @@
 	     the click bubbling to its own span, so stopping on the Button itself
 	     would keep the sheet from opening.
 	     Each button's grown hit area (touch-target) lies under the buttons, in the row's isolated
-	     stack (see MailThread): set 30px apart, the star's area otherwise took taps on More's edge. -->
+	     stack (see MailThread): set close, the star's area otherwise took taps on More's edge. -->
   <div v-if="!mail.draft && !isCollapsed" class="flex" @click.stop>
     <AdaptiveDropdown :options="moreActions(mail)" align="end">
       <Button
         variant="ghost"
-        class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target after:-z-10"
+        class="max-sm:!h-8 max-sm:!w-8 touch-target after:-z-10"
         :tooltip="isMobile ? undefined : __('More')"
         :aria-label="__('More')"
       >
         <template #icon>
-          <Ellipsis class="text-ink-gray-5 icon max-sm:!h-[17px] max-sm:!w-[17px]" />
+          <Ellipsis class="text-ink-gray-5 icon max-sm:!h-[18px] max-sm:!w-[18px]" />
         </template>
       </Button>
     </AdaptiveDropdown>
@@ -23,13 +23,13 @@
     v-for="action in shown(mail).filter((d) => !d.star)"
     :key="action.label"
     variant="ghost"
-    class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target after:-z-10"
+    class="max-sm:!h-8 max-sm:!w-8 touch-target after:-z-10"
     :tooltip="isMobile ? undefined : action.label"
     :aria-label="action.label"
     @click.stop="action.onClick"
   >
     <template #icon>
-      <component :is="action.icon" class="text-ink-gray-5 icon max-sm:!h-[17px] max-sm:!w-[17px]" />
+      <component :is="action.icon" class="text-ink-gray-5 icon max-sm:!h-[18px] max-sm:!w-[18px]" />
     </template>
   </Button>
 
@@ -39,13 +39,13 @@
     v-for="action in shown(mail).filter((d) => d.star)"
     :key="action.label"
     variant="ghost"
-    class="max-sm:!h-[30px] max-sm:!w-[30px] touch-target after:-z-10"
+    class="max-sm:!h-8 max-sm:!w-8 touch-target after:-z-10"
     :tooltip="isMobile ? undefined : action.label"
     :aria-label="action.label"
     @click.stop="action.onClick"
   >
     <template #icon>
-      <component :is="action.icon" class="text-ink-gray-5 icon max-sm:!h-[17px] max-sm:!w-[17px]" />
+      <component :is="action.icon" class="text-ink-gray-5 icon max-sm:!h-[18px] max-sm:!w-[18px]" />
     </template>
   </Button>
 </template>
