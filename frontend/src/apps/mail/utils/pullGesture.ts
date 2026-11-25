@@ -52,15 +52,16 @@ export const createPullGesture = () => {
     /**
      * The first `DECIDE_AT` pixels decide: mostly downward is a pull, anything else (a scroll up
      * the list, a sideways swipe) is not, and neither turns into the other. Till then the spinner
-     * follows a downward finger, so it doesn't jump in once the pull is settled.
+     * follows a finger heading mostly down, so it doesn't jump in once the pull is settled.
      */
     move(x: number, y: number): PullMove {
       if (!origin) return { phase: 'other', offset: 0 }
       const dx = x - origin.x
       const dy = y - origin.y
+      const downward = dy > Math.abs(dx)
       if (phase === 'pending' && Math.hypot(dx, dy) >= DECIDE_AT)
-        phase = dy > Math.abs(dx) ? 'pull' : 'other'
-      offset = phase === 'other' ? 0 : pullOffset(dy)
+        phase = downward ? 'pull' : 'other'
+      offset = phase === 'pull' || (phase === 'pending' && downward) ? pullOffset(dy) : 0
       return { phase, offset }
     },
 

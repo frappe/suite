@@ -1,5 +1,5 @@
 import { useEventListener } from '@vueuse/core'
-import { computed, ref, type StyleValue } from 'vue'
+import { computed, ref, watch, type StyleValue } from 'vue'
 
 import { useSyncNow } from '@/apps/mail/composables/useChangeSync'
 import { createPullGesture, REFRESH_AT } from '@/apps/mail/utils/pullGesture'
@@ -50,6 +50,14 @@ export function usePullToRefresh({ scroller, enabled, refresh }: Options) {
     clearTimeout(easingTimer)
     easingTimer = setTimeout(() => (easing.value = false), SETTLE_MS)
   }
+
+  // Turned off mid-pull (a long press that starts selecting rows), the pull lets go without
+  // refreshing: its touchend will not come here.
+  watch(target, () => {
+    if (refreshing.value) return
+    gesture.cancel()
+    settle()
+  })
 
   useEventListener(
     target,

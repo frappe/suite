@@ -53,6 +53,8 @@ describe('pull to refresh', () => {
       [DECIDE_AT + 2, 4],
       [20, 200],
     ])
+    // Not even held while it is still being decided: the page is free to move under it.
+    expect(moves[0]?.offset).toBe(0)
     expect(moves.at(-1)?.phase).toBe('other')
     expect(refreshes).toBe(false)
   })
