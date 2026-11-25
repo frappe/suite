@@ -368,9 +368,6 @@ importers:
       frappe-ui:
         specifier: ^1.0.0
         version: 1.0.0(@codemirror/lang-css@6.3.1)(@codemirror/lang-html@6.4.11)(@codemirror/lang-javascript@6.2.5)(@codemirror/lang-json@6.0.2)(@codemirror/lang-markdown@6.5.0)(@codemirror/lang-python@6.2.1)(@codemirror/lang-sass@6.0.2)(@codemirror/lang-sql@6.10.0)(@codemirror/lang-xml@6.1.0)(@codemirror/lang-yaml@6.1.3)(@codemirror/lint@6.9.7)(@vue/compiler-dom@3.5.42)(rolldown@1.1.3)(rollup@4.62.2)(supports-color@11.0.0)(tailwindcss@3.4.19(yaml@2.9.0))(vite@8.1.0(@types/node@26.6.4)(jiti@1.21.7)(sass@1.101.0)(terser@5.48.0)(yaml@2.9.0))(vue-router@4.6.4(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
-      gemoji:
-        specifier: ^8.1.0
-        version: 8.1.0
       hash-wasm:
         specifier: ^4.12.0
         version: 4.12.0
@@ -3939,9 +3936,6 @@ packages:
 
   fuzzysort@3.1.0:
     resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
-
-  gemoji@8.1.0:
-    resolution: {integrity: sha512-HA4Gx59dw2+tn+UAa7XEV4ufUKI4fH1KgcbenVA9YKSj1QJTT0xh5Mwv5HMFNN3l2OtUe3ZIfuRwSyZS5pLIWw==}
 
   generator-function@2.0.1:
     resolution: {integrity: sha512-SFdFmIJi+ybC0vjlHN0ZGVGHc3lgE0DxPAT0djjVg+kjOnSqclqmj0KQ7ykTOLP6YxoqOvuAODGdcHJn+43q3g==}
@@ -9785,8 +9779,6 @@ snapshots:
   functions-have-names@1.2.3: {}
 
   fuzzysort@3.1.0: {}
-
-  gemoji@8.1.0: {}
 
   generator-function@2.0.1: {}
 

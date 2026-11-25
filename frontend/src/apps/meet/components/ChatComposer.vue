@@ -45,7 +45,7 @@
             <span class="truncate text-ink-gray-4">{{ item.name }}</span>
           </button>
           <div v-if="emojiSuggestions.length === 0" class="px-2 py-1.5 text-sm text-ink-gray-4">
-            {{ __('No results') }}
+            {{ emojiLoading ? __('Loading emoji…') : __('No results') }}
           </div>
         </div>
         <textarea
@@ -107,10 +107,12 @@ const draft = ref('')
 const sending = ref(false)
 const emojiSuggestions = ref<EmojiSuggestion[]>([])
 const emojiSelectedIndex = ref(0)
+const emojiLoading = ref(false)
+let emojiQueryVersion = 0
 const emojiQueryStart = ref<number | null>(null)
 const emojiMenuActive = computed(() => emojiQueryStart.value !== null)
 
-function syncEmojiMenu() {
+async function syncEmojiMenu() {
   const el = inputEl.value
   if (!el) {
     closeEmojiMenu()
@@ -122,12 +124,20 @@ function syncEmojiMenu() {
     closeEmojiMenu()
     return
   }
+  const version = ++emojiQueryVersion
   emojiQueryStart.value = found.start
-  emojiSuggestions.value = suggestEmojis(found.query)
+  emojiSuggestions.value = []
   emojiSelectedIndex.value = 0
+  emojiLoading.value = true
+  const suggestions = await suggestEmojis(found.query)
+  if (version !== emojiQueryVersion) return
+  emojiSuggestions.value = suggestions
+  emojiLoading.value = false
 }
 
 function closeEmojiMenu() {
+  emojiQueryVersion++
+  emojiLoading.value = false
   emojiQueryStart.value = null
   emojiSuggestions.value = []
   emojiSelectedIndex.value = 0
@@ -155,7 +165,7 @@ function selectEmoji(item: EmojiSuggestion) {
 
 function onInput() {
   autosize()
-  syncEmojiMenu()
+  void syncEmojiMenu()
 }
 
 function onKeydown(event: KeyboardEvent) {
@@ -177,6 +187,10 @@ function onKeydown(event: KeyboardEvent) {
     if (event.key === 'Escape') {
       event.preventDefault()
       closeEmojiMenu()
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey && emojiLoading.value) {
+      event.preventDefault()
       return
     }
     if (
@@ -235,7 +249,10 @@ function autosize() {
 watch(
   () => props.open,
   async (open) => {
-    if (!open) return
+    if (!open) {
+      closeEmojiMenu()
+      return
+    }
     await nextTick()
     if (props.open) focusInput()
   },

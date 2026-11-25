@@ -35,7 +35,7 @@ watch(pickerHost, async (host, _, onCleanup) => {
   try {
     const [{ Picker }, { default: data }] = await Promise.all([
       import('emoji-mart'),
-      import('@emoji-mart/data'),
+      import('@emoji-mart/data/sets/15/native.json'),
     ])
     if (closed) return
 

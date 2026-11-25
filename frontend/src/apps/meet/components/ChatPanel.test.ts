@@ -154,3 +154,38 @@ it('sends a reply to the selected message and jumps from its quote to the origin
     row.querySelector('.chat-message-bubble')?.classList.contains('chat-message-highlighted'),
   ).toBe(true)
 })
+
+it('uses the latest emoji query and inserts the selected suggestion without sending', async () => {
+  const sendMessage = vi.fn()
+  const root = document.createElement('div')
+  document.body.append(root)
+  const app = createApp({
+    render: () =>
+      h(ChatPanel, {
+        open: true,
+        sendMessage,
+        setReaction: vi.fn(),
+        reactionsByMessage: {},
+      }),
+  })
+  app.use(createPinia()).mount(root)
+  cleanup = () => {
+    app.unmount()
+    root.remove()
+  }
+
+  const textarea = root.querySelector('textarea')
+  if (!textarea) throw new Error('Expected the chat composer to be available')
+  for (const value of [':fire', ':thumbsup']) {
+    textarea.value = value
+    textarea.setSelectionRange(value.length, value.length)
+    textarea.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+  await vi.waitFor(() => {
+    expect(root.querySelector('[role="option"]')?.textContent).toContain('thumbsup')
+  })
+  textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }))
+  await nextTick()
+  expect(textarea.value).toBe('👍')
+  expect(sendMessage).not.toHaveBeenCalled()
+})

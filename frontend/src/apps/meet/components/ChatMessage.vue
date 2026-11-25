@@ -112,6 +112,7 @@
 
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
+import { watch } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
@@ -122,7 +123,7 @@ import {
 } from '../../../../../suite/meet/types/chatReactions'
 import type { ChatMessage } from '../composables/useChatStore'
 import { tokenizeChatMessage } from '../utils/chatMessageTokens'
-import { emojiLabel } from '../utils/emojiSuggest'
+import { emojiLabel, loadEmojiCatalog } from '../utils/emojiSuggest'
 import ChatReactionPicker from './ChatReactionPicker.vue'
 
 const props = defineProps<{
@@ -146,7 +147,14 @@ const emit = defineEmits<{
   react: [request: ChatReactionRequest]
 }>()
 
-const quickReactions = QUICK_CHAT_REACTIONS.slice(0, 3)
+const quickReactions: readonly string[] = QUICK_CHAT_REACTIONS.slice(0, 3)
+watch(
+  () => props.reactions.some(({ emoji }) => !quickReactions.includes(emoji)),
+  (hasOtherReactions) => {
+    if (hasOtherReactions) void loadEmojiCatalog()
+  },
+  { immediate: true },
+)
 const reactionNameList = new Intl.ListFormat('en', { type: 'conjunction' })
 
 function hasReaction(emoji: string) {
