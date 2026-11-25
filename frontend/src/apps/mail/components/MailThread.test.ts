@@ -1,6 +1,7 @@
 import dayjs from 'dayjs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  computed,
   createApp,
   createBlock,
   h,
@@ -65,8 +66,11 @@ vi.mock('@/apps/mail/utils', async (original) => ({
 }))
 // The reader's own addresses: their own mail is never held back.
 const own = vi.hoisted(() => ({ identities: new Array<{ email: string }>() }))
-// The account's folders by role, for the tests that open a thread from one.
-const folders = vi.hoisted(() => ({ ids: {} }))
+// The account's folders by role, for the tests that open a thread from one, and whether the pane
+// has read them yet: its own read of them lands after it mounts.
+const folders = await vi.hoisted(async () =>
+  (await import('vue')).reactive({ ids: {}, landed: true }),
+)
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({ globalScreenedAddresses: { data: [] } }),
 }))
@@ -76,7 +80,8 @@ vi.mock('@/apps/mail/utils/accountScope', () => ({
     account: ref({}),
     identities: ref({ data: own.identities }),
     screenedAddresses: ref({ data: [] }),
-    mailboxIds: ref(folders.ids),
+    mailboxIds: computed(() => (folders.landed ? folders.ids : {})),
+    mailboxes: computed(() => ({ data: folders.landed ? [] : undefined })),
   }),
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
@@ -112,6 +117,7 @@ afterEach(() => {
   platform.mac = false
   own.identities = []
   folders.ids = {}
+  folders.landed = true
 })
 
 // A message as the list and get_thread hand it over: on its own thread, from Bob, unless told.
@@ -213,6 +219,34 @@ it('opens a thread from Spam whose mail was filed there without the junk mark', 
   )
   applyRouteMeta({ ...router.currentRoute.value, meta: { title: 'Mail' } })
   // A bounce to the list is a navigation, which settles after the pane's own updates.
+  await new Promise((resolve) => setTimeout(resolve))
+  expect(router.currentRoute.value.name).toBe('mail-thread')
+  expect(document.title).toBe('You have won | Mail')
+})
+
+it('opens a thread from Spam when the folders land after the pane has mounted', async () => {
+  folders.ids = { junk: 'spam', trash: 'bin' }
+  folders.landed = false
+  query.current = reactive({ data: undefined, status: 'pending', refetch: async () => {} })
+  const router = await mount((reader) =>
+    h(reader, {
+      mailbox: 'spam',
+      threadID: 'one',
+      threads: [],
+      marksSeen: false,
+      messages: [
+        mail('one', {
+          subject: 'You have won',
+          junk: 1,
+          mailboxes: [fromPartial({ mailbox_id: 'spam' })],
+        }),
+      ],
+    }),
+  )
+  applyRouteMeta({ ...router.currentRoute.value, meta: { title: 'Mail' } })
+  // A bounce to the list is a navigation, which settles after the pane's own updates.
+  await new Promise((resolve) => setTimeout(resolve))
+  folders.landed = true
   await new Promise((resolve) => setTimeout(resolve))
   expect(router.currentRoute.value.name).toBe('mail-thread')
   expect(document.title).toBe('You have won | Mail')

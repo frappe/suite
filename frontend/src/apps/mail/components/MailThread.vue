@@ -1516,6 +1516,12 @@ watch(
     if (landsPending && thread.value.length && scrollToLanding(thread.value)) landsPending = false
   },
 )
+// The account's folders have been read, or could not be: a pane on a failed read goes on without
+// them, as it always did.
+const foldersIn = computed(() => {
+  const folders = scope.mailboxes.value
+  return !!folders.data || !!folders.error
+})
 const loadThread = () => {
   if (!threadID) return
   const source = sourceMessages()
@@ -1525,6 +1531,12 @@ const loadThread = () => {
       void threadFallback.refetch().catch(() => {})
     return
   }
+  // Which of the conversation's mail a view shows goes by the account's folders (see
+  // filterRelevantMails), and a pane reads them a moment after it mounts. Decided before they were
+  // in, a thread opened from Spam on a phone, where every opening mounts its pane, was not known to
+  // be in Spam: its mail was hidden as junk and the pane went back to the list. It is built when
+  // they land (see the watch on foldersIn).
+  if (!readonly && !foldersIn.value) return
   const data = transformThreadMails(source)
   if (!data.length) {
     if (beside) return
@@ -1699,17 +1711,16 @@ const firstMailOfCollapsedGroup = computed(
 )
 // The messages a mailbox view shows: junked and trashed mail only in its own folder. The list's rows
 // are built by the same rule on the server (`visible_in_mailbox`), so a change here is one there.
-// Junked is in the Junk folder or carrying the junk mark. Either alone counts: another mail client,
-// or a filter, files mail in Junk without marking it, and going by the mark alone left such a thread
-// with nothing to show, so its row could not be opened.
+// Junk shows the mail in its folder as well as the mail marked junk: another mail client, or a
+// filter, files mail there without marking it, and going by the mark alone left such a thread with
+// nothing to show, so its row could not be opened.
 const filterRelevantMails = (mail: Mail) => {
   if (mailbox === 'search') return true
   const mailboxes = mail.mailboxes.map((m) => m.mailbox_id)
   const { trash, junk } = mailboxIds.value
-  const junked = !!mail.junk || mailboxes.includes(junk)
   if (mailbox === trash) return mailboxes.includes(trash)
-  if (mailbox === junk) return junked
-  return !mailboxes.includes(trash) && !junked
+  if (mailbox === junk) return !!mail.junk || mailboxes.includes(junk)
+  return !mailboxes.includes(trash) && !mail.junk
 }
 
 // Unsubscribing from a list (see useUnsubscribe): offered on mail you received, never in Junk, nor
@@ -1963,6 +1974,9 @@ watch(
   },
 )
 watch(() => messages, rederive)
+watch(foldersIn, (landed) => {
+  if (landed && !thread.value.length) loadThread()
+})
 onMounted(() => loadThread())
 const unblockEmailAddress = useMutation(api.mail.screening.remove)
 // Said on the click; a refusal takes the toast down (the mutation says why).

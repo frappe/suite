@@ -71,6 +71,7 @@ vi.mock('@/apps/mail/utils/accountScope', () => ({
     identities: ref({ data: [] }),
     screenedAddresses: ref({ data: [] }),
     mailboxIds: ref({}),
+    mailboxes: ref({ data: [] }),
   }),
 }))
 vi.mock('@/apps/mail/utils/composables', () => ({
