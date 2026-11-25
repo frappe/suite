@@ -19,7 +19,7 @@ import MailServerUnavailableView from '@/apps/mail/components/MailServerUnavaila
 import ShortcutsModal from '@/apps/mail/components/Modals/ShortcutsModal.vue'
 import OldMailDialog from '@/apps/mail/components/Screener/OldMailDialog.vue'
 import { provideMailOverlayLayer } from '@/apps/mail/composables/mailOverlayLayer'
-import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
+import { provideChangeSync, useChangeSync } from '@/apps/mail/composables/useChangeSync'
 import { useFollowOpenFolder } from '@/apps/mail/composables/useFollowOpenFolder'
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
@@ -137,7 +137,7 @@ provide('$dayjs', dayjs)
 const socket = initSocket()
 provide('$socket', socket)
 onScopeDispose(() => socket.disconnect())
-useChangeSync(socket, () => mailServerUnavailable.value)
+provideChangeSync(useChangeSync(socket, () => mailServerUnavailable.value))
 
 const Layout = computed(() => {
   if (route.meta.noLayout) return 'div'

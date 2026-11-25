@@ -123,10 +123,19 @@
             </MailListToolbar>
           </PhoneListHead>
 
+          <!-- The gap a pull to refresh opens above the list. -->
+          <PullToRefreshIndicator
+            v-if="isMobile"
+            :offset="pull.offset"
+            :progress="pull.progress"
+            :pulling="pull.pulling"
+            :refreshing="pull.refreshing"
+          />
           <!-- Mail list -->
           <div
             ref="mailList"
             class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
+            :style="pull.listStyle"
             @focusin="onListFocusIn"
           >
             <div ref="listTop" />
@@ -245,8 +254,9 @@
             <!-- Infinite-scroll sentinel: entering the viewport near the list bottom loads the next
 						     batch (appended, never refetching loaded rows). Sits after all groups. -->
             <div ref="loadMoreSentinel" class="h-px" />
-            <div v-if="loadingMore" class="flex justify-center py-3">
-              <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+            <!-- On a phone, the pull to refresh spinner's size and band (PullToRefreshIndicator). -->
+            <div v-if="loadingMore" class="flex justify-center py-4 sm:py-3">
+              <LoaderCircle class="text-ink-gray-5 size-5 animate-spin sm:size-4" />
             </div>
           </div>
         </template>
@@ -356,7 +366,17 @@
 <script setup lang="ts">
 import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
 import { LoaderCircle, RefreshCw } from 'lucide-vue-next'
-import { computed, h, inject, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import {
+  computed,
+  h,
+  inject,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  useTemplateRef,
+  watch,
+} from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery } from '@/api'
@@ -378,6 +398,7 @@ import MailThreadSkeleton from '@/apps/mail/components/MailThreadSkeleton.vue'
 import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
+import PullToRefreshIndicator from '@/apps/mail/components/PullToRefreshIndicator.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
@@ -393,6 +414,7 @@ import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { useMailRemoval } from '@/apps/mail/composables/useMailRemoval'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
 import { userStore } from '@/apps/mail/stores/user'
@@ -636,10 +658,8 @@ const resetThreads = () => {
 }
 
 // Refresh the loaded windows without changing the reader's selection.
-const refreshThreads = (reloadCounts = true) => {
-  refreshList()
-  if (reloadCounts) refreshCounts()
-}
+const refreshThreads = (reloadCounts = true) =>
+  Promise.all([refreshList(), reloadCounts && store.refreshCounts()])
 
 // A verdict on a sender, from the pane or anywhere else, changes which rows are waiting: the
 // "Unknown sender" filter drops the ones decided.
@@ -715,6 +735,16 @@ const {
   keys: () => threadIDs.value,
   groupKeys: (dateKey) => getGroupThreads(dateKey),
 })
+
+// A pull down from the top of the list, on a phone, refreshes it (see usePullToRefresh). Not while
+// rows are ticked, where the toolbar's refresh steps aside too.
+const pull = reactive(
+  usePullToRefresh({
+    scroller: () => mailListRef.value,
+    enabled: () => isMobile.value && !mobileSelectionMode.value,
+    refresh: () => refreshThreads(),
+  }),
+)
 const selectedRows = computed(() =>
   (threadRows.value ?? []).filter((t: Thread) => selections.value.includes(threadKey(t))),
 )

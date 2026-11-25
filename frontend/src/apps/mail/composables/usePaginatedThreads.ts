@@ -97,10 +97,15 @@ export function usePaginatedThreads({
   // A refresh asked while the list is being read waits for that read rather than being dropped: the
   // change that asked for it may have reached the server after the read went out.
   const refreshOwed = ref(false)
-  /** Read the list again, now or once the read under way is in. */
-  function refresh() {
-    if (isFetching.value) refreshOwed.value = true
-    else void refetch()
+  // Settles every refresh asked while the read under way was out, once the read owed them is in.
+  let settleOwed: (() => void) | undefined
+  let owed: Promise<void> | undefined
+  /** Read the list again, now or once the read under way is in; settles when that read is in. */
+  function refresh(): Promise<void> {
+    if (!isFetching.value) return refetch()
+    refreshOwed.value = true
+    owed ??= new Promise((resolve) => (settleOwed = resolve))
+    return owed
   }
   // Reads nothing of the query until a refresh is owed: the source runs at setup, and a caller may
   // declare its query further down.
@@ -109,7 +114,9 @@ export function usePaginatedThreads({
     (due) => {
       if (!due) return
       refreshOwed.value = false
-      void refetch()
+      const settle = settleOwed
+      owed = settleOwed = undefined
+      void refetch().then(settle)
     },
   )
   let fillWindows = 0

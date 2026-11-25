@@ -33,6 +33,9 @@ const listOnServer = () => {
   return { query, answer }
 }
 
+// Every promise chained on an answer, through.
+const settle = () => new Promise((resolve) => setTimeout(resolve))
+
 const mountList = (server: ReturnType<typeof listOnServer>) => {
   let list!: ReturnType<typeof usePaginatedThreads>
   const app = createApp(
@@ -79,6 +82,24 @@ describe('usePaginatedThreads reads the list again', () => {
 
     await server.answer()
     expect(server.query.reads).toBe(2)
+    unmount()
+  })
+
+  it('settles a refresh asked meanwhile only once the read owed to it is in', async () => {
+    const server = listOnServer()
+    const { list, unmount } = mountList(server)
+    list.refresh()
+    let settled = false
+    void list.refresh().then(() => (settled = true))
+
+    // The read under way went out before this refresh was asked: it doesn't answer it.
+    await server.answer()
+    await settle()
+    expect(settled).toBe(false)
+
+    await server.answer()
+    await settle()
+    expect(settled).toBe(true)
     unmount()
   })
 
