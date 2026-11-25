@@ -39,8 +39,6 @@ def handle(ctx: DavContext) -> Response:
         raise NotFoundError("Resource not found.")
 
     row = resolved.node
-    # one point check, §2.3's whole budget for the byte path; below READ it
-    # raises DriveNotFound, so an unreadable node is 404 and never 403
     require(row, READ, ctx.principals)
 
     if resolved.is_collection:
@@ -52,12 +50,7 @@ def handle(ctx: DavContext) -> Response:
         allow_native_redirect=bool(frappe.conf.get("drive_webdav_s3_redirect")),
     )
     if response.status_code in (200, 206):
-        # RFC 7232 §4.1: a 304 carries no representation metadata, and a cache
-        # copies whatever it does carry onto the stored response
         _neutralize_active_content(response.headers, download_filename(row.title))
-    # the byte path and `getlastmodified` must name one time (§8.11, §12.4).
-    # werkzeug derives its own from the blob file's mtime, which is when those
-    # bytes were first stored - shared by every node that dedupes onto them.
     response.headers["Last-Modified"] = rfc1123(content_time(row))
     response.headers["Cache-Control"] = "private, no-cache"
     if "Accept-Ranges" not in response.headers:

@@ -20,8 +20,6 @@ from suite.drive._core.nodes import EMPTY_BLOB_CHECKSUM, blob_checksums
 from suite.drive._core.times import WIRE_FORMAT, to_utc
 from suite.drive.webdav.xmlutil import dav, dav_element
 
-# `checksum` was never looked up, as opposed to looked up and absent. A batched
-# caller passes what it found, None included; only an unbatched one may read.
 UNREAD: str = object()  # type: ignore[assignment]
 
 

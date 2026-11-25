@@ -62,7 +62,6 @@ describe('magic move refIds', () => {
     expect(getTransitionKey({ ...element('e2', 'text'), refId: 'r1' })).toBe('r1')
   })
 
-  // a saved presentation plays as it did: converted ones carry numeric refIds
   it('keys an element by any refId it holds, a number too, else by its own id', () => {
     expect(getTransitionKey({ ...element('e1', 'image'), refId: 'r1' })).toBe('r1')
     expect(getTransitionKey({ ...element('e1', 'image'), refId: 7 })).toBe(7)

@@ -19,7 +19,6 @@ const canCreateTextConnection = (currentContent, nextContent) => {
   if (currentBlocks.length != nextBlocks.length) return false
 
   for (let i = 0; i < currentBlocks.length; i++) {
-    // within each block, compare text content only (ignore styles and tags)
     if (blockText(currentBlocks[i]) != blockText(nextBlocks[i])) {
       return false
     }
@@ -163,7 +162,6 @@ const getCommandsToUpdateElementRefId = (element, index = slideIndex.value) => {
   if (el) {
     const refId = generateUniqueId()
 
-    // command to set refId on the element in the current slide
     commands.push(
       editElementCommand({
         slideId: slides.value[index].clientId,
@@ -174,7 +172,6 @@ const getCommandsToUpdateElementRefId = (element, index = slideIndex.value) => {
       }),
     )
 
-    // command to set refId on the reference element (prev/next slide)
     const refSlideIndex = onPrev ? index - 1 : index + 1
     const refSlideObj = slides.value[refSlideIndex]
     if (refSlideObj) {
