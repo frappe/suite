@@ -104,13 +104,14 @@
                 >
                   {{ thread[0].subject }}
                   <!-- A subject is what gets pasted into a ticket or a chat: a button for it after
-                       its last word, shown on hover, its kept room where nothing follows.
-                       align-top: as tall as the 28px line it ends, it fills that line from its top
-                       and doesn't make it taller, centred on the words. -->
+                       its last word, shown on hover and always on a touch screen wider than a phone,
+                       its kept room where nothing follows. align-top: as tall as the 28px line it
+                       ends, it fills that line from its top and doesn't make it taller, centred on
+                       the words. -->
                   <Button
                     v-if="!isMobile"
                     variant="ghost"
-                    class="ml-1 align-top opacity-0 focus-visible:opacity-100 group-hover/subject:opacity-100"
+                    class="ml-1 align-top opacity-0 focus-visible:opacity-100 group-hover/subject:opacity-100 [@media(hover:none)]:opacity-100"
                     :tooltip="__('Copy subject')"
                     :aria-label="__('Copy subject')"
                     @click="copyToClipBoard(thread[0].subject)"

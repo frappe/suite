@@ -99,6 +99,8 @@ vi.mock('@/platform/workspace', () => ({
   useWorkspace: () => ({ workspaceName: ref('Acme'), workspaceLogo: ref(server.logo) }),
 }))
 vi.mock('@/platform/settings', () => ({ openSettings: server.settings }))
+const phone = vi.hoisted(() => ({ isMobile: { value: false } }))
+vi.mock('@/shell/useIsMobile', () => phone)
 
 const cleanups: (() => void)[] = []
 afterEach(() => {
@@ -117,6 +119,7 @@ afterEach(() => {
   })
   server.update.mockReset()
   server.settings.mockReset()
+  phone.isMobile.value = false
 })
 
 describe('Get started on Home', () => {
@@ -172,6 +175,14 @@ describe('Get started on Home', () => {
     const root = mount()
     task(root, 'Bring your old mail').click()
     expect(server.settings).toHaveBeenCalledWith('mail.import-export', 'import')
+  })
+
+  // Import and export is not among a phone's settings pages, so the task would open nothing.
+  it('leaves the old mail task out on a phone', () => {
+    server.admin = false
+    phone.isMobile.value = true
+    const root = mount()
+    expect(titles(root)).toEqual(['Add a profile photo'])
   })
 
   it('stays hidden for the person once they hide it', async () => {

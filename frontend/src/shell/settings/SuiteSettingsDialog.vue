@@ -129,13 +129,21 @@ const tabs = computed(() => groups.value.flatMap((group) => group.tabs))
 const activeTab = ref<string | undefined>()
 const route = useRoute()
 
-watch(
-  [groups, requestedTab],
-  ([visible, requested]) => {
-    activeTab.value = resolveSettingsTab(visible, requested, route.meta.area)
-  },
-  { immediate: true },
-)
+// The tab the dialog last picked itself. The groups recompute whenever a condition's input
+// changes (a session refresh after a profile save, a late server answer), so a new list only
+// moves the user off a tab they picked when that tab is gone
+let resolvedTab: string | undefined
+function resolveTab() {
+  resolvedTab = resolveSettingsTab(groups.value, requestedTab.value, route.meta.area)
+  activeTab.value = resolvedTab
+}
+
+watch(requestedTab, resolveTab, { immediate: true })
+watch(tabs, (visible) => {
+  const isShown = visible.some((tab) => tab.id === activeTab.value)
+  if (isShown && activeTab.value !== resolvedTab) return
+  resolveTab()
+})
 
 // A section left unanswered must not open on a later visit to its tab
 function dropSectionOfAnotherTab(tab: string | undefined) {
@@ -194,6 +202,7 @@ watch(
   open,
   (isOpen) => {
     if (isOpen) {
+      resolveTab()
       void refresh()
       return
     }

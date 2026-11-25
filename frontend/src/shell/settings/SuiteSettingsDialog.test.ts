@@ -173,6 +173,14 @@ const mail: SettingsGroup = {
   ],
 }
 
+// A group whose condition reads the session, and so recomputes when the session refreshes
+const hasCalendar: Ref<boolean> = ref(false)
+const calendar: SettingsGroup = {
+  label: () => 'Calendar',
+  condition: () => hasCalendar.value,
+  tabs: [{ id: 'calendar.general', label: () => 'General', icon: '', body }],
+}
+
 const isOpen = ref(true)
 let app: ReturnType<typeof createApp>
 let root: HTMLElement
@@ -180,7 +188,7 @@ async function mount() {
   root = document.createElement('div')
   app = createApp({ render: () => h(SuiteSettingsDialog, { open: isOpen.value }) })
   app.config.globalProperties.__ = (text: string) => text
-  app.provide(SETTINGS_GROUPS_KEY, [account, mail])
+  app.provide(SETTINGS_GROUPS_KEY, [account, mail, calendar])
   // On the page, so its parts can take focus
   document.body.append(root)
   app.mount(root)
@@ -232,6 +240,7 @@ function openDialogs() {
 beforeEach(() => {
   isOpen.value = true
   hasServers.value = true
+  hasCalendar.value = false
   settingsSection.value = undefined
 })
 afterEach(() => {
@@ -345,4 +354,11 @@ it('starts the next open with nothing searched for', async () => {
   await nextTick()
   expect(searchBox().value).toBe('')
   expect(sidebar()).toEqual(['tab Profile', 'tab Sending', 'tab Import and export', 'tab Advanced'])
+})
+it('stays on the tab picked when a group shows or goes while it is open', async () => {
+  await mount()
+  await pick('Sending')
+  hasCalendar.value = true
+  await nextTick()
+  expect(shownTab()).toBe('mail.sending')
 })
