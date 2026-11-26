@@ -4,33 +4,22 @@ import argparse
 import multiprocessing
 import os
 from pathlib import Path
-from typing import NoReturn
 
 import frappe
 from frappe.commands.testing import main
 from merge_junit import merge_junit
 
 
-def run_module(site: str, module: str, report: Path) -> NoReturn:
+def run_module(site: str, module: str, report: Path) -> None:
     fragments = report.with_name(f"{report.stem}-fragments.xml")
-    frappe.init(site)
-    try:
+    with frappe.init_site(site):
         if not frappe.conf.allow_tests:
             raise RuntimeError(f"Tests are disabled on {site}")
         try:
             main(site=site, module=module, junit_xml_output=str(fragments))
-        except SystemExit as error:
-            if error.code != 1:
-                raise
-            status = 1
-        else:
-            status = 0
-    finally:
-        frappe.destroy()
-
-    merge_junit(fragments, report)
-    fragments.unlink()
-    raise SystemExit(status)
+        finally:
+            merge_junit(fragments, report)
+            fragments.unlink()
 
 
 def run(product: str, site: str, workspace: Path) -> int:
