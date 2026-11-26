@@ -131,12 +131,39 @@ class ReplyTo(unittest.TestCase):
 
 
 class Subject(unittest.TestCase):
+    """Stalwart encodes a `subject` that is long or ends in whitespace; Rspamd scores an encoded
+    ASCII subject as SUBJ_EXCESS_QP. The raw header is folded instead, so ASCII goes out raw."""
+
     def test_whitespace_around_the_subject_is_not_sent(self):
-        # A trailing space makes Stalwart encode the header, which Rspamd scores as SUBJ_EXCESS_QP.
-        self.assertEqual(draft(subject=" \tHow is  it going? \t")["subject"], "How is  it going?")
+        self.assertEqual(draft(subject=" \tHow is  it going? \t")["header:Subject"], "How is  it going?")
+
+    def test_a_long_ascii_subject_goes_out_raw_to_be_folded_not_encoded(self):
+        subject = (
+            "Re: Authorization letter and annual turnover certificate needed for the tender bid 2024/B/1234"
+        )
+        payload = draft(subject=subject)
+
+        self.assertEqual(payload["header:Subject"], subject)
+        self.assertNotIn("subject", payload)
+
+    def test_a_non_ascii_subject_is_left_for_the_server_to_encode(self):
+        payload = draft(subject="Café ☕ at noon")
+
+        self.assertEqual(payload["subject"], "Café ☕ at noon")
+        self.assertNotIn("header:Subject", payload)
+
+    def test_a_line_break_in_the_subject_never_reaches_the_raw_header(self):
+        # Raw, the CRLF would end the Subject and start a header of the sender's choosing.
+        payload = draft(subject="Hello\r\nBcc: someone@example.com")
+
+        self.assertNotIn("header:Subject", payload)
+        self.assertEqual(payload["subject"], "Hello\r\nBcc: someone@example.com")
 
     def test_a_blank_subject_sets_no_subject(self):
-        self.assertNotIn("subject", draft(subject="  \t "))
+        payload = draft(subject="  \t ")
+
+        self.assertNotIn("subject", payload)
+        self.assertNotIn("header:Subject", payload)
 
 
 class MailerHeaders(unittest.TestCase):
