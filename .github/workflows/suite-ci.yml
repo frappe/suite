@@ -78,7 +78,7 @@ jobs:
           # confined to them do not need the bench
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_backend=1
-            run_mail_calendar=1
+            run_stalwart=1
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
@@ -93,20 +93,18 @@ jobs:
               | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
               | grep -E '^(suite/|pyproject\.toml|\.coveragerc$|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
             [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
-            # Mail and calendar tests run together whenever either module changes,
-            # since the calendar tests build on the mail harness and Stalwart accounts.
-            printf '%s\n' "$changed_files" | grep -Eq '^(suite/mail/|suite/calendar/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' && run_mail_calendar=1 || run_mail_calendar=0
+            printf '%s\n' "$changed_files" | grep -Eq '^(suite/mail/|suite/calendar/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' && run_stalwart=1 || run_stalwart=0
           fi
 
-          if [ "$run_backend" = 1 ] || [ "$run_mail_calendar" = 1 ]; then run_bench=1; else run_bench=0; fi
+          if [ "$run_backend" = 1 ] || [ "$run_stalwart" = 1 ]; then run_bench=1; else run_bench=0; fi
           echo "backend=$run_backend" >> $GITHUB_OUTPUT
-          echo "mail-calendar=$run_mail_calendar" >> $GITHUB_OUTPUT
+          echo "stalwart=$run_stalwart" >> $GITHUB_OUTPUT
           echo "bench=$run_bench" >> $GITHUB_OUTPUT
           echo "Run backend tests: $run_backend"
-          echo "Run mail/calendar tests: $run_mail_calendar"
+          echo "Validate Sieve on Stalwart: $run_stalwart"
 
       - name: Start Stalwart
-        if: steps.changes.outputs.mail-calendar == '1'
+        if: steps.changes.outputs.stalwart == '1'
         run: |
           # The JMAP session advertises URLs at https://mail.example.test (the bootstrap
           # serverHostname), which must resolve to the local container.
@@ -273,11 +271,11 @@ jobs:
         run: |
           test "$(node --version)" = v22.13.0
           pilot frappe --site test_site run-tests --module suite.writer.content.tests.test_converter
-      # Connecting the site to Stalwart comes after the backend tests, so that run
-      # still skips the tests that need a mail server, as it did on its own.
+      # The standalone Stalwart container supports Sieve validation. Tests that
+      # provision mail accounts require a Suite Cloud-managed server.
       - name: Connect Site to Stalwart
         id: connect-stalwart
-        if: ${{ !cancelled() && steps.changes.outputs.mail-calendar == '1' && steps.create-site.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.changes.outputs.stalwart == '1' && steps.create-site.outcome == 'success' }}
         working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
           # Invite/OTP flows send transactional emails; with mute_emails set, frappe
@@ -289,17 +287,18 @@ jobs:
           pilot frappe --site test_site execute frappe.db.set_single_value --args "['Mail Settings', 'verify_ssl', 0]"
           pilot frappe --site test_site clear-cache
 
-      - name: Run Mail Tests
+      - name: Validate Sieve on Stalwart
         if: ${{ !cancelled() && steps.connect-stalwart.outcome == 'success' }}
-        working-directory: /home/runner/pilot/benches/frappe-bench/sites
-        run: ../env/bin/python "$GITHUB_WORKSPACE/.github/scripts/run_module_tests.py" mail
-        env:
-          TYPE: server
-
-      - name: Run Calendar Tests
-        if: ${{ !cancelled() && steps.connect-stalwart.outcome == 'success' }}
-        working-directory: /home/runner/pilot/benches/frappe-bench/sites
-        run: ../env/bin/python "$GITHUB_WORKSPACE/.github/scripts/run_module_tests.py" calendar
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          results="$GITHUB_WORKSPACE/test-results/mail"
+          mkdir -p "$results"
+          module=suite.mail.tests.test_automation_sieve_compiles
+          status=0
+          pilot frappe --site test_site run-tests --module "$module" --junit-xml-output "$results/$module-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" "$results/$module-fragments.xml" "$results/$module.xml"
+          rm "$results/$module-fragments.xml"
+          exit "$status"
         env:
           TYPE: server
 
