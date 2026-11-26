@@ -70,6 +70,18 @@ class TestCalendarInviteMime(UnitTestCase):
         self.assertEqual(html["Content-Transfer-Encoding"], "quoted-printable")
         self.assertIn(description, html.get_payload(decode=True).decode("utf-8"))
 
+    def test_trailing_whitespace_is_encoded_so_a_relay_cannot_strip_it(self):
+        description = "Agenda \r\n\t\t\r\nNotes\t"
+        parts = text_parts(build_invite(description=description))
+
+        for name in ("text/plain body", "text/html body"):
+            with self.subTest(part=name):
+                part = parts[name]
+                self.assertEqual(part["Content-Transfer-Encoding"], "quoted-printable")
+                for line in part.get_payload().splitlines():
+                    self.assertEqual(line, line.rstrip(" \t"))
+                self.assertIn(description, part.get_payload(decode=True).decode("utf-8"))
+
     def test_the_calendar_parts_keep_their_itip_method(self):
         parts = text_parts(build_invite())
 

@@ -505,13 +505,16 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
 
 
 def _text_part(text: str, subtype: str) -> MIMEPart:
-    """Returns a UTF-8 text part: 7bit for ASCII text that fits SMTP's line limit, else quoted-printable.
+    """Returns a UTF-8 text part: 7bit for ASCII text that is safe to relay as-is, else quoted-printable.
 
     `MIMEText(text, subtype, "utf-8")` encodes in base64, or in quoted-printable after Frappe changes
     the global utf-8 charset. Spam filters score base64 text (Rspamd MIME_BASE64_TEXT_BOGUS).
+    Quoted-printable encodes trailing whitespace, which some relays strip and so break DKIM.
     """
 
-    is_7bit = text.isascii() and all(len(line) <= SMTP_MAX_LINE_LENGTH for line in text.splitlines())
+    is_7bit = text.isascii() and all(
+        len(line) <= SMTP_MAX_LINE_LENGTH and line == line.rstrip(" \t") for line in text.splitlines()
+    )
     part = MIMEPart()
     part.set_content(text, subtype=subtype, charset="utf-8", cte="7bit" if is_7bit else "quoted-printable")
     return part
