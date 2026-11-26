@@ -291,15 +291,15 @@ jobs:
 
       - name: Run Mail Tests
         if: ${{ !cancelled() && steps.connect-stalwart.outcome == 'success' }}
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: bash "$GITHUB_WORKSPACE/.github/scripts/run_module_tests.sh" mail
+        working-directory: /home/runner/pilot/benches/frappe-bench/sites
+        run: ../env/bin/python "$GITHUB_WORKSPACE/.github/scripts/run_module_tests.py" mail
         env:
           TYPE: server
 
       - name: Run Calendar Tests
         if: ${{ !cancelled() && steps.connect-stalwart.outcome == 'success' }}
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: bash "$GITHUB_WORKSPACE/.github/scripts/run_module_tests.sh" calendar
+        working-directory: /home/runner/pilot/benches/frappe-bench/sites
+        run: ../env/bin/python "$GITHUB_WORKSPACE/.github/scripts/run_module_tests.py" calendar
         env:
           TYPE: server
 
