@@ -435,8 +435,15 @@ describe("Calendar's new-event form opened over another area's page", () => {
 
     await click(button('Save'))
     await click(button('Send Email'))
-    expect(server.writes.map((write) => write.to)).toEqual(['meet.meetings.createCalendar'])
-    expect(JSON.stringify(server.writes[0].input)).not.toContain('team-meet-room')
+    expect(server.writes[0]).toEqual({
+      to: 'meet.rooms.setDefaultInvite',
+      input: { room: null },
+    })
+    expect(server.writes.map((write) => write.to)).toEqual([
+      'meet.rooms.setDefaultInvite',
+      'meet.meetings.createCalendar',
+    ])
+    expect(JSON.stringify(server.writes[1].input)).not.toContain('team-meet-room')
   })
 
   it('searches owned or co-hosted rooms and remembers the one picked', async () => {

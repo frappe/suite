@@ -395,6 +395,7 @@ const setMeet = (on: boolean) => {
 const pickInviteRoom = (url: string | null) => {
   if (url === null) {
     useNewRoom()
+    void rememberInviteRoom.run({ room: null }).catch(() => {})
     return
   }
   const room = inviteRooms.value.find((option) => option.meeting_url === url)
