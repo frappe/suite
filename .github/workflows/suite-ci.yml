@@ -20,7 +20,7 @@ jobs:
           persist-credentials: false
       - name: Compare preinstalled tools in both orders
         env:
-          IMAGE: ghcr.io/frappe/suite-actions-runner:benchmark-4bbfc24ccecf021e1b7e0c08a926e35d141ff60c
+          IMAGE: ghcr.io/frappe/suite-actions-runner:benchmark-1dc84252d5096c38648563708ace13a4753821a2
         run: |
           docker pull "$IMAGE"
           frappe_sha="$(git ls-remote https://github.com/frappe/frappe.git refs/heads/develop | cut -f1)"
