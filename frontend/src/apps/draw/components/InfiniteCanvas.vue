@@ -152,8 +152,8 @@ const textAlignOptions = [
 
 const props = defineProps<{ activeTool: DrawingTool | null }>()
 const { resolvedMode } = useTheme()
-function displayColor(color?: string) {
-  return paletteColor(color, resolvedMode.value === 'dark')
+function displayColor(color?: string, usage: 'ink' | 'fill' = 'ink') {
+  return paletteColor(color, resolvedMode.value === 'dark', usage)
 }
 const persistence = useDrawingPersistence()
 const { loadDrawing, queueSave, warnUnsaved, saveDrawing, drawingLoading, editable } = persistence
@@ -733,7 +733,7 @@ const textEditorStyle = computed(() => {
         : editor.backgroundColor,
       resolvedMode.value === 'dark',
     ),
-    backgroundColor: displayColor(editor.backgroundColor) ?? 'transparent',
+    backgroundColor: displayColor(editor.backgroundColor, 'fill') ?? 'transparent',
     lineHeight: `${TEXT_LINE_HEIGHT}`,
     fontFamily: TEXT_FONT_FAMILIES[editor.fontFamily ?? 'shantell'],
     fontWeight: editor.fontWeight ?? 400,
@@ -2348,7 +2348,7 @@ function shapeStyle(shape: Shape) {
     fill:
       isLine(shape) || isImage(shape) || (isFreeDraw(shape) && !isClosedFreeDraw(shape))
         ? 'none'
-        : (displayColor(shape.fill) ?? 'none'),
+        : (displayColor(shape.fill, 'fill') ?? 'none'),
     strokeWidth: `${shape.strokeWidth ?? 2}px`,
     strokeDasharray:
       shape.strokeStyle === 'dashed' ? '8 5' : shape.strokeStyle === 'dotted' ? '1 5' : undefined,
@@ -4169,7 +4169,10 @@ onBeforeUnmount(() => {
               :height="text.height"
               :rx="text.cornerRadius"
               :ry="text.cornerRadius"
-              :style="{ fill: displayColor(text.backgroundColor), opacity: text.opacity ?? 1 }"
+              :style="{
+                fill: displayColor(text.backgroundColor, 'fill'),
+                opacity: text.opacity ?? 1,
+              }"
             />
             <text
               :x="textX(text)"
@@ -4516,7 +4519,7 @@ onBeforeUnmount(() => {
                     : activePropertyColor === color.fill,
               }"
               :style="{
-                '--property-fill': displayColor(color.fill),
+                '--property-fill': displayColor(color.fill, 'fill'),
                 '--property-border': displayColor(color.border),
               }"
               @click="applyObjectColor(color)"

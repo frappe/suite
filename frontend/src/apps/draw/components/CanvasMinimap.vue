@@ -174,7 +174,7 @@ function stroke(shape: Shape): string {
 }
 
 function fill(shape: RectangleShape): string {
-  return paletteColor(shape.fill, dark.value) ?? 'none'
+  return paletteColor(shape.fill, dark.value, 'fill') ?? 'none'
 }
 
 function labelWidth(shape: RectangleShape): number {
@@ -267,7 +267,7 @@ function textX(shape: TextShape): number {
               :y="shape.y"
               :width="shape.width"
               :height="shape.height"
-              :fill="paletteColor(shape.backgroundColor, dark)"
+              :fill="paletteColor(shape.backgroundColor, dark, 'fill')"
             />
             <text
               :x="textX(shape)"

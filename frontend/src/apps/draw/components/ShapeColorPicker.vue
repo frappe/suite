@@ -5,6 +5,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useTheme } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
 
+import { contrastingInk } from '../canvas/appearance'
 import { DRAW_PALETTE, paletteColor } from '../canvas/palette'
 
 type ColorTarget = 'border' | 'fill'
@@ -208,28 +209,17 @@ function onColorShortcut(event: KeyboardEvent) {
   selectColor(option?.color, option?.family, colorTarget)
 }
 
-function displayColor(color: string | undefined | null) {
-  return paletteColor(color ?? undefined, dark.value)
+function displayColor(color: string | undefined | null, target = selectionTarget.value) {
+  const isFill =
+    propertyKind.value === 'text' && isPropertyObject.value
+      ? target === 'border'
+      : target === 'fill' && propertyKind.value !== 'arrow' && propertyKind.value !== 'line'
+  return paletteColor(color ?? undefined, dark.value, isFill ? 'fill' : 'ink')
 }
 
-function shortcutTextColor(color: string) {
-  const displayed = displayColor(color)
-  if (dark.value && displayed !== color) {
-    const step = displayed?.match(/^var\(--surface-\w+-(\d+)\)$/)?.[1]
-    if (step) return Number(step) <= 4 ? 'var(--ink-gray-9)' : 'var(--ink-base)'
-    if (displayed === 'var(--surface-base)') return 'var(--ink-gray-9)'
-    const family = DRAW_PALETTE.find(
-      (family) => family.base === color || family.shades.includes(color),
-    )
-    const shadeIndex = family?.shades.indexOf(color) ?? -1
-    return shadeIndex >= 3 ? 'var(--ink-base)' : 'var(--ink-gray-9)'
-  }
-  const channels = [1, 3, 5].map((start) => {
-    const channel = Number.parseInt(color.slice(start, start + 2), 16) / 255
-    return channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4
-  })
-  const luminance = channels[0]! * 0.2126 + channels[1]! * 0.7152 + channels[2]! * 0.0722
-  return luminance > 0.179 ? '#000000' : '#ffffff'
+function shortcutStyle(color: string, target = selectionTarget.value) {
+  const background = displayColor(color, target)
+  return { background, color: contrastingInk(background, background !== color) }
 }
 
 function updateHex(value: string) {
@@ -275,7 +265,7 @@ async function pickScreenColor() {
             '--color':
               color === undefined && target === 'border'
                 ? 'var(--ink-gray-9)'
-                : (displayColor(color) ?? 'transparent'),
+                : (displayColor(color, target) ?? 'transparent'),
           }"
           :label="label"
           :tooltip="isProperty ? 'Custom' : label"
@@ -326,10 +316,7 @@ async function pickScreenColor() {
                 :key="option.family.name"
                 :class="{ selected: isSelectedColor(option.color, primaryTarget) }"
                 :aria-pressed="isSelectedColor(option.color, primaryTarget)"
-                :style="{
-                  background: displayColor(option.color),
-                  color: shortcutTextColor(option.color),
-                }"
+                :style="shortcutStyle(option.color, primaryTarget)"
                 :aria-label="`${option.family.name} ${primaryLabel.toLowerCase()} (${colorKeys[index + 1]})`"
                 :aria-keyshortcuts="colorKeys[index + 1]"
                 :title="colorKeys[index + 1]"
@@ -358,10 +345,7 @@ async function pickScreenColor() {
                 :key="option.family.name"
                 :class="{ selected: isSelectedColor(option.color, secondaryTarget) }"
                 :aria-pressed="isSelectedColor(option.color, secondaryTarget)"
-                :style="{
-                  background: displayColor(option.color),
-                  color: shortcutTextColor(option.color),
-                }"
+                :style="shortcutStyle(option.color, secondaryTarget)"
                 :aria-label="`${option.family.name} ${secondaryLabel.toLowerCase()} (Shift+${colorKeys[index + 1]})`"
                 :aria-keyshortcuts="`Shift+${colorKeys[index + 1]}`"
                 :title="`Shift+${colorKeys[index + 1]}`"
@@ -390,10 +374,7 @@ async function pickScreenColor() {
               :key="option.family.name"
               :class="{ selected: isSelectedColor(option.color) }"
               :aria-pressed="isSelectedColor(option.color)"
-              :style="{
-                background: displayColor(option.color),
-                color: shortcutTextColor(option.color),
-              }"
+              :style="{ background: displayColor(option.color) }"
               :aria-label="option.family.name"
               @click="selectColor(option.color, option.family)"
             />
@@ -407,7 +388,7 @@ async function pickScreenColor() {
               :key="color"
               :class="{ selected: isSelectedColor(color) }"
               :aria-pressed="isSelectedColor(color)"
-              :style="{ background: displayColor(color), color: shortcutTextColor(color) }"
+              :style="shortcutStyle(color)"
               :aria-label="`${color} (Shift+${index + 1})`"
               :aria-keyshortcuts="`Shift+${index + 1}`"
               :title="`Shift+${index + 1}`"

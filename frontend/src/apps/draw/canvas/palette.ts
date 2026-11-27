@@ -90,17 +90,23 @@ const semanticFamilies = new Set([
 ])
 const surfaceSteps = [2, 4, 6, 8, 10]
 
-export function paletteColor(color: string | undefined, dark: boolean): string | undefined {
+export function paletteColor(
+  color: string | undefined,
+  dark: boolean,
+  usage: 'ink' | 'fill' = 'ink',
+): string | undefined {
   if (!dark || color === undefined) return color
   const normalized = color.toLowerCase()
-  if (normalized === '#fff' || normalized === '#ffffff') return 'var(--surface-base)'
+  if (usage === 'fill' && (normalized === '#fff' || normalized === '#ffffff')) {
+    return 'var(--surface-base)'
+  }
   if (normalized === '#000' || normalized === '#000000') return 'var(--surface-gray-10)'
 
   for (const family of DRAW_PALETTE) {
     const shadeIndex = family.shades.indexOf(normalized)
     if (family.base !== normalized && shadeIndex < 0) continue
     if (!semanticFamilies.has(family.name)) {
-      return `oklch(from ${color} clamp(0.24, calc(1.18 - l), 0.96) c h)`
+      return `oklch(from ${normalized} clamp(0.24, calc(1.18 - l), 0.96) c h)`
     }
     const step = shadeIndex >= 0 ? surfaceSteps[shadeIndex] : family.name === 'Gray' ? 9 : 6
     return `var(--surface-${family.name.toLowerCase()}-${step})`
