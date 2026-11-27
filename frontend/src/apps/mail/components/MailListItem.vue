@@ -272,6 +272,7 @@ import {
 } from '@/apps/mail/utils/participants'
 import { isReceived, receivedFolders, searchFolders } from '@/apps/mail/utils/receivedMail'
 import { returnedReason } from '@/apps/mail/utils/snoozeTimes'
+import { unloadedIn } from '@/apps/mail/utils/threadFolding'
 import { threadLink } from '@/apps/mail/utils/unifiedFolders'
 import HighlightedText from '@/components/HighlightedText.vue'
 
@@ -497,7 +498,8 @@ const selectLabel = computed(() => {
 })
 
 // Gmail-style count of how many messages the conversation holds, shown once there's more than one.
-const messageCount = computed(() => mail.messages?.length ?? 0)
+// A long thread comes in part, and counts what was left on the server too.
+const messageCount = computed(() => (mail.messages?.length ?? 0) + unloadedIn(mail.messages ?? []))
 
 const avatarLabel = computed(() => threadAvatarLabel(participants.value, mail, ownEmails.value))
 

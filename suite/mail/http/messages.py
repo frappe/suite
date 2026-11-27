@@ -26,6 +26,15 @@ from suite.mail.http.shapes import AccountInput
 
 class ThreadInput(AccountInput):
     thread_id: str
+    # The message the thread is opened on, read with a long thread wherever it sits.
+    include: NotRequired[str | None]
+
+
+class EarlierInput(AccountInput):
+    thread_id: str
+    before: str
+    after: NotRequired[str | None]
+    limit: NotRequired[int]
 
 
 class Window(TypedDict):
@@ -85,12 +94,22 @@ class NamesInput(TypedDict):
     names: list[str]
 
 
+class DeleteInput(NamesInput):
+    # The long threads among `names` that the client holds only part of: the rest of each, of what
+    # the list shows, is deleted too.
+    threads: NotRequired[list[str] | None]
+
+
 class SeenInput(IdsInput):
     seen: bool
+    # The long threads among `ids` that the client holds only part of: the rest is marked too.
+    threads: NotRequired[list[str] | None]
 
 
 class FlagInput(IdsInput):
     flagged: bool
+    # The long threads among `ids` that the client holds only part of: the rest is unstarred, where it is starred too.
+    threads: NotRequired[list[str] | None]
 
 
 class FlagResult(TypedDict):
@@ -102,6 +121,8 @@ class PinInput(IdsInput):
     pinned: bool
     # The folder it is pinned from, the Inbox when left out (see suite.mail.pins).
     mailbox: NotRequired[str | None]
+    # The long threads among `ids` that the client holds only part of: the rest is pinned or unpinned too.
+    threads: NotRequired[list[str] | None]
 
 
 class PinResult(TypedDict):
@@ -112,10 +133,14 @@ class PinResult(TypedDict):
 class SnoozeInput(IdsInput):
     until: str
     leaves: NotRequired[str | None]
+    # The long threads among `ids` that the client holds only part of: the rest is snoozed too.
+    threads: NotRequired[list[str] | None]
 
 
 class UnsnoozeInput(IdsInput):
     leaves: NotRequired[str | None]
+    # The long threads among `ids` that the client holds only part of: the rest is brought back too.
+    threads: NotRequired[list[str] | None]
 
 
 class RemindInput(IdsInput):
@@ -162,6 +187,8 @@ class FileInput(IdsInput):
     screen_action: NotRequired[str | None]
     leaves: NotRequired[str | None]
     shows: NotRequired[dict[str, list[ShownFolder]] | None]
+    # The long threads among `ids` that the client holds only part of: the rest is filed too.
+    threads: NotRequired[list[str] | None]
 
 
 class UnsubscribeOption(TypedDict):
@@ -393,6 +420,7 @@ _OPERATIONS: tuple[
     ),
     (mail.clear_list, "mutation", "messages.clearList", ClearListInput, Cleared, None),
     (mail.get_thread, "query", "threads.get", ThreadInput, list[Message], None),
+    (mail.get_earlier_messages, "query", "threads.earlier", EarlierInput, list[Message], None),
     (
         mail.search_mails,
         "query",
@@ -533,7 +561,7 @@ CONTRACT_ROUTES = (
         "delete_messages",
         kind="mutation",
         public_name="messages.delete",
-        body=NamesInput,
+        body=DeleteInput,
         output=type(None),
         envelope="message",
     ),

@@ -77,6 +77,8 @@ export function usePaginatedThreads({
     nextWindow = pending
     void pending.then(() => {
       if (nextWindow === pending) nextWindow = undefined
+      // The window is in, and the list may still be shorter than its view (see topUpIfShort).
+      topUpIfShort()
     })
     return pending
   }
@@ -160,6 +162,12 @@ export function usePaginatedThreads({
   function topUpIfShort() {
     if (!visible.value || !hasMore.value || fillWindows >= MAX_FILL_WINDOWS) return
     void nextTick(() => {
+      // A read of the list is out: the window before this one, still landing when its rows are
+      // already here, or a refresh of the loaded rows. Asking now gets that read back, not the
+      // next window (see loadMore), so the fill waits and is tried again when the read is in.
+      // Counted as a window asked for all the same, the rows on screen were progress already
+      // spent, and a list shorter than its view stayed short, with more mail to show.
+      if (nextWindow || isFetching.value) return
       const el = container.value,
         marker = sentinel.value
       if (!el || !marker) return
@@ -173,6 +181,10 @@ export function usePaginatedThreads({
       void loadMore()
     })
   }
+  // A refresh that lands may leave the list short with nothing asking for more: the rows it
+  // brought are the rows already held, and the sentinel never left the view to come back into
+  // it. Once mounted, as above: the caller may declare its query further down.
+  onMounted(() => watch(isFetching, (fetching) => !fetching && topUpIfShort()))
   // A refusal stands in for the list only while there is nothing to show: a failed refresh of a
   // loaded list keeps its rows. Asking again shows the outline, not the stale refusal.
   const listState = computed<ThreadListState>(() => {

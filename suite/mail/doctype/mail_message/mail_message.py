@@ -3,6 +3,7 @@
 
 import json
 import re
+from collections.abc import Iterable
 from contextlib import suppress
 from datetime import datetime
 from email.utils import formataddr
@@ -720,8 +721,12 @@ class MailMessage(Document):
 
 
 @frappe.whitelist()
-def bulk_delete(names: JSONList[str]) -> None:
-    """Delete multiple Mail Messages based on their names."""
+def bulk_delete(names: JSONList[str], threads: JSONList[str] | None = None) -> None:
+    """Delete multiple Mail Messages based on their names. `threads` names the long threads among
+    them that the client holds only part of: the rest of each, of what the list shows, goes too."""
+
+    # Imported here: long_threads imports this module.
+    from suite.mail.long_threads import rest_of
 
     accounts_map = {}
     for name in names:
@@ -729,7 +734,7 @@ def bulk_delete(names: JSONList[str]) -> None:
         accounts_map.setdefault(account, []).append(id)
 
     for account, ids in accounts_map.items():
-        delete_messages(account, ids)
+        delete_messages(account, ids + (rest_of(account, threads, ids) if threads else []))
 
     frappe.msgprint(_("Mail Messages deleted successfully."), alert=True)
 
@@ -820,6 +825,43 @@ def fetch_messages(
     return messages[:limit], total
 
 
+# A conversation can run to thousands of messages (a repository's notifications thread on one
+# subject for years), and read whole, one of them holds up the list it is on and the pane it opens
+# in. Past LONG_THREAD messages a thread is read in part: its first message, its newest THREAD_TAIL,
+# and any the caller names. The rest are read a page at a time (see `fetch_earlier_messages`).
+# A list reads less of each: the first message and the newest LIST_TAIL are what a row shows and
+# what the pane opens on, and every message more is a body the whole page waits for.
+LONG_THREAD = 50
+THREAD_TAIL = 20
+LIST_TAIL = 2
+EARLIER_PAGE = 50
+
+
+def thread_window(ids: list[str], keep: Iterable[str | None] = (), tail: int = THREAD_TAIL) -> list[str]:
+    """The emails read with a thread, of all it holds (`ids`, oldest first): every one, until the
+    thread is long (see LONG_THREAD)."""
+
+    if len(ids) <= LONG_THREAD:
+        return ids
+    kept = {ids[0], *ids[-tail:], *keep}
+    return [id for id in ids if id in kept]
+
+
+def mark_unloaded(ids: list[str], messages: list[dict], after: int = -1) -> None:
+    """Says on each message read from a thread how many before it were left on the server, as
+    `earlier_unloaded`: the run of the thread's emails (`ids`, oldest first) between it and the
+    message read before it, or the one at `after`."""
+
+    position = {id: at for at, id in enumerate(ids)}
+    # A message the thread no longer lists (destroyed since it was read) has no place to count from.
+    listed = [message for message in messages if message["id"] in position]
+    for message in sorted(listed, key=lambda message: position[message["id"]]):
+        at = position[message["id"]]
+        if at - after > 1:
+            message["earlier_unloaded"] = at - after - 1
+        after = at
+
+
 def fetch_threads(
     account: str,
     filter: dict | None = None,
@@ -829,8 +871,9 @@ def fetch_threads(
 ) -> dict[str, list[dict]]:
     """Returns a page of threads matching the filter, newest first unless `sort` says otherwise.
 
-    Each thread ID is mapped to the full list of messages in that thread (the entire conversation
-    across all mailboxes), ordered oldest to newest.
+    Each thread ID is mapped to the list of messages in that thread (the entire conversation
+    across all mailboxes), ordered oldest to newest. A long thread comes in part, with the newest
+    message that matched among what is read (see `thread_window`).
     """
 
     return query_threads(account, filter, position, limit, sort=sort)[0]
@@ -869,23 +912,35 @@ def query_threads(
     if not thread_email_ids:
         return {}, matches, total
 
-    # Fetch every message in the page's threads once, then group them back by thread.
+    # Fetch the messages of the page's threads once, then group them back by thread.
     threads: dict[str, list[dict]] = {thread_id: [] for thread_id in thread_email_ids}
-    email_ids = [email_id for ids in thread_email_ids.values() for email_id in ids]
-    messages = get_messages(account, email_ids)
+    windows = {
+        thread_id: thread_window(ids, keep=[matches.get(thread_id)], tail=LIST_TAIL)
+        for thread_id, ids in thread_email_ids.items()
+    }
+    messages = get_messages(account, [email_id for ids in windows.values() for email_id in ids])
     # A message destroyed between the query and that read is missing from it. A draft saved again
     # meanwhile is: the save replaces it under a new id, in the same thread, which the query came
     # too early to list, and the row dropped out of the list until the next read. A thread left
     # short is asked again, the once.
     held = {message["id"] for message in messages}
-    short = [thread_id for thread_id, ids in thread_email_ids.items() if not held.issuperset(ids)]
+    short = [thread_id for thread_id, ids in windows.items() if not held.issuperset(ids)]
     if short:
         latest = get_thread_email_ids(account, short)
-        if missed := [email_id for ids in latest.values() for email_id in ids if email_id not in held]:
+        thread_email_ids.update(latest)
+        if missed := [
+            email_id
+            for thread_id, ids in latest.items()
+            for email_id in thread_window(ids, keep=[matches.get(thread_id)], tail=LIST_TAIL)
+            if email_id not in held
+        ]:
             messages += get_messages(account, missed)
     for message in messages:
         if message["thread_id"] in threads:
             threads[message["thread_id"]].append(message)
+    for thread_id, ids in thread_email_ids.items():
+        if len(ids) > LONG_THREAD:
+            mark_unloaded(ids, threads[thread_id])
 
     # Order each conversation oldest to newest so callers don't have to re-sort.
     conversations = {
@@ -895,13 +950,41 @@ def query_threads(
     return conversations, matches, total
 
 
-def fetch_thread(account: str, thread_id: str, sort: Literal["asc", "desc"] = "asc") -> list[dict]:
-    """Returns a list of messages in a thread based on the provided thread ID."""
+def fetch_thread(
+    account: str,
+    thread_id: str,
+    sort: Literal["asc", "desc"] = "asc",
+    keep: Iterable[str | None] = (),
+) -> list[dict]:
+    """Returns a list of messages in a thread based on the provided thread ID. A long thread comes
+    in part, with the messages named in `keep` among what is read (see `thread_window`)."""
 
     ids = get_thread_email_ids(account, [thread_id]).get(thread_id, [])
-    messages = get_messages(account, ids=ids)
+    messages = get_messages(account, ids=thread_window(ids, keep))
+    if len(ids) > LONG_THREAD:
+        mark_unloaded(ids, messages)
 
     return sorted(messages, key=lambda m: m["received_at"], reverse=(sort == "desc"))
+
+
+def fetch_earlier_messages(
+    account: str, thread_id: str, before: str, after: str | None = None, limit: int = EARLIER_PAGE
+) -> list[dict]:
+    """The messages of a thread that come just ahead of `before`, oldest first: at most `limit`, and
+    none as old as `after`, the message already read on their far side. The first says how many are
+    still left between it and `after` (see `mark_unloaded`)."""
+
+    ids = get_thread_email_ids(account, [thread_id]).get(thread_id, [])
+    if before not in ids:
+        return []
+
+    end = ids.index(before)
+    floor = ids.index(after) if after in ids[:end] else -1
+    start = max(floor + 1, end - limit)
+    messages = get_messages(account, ids=ids[start:end])
+    mark_unloaded(ids, messages, after=floor)
+
+    return messages
 
 
 def get_thread_email_ids(account: str, thread_ids: list[str]) -> dict[str, list[str]]:

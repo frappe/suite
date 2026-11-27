@@ -102,6 +102,15 @@ export interface Mail {
   // Why this message can't be reacted to, in words for the reader (see reaction_refusal).
   cannot_react?: string | null
   user_image?: string
+  /** In a long thread, read in part: how many messages just ahead of this one are still on the
+   * server (see thread_window in mail_message.py). */
+  earlier_unloaded?: number
+  /** And how many after it, on the last mail shown when the newest are mail the view leaves out
+   * (see with_unloaded in api/mail.py). */
+  later_unloaded?: number
+  /** The oldest of those already fetched, when the pane shows none of them: the next are asked for
+   * from it (see withEarlier). */
+  earlier_from?: string
   collapsed?: boolean
   show?: boolean
 }
