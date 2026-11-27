@@ -829,6 +829,17 @@ def touch(principals: Principals, doctype: str, docname: str) -> None:
     touch_node(node)
 
 
+def lock_for_edit(principals: Principals, node: str) -> None:
+    """Take the content node lock and require EDIT before an app locks its document row."""
+    from suite.drive._core.nodes import _lock_node
+
+    current = _lock_node(node)
+    require(current, EDIT, principals)
+    if current.kind != "document":
+        raise DriveConflict(_("That Drive node is not a content document"))
+    _refuse_trashed_write(current, EDIT)
+
+
 def _refuse_trashed_write(node: Mapping, role: int) -> None:
     """§8.8: a trashed document node opens read-only.
 

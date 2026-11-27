@@ -1,6 +1,7 @@
 """Validate drawing scenes and defer identity and access to Drive."""
 
 import json
+import math
 import re
 
 import frappe
@@ -14,6 +15,10 @@ MAX_SHAPES = 10_000
 MAX_POINTS = 100_000
 MAX_COORDINATE = 100_000_000
 SHAPE_KINDS = {"diamond", "ellipse", "text", "image", "freedraw"}
+LINE_KINDS = {"line", "arrow"}
+FONT_FAMILIES = {"shantell", "inter", "georgia", "mono"}
+FONT_WEIGHTS = (400, 500, 600, 700)
+TEXT_ALIGNMENTS = ("left", "center", "right", "justify")
 
 
 def _valid_number(value):
@@ -22,6 +27,63 @@ def _valid_number(value):
 
 def _valid_point(value):
     return isinstance(value, dict) and _valid_number(value.get("x")) and _valid_number(value.get("y"))
+
+
+def _finite_number(value: object) -> bool:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+def _valid_optional_fields(shape: dict, is_line: bool) -> bool:
+    string_fields = ("stroke", "fill", "link", "label", "labelFill")
+    if is_line:
+        string_fields = (*string_fields, "arrowHeadFill")
+    if any(
+        field in shape
+        and not isinstance(shape[field], str)
+        and not (field == "stroke" and shape[field] is None)
+        for field in string_fields
+    ):
+        return False
+    # The editor counts link length in UTF-16 code units.
+    if "link" in shape and len(shape["link"].encode("utf-16-le")) // 2 > 2048:
+        return False
+    if "strokeWidth" in shape and (not _finite_number(shape["strokeWidth"]) or shape["strokeWidth"] <= 0):
+        return False
+    if "strokeStyle" in shape and shape["strokeStyle"] not in ("solid", "dashed", "dotted"):
+        return False
+    if "opacity" in shape and (not _finite_number(shape["opacity"]) or not 0 <= shape["opacity"] <= 1):
+        return False
+    if "groupId" in shape and not isinstance(shape["groupId"], str):
+        return False
+    if "order" in shape and not _finite_number(shape["order"]):
+        return False
+
+    if "labelFontSize" in shape and (
+        not _finite_number(shape["labelFontSize"]) or shape["labelFontSize"] <= 0
+    ):
+        return False
+    if "labelFontFamily" in shape and (
+        not isinstance(shape["labelFontFamily"], str) or shape["labelFontFamily"] not in FONT_FAMILIES
+    ):
+        return False
+    if "labelFontWeight" in shape and shape["labelFontWeight"] not in FONT_WEIGHTS:
+        return False
+    if "labelFontStyle" in shape and shape["labelFontStyle"] not in ("normal", "italic"):
+        return False
+    if "labelTextDecoration" in shape and shape["labelTextDecoration"] not in (
+        "none",
+        "underline",
+        "line-through",
+    ):
+        return False
+    if "labelTextAlign" in shape and shape["labelTextAlign"] not in TEXT_ALIGNMENTS:
+        return False
+    return True
 
 
 def _valid_pressures(value, point_count):
@@ -42,10 +104,12 @@ class Drawing(drive.DriveContent, Document):
             if isinstance(self.content, str) and len(self.content.encode("utf-8")) > MAX_CONTENT_BYTES:
                 frappe.throw(_("Drawing content cannot exceed 64 MB."))
             scene = json.loads(self.content) if isinstance(self.content, str) else self.content
-            raw = json.dumps(scene, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+            raw = json.dumps(scene, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode(
+                "utf-8"
+            )
         except ValueError, TypeError, UnicodeError:
             frappe.throw(_("Drawing content must be valid JSON."))
-        if len(raw.encode("utf-8")) > MAX_CONTENT_BYTES:
+        if len(raw) > MAX_CONTENT_BYTES:
             frappe.throw(_("Drawing content cannot exceed 64 MB."))
 
         if not isinstance(scene, dict):
@@ -66,14 +130,16 @@ class Drawing(drive.DriveContent, Document):
                 if not isinstance(shape, dict) or not isinstance(shape.get("id"), str) or shape["id"] in ids:
                     frappe.throw(_("Every drawing object must have a unique ID."))
                 ids.add(shape["id"])
+                if not _valid_optional_fields(shape, is_line):
+                    frappe.throw(_("A drawing object has invalid style or metadata."))
 
                 kind = shape.get("kind")
                 if is_line:
                     curve = shape.get("curve")
-                    valid_curve = curve is None or _valid_number(curve) or _valid_point(curve)
+                    valid_curve = "curve" not in shape or _valid_number(curve) or _valid_point(curve)
                     if (
                         not isinstance(kind, str)
-                        or kind not in {"line", "arrow"}
+                        or kind not in LINE_KINDS
                         or not _valid_point(shape.get("start"))
                         or not _valid_point(shape.get("end"))
                         or not valid_curve
@@ -81,7 +147,7 @@ class Drawing(drive.DriveContent, Document):
                         frappe.throw(_("A drawing line has invalid geometry."))
                     continue
 
-                if kind is not None and (not isinstance(kind, str) or kind not in SHAPE_KINDS):
+                if "kind" in shape and (not isinstance(kind, str) or kind not in SHAPE_KINDS):
                     frappe.throw(_("A drawing object has an invalid type."))
                 if (
                     not all(_valid_number(shape.get(field)) for field in geometry)
@@ -103,10 +169,26 @@ class Drawing(drive.DriveContent, Document):
                     if "pressures" in shape and not _valid_pressures(shape["pressures"], len(points)):
                         frappe.throw(_("A free draw object has invalid pressure data."))
                 elif kind == "text":
+                    font_family = shape.get("fontFamily")
                     if (
                         not isinstance(shape.get("text"), str)
                         or not _valid_number(shape.get("fontSize"))
                         or shape["fontSize"] <= 0
+                        or (
+                            "fontFamily" in shape
+                            and (
+                                not isinstance(font_family, str)
+                                or (font_family != "monday" and font_family not in FONT_FAMILIES)
+                            )
+                        )
+                        or ("backgroundColor" in shape and not isinstance(shape["backgroundColor"], str))
+                        or ("fontWeight" in shape and shape["fontWeight"] not in FONT_WEIGHTS)
+                        or ("fontStyle" in shape and shape["fontStyle"] not in ("normal", "italic"))
+                        or (
+                            "textDecoration" in shape
+                            and shape["textDecoration"] not in ("none", "underline", "line-through")
+                        )
+                        or ("textAlign" in shape and shape["textAlign"] not in TEXT_ALIGNMENTS)
                     ):
                         frappe.throw(_("A text object has invalid content."))
                 elif kind == "image":
@@ -115,6 +197,32 @@ class Drawing(drive.DriveContent, Document):
                         r"^data:image/(png|jpe?g|gif|webp);base64,", source, re.I
                     ):
                         frappe.throw(_("An image object has an invalid source."))
+                    has_width = "naturalWidth" in shape
+                    has_height = "naturalHeight" in shape
+                    if (has_width or has_height) and (
+                        not _finite_number(shape.get("naturalWidth"))
+                        or not _finite_number(shape.get("naturalHeight"))
+                        or shape["naturalWidth"] <= 0
+                        or shape["naturalHeight"] <= 0
+                    ):
+                        frappe.throw(_("An image object has invalid dimensions."))
+                    crop = shape.get("crop")
+                    if crop is not None:
+                        if (
+                            not isinstance(crop, dict)
+                            or not has_width
+                            or not has_height
+                            or not all(
+                                _finite_number(crop.get(field)) for field in ("x", "y", "width", "height")
+                            )
+                            or crop["x"] < 0
+                            or crop["y"] < 0
+                            or crop["width"] <= 0
+                            or crop["height"] <= 0
+                            or crop["x"] + crop["width"] > shape["naturalWidth"]
+                            or crop["y"] + crop["height"] > shape["naturalHeight"]
+                        ):
+                            frappe.throw(_("An image object has an invalid crop."))
 
     def before_save(self):
         if self.get("node") and not self.is_new():

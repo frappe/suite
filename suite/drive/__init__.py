@@ -102,7 +102,9 @@ Ordering, which callers must respect to stay deadlock-free:
    `Drive Storage Reservation` row.
 
 A caller that takes its own locks in the same transaction takes them in that
-order: `User`, then its own tables, then Drive.
+order: `User`, then its own tables, then Drive. A content app editing a linked
+body calls `lock_content_for_edit` before locking that body's row; Drive
+version restores take the node lock before calling back into the app.
 
 Conversion locks its row, then the node, then the tree, against rule 2 and
 against Drive→app callbacks; a Drive write that takes the tree lock and then
@@ -489,6 +491,17 @@ def touch(doctype: str, docname: str) -> None:
     from suite.drive._core.content import touch as _touch
 
     _touch(_principals(), doctype, docname)
+
+
+def lock_content_for_edit(node: str) -> None:
+    """Lock a content document's Drive node and require EDIT before its app locks its body.
+
+    The node lock precedes the content document lock, matching Drive version
+    restore callbacks. The caller keeps this transaction open through its save.
+    """
+    from suite.drive._core.content import lock_for_edit as _lock_for_edit
+
+    _lock_for_edit(_principals(), node)
 
 
 def comment_threads(node: str) -> list[dict]:

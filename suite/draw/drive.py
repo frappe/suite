@@ -38,8 +38,17 @@ def duplicate(source_docname: str, node: str) -> str:
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     """Return a bounded scene envelope for Drive's immutable version store."""
     document = frappe.get_doc(DOCTYPE, docname)
-    document.validate()
-    content = json.loads(document.content) if isinstance(document.content, str) else document.content
+    # Preserve the current body as the recovery version even when it predates
+    # today's scene rules; restore validates the requested target on save.
+    if isinstance(document.content, str):
+        if len(document.content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            frappe.throw(_("Drawing content cannot exceed 64 MB."))
+        content = json.loads(document.content)
+    else:
+        content = document.content
+    scene_size = len(json.dumps(content, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode())
+    if scene_size > MAX_CONTENT_BYTES:
+        frappe.throw(_("Drawing content cannot exceed 64 MB."))
     raw = json.dumps(
         {"schema": VERSION_SCHEMA, "content": content},
         ensure_ascii=False,

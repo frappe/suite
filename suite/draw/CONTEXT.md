@@ -51,7 +51,9 @@ adoption backup marker.
 ## Content and lifecycle
 
 The adapter creates empty scenes, copies bodies, and supplies version snapshots
-with schema `drawing/1`. Restore validates the entire scene before saving.
+with schema `drawing/1`. Both saves and restores validate the scene fields
+that the editor reads. Version capture preserves an older saved scene even if
+it fails these checks, so a valid version can still restore the drawing.
 Scenes are limited to 64 MiB, 10,000 objects, and 100,000 freehand points in total.
 The limits refuse a write. They never truncate the saved drawing.
 
@@ -73,9 +75,10 @@ The `/draw/` entry redirects to Home. Existing `/draw/editor?drawing=<name>`
 links open the adopted node through the document host.
 
 Authenticated Draw routes read and save scenes by Drive node. Saves lock the
-document, check Edit access, and compare the submitted revision. A stale save
-returns a conflict without replacing the saved scene. Successful saves take a
-Drive version in the same transaction.
+Drive node before the Drawing row, in the same order as version restore. They
+check Edit access and compare the submitted revision. A stale save returns a
+conflict without replacing the saved scene. Successful saves take a Drive
+version in the same transaction.
 
 Each editor keeps its unsynced draft in a separate IndexedDB record. A successful
 save removes only the acknowledged draft revision. Conflicting drafts remain
