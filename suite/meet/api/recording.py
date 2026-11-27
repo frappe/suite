@@ -226,7 +226,7 @@ def get_preflight(
         and not bool(room.e2ee_enabled)
         and storage_available
         and (not video_enabled or budget_bytes >= MINIMUM_BUDGET_BYTES)
-        and (not transcription_enabled or transcription_available)
+        and (video_enabled or transcription_available)
         and _recorder_available(),
         "global_enabled": global_enabled,
         "transcription_available": transcription_available,
@@ -298,13 +298,20 @@ def _participant_recording_state(recording):
         job = frappe.db.get_value(
             "Meet Transcription Job",
             {"capture": state.name},
-            ["status", "stop_requested", "participant_revision", "capture_started_at"],
+            [
+                "status",
+                "stop_requested",
+                "participant_revision",
+                "capture_started_at",
+                "manifest",
+                "failure_code",
+            ],
             as_dict=True,
         )
-        state.transcription_capture_state = participant_state(state.name)
+        state.transcription_capture_state = participant_state(job)
         if job:
             state.state_revision = cint(state.state_revision) + cint(job.participant_revision)
-            if job.status == "Capturing":
+            if state.transcription_capture_state == "capturing":
                 audio_started = _system_datetime_as_utc(job.capture_started_at).replace(tzinfo=None)
                 state.started_at = state.started_at or audio_started
                 state.capture_started_at = state.capture_started_at or audio_started
@@ -608,10 +615,7 @@ def start(
                 "meet_room": room.name,
                 "room_owner": room.owner,
                 "initiated_by": frappe.session.user,
-                "calendar_event": room.calendar_event,
                 "status": "Starting",
-                "estimated_seconds": preflight["estimated_seconds"],
-                "estimated_bytes": preflight["estimated_bytes"],
                 "budget_bytes": preflight["budget_bytes"],
                 "max_ends_at": add_to_date(now, seconds=MAX_SECONDS + STARTUP_TIMEOUT_SECONDS),
                 "recorder_job_id": frappe.generate_hash(length=32),
@@ -628,16 +632,19 @@ def start(
             )
             if _count_active_owner_recordings(room.owner) > owner_limit:
                 frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
-    if transcription_enabled:
+    if transcription_enabled and preflight["transcription_available"]:
         from suite.meet.transcription.capture import prepare
 
         try:
             prepare(recording)
-            _publish_state(room, recording)
         except Exception:
-            _fail_startup(room, _locked_recording(recording.name), "capture_failed")
-            frappe.db.commit()
-            raise
+            if not video_enabled:
+                _fail_startup(room, _locked_recording(recording.name), "capture_failed")
+                frappe.db.commit()
+                raise
+            frappe.logger("meet_transcription").warning("Transcription startup failed for %s", recording.name)
+        else:
+            _publish_state(room, recording)
         if not video_enabled:
             recording = _locked_recording(recording.name)
             if recording.status != "Starting":

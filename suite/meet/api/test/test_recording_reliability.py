@@ -648,8 +648,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 "room_owner": self.owner,
                 "initiated_by": self.owner,
                 "status": "Pending",
-                "estimated_seconds": 60,
-                "estimated_bytes": MINIMUM_BUDGET_BYTES,
                 "budget_bytes": MINIMUM_BUDGET_BYTES,
                 "max_ends_at": add_to_date(now_datetime(), days=-1),
                 "recorder_job_id": frappe.generate_hash(length=32),

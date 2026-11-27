@@ -7,7 +7,6 @@
   "meet_room",
   "room_owner",
   "initiated_by",
-  "calendar_event",
   "status",
   "state_revision",
   "recorder_event_sequence",
@@ -29,8 +28,6 @@
   "replacement_event_sequence",
   "ended_at",
   "end_reason",
-  "estimated_seconds",
-  "estimated_bytes",
   "budget_bytes",
   "captured_bytes",
   "budget_warning_10m_sent",
@@ -79,7 +76,6 @@
   {"fieldname": "meet_room", "fieldtype": "Link", "label": "Meet Room", "options": "Meet Room", "reqd": 1, "search_index": 1},
   {"fieldname": "room_owner", "fieldtype": "Link", "label": "Room Owner", "options": "User", "reqd": 1, "search_index": 1},
   {"fieldname": "initiated_by", "fieldtype": "Link", "label": "Initiated By", "options": "User", "reqd": 1},
-  {"fieldname": "calendar_event", "fieldtype": "Data", "label": "Calendar Event"},
   {"fieldname": "status", "fieldtype": "Select", "label": "Status", "options": "Pending\nStarting\nRecording\nInterrupted\nStopping\nProcessing\nReady\nPartial\nFailed\nCancelled\nCaptured", "reqd": 1, "search_index": 1},
   {"default": "0", "fieldname": "state_revision", "fieldtype": "Int", "label": "State Revision", "reqd": 1},
   {"default": "0", "fieldname": "recorder_event_sequence", "fieldtype": "Int", "length": 20, "label": "Recorder Event Sequence"},
@@ -101,8 +97,6 @@
   {"fieldname": "replacement_event_sequence", "fieldtype": "Int", "length": 20, "label": "Replacement Event Sequence", "read_only": 1},
   {"fieldname": "ended_at", "fieldtype": "Datetime", "label": "Ended At"},
   {"fieldname": "end_reason", "fieldtype": "Select", "label": "End Reason", "options": "\nhost_stop\nroom_empty\nduration_limit\nquota_limit\ninterruption_timeout\nservice_shutdown"},
-  {"fieldname": "estimated_seconds", "fieldtype": "Int", "label": "Estimated Seconds", "reqd": 1},
-  {"fieldname": "estimated_bytes", "fieldtype": "Int", "length": 20, "label": "Estimated Bytes", "reqd": 1},
   {"fieldname": "budget_bytes", "fieldtype": "Int", "length": 20, "label": "Budget Bytes", "reqd": 1},
   {"default": "0", "fieldname": "captured_bytes", "fieldtype": "Int", "length": 20, "label": "Captured Bytes", "reqd": 1},
   {"default": "0", "fieldname": "budget_warning_10m_sent", "fieldtype": "Check", "label": "Ten Minute Budget Warning Sent", "read_only": 1},
@@ -153,7 +147,7 @@
  "module": "Meet",
  "name": "Meet Recording",
  "permissions": [
-  {"create": 1, "delete": 1, "read": 1, "role": "System Manager", "write": 1}
+  {"read": 1, "role": "System Manager"}
  ],
  "row_format": "Dynamic",
  "sort_field": "creation",
