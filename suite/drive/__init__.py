@@ -16,9 +16,9 @@ which supplies the node id, the node title, `drive_check`, `drive_touch`, and
 title, the grants, the lifecycle, the versions, the comments, and the byte
 charge; the app owns the body.
 
-The twelve calls an app makes are `check`, `touch`, `take_version`,
-`create_document`, `import_document`, `copy`, `adopt_media`, `read_file`,
-`push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
+The fifteen calls an app makes are `check`, `throw_again`, `touch`, `take_version`,
+`create_document`, `import_document`, `copy`, `adopt_media`, `get_node`, `read_file`,
+`stream_file`, `push_preview`, `comment_threads`, `has_blank_old_comment`, and `install_threads`. Nothing lower flows from an app to Drive. The `ContentTypeSpec` callbacks flow the other
 way, when Drive asks an app to work with its own document body. Each one
 imports its workflow inside the call, so importing `suite.drive` for byte
 accounting alone does not load the node, preview, and imaging modules.
@@ -143,7 +143,7 @@ on the shared row itself, on a node column the shared row carries, and on the
 parent document a shared child row points at.
 
 The content workflows do check. `check`, `create_document`,
-`import_document`, `copy`, `adopt_media`, `read_file`, `touch`, `take_version`,
+`import_document`, `copy`, `adopt_media`, `read_file`, `stream_file`, `touch`, `take_version`,
 `push_preview`, `comment_threads`, and `install_threads` build the caller's
 principals from the current Frappe session and this request's `X-Drive-Links`
 header, then run the same point check every other Drive workflow runs. A caller never constructs
@@ -168,6 +168,7 @@ which is what an offboarded user looks like.
 | `legacy_node` | one primary-key read of `Drive Legacy Route` |
 | `node_url` | one primary-key read of the node's kind |
 | `node_owner` | one primary-key read of the node's owner |
+| `get_node` | one primary-key read of the node, one READ check, and one read of its owner as a person |
 | `ensure_folder` | one indexed read of the parent's children; on a miss, one folder create under the parent-chain lock |
 | `record_visit` | one READ check and one upsert of the caller's `Drive Recent` row |
 | `store_file` | one pass over the bytes to hash and store them, then one file create under the parent-chain lock |
@@ -242,7 +243,7 @@ def transfer_user_drive(
 
 from collections.abc import Iterable
 from datetime import datetime
-from typing import IO
+from typing import IO, TYPE_CHECKING, NoReturn
 
 from suite.drive._core.content import (
     ContentTypeSpec,
@@ -277,6 +278,10 @@ from suite.drive._core.roots import (
 from suite.drive._core.roots import (
     provision_personal_root as ensure_personal_root,
 )
+from suite.drive.http.node_shape import NodeShape
+
+if TYPE_CHECKING:
+    from werkzeug.wrappers import Response
 
 
 def check(node: str, role: int) -> str | None:
@@ -289,6 +294,13 @@ def check(node: str, role: int) -> str | None:
     require(row, role, _principals())
     _refuse_trashed_write(row, role)
     return row.content_doctype
+
+
+def throw_again(refusal: Exception) -> NoReturn:
+    """Throw `refusal` as a Drive route answers it, so an app's route that calls Drive answers the same."""
+    from suite.drive.http.routes import throw_again as _throw_again
+
+    _throw_again(refusal)
 
 
 def create_document(
@@ -411,6 +423,14 @@ def node_url(node: str) -> str:
     return _node_url(node)
 
 
+def get_node(node: str) -> NodeShape:
+    """Answer one node the caller can read, as a Drive write answers it: `GET nodes/{node}` with no expansion."""
+    from suite.drive._core.nodes import get
+    from suite.drive.http.shapes import node_shape
+
+    return node_shape(get(_principals(), node))
+
+
 def node_owner(node: str) -> str:
     """Answer the user who owns one node. No role is checked; an unknown node raises `DriveNotFound`."""
     from suite.drive._core.nodes import node_owner as _node_owner
@@ -443,6 +463,21 @@ def read_file(node: str) -> tuple[IO[bytes], str]:
     from suite.drive._core.nodes import read_file as _read_file
 
     return _read_file(_principals(), node)
+
+
+def stream_file(node: str, *, as_attachment: bool) -> Response:
+    """Answer one readable file node's bytes as an HTTP response, Range and all.
+
+    The bytes leave through the framework's `stream_blob`, so its content-type
+    rules apply: HTML, SVG, XML and script always download, whatever the
+    caller asks. `as_attachment` forces a download for anything else too.
+    """
+    from suite.drive._core.access import require
+    from suite.drive._core.nodes import _node, stream_content
+
+    row = _node(node)
+    require(row, READ, _principals())
+    return stream_content(row, as_attachment=as_attachment)
 
 
 def adopt_media(document_node: str, media_nodes) -> dict[str, str]:
@@ -613,6 +648,7 @@ def store_file(
     *,
     content_modified: datetime | int | float | str | None = None,
     reservation: str | None = None,
+    read_only: bool = False,
 ) -> str:
     """Store bytes this process holds as a private file node below `parent`.
 
@@ -623,6 +659,7 @@ def store_file(
     reservation the caller charged these bytes to in advance; it is consumed
     in the same step, so the bytes never count twice against the root.
     Needs UPLOAD on `parent`.
+    A read-only file keeps its original bytes while remaining movable and shareable.
     """
     from suite.drive._core.nodes import store_file as _store_file
 
@@ -633,6 +670,7 @@ def store_file(
         stream,
         content_modified=content_modified,
         reservation=reservation,
+        read_only=read_only,
     )
 
 
@@ -675,6 +713,7 @@ __all__ = (
     "DriveNotFound",
     "DriveOverQuota",
     "DriveStorageUnmeasured",
+    "NodeShape",
     "PersonOnNode",
     "Satellite",
     "administration_usage",
@@ -688,6 +727,7 @@ __all__ = (
     "create_storage_reservation",
     "ensure_folder",
     "ensure_personal_root",
+    "get_node",
     "get_storage_reservation",
     "get_storage_usage",
     "get_version",
@@ -719,7 +759,9 @@ __all__ = (
     "root_locations",
     "set_user_active",
     "store_file",
+    "stream_file",
     "take_version",
+    "throw_again",
     "touch",
     "transfer_user_drive",
 )

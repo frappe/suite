@@ -149,8 +149,11 @@ export function useSFUConnection(deps: {
   onRoomRejoined?: (sfuClient: SFUClient) => void
   onE2EERequired?: () => void
   onRecordingState?: (recording: RecordingState | null) => void
+  beginRecordingAdmissionSync?: () => (recording: RecordingState | null) => void
+  onTranscriptionCaptureState?: (value: unknown) => void
   onRecordingEnabled?: (enabled: boolean) => void
-  onCohostPromoted?: () => Promise<void>
+  onRole?: (isHost: boolean, isCohost: boolean) => void
+  onCohostPromoted?: () => void
 }): SFUConnectionAPI {
   const {
     connectionState,
@@ -168,7 +171,10 @@ export function useSFUConnection(deps: {
     onRoomRejoined,
     onE2EERequired,
     onRecordingState,
+    beginRecordingAdmissionSync,
+    onTranscriptionCaptureState,
     onRecordingEnabled,
+    onRole,
     onCohostPromoted,
   } = deps
 
@@ -181,6 +187,9 @@ export function useSFUConnection(deps: {
 
   const signalChannel = new SocketIOSignalChannel()
   const sfuClient = new SFUClient(signalChannel)
+  const handleTranscriptionCaptureState = (value: unknown) => onTranscriptionCaptureState?.(value)
+  sfuClient.on('transcription:state', handleTranscriptionCaptureState)
+  onUnmounted(() => sfuClient.off('transcription:state', handleTranscriptionCaptureState))
   const videoManager = new VideoElementManager()
   const clientTelemetry = getClientTelemetry(sfuClient)
   const sfuManager = shallowRef<SFUMeetingManager | null>(null)
@@ -398,6 +407,7 @@ export function useSFUConnection(deps: {
             isHost = sfuClient.connectionDetails.isHost || isHost
             isCohost = sfuClient.connectionDetails.isCohost || isCohost
             isCurrentTabHost.value = isHost
+            onRole?.(isHost, isCohost)
           }
           if (sfuClient.isE2EERequired() && !sfuClient.isInsertableStreamsSupported()) {
             throw new Error(
@@ -685,12 +695,14 @@ export function useSFUConnection(deps: {
       lobbyStore.isWaitingForApproval = false
 
       try {
+        const syncRecording = beginRecordingAdmissionSync?.()
         const sfuResult = normalizeJoinPayload(
           await getSFUConnectionDetails.run({ meeting_id: meetingId }),
         )
 
         if (sfuResult) {
           onRecordingEnabled?.(!!sfuResult.recording_enabled)
+          if (sfuResult.recording !== undefined) syncRecording?.(sfuResult.recording)
           const prefetched = connectionDetailsFromJoinPayload(sfuResult, {
             expectedMeetingId: meetingId,
           })
@@ -739,8 +751,9 @@ export function useSFUConnection(deps: {
     const currentUserId = currentUser.currentUser.value?.user_id
     if (data?.meeting !== meetingId || data.user !== currentUserId) return
 
+    onCohostPromoted?.()
     try {
-      await Promise.all([sfuClient.refreshToken({ forceNewRequest: true }), onCohostPromoted?.()])
+      await sfuClient.refreshToken({ forceNewRequest: true })
       toast.success(__('You are now a co-host'))
     } catch (error) {
       console.error('Failed to activate co-host permissions:', error)
@@ -877,6 +890,7 @@ export function useSFUConnection(deps: {
 
       connectionState.guestAuthToken = null
 
+      const syncRecording = beginRecordingAdmissionSync?.()
       const joinResult = normalizeJoinPayload(await joinMeetingAPI.run({ meeting_id: meetingId }))
       if (!joinResult) throw new Error('Invalid meeting join response')
 
@@ -890,6 +904,7 @@ export function useSFUConnection(deps: {
         chatStore.hostOnlyChat = !!joinResult.host_only_chat
       }
       onRecordingEnabled?.(!!joinResult.recording_enabled)
+      if (joinResult.recording !== undefined) syncRecording?.(joinResult.recording)
 
       const prefetched = connectionDetailsFromJoinPayload(joinResult, {
         expectedMeetingId: meetingId,

@@ -1,0 +1,6 @@
+export const MAX_CHAT_TEXT_BYTES = 32 * 1024;
+export const CHAT_TOO_LONG_ERROR = 'This message is too long. Shorten it and try again.';
+export const E2EE_CHAT_PREFIX = 'e2ee:';
+
+export const MAX_ENCRYPTED_CHAT_LENGTH =
+	E2EE_CHAT_PREFIX.length + 4 * Math.ceil((MAX_CHAT_TEXT_BYTES + 12 + 16) / 3);

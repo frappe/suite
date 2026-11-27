@@ -1,4 +1,4 @@
-import type { Mail, ThreadParticipant } from '@/apps/mail/types'
+import type { Mail, Recipient, ThreadParticipant } from '@/apps/mail/types'
 
 // Past this many names the middle of the list is dropped for an ellipsis, keeping the
 // thread's first sender and its two most recent — the ends identify a conversation.
@@ -86,16 +86,34 @@ const firstNameOf = (fullName: string) => {
   return isInitial(first) && second ? `${first} ${second}` : first
 }
 
+const RECIPIENT_ORDER = ['To', 'Cc', 'Bcc']
+
 /**
- * The participant a row's avatar stands for: the first person in the thread who isn't the user,
- * falling back to the user themselves for a thread only they have written in.
+ * The person a row's avatar stands for: the first in the thread who isn't the user. Where nobody else
+ * has written (a mail sent and not answered, a draft, a search result) and the row's own mail is the
+ * user's, the first they wrote to, To before Cc and Bcc. The user themselves when they wrote to nobody
+ * else.
  *
  * The avatar IMAGE is chosen server-side by the same rule (add_user_images_to_emails skips the user's
  * own addresses), so deriving the fallback letter from anywhere else — the latest sender, say, which is
  * the user on any thread they have answered — puts one person's initial on another's photo.
  */
-const primaryParticipant = (participants: ThreadParticipant[]): ThreadParticipant | undefined =>
-  participants.find((p) => !p.is_self) ?? participants[0]
+const primaryParticipant = (
+  participants: ThreadParticipant[],
+  row: { from_email?: string; recipients?: Recipient[] },
+  ownEmails: Set<string>,
+): ThreadParticipant | undefined => {
+  const other = participants.find((p) => !p.is_self)
+  if (other) return other
+  const own = (email?: string) => !!email && ownEmails.has(email.toLowerCase())
+  const recipients = own(row.from_email) ? (row.recipients ?? []) : []
+  const writtenTo = RECIPIENT_ORDER.flatMap((type) =>
+    recipients.filter((r) => r.type === type),
+  ).find((r) => !own(r.email))
+  if (writtenTo)
+    return { name: writtenTo.display_name ?? '', email: writtenTo.email, is_self: false }
+  return participants[0]
+}
 
 /**
  * The name(s) a thread row goes by: everyone who has written in it, in the order they
@@ -138,14 +156,15 @@ export const formatThreadParticipants = (participants: ThreadParticipant[]) => {
 
 /**
  * The letter behind a thread row's avatar, for a contact with no picture: the initial of whoever the
- * picture itself would be of (see primaryParticipant). `fallback` is the row's own sender, for a row
- * with no conversation behind it to name anybody — a search result.
+ * picture itself would be of (see primaryParticipant). `fallback` is the row's own mail, its sender
+ * and who it went to, for a row that names nobody else.
  */
 export const threadAvatarLabel = (
   participants: ThreadParticipant[],
-  fallback: { from_name?: string; from_email?: string },
+  fallback: { from_name?: string; from_email?: string; recipients?: Recipient[] },
+  ownEmails: Set<string>,
 ) => {
-  const primary = primaryParticipant(participants)
+  const primary = primaryParticipant(participants, fallback, ownEmails)
   if (!primary) return getSenderInitial(fallback)
   return getSenderInitial({ from_name: primary.name, from_email: primary.email })
 }

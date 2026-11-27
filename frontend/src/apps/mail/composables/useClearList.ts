@@ -1,6 +1,6 @@
 import { api, client } from '@/api'
 import { tabName, type InboxCategory } from '@/apps/mail/composables/useInboxTabs'
-import { raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
+import { afterUndoing, raiseOptimisticToast, raiseToast } from '@/apps/mail/utils'
 import { useUndo } from '@/apps/mail/utils/composables'
 import { translate as __ } from '@/platform/translation'
 
@@ -82,7 +82,10 @@ export const useClearList = (target: () => ClearTarget) => {
             cleared.map(({ account, ids, mails }) =>
               action === 'read'
                 ? client.mutation(api.mail.messages.seen, { account, ids, seen: false })
-                : client.mutation(api.mail.messages.setFolders, { account, mails: mails ?? [] }),
+                : // Behind any Undo's inverse still to be sent, which would overturn it.
+                  afterUndoing(() =>
+                    client.mutation(api.mail.messages.setFolders, { account, mails: mails ?? [] }),
+                  ),
             ),
           ),
           { onAnswer: undone },

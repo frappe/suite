@@ -33,6 +33,11 @@ declare module 'vue-router' {
     scroll?: ScrollOwner
     /** Absent reads as `shell`. */
     phoneChrome?: PhoneChromeOwner
+    /**
+     * A list that runs on under a floating phone bar, leaving room at its own end, where another
+     * page stops short of the bar.
+     */
+    scrollsUnderPhoneBar?: boolean
     allowGuest?: boolean
     title?: string
     /**
@@ -41,6 +46,15 @@ declare module 'vue-router' {
      */
     onboarding?: boolean
   }
+}
+
+/** What an area has waiting for the reader, drawn on its entry in the rail and the phone's menus. */
+export interface AreaBadge {
+  count: number
+  /** None of it is the reader's alone to deal with, so it is drawn without the alarm of red. */
+  quiet: boolean
+  /** Where the count is, when it is spread over more than one place: each, with its share. */
+  parts?: readonly { label: string; count: number }[]
 }
 
 interface AreaBase {

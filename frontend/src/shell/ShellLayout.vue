@@ -66,9 +66,6 @@
         <!-- Everything under the page, measured: what floats over the page (a compose button)
              stands on it through --suite-phone-nav-height, whatever it holds. -->
         <div ref="phoneNav">
-          <!-- The offer to install, just above the bottom bar: in the flow, so it covers nothing,
-               and only where the bar is. -->
-          <InstallPrompt :app="activeArea?.installable ? activeArea : undefined" />
           <!-- An unavailable area's own tabs lead only back to its unavailable page. -->
           <component :is="activeArea.phoneNav" v-if="activeArea?.phoneNav && !unavailable" />
           <MobileNav
@@ -111,7 +108,7 @@ import { computed, defineAsyncComponent, onUnmounted, ref, useTemplateRef, watch
 import { useRoute } from 'vue-router'
 
 import { AreaSidebarTarget } from '@/platform/area-sidebar'
-import type { AreaDefinition, ScrollOwner, ShellFrame } from '@/platform/contracts'
+import type { AreaBadge, AreaDefinition, ScrollOwner, ShellFrame } from '@/platform/contracts'
 import { shellPhoneChromeRequested } from '@/platform/phone-chrome'
 import { railHidden } from '@/platform/rail'
 import { missingCapabilities, useSession } from '@/platform/session'
@@ -123,7 +120,6 @@ import { progressDetail, useAreaProgress } from '@/shell/areaProgress'
 import AreaProgressDot from '@/shell/AreaProgressDot.vue'
 import ContentPane from '@/shell/ContentPane.vue'
 import GuestSurface from '@/shell/GuestSurface.vue'
-import InstallPrompt from '@/shell/InstallPrompt.vue'
 import MobileNav from '@/shell/MobileNav.vue'
 import Rail from '@/shell/Rail.vue'
 import { settingsTab, showSettings } from '@/shell/settings/useSettingsDialog'
@@ -134,7 +130,7 @@ import { isMobile } from '@/shell/useIsMobile'
 const props = defineProps<{
   areas: readonly AreaDefinition[]
   activeArea?: AreaDefinition
-  badges: Readonly<Record<string, number>>
+  badges: Readonly<Record<string, AreaBadge | undefined>>
 }>()
 
 defineSlots<{
@@ -196,8 +192,7 @@ const scrollOwner = computed<ScrollOwner>(() =>
 // inset from the shell, so the inset applies once. The unavailable surface
 // replaces that page and its chrome, so the shell draws its own again; so does
 // a page that asks for it.
-// The height of what sits under the page on a phone: the bottom bar, and the offer to install over
-// it. A button floating over the page stands on it (see the compose buttons).
+// The height of what sits under the page on a phone: the bottom bar. A button floating over the page stands on it (see the compose buttons).
 const phoneNav = useTemplateRef<HTMLElement>('phoneNav')
 const setPhoneNavHeight = (height: number | null) =>
   height === null

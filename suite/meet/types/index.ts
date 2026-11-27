@@ -200,6 +200,8 @@ export interface ScreenShareData {
 	stoppedAt?: number;
 }
 
+export type ChatQuote = Pick<ChatMessage, 'messageId' | 'message' | 'fromName'>;
+
 export interface ChatMessage {
 	roomId: string;
 	messageId: string;
@@ -208,9 +210,11 @@ export interface ChatMessage {
 	fromName: string;
 	timestamp: string;
 	clientId?: string;
+	replyTo?: ChatQuote;
 }
 
 export interface PinnedChatMessage {
+	replyTo?: ChatQuote;
 	messageId: string;
 	message: string;
 	fromUser: string;
@@ -465,6 +469,7 @@ export interface ScreenShareRequest {
 
 export interface ChatSendRequest {
 	message: string;
+	replyToId?: string;
 	clientId?: string;
 }
 

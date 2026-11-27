@@ -15,14 +15,19 @@ import type { ComposeMailData } from '@/apps/mail/types'
  * re-opening a reply the user has already dealt with, and the next plain "new mail" doesn't inherit
  * the last reply's recipients.
  */
-let pending: ComposeMailData | undefined
+let pending: PendingCompose = {}
 
-const setPendingCompose = (draft?: ComposeMailData) => (pending = draft)
+/**
+ * The draft, and where the page puts the caret when the opener knows: `to` for a reply whose
+ * recipients were tapped to change them. Otherwise the page starts where there is still something to
+ * write (see ComposeView).
+ */
+export type PendingCompose = { draft?: ComposeMailData; startAt?: 'to' }
 
 export const takePendingCompose = () => {
-  const draft = pending
-  pending = undefined
-  return draft
+  const taken = pending
+  pending = {}
+  return taken
 }
 
 /**
@@ -33,7 +38,12 @@ export const takePendingCompose = () => {
  * Passing no draft is a request for an empty one, and clears whatever a navigation that never
  * happened left behind.
  */
-export const openComposePage = (router: Router, accountId: string, draft?: ComposeMailData) => {
-  setPendingCompose(draft)
+export const openComposePage = (
+  router: Router,
+  accountId: string,
+  draft?: ComposeMailData,
+  startAt?: PendingCompose['startAt'],
+) => {
+  pending = { draft, startAt }
   return router.push({ name: 'mail-compose', params: { accountId } })
 }

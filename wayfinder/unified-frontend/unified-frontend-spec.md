@@ -4,7 +4,7 @@
 |---|---|
 | Status | Approved by Faris 2026-09-29. Decisions folded 2026-09-29 (tickets 017 to 021). |
 | Date | 2026-09-29 |
-| Source map | [`MAP.md`](MAP.md) and [`tickets/`](tickets/) |
+| Source map | [`MAP.md`](MAP.md) |
 | Companion plan | [`unified-frontend-plan.md`](unified-frontend-plan.md) (stages, file ownership, gates) |
 | Architecture | [`../../ARCHITECTURE.md`](../../ARCHITECTURE.md) (rule 8 owns frontend module boundaries) |
 | Base prototype | [suite-shell-prototype](https://sketch.netchamp.dev/u/netchampfaris/suite-shell-prototype) (sketch slug `suite-shell-prototype`) |
@@ -27,7 +27,8 @@ Source precedence:
 - A new Drive backend need is an ask on the Drive program, not a decision
   here. Section 15 lists every ask.
 
-Citations: `[T006]` is ticket 006 in [`tickets/`](tickets/). `[SSC]` is
+Citations: `[T006]` is ticket 006, in git history at `fd03f7c75` under
+`wayfinder/unified-frontend/tickets/`. `[SSC]` is
 [`references/server-state-client.md`](references/server-state-client.md).
 `[IMPL]` is [`IMPLEMENTATION.md`](IMPLEMENTATION.md), which records shared
 contracts already fixed in code. `[MAP]` is the map. `[ARCH 8.3]` is
@@ -2470,7 +2471,7 @@ The legacy Vitest manifest is not a gate. It shrinks by deletion [T014].
 - The same change unregisters the Slides service worker. The redirects
   stay 302 (section 14.3) [T014, Faris, 2026-09-29].
 - The counter is the evidence that Drive issue
-  [36](../drive-layer-spec/implementation/issues/36-cleanup-later-release.md)
+  36
   asks for. Drive Cleanup then unblocks [T014].
 - Legacy REST adapters go only after their product's zero-caller proof
   (section 4.4) [T003].
@@ -2554,28 +2555,28 @@ Where the asks land [T019]:
 | D7a | Node event with `{node, parent, root, modified, action}` and per-folder rooms | SSC | 5.9 | none | superseded by D7 [T006] |
 | D8 | `opened_at` on `views/recents` rows | T012 | 11.1 | shipped (`20befde95`) [T019] | specified [Drive §9.5, §11.2] |
 | D9 | Notification unread-count route | T005, T012, SSC | 11.5 | shipped (`20befde95`) [T019] | specified [Drive §11.2] |
-| D10 | Storage breakdown aggregates (by-type totals, largest files) | T005 | 12.2, 16 | [Drive 41](../drive-layer-spec/implementation/issues/41-storage-breakdown-on-root-usage.md) | filed |
-| D11 | `create_upload` checks the title and returns 409 with the free title | T007 | 6.4 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
-| D12 | `POST /nodes` 409 carries the free title | T007 | 6.6 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
-| D13 | A browser (HTTP) replace skips the auto version and its charge. WebDAV keeps the rule | T007 | 6.8 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed. Today [Drive §8.5] versions every replace path |
-| D14 | `DriveRestoreDestinationRequired`, a `DriveConflict` subtype | T007 | 6.9 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
-| D15 | Batch purge route with the `{ok, failed}` shape | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
-| D16 | Empty trash route per root | T007 | 6.10 | [Drive 42](../drive-layer-spec/implementation/issues/42-upload-collisions-restore-and-purge-routes.md) | filed |
-| D17 | A grant's `url` becomes `/l/<token>` | T008 | 7.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | filed. [Drive §11.2] still returns `/drive/l/<token>` |
+| D10 | Storage breakdown aggregates (by-type totals, largest files) | T005 | 12.2, 16 | Drive 41 | filed |
+| D11 | `create_upload` checks the title and returns 409 with the free title | T007 | 6.4 | Drive 42 | filed |
+| D12 | `POST /nodes` 409 carries the free title | T007 | 6.6 | Drive 42 | filed |
+| D13 | A browser (HTTP) replace skips the auto version and its charge. WebDAV keeps the rule | T007 | 6.8 | Drive 42 | filed. Today [Drive §8.5] versions every replace path |
+| D14 | `DriveRestoreDestinationRequired`, a `DriveConflict` subtype | T007 | 6.9 | Drive 42 | filed |
+| D15 | Batch purge route with the `{ok, failed}` shape | T007 | 6.10 | Drive 42 | filed |
+| D16 | Empty trash route per root | T007 | 6.10 | Drive 42 | filed |
+| D17 | A grant's `url` becomes `/l/<token>` | T008 | 7.7 | Drive 43 | filed. [Drive §11.2] still returns `/drive/l/<token>` |
 | D18 | `GET /links/<token>` returns `{node, kind, locked}` | T008 | none | none | withdrawn [T011] |
-| D19 | List inherited grants with their source node, for example `GET /nodes/<id>/grants?inherited=1` | T008 | 7.3 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
-| D20 | Grant PUT: an omitted `password` keeps the hash; `password: null` clears it | T008 | 7.7 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
-| D21 | `PUT …/grants/$LINK` accepts `send_to: <email>`, sends the email and stores the address | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
-| D22 | Grant PUT accepts `notify: true` and sends a share email to a user | T008 | 7.8 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed |
-| D23 | Spec fix: §11.2 shows `explain?: [...]` where code and §5.8 return an object | T008 | 7.4 | [Drive 44](../drive-layer-spec/implementation/issues/44-inherited-grants-passwords-and-share-email.md) | filed. The `{ticket, expires}` half is already in [Drive §11.2] |
-| D24 | `/l/<token>` redirects by kind to `/drive/f/` or `/d/` with `#link=` | T011 | 2.4, 10.1, 14.7 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | filed |
-| D25 | Unlock 429 carries `Retry-After`; the failure that sets the lockout answers 429 | T011 | 10.2 | [Drive 43](../drive-layer-spec/implementation/issues/43-link-routes-and-unlock-lockout.md) | filed |
-| D26 | Legacy-call counter in the `suite.drive.api.*` dispatch, keyed by name and user agent, stored in a doctype that a System Manager reads in Desk, and read by a bench command | T014 | 14.7, 14.8 | [Drive 45](../drive-layer-spec/implementation/issues/45-legacy-call-counter.md) | filed. Counts every name; the gate reads all 69 [T017]. Ships in the release that carries Build [Faris, 2026-09-29] |
-| D27 | Accept an expected `modified` on PATCH and answer `DriveConflict` | SSC | 3.9 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | filed |
-| D28 | `favourite` on the Drive node shape | T006, via [`ACCOUNTING.md`](ACCOUNTING.md) | 5.11 | [Drive 46](../drive-layer-spec/implementation/issues/46-node-shape-favourite-and-expected-modified.md) | filed |
+| D19 | List inherited grants with their source node, for example `GET /nodes/<id>/grants?inherited=1` | T008 | 7.3 | Drive 44 | filed |
+| D20 | Grant PUT: an omitted `password` keeps the hash; `password: null` clears it | T008 | 7.7 | Drive 44 | filed |
+| D21 | `PUT …/grants/$LINK` accepts `send_to: <email>`, sends the email and stores the address | T008 | 7.8 | Drive 44 | filed |
+| D22 | Grant PUT accepts `notify: true` and sends a share email to a user | T008 | 7.8 | Drive 44 | filed |
+| D23 | Spec fix: §11.2 shows `explain?: [...]` where code and §5.8 return an object | T008 | 7.4 | Drive 44 | filed. The `{ticket, expires}` half is already in [Drive §11.2] |
+| D24 | `/l/<token>` redirects by kind to `/drive/f/` or `/d/` with `#link=` | T011 | 2.4, 10.1, 14.7 | Drive 43 | filed |
+| D25 | Unlock 429 carries `Retry-After`; the failure that sets the lockout answers 429 | T011 | 10.2 | Drive 43 | filed |
+| D26 | Legacy-call counter in the `suite.drive.api.*` dispatch, keyed by name and user agent, stored in a doctype that a System Manager reads in Desk, and read by a bench command | T014 | 14.7, 14.8 | Drive 45 | filed. Counts every name; the gate reads all 69 [T017]. Ships in the release that carries Build [Faris, 2026-09-29] |
+| D27 | Accept an expected `modified` on PATCH and answer `DriveConflict` | SSC | 3.9 | Drive 46 | filed |
+| D28 | `favourite` on the Drive node shape | T006, via `ACCOUNTING.md` | 5.11 | Drive 46 | filed |
 | D29 | Type `shapes.py` outputs | SSC | 3.9, 4.5 | none | met. `suite/drive/http/shapes.py` already uses `TypedDict` |
-| D30 | Settings, site settings and WebDAV routes (`GET`/`PATCH /settings`, `GET`/`PATCH /site-settings`, `GET /webdav`); Cleanup deletes all 69 names and the allowlist prefix | T017 | 4.4, 12.2, 14.8 | Drive issues [39](../drive-layer-spec/implementation/issues/39-settings-and-webdav-routes.md) and [40](../drive-layer-spec/implementation/issues/40-cleanup-deletes-every-legacy-name.md) | filed, ready-for-agent [T017] |
-| D31 | `views/recents` accepts `?content_doctype=` and returns only document nodes of that type, filtered on the server | Faris, 2026-09-29 | 5.1, 14.3 | [Drive 47](../drive-layer-spec/implementation/issues/47-recents-content-doctype-filter.md) | filed |
+| D30 | Settings, site settings and WebDAV routes (`GET`/`PATCH /settings`, `GET`/`PATCH /site-settings`, `GET /webdav`); Cleanup deletes all 69 names and the allowlist prefix | T017 | 4.4, 12.2, 14.8 | Drive issues 39 and 40 | filed, ready-for-agent [T017] |
+| D31 | `views/recents` accepts `?content_doctype=` and returns only document nodes of that type, filtered on the server | Faris, 2026-09-29 | 5.1, 14.3 | Drive 47 | filed |
 
 ### 15.2 Suite
 
@@ -2621,7 +2622,7 @@ them [SSC].
 
 Each item names the affected section. "Meanwhile" appears only where a
 source says what to do. Tickets 017 to 021 are folded in
-([ticket 022](tickets/022-fold-decisions-into-the-spec-and-plan.md)).
+(ticket 022).
 What remains is implementation-time work, environment approvals and
 post-launch fog.
 

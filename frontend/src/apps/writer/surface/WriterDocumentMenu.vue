@@ -8,6 +8,7 @@ import {
   type DocumentPanel,
   type DocumentSession,
 } from '@/apps/drive'
+import emitter from '@/apps/writer/emitter'
 import { listTabs } from '@/apps/writer/extensions/tabs'
 import { toast } from '@/platform/feedback'
 import { translate as __ } from '@/platform/translation'
@@ -16,8 +17,8 @@ import { downloadDocx, downloadMarkdown, exportHTML, type ExportScope } from './
 
 /**
  * What Writer adds to the document menu in the Drive header: save a version,
- * export as DOCX or Markdown, and, with edit access, lock the document or
- * import a DOCX into it. A document with tabs asks in a submenu whether to
+ * export as DOCX or Markdown, print the open tab as a PDF, and, with edit
+ * access, lock the document or import a DOCX into it. A document with tabs asks in a submenu whether to
  * export the open tab or all of them.
  */
 const props = defineProps<{
@@ -115,6 +116,12 @@ const transfer = computed(() => {
     exportOption(__('Export as Markdown'), (html) =>
       downloadMarkdown(html, title, props.session.credentials.fetch),
     ),
+    // The editor prints it as Cmd+P does
+    {
+      label: __('Export as PDF'),
+      icon: 'lucide-download',
+      onClick: () => emitter.emit('print-file'),
+    },
     ...(props.editable
       ? [{ label: __('Import DOCX'), icon: 'lucide-upload', onClick: pickDocx }]
       : []),

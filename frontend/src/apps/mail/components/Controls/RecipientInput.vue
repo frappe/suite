@@ -32,6 +32,7 @@
       }"
       :tabindex="isMobile ? -1 : undefined"
       :draggable="!isMobile"
+      @mousedown="keepFieldFocus"
       @click="handleTagClick($event, i)"
       @focus="!isMobile && (focusedTagIndex = i)"
       @blur="focusedTagIndex = -1"
@@ -142,9 +143,16 @@
       trigger="manual"
       :reference="menuAnchor"
       :auto-focus="false"
+      :bare="isMobile"
       align="start"
     >
-      <div class="min-w-52 max-w-72 p-1 sm:min-w-44">
+      <!-- On a phone it floats over the keyboard with the compose islands, so it is drawn as one
+           of them, rounded as their 48px pills are; on desktop it is frappe-ui's panel, like
+           every other menu there. -->
+      <div
+        class="min-w-52 max-w-72 p-1 sm:min-w-44"
+        :class="{ 'bg-surface-elevation-2 rounded-[24px] border shadow-xl': isMobile }"
+      >
         <!-- Who this is about, the way a contact reads in every picker: the address is what
 				     the chip cannot say — it shows the display name when there is one, truncated at
 				     160px — and it is the disambiguator between two people of the same name. -->
@@ -164,8 +172,9 @@
         <button
           v-for="item in menuOptions"
           :key="item.label"
-          class="active:bg-surface-gray-2 sm:hover:bg-surface-gray-2 flex w-full items-center rounded-6 px-2.5 py-2 text-base sm:h-7 sm:rounded-4 sm:px-2 sm:py-0"
+          class="active:bg-surface-gray-2 sm:hover:bg-surface-gray-2 flex w-full items-center rounded-8 px-2.5 py-2 text-base sm:h-7 sm:rounded-4 sm:px-2 sm:py-0"
           :class="item.theme === 'red' ? 'text-ink-red-6' : 'text-ink-gray-8'"
+          @mousedown="keepFieldFocus"
           @click="runMenuOption(item)"
         >
           {{ item.label }}
@@ -199,10 +208,16 @@ const emit = defineEmits<{
  * floating panel. Set by the mobile composer, which wants the full-width Gmail-style list; left
  * unset on desktop, where the panel is the right shape and the popover behaviour is kept.
  */
-const { field, suggestionsTo = null } = defineProps<{
+const {
+  field,
+  suggestionsTo = null,
+  movable = true,
+} = defineProps<{
   /** Which of the draft's recipient lists this is, so a move can name where it came from. */
   field: RecipientField
   suggestionsTo?: HTMLElement | null
+  /** Whether a chip's menu offers the other fields: not where this is the only one on screen. */
+  movable?: boolean
 }>()
 
 const selectedRecipients = defineModel<DraftRecipient[]>({ default: () => [] })
@@ -435,6 +450,13 @@ const handleContainerKeydown = (e: KeyboardEvent) => {
   }
 }
 
+// On a phone, a press on a chip or its menu leaves the caret where it is: a tap that took focus
+// from the field would drop the keyboard. On desktop a click focuses the chip, which is how
+// Delete removes it.
+const keepFieldFocus = (e: MouseEvent) => {
+  if (isMobile.value) e.preventDefault()
+}
+
 const handleTagClick = (e: MouseEvent, i: number) => {
   const checkedEventTarget = e.currentTarget
   if (!(checkedEventTarget instanceof Element)) return
@@ -483,7 +505,7 @@ const menuOptions = computed<{ label: string; theme?: 'red'; onClick: () => void
   if (!recipient) return []
 
   return [
-    ...RECIPIENT_FIELDS.filter((target) => target !== field).map((target) => ({
+    ...RECIPIENT_FIELDS.filter((target) => movable && target !== field).map((target) => ({
       label: __('Move to {0}', [FIELD_LABELS[target]]),
       onClick: () => {
         // Cc and Bcc are behind a toggle on both composers: moving someone into a field that

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Tooltip } from 'frappe-ui'
 import { computed } from 'vue'
 
 import HighlightedText from '@/components/HighlightedText.vue'
@@ -142,18 +143,18 @@ const pick = (mark: number, event?: MouseEvent) => {
         class="text-ink-blue-6 hover:underline"
         ><HighlightedText :text="segment.text" :term="term"
       /></a>
-      <span
-        v-else-if="segment.mark !== undefined"
-        role="button"
-        tabindex="0"
-        :title="markLabel"
-        class="cursor-pointer underline decoration-[color:color-mix(in_srgb,currentColor_50%,transparent)] underline-offset-2 hover:decoration-current"
-        @pointerdown="press($event, segment.mark)"
-        @click="pick(segment.mark, $event)"
-        @keydown.enter.prevent="pick(segment.mark)"
-        @keydown.space.prevent="pick(segment.mark)"
-        ><HighlightedText :text="segment.text" :term="term"
-      /></span>
+      <Tooltip v-else-if="segment.mark !== undefined" :text="markLabel" :disabled="!markLabel">
+        <span
+          role="button"
+          tabindex="0"
+          class="cursor-pointer underline decoration-[color:color-mix(in_srgb,currentColor_50%,transparent)] underline-offset-2 hover:decoration-current"
+          @pointerdown="press($event, segment.mark)"
+          @click="pick(segment.mark, $event)"
+          @keydown.enter.prevent="pick(segment.mark)"
+          @keydown.space.prevent="pick(segment.mark)"
+          ><HighlightedText :text="segment.text" :term="term"
+        /></span>
+      </Tooltip>
       <span v-else><HighlightedText :text="segment.text" :term="term" /></span>
     </template>
   </div>

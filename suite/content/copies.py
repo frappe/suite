@@ -8,7 +8,7 @@ An app with no readable copy skips all of it.
 
 import hashlib
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import timedelta
 from http import HTTPStatus
 from urllib.parse import unquote, urlsplit
@@ -29,11 +29,12 @@ from frappe.utils.html_utils import (
     svg_attributes,
     svg_elements,
 )
+from pypika.queries import QueryBuilder
 from pypika.terms import Values
 
-from suite.content import compaction, db, stage
+from suite.content import checker, compaction, convert, db, stage
 from suite.content.app_row import copy_row, forget_cached, locked_app_row, write_copy
-from suite.content.editors import ReadableCopy, spec_of
+from suite.content.editors import HtmlCopy, ReadableCopy, spec_of
 from suite.content.log import Refusal
 from suite.content.sessions import load_session
 from suite.content.snapshot import Snapshot, read
@@ -128,7 +129,9 @@ def check_staged(app: str, doc_id: str) -> str | None:
 
         rev = int(render.rev)
         html = payload.decode(errors="replace")
-        outcome = install(app, doc_id, rev, render.lineage, int(render.q_epoch), html, html_copy)
+        outcome = install(
+            app, doc_id, rev, render.lineage, int(render.q_epoch), lambda _state: html, html_copy
+        )
         stage.drop_renders_through(app, doc_id, rev)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         return outcome
@@ -137,15 +140,22 @@ def check_staged(app: str, doc_id: str) -> str | None:
 
 
 def install(
-    app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, html: str, html_copy: ReadableCopy
+    app: str,
+    doc_id: str,
+    rev: int,
+    lineage: str,
+    q_epoch: int,
+    render: Callable[[bytes], str],
+    html_copy: ReadableCopy,
 ) -> str:
-    """Make a render at `rev` the readable copy if it holds the document then: installed, stale or refused."""
+    """Make `render` of the state at `rev` the readable copy if it holds it: installed, stale or refused."""
     log_read = read(app, doc_id, integrated=True)
     if log_read is None or not renders_log(log_read, rev, lineage, q_epoch):
         return "stale"
 
-    clean, text = cleaned(html)
-    if not html_copy.is_html_complete(state_at(app, log_read, rev), clean, text):
+    state = state_at(app, log_read, rev)
+    clean, text = cleaned(render(state))
+    if not html_copy.is_html_complete(state, clean, text):
         keep_evidence(app, doc_id, "copy_refused", clean, rev)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         db.alert("Collab readable copy: refused", f"{app} document {doc_id} at rev {rev}")
@@ -155,6 +165,138 @@ def install(
         return "stale"
 
     return "installed"
+
+
+def follow_write(app: str, doc_id: str, rev: int, lineage: str, q_epoch: int, *, is_wanted: bool) -> None:
+    """After a write on the server, where no tab renders: render the copy at `rev` if one is wanted, else owe it."""
+    html_copy = spec_of(app).readable_copy
+    # A copy of another kind, or one only a tab can render, waits for the next tab to open the document
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return
+
+    doc = Table(table(app, "doc"))
+    # Before any render, so an export while one runs renders the copy rather than refusing
+    mark(app, doc_id, rev, frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id))
+    # A young copy waits for a reader or the sweep, so writing a document in parts does not render every part
+    if not is_wanted:
+        return
+
+    try:
+        install(app, doc_id, rev, lineage, q_epoch, html_copy.render, html_copy)
+    except Exception:
+        # The row and its mark are committed; the sweep renders once more, and its job reports what fails there
+        frappe.db.rollback()
+        return
+
+    # A write after this one keeps what it owes
+    paid = frappe.qb.update(doc).set(doc.copy_owed, 0).where(doc.id == doc_id).where(doc.head_rev == rev)
+    mark(app, doc_id, rev, paid)
+
+
+def mark(app: str, doc_id: str, rev: int, marked: QueryBuilder) -> None:
+    """Run `marked`, which says whether the copy a write at `rev` left is owed, and commit it."""
+    try:
+        # At once: the write has landed, and what follows in the request must not undo the mark or wait on its row
+        db.claim(marked)
+    except Exception:
+        # The write still answers its rev, as one asked again would land twice
+        frappe.db.rollback()
+        db.alert("Collab readable copy: not marked as owed", f"{app} document {doc_id} at rev {rev}")
+
+
+def render_owed(app: str, doc_id: str) -> None:
+    """Render the copy a write on the server owed, at the head the document has now."""
+    doc = Table(table(app, "doc"))
+    # Before the render: one that fails waits for the next write or tab, not for every sweep
+    frappe.qb.update(doc).set(doc.copy_owed, 0).where(doc.id == doc_id).run()
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    html_copy = spec_of(app).readable_copy
+    # A tab may have rendered the head since the write
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render or is_at_head(app, doc_id):
+        return
+
+    log_read = read(app, doc_id)
+    if log_read is None:
+        return
+
+    try:
+        install(
+            app, doc_id, log_read.head_rev, log_read.lineage, log_read.q_epoch, html_copy.render, html_copy
+        )
+    except (checker.CheckerBusy, convert.ConverterChanged):
+        # No answer from the converter says nothing of the document, so the next sweep renders it
+        frappe.db.rollback()
+        frappe.qb.update(doc).set(doc.copy_owed, 1).where(doc.id == doc_id).run()
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def is_owed(app: str, doc_id: str) -> bool:
+    """Whether a write on the server owes the document a copy."""
+    doc = Table(table(app, "doc"))
+    owed = (
+        frappe.qb.from_(doc)
+        .select(doc.id)
+        .where(doc.id == doc_id)
+        .where(doc.copy_owed == 1)
+        .where(doc.mode != "purged")
+        .run()
+    )
+    return bool(owed)
+
+
+def owed_html(app: str, doc_id: str) -> str | None:
+    """Render the owed copy for one reader and save nothing; None when no render holds the document."""
+    html_copy = spec_of(app).readable_copy
+    if not isinstance(html_copy, HtmlCopy) or not html_copy.render:
+        return None
+
+    try:
+        # In the reader's transaction, which a Drive callback may not commit: the job is what saves the copy
+        log_read = read(app, doc_id, integrated=True, own_snapshot=False)
+        if log_read is None:
+            return None
+
+        state = state_at(app, log_read, log_read.head_rev)
+        clean, text = cleaned(html_copy.render(state))
+    except Exception:
+        # The reader is told to read again; the job renders once more and reports what fails
+        return None
+
+    return clean if html_copy.is_html_complete(state, clean, text) else None
+
+
+def is_at_head(app: str, doc_id: str) -> bool:
+    """Whether the document's copy is of its head."""
+    doc = Table(table(app, "doc"))
+    projection = Table(table(app, "projection"))
+    found = (
+        frappe.qb.from_(doc)
+        .join(projection)
+        .on(projection.doc_id == doc.id)
+        .select(doc.id)
+        .where(doc.id == doc_id)
+        .where(projection.projected_rev >= doc.head_rev)
+        .run()
+    )
+    return bool(found)
+
+
+def owed_docs(app: str, limit: int = 100) -> list[str]:
+    """Return the documents whose copy a write on the server owes and that is COPY_AGE old or was never written."""
+    doc = Table(table(app, "doc"))
+    projection = Table(table(app, "projection"))
+    found = (
+        frappe.qb.from_(doc)
+        .left_join(projection)
+        .on(projection.doc_id == doc.id)
+        .select(doc.id)
+        .where(doc.copy_owed == 1)
+        .where(doc.mode != "purged")
+        .where(projection.updated.isnull() | (projection.updated <= now_datetime() - COPY_AGE))
+        .limit(limit)
+        .run()
+    )
+    return [doc_id for (doc_id,) in found]
 
 
 def cleaned(html: str) -> tuple[str, str]:
@@ -411,7 +553,8 @@ def readable_copy(app: str, doc_id: str) -> str | None:
         return None
 
     copy = copy_row(app, doc_id, html_copy)
-    if copy is None:
+    # A projection row made at rev 0 has no hash until a copy is written
+    if copy is None or copy.projection_hash is None:
         return None
 
     serialized = html_copy.serialized(copy.written)

@@ -11,6 +11,8 @@ import type {
   BanGuestOutput,
   CalendarMeetingInput,
   CalendarMeetingOutput,
+  DefaultInviteRoomInput,
+  DefaultInviteRoomOutput,
   E2eeDeviceInput,
   E2eeDeviceOutput,
   EnableE2eeInput,
@@ -23,6 +25,8 @@ import type {
   GuestRoomJoinOutput,
   GuestRoomTokenInput,
   GuestRoomTokenOutput,
+  MyRoomsInput,
+  MyRoomsOutput,
   PromoteToCohostInput,
   PromoteToCohostOutput,
   RecordingListInput,
@@ -45,6 +49,8 @@ import type {
   RoomDocumentOutput,
   RoomJoinInput,
   RoomJoinOutput,
+  RoomLinkAvailabilityInput,
+  RoomLinkAvailabilityOutput,
   RoomLinkInput,
   RoomLinkOutput,
   RoomPresenceTokenInput,
@@ -59,6 +65,8 @@ import type {
   RoomTokenOutput,
   ScheduledMeetingsPostInput,
   ScheduledMeetingsPostOutput,
+  SetDefaultInviteRoomInput,
+  SetDefaultInviteRoomOutput,
   UpdateSettingsInput,
   UpdateSettingsOutput,
 } from './generated'
@@ -69,7 +77,11 @@ export const operationRoomsPost: Validators<RoomsPostInput, RoomsPostOutput> = {
       value,
       {
         type: 'object',
-        properties: { type: { enum: ['open', 'restricted'], title: 'Type', type: 'string' } },
+        properties: {
+          type: { enum: ['open', 'restricted'], title: 'Type', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          link: { title: 'Link', type: 'string' },
+        },
         required: ['type'],
         additionalProperties: false,
         $defs: {},
@@ -90,6 +102,43 @@ export const operationRoomsPost: Validators<RoomsPostInput, RoomsPostOutput> = {
         type: 'object',
       },
       'rooms_post output',
+    )
+  },
+}
+
+export const operationRoomLinkAvailability: Validators<
+  RoomLinkAvailabilityInput,
+  RoomLinkAvailabilityOutput
+> = {
+  validateInput(value: unknown): asserts value is RoomLinkAvailabilityInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { link: { title: 'Link', type: 'string' } },
+        required: ['link'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'room_link_availability input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is RoomLinkAvailabilityOutput {
+    assertSchema(
+      value,
+      {
+        properties: {
+          status: {
+            enum: ['available', 'invalid', 'reserved', 'taken'],
+            title: 'Status',
+            type: 'string',
+          },
+        },
+        required: ['status'],
+        title: 'LinkAvailability',
+        type: 'object',
+      },
+      'room_link_availability output',
     )
   },
 }
@@ -439,6 +488,7 @@ export const operationRecordingState: Validators<RecordingStateInput, RecordingS
                   'Partial',
                   'Failed',
                   'Cancelled',
+                  'Captured',
                 ],
                 title: 'Status',
                 type: 'string',
@@ -460,6 +510,26 @@ export const operationRecordingState: Validators<RecordingStateInput, RecordingS
               interruption_deadline: {
                 anyOf: [{ type: 'string' }, { type: 'null' }],
                 title: 'Interruption Deadline',
+              },
+              video_enabled: { title: 'Video Enabled', type: 'boolean' },
+              transcription_enabled: { title: 'Transcription Enabled', type: 'boolean' },
+              transcription_language: {
+                anyOf: [{ const: 'en', type: 'string' }, { type: 'null' }],
+                title: 'Transcription Language',
+              },
+              transcription_capture_state: {
+                anyOf: [
+                  { enum: ['capturing', 'complete', 'partial', 'failed'], type: 'string' },
+                  { type: 'null' },
+                ],
+                title: 'Transcription Capture State',
+              },
+              video_capture_state: {
+                anyOf: [
+                  { enum: ['starting', 'capturing', 'complete', 'failed'], type: 'string' },
+                  { type: 'null' },
+                ],
+                title: 'Video Capture State',
               },
             },
             required: ['name', 'status', 'state_revision'],
@@ -483,7 +553,12 @@ export const operationRecordingPreflight: Validators<
       value,
       {
         type: 'object',
-        properties: { meeting_id: { title: 'Meeting Id', type: 'string' } },
+        properties: {
+          meeting_id: { title: 'Meeting Id', type: 'string' },
+          video_enabled: { title: 'Video Enabled', type: 'boolean' },
+          transcription_enabled: { title: 'Transcription Enabled', type: 'boolean' },
+          language: { const: 'en', title: 'Language', type: 'string' },
+        },
         required: ['meeting_id'],
         additionalProperties: false,
         $defs: {},
@@ -498,6 +573,9 @@ export const operationRecordingPreflight: Validators<
         properties: {
           eligible: { title: 'Eligible', type: 'boolean' },
           global_enabled: { title: 'Global Enabled', type: 'boolean' },
+          transcription_available: { title: 'Transcription Available', type: 'boolean' },
+          video_enabled: { title: 'Video Enabled', type: 'boolean' },
+          transcription_enabled: { title: 'Transcription Enabled', type: 'boolean' },
           e2ee_conflict: { title: 'E2Ee Conflict', type: 'boolean' },
           storage_available: { title: 'Storage Available', type: 'boolean' },
           recorder_available: { title: 'Recorder Available', type: 'boolean' },
@@ -511,6 +589,9 @@ export const operationRecordingPreflight: Validators<
         required: [
           'eligible',
           'global_enabled',
+          'transcription_available',
+          'video_enabled',
+          'transcription_enabled',
           'e2ee_conflict',
           'storage_available',
           'recorder_available',
@@ -537,6 +618,9 @@ export const operationRecordingStart: Validators<RecordingStartInput, RecordingS
         type: 'object',
         properties: {
           meeting_id: { title: 'Meeting Id', type: 'string' },
+          video_enabled: { title: 'Video Enabled', type: 'boolean' },
+          transcription_enabled: { title: 'Transcription Enabled', type: 'boolean' },
+          language: { const: 'en', title: 'Language', type: 'string' },
           request_id: { title: 'Request Id', type: 'string' },
         },
         required: ['meeting_id', 'request_id'],
@@ -566,11 +650,13 @@ export const operationRecordingStart: Validators<RecordingStartInput, RecordingS
                   'Partial',
                   'Failed',
                   'Cancelled',
+                  'Captured',
                 ],
                 title: 'Status',
                 type: 'string',
               },
               grant_delivered: { title: 'Grant Delivered', type: 'boolean' },
+              state_revision: { title: 'State Revision', type: 'integer' },
             },
             required: ['name', 'status'],
             title: 'RecordingCommand',
@@ -624,11 +710,13 @@ export const operationRecordingStop: Validators<RecordingStopInput, RecordingSto
                   'Partial',
                   'Failed',
                   'Cancelled',
+                  'Captured',
                 ],
                 title: 'Status',
                 type: 'string',
               },
               grant_delivered: { title: 'Grant Delivered', type: 'boolean' },
+              state_revision: { title: 'State Revision', type: 'integer' },
             },
             required: ['name', 'status'],
             title: 'RecordingCommand',
@@ -786,6 +874,104 @@ export const operationRecordingList: Validators<RecordingListInput, RecordingLis
         type: 'array',
       },
       'recording_list output',
+    )
+  },
+}
+
+export const operationDefaultInviteRoom: Validators<
+  DefaultInviteRoomInput,
+  DefaultInviteRoomOutput
+> = {
+  validateInput(value: unknown): asserts value is DefaultInviteRoomInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'default_invite_room input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is DefaultInviteRoomOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          InviteRoom: {
+            properties: {
+              room: { title: 'Room', type: 'string' },
+              title: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Title' },
+              meeting_url: { title: 'Meeting Url', type: 'string' },
+            },
+            required: ['room', 'title', 'meeting_url'],
+            title: 'InviteRoom',
+            type: 'object',
+          },
+        },
+        properties: {
+          room: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Room' },
+          meeting_url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Meeting Url' },
+          rooms: { items: { $ref: '#/$defs/InviteRoom' }, title: 'Rooms', type: 'array' },
+        },
+        required: ['room', 'meeting_url', 'rooms'],
+        title: 'DefaultInviteRoom',
+        type: 'object',
+      },
+      'default_invite_room output',
+    )
+  },
+}
+
+export const operationSetDefaultInviteRoom: Validators<
+  SetDefaultInviteRoomInput,
+  SetDefaultInviteRoomOutput
+> = {
+  validateInput(value: unknown): asserts value is SetDefaultInviteRoomInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { room: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Room' } },
+        required: ['room'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'set_default_invite_room input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SetDefaultInviteRoomOutput {
+    assertSchema(value, { type: 'null' }, 'set_default_invite_room output')
+  },
+}
+
+export const operationMyRooms: Validators<MyRoomsInput, MyRoomsOutput> = {
+  validateInput(value: unknown): asserts value is MyRoomsInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'my_rooms input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is MyRoomsOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          MyRoom: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Title' },
+              meeting_type: { enum: ['open', 'restricted'], title: 'Meeting Type', type: 'string' },
+              owner: { title: 'Owner', type: 'string' },
+              modified: { title: 'Modified', type: 'string' },
+              url: { title: 'Url', type: 'string' },
+            },
+            required: ['name', 'title', 'meeting_type', 'owner', 'modified', 'url'],
+            title: 'MyRoom',
+            type: 'object',
+          },
+        },
+        items: { $ref: '#/$defs/MyRoom' },
+        type: 'array',
+      },
+      'my_rooms output',
     )
   },
 }

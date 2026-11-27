@@ -4,7 +4,6 @@
  * converters load on first use, so opening a document does not pay for them.
  */
 import type { Editor } from '@tiptap/core'
-import type TurndownService from 'turndown'
 
 import type { DocumentSession } from '@/apps/drive'
 import { embedUrl } from '@/apps/writer/drive'
@@ -66,41 +65,6 @@ function pictureFetch(fetchMedia: MediaFetch): PictureFetch {
 }
 
 /**
- * A table as GitHub-flavoured Markdown: the first row is the heading row,
- * every other row a body row. Written for the editor's own tables, which
- * have one block per cell at most, so a cell's paragraphs are joined with
- * `<br>`; a cell that spans columns is followed by as many empty cells.
- */
-function tableRule(turndown: TurndownService): void {
-  const cells = (tr: HTMLTableRowElement): string[] =>
-    [...tr.cells].flatMap((node) => {
-      const text = turndown
-        .turndown(node.innerHTML)
-        .trim()
-        .replace(/\n{2,}/g, '<br>')
-        .replace(/\n/g, ' ')
-      return [text.replace(/\|/g, '\\|'), ...Array<string>(Math.max(0, node.colSpan - 1)).fill('')]
-    })
-  const line = (row: string[]): string => `| ${row.join(' | ')} |`
-  turndown.addRule('table', {
-    filter: 'table',
-    replacement: (_content, node) => {
-      if (!(node instanceof HTMLTableElement)) return _content
-      const rows = [...node.rows].map(cells)
-      const heading = rows.shift()
-      if (!heading) return ''
-      const divider = heading.map(() => '---')
-      return `\n\n${[heading, divider, ...rows].map(line).join('\n')}\n\n`
-    },
-  })
-  // Cells are rendered by the table rule; keep their text out of the default output.
-  turndown.addRule('tableCell', {
-    filter: ['th', 'td', 'tr', 'thead', 'tbody'],
-    replacement: (content) => content,
-  })
-}
-
-/**
  * The document as Markdown. Each picture stored in Drive is fetched and saved
  * as `images/<n>.<ext>`, and the Markdown links it by that relative path. A
  * picture that cannot be fetched keeps its stored link.
@@ -120,14 +84,8 @@ export async function toMarkdown(html: string, fetchMedia: MediaFetch): Promise<
     media.push({ path, blob })
   }
 
-  const { default: TurndownService } = await import('turndown')
-  const turndown = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    bulletListMarker: '-',
-  })
-  tableRule(turndown)
-  return { markdown: turndown.turndown(page.body), media }
+  const { markdownOf } = await import('@/apps/writer/collab/markdown')
+  return { markdown: markdownOf(page.body), media }
 }
 
 /** Saves `<title>.md`, or `<title>.zip` with the Markdown and its pictures when it has any. */

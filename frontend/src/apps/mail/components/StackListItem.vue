@@ -2,6 +2,7 @@
   <MailRow
     :is-selected
     :selectable
+    :selection-mode
     :hide-avatar
     :account-label="accountLabel"
     :unread="!!unreadCount"
@@ -13,7 +14,7 @@
     :preview-placeholder="!latest.preview"
     role="button"
     :aria-expanded="expanded"
-    @click="emit('toggle')"
+    @click="!selectionMode && emit('toggle')"
     @set-selected="(selected: boolean) => emit('setSelected', selected)"
   >
     <template #sender>{{ sender }}</template>
@@ -79,6 +80,7 @@ const {
   expanded,
   isSelected,
   selectable = true,
+  selectionMode = false,
   hideAvatar,
   accountLabel,
   drafts = false,
@@ -89,6 +91,9 @@ const {
   // Forwarded to MailRow, for lists without bulk selection / with the leading
   // column reclaimed (the merged All Inboxes list) — see MailRow's props.
   selectable?: boolean
+  // Rows are being picked (a phone's selection): a tap picks the run rather than opening it, as a
+  // thread row's does, and the row shows only the grey it is left with (see MailRow).
+  selectionMode?: boolean
   hideAvatar?: boolean
   // Which account received the run (merged lists) — a stack never mixes accounts.
   accountLabel?: string
@@ -118,7 +123,9 @@ const participants = computed(() => threadParticipants(latest.value.messages, ow
 // stack is named exactly the way each of its members is — collapsed or expanded, the name holds.
 const sender = computed(() => threadDisplayName(participants.value, latest.value))
 
-const avatarLabel = computed(() => threadAvatarLabel(participants.value, latest.value))
+const avatarLabel = computed(() =>
+  threadAvatarLabel(participants.value, latest.value, ownEmails.value),
+)
 
 // What the checkbox ticks: the whole run, by its count and whose it is.
 const selectLabel = computed(() =>

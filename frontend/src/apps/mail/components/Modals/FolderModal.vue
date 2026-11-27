@@ -1,8 +1,8 @@
 <template>
-  <Dialog
+  <AdaptiveDialog
     v-model:open="show"
     v-bind="{
-      title: isNew ? __('New Folder') : __('Folder Settings'),
+      title: isNew ? __('New folder') : __('Edit folder'),
       size: 'xl' as const,
       paddingTop: '10%',
       actions: [
@@ -16,10 +16,22 @@
     }"
   >
     <template #default>
-      <Tabs v-model="tab" :tabs="TABS">
-        <!-- Tabs renders a panel per tab and shows the selected one, so the body
-				     keys off the panel's own tab rather than the model. -->
-        <template #tab-panel="{ tab: panel }">
+      <!-- One height for both tabs, so the dialog doesn't jump as they are switched; a longer
+           Automation tab scrolls inside it. -->
+      <Tabs v-model="tab" class="flex h-96 flex-col">
+        <!-- On a phone the tabs share the sheet's width, words alone: a desktop's row of tabs with
+             icons, hugging the left, looked out of place there -->
+        <TabButtons v-if="isMobile" v-model="tab" :options="PHONE_TABS" variant="underline" fluid />
+        <TabList v-else>
+          <TabTrigger
+            v-for="item in TABS"
+            :key="item.value"
+            :value="item.value"
+            :label="item.label"
+            :icon-left="item.iconLeft"
+          />
+        </TabList>
+        <TabPanel v-for="panel in TABS" :key="panel.value" :value="panel.value">
           <!-- px-0.5: the tab panel is an `overflow-auto` scroll container, and a focus ring
 					     is a box-shadow — which is clipped by an overflowing ancestor rather than
 					     scrolled to. A full-width control therefore had its ring shaved off both sides.
@@ -49,11 +61,8 @@
                   />
                 </template>
               </FormControl>
-              <SettingsRow :title="__('Disable Push Notifications')" class="!pb-0">
-                <Switch
-                  v-model="folder.disable_push_notification"
-                  :disabled="isNotificationsDisabled"
-                />
+              <SettingsRow :title="__('Notifications')" class="!pb-0">
+                <Switch v-model="pushNotifications" :disabled="isNotificationsDisabled" />
               </SettingsRow>
             </template>
 
@@ -129,12 +138,12 @@
               </template>
             </template>
           </div>
-        </template>
+        </TabPanel>
       </Tabs>
       <!-- Under both tabs, as either one's fields can be what was refused -->
       <ErrorMessage :message="saveError" class="mt-4" />
     </template>
-  </Dialog>
+  </AdaptiveDialog>
 
   <SetSieveScriptStateModal
     v-model="showEnableFolderAutomation"
@@ -147,12 +156,15 @@
 import {
   Alert,
   Button,
-  Dialog,
   ErrorMessage,
   FormControl,
   SettingsRow,
   Switch,
+  TabButtons,
+  TabList,
+  TabPanel,
   Tabs,
+  TabTrigger,
 } from 'frappe-ui'
 import { IconPicker } from 'frappe-ui/experimental'
 import { Settings, Zap } from 'lucide-vue-next'
@@ -164,7 +176,9 @@ import { FOLDER_COLOR_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { raiseToast } from '@/apps/mail/utils'
+import { useScreenSize } from '@/apps/mail/utils/composables'
 import { failureLine } from '@/platform/feedback'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { translate as __ } from '@/platform/translation'
 
 const show = defineModel<boolean>()
@@ -179,6 +193,7 @@ const automationScript = computed(() =>
   sieveScripts.data?.find((s) => s._name === 'frappe_mail_automation'),
 )
 const tab = ref('general')
+const { isMobile } = useScreenSize()
 
 // iconLeft, not icon: `icon` is Tabs' icon-only trigger — it drops the label.
 const TABS = [
@@ -193,6 +208,8 @@ const TABS = [
     iconLeft: Zap,
   },
 ]
+// Words alone on a phone, where the two halves of a full-width control say enough
+const PHONE_TABS = TABS.map(({ value, label }) => ({ value, label }))
 const DEFAULT_FOLDER = {
   id: '',
   name: '',
@@ -217,6 +234,11 @@ const isNotificationsDisabled = computed(
     !!mailbox?.role &&
     ['sent', 'drafts', 'junk', 'trash', 'archive'].includes(mailbox.role),
 )
+// The folder stores the opt-out; the switch says whether notifications come, so it is on by default
+const pushNotifications = computed({
+  get: () => !folder.disable_push_notification,
+  set: (on: boolean) => (folder.disable_push_notification = !on),
+})
 const isNotDirty = computed(() => {
   const folderUnchanged =
     folder.name === original.name &&

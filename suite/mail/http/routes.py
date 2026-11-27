@@ -112,6 +112,7 @@ from suite.mail.api.mail import (
     get_delivery_status,
     get_email_suggestions,
     get_global_screened_addresses,
+    get_inbox_unread_by_account,
     get_mailboxes,
     get_mime_message,
     get_recent_threads_from,
@@ -172,6 +173,7 @@ from suite.mail.doctype.contact_card.contact_card import (
     contact_card_remove_from_address_book,
     delete_contact_cards,
 )
+from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
 from suite.mail.doctype.vacation_response.vacation_response import (
     get_vacation_response,
     update_vacation_response,
@@ -269,8 +271,19 @@ from suite.mail.http.shapes import (
 )
 
 
-class InboxSummary(TypedDict):
+class AccountUnread(TypedDict):
+    # The account's address.
+    name: str
     unread: int
+    # The reader's own account, rather than one shared with them.
+    personal: bool
+
+
+class InboxSummary(TypedDict):
+    # Unread Inbox threads across every account of the reader's.
+    unread: int
+    # The same, account by account, the reader's own first.
+    accounts: list[AccountUnread]
 
 
 ROUTES: tuple[Route, ...] = (
@@ -287,7 +300,16 @@ ROUTES: tuple[Route, ...] = (
 
 @frappe.whitelist(methods=["GET"])
 def inbox_summary() -> InboxSummary:
-    return {"unread": get_all_inbox_unread_count()}
+    accounts = get_inbox_unread_by_account()
+    # No Mail at all: there is no account to look up.
+    personal = get_user_personal_jmap_account() if accounts else None
+    return {
+        "unread": sum(account["unread"] for account in accounts),
+        "accounts": [
+            {"name": account["name"], "unread": account["unread"], "personal": account["account"] == personal}
+            for account in accounts
+        ],
+    }
 
 
 @frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])

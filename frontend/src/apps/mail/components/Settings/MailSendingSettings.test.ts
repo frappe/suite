@@ -44,15 +44,19 @@ vi.mock('@/api', async () => {
 
       return reactive({
         isFetching: false,
-        data: { ...state.reply, subject: 'Away', html_body: '' },
+        data: { ...state.reply, subject: 'Away', html_body: '<p>Back soon</p>' },
         refetch: async () => {},
       })
     },
     useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
       fakeMutation((input) => state.save(reference.id, input), vi.fn(), options),
+    client: {
+      mutation: (reference: { id: string }, input: unknown) => state.save(reference.id, input),
+    },
   }
 })
 vi.mock('frappe-ui', () => ({
+  FormLabel: { render: () => null },
   ErrorMessage: { render: () => null },
   SettingsHeader: { render: () => null },
   SettingsBody: defineComponent({
@@ -91,10 +95,21 @@ vi.mock('frappe-ui', () => ({
         })
     },
   }),
+  Switch: defineComponent({
+    props: { modelValue: Boolean },
+    emits: ['update:modelValue'],
+    setup(props, { emit }) {
+      return () =>
+        h('button', {
+          'aria-checked': String(props.modelValue),
+          onClick: () => emit('update:modelValue', !props.modelValue),
+        })
+    },
+  }),
   SettingsRow: defineComponent({
-    props: { title: { type: String, default: '' } },
+    props: { title: { type: String, default: '' }, description: { type: String, default: '' } },
     setup(props, { slots }) {
-      return () => h('section', [props.title, slots.default?.()])
+      return () => h('section', [props.title, h('p', props.description), slots.default?.()])
     },
   }),
 }))
@@ -164,23 +179,29 @@ it('keeps Auto-reply open, with what was typed, when the save is refused', async
 })
 // Midday UTC, so the day reads the same in the zone the tests run in
 it.each([
-  [{ enabled: 0, from_date: null, to_date: '2099-11-24T12:00:00Z' }, 'Off'],
-  [{ enabled: 1, from_date: null, to_date: null }, 'On'],
-  [{ enabled: 1, from_date: null, to_date: '2099-11-24T12:00:00Z' }, 'On until 24 Nov'],
+  [
+    { enabled: 0, from_date: null, to_date: '2099-11-24T12:00:00Z' },
+    'Answers mail for you while you are away.',
+  ],
+  [{ enabled: 1, from_date: null, to_date: null }, 'Answering mail for you now.'],
+  [
+    { enabled: 1, from_date: null, to_date: '2099-11-24T12:00:00Z' },
+    'Answering mail for you until 24 Nov.',
+  ],
   [
     { enabled: 1, from_date: '2099-11-20T12:00:00Z', to_date: '2099-11-24T12:00:00Z' },
-    'Starts 20 Nov',
+    'Starts answering mail for you on 20 Nov.',
   ],
   [
     { enabled: 1, from_date: '2001-03-01T12:00:00Z', to_date: '2001-03-05T12:00:00Z' },
-    'Ended 5 Mar',
+    'Stopped answering mail on 5 Mar.',
   ],
 ])('says where Auto-reply stands on its row: %o reads %s', (reply, status) => {
   state.reply = reply
   const row = Array.from(mount().querySelectorAll('section')).find((section) =>
     section.textContent.startsWith('Auto-reply'),
   )
-  expect(row?.querySelector('span')?.textContent).toBe(status)
+  expect(row?.querySelector('p')?.textContent).toBe(status)
 })
 it('moves the Auto-reply status on when its end passes in a page left open', async () => {
   vi.useFakeTimers({ now: new Date('2026-11-20T11:58:00Z') })
@@ -188,9 +209,9 @@ it('moves the Auto-reply status on when its end passes in a page left open', asy
   const row = Array.from(mount().querySelectorAll('section')).find((section) =>
     section.textContent.startsWith('Auto-reply'),
   )
-  expect(row?.querySelector('span')?.textContent).toBe('On until 20 Nov')
+  expect(row?.querySelector('p')?.textContent).toBe('Answering mail for you until 20 Nov.')
   await vi.advanceTimersByTimeAsync(180_000)
-  expect(row?.querySelector('span')?.textContent).toBe('Ended 20 Nov')
+  expect(row?.querySelector('p')?.textContent).toBe('Stopped answering mail on 20 Nov.')
 })
 it.each([
   ['send-as', 'Send-as addresses'],
@@ -199,4 +220,30 @@ it.each([
 ] as const)('opens %s when Settings is opened on it', (section, title) => {
   openSettings('mail.sending', section)
   expect(mount().querySelector('dialog')?.getAttribute('aria-label')).toBe(title)
+})
+it('saves a Sent folder switch as it is flipped, sending only that preference', async () => {
+  const row = Array.from(mount().querySelectorAll('section')).find((section) =>
+    section.textContent.startsWith('Don’t keep sent newsletters'),
+  )
+  requireTestElement(row?.querySelector('button'), HTMLButtonElement).click()
+  await nextTick()
+  expect(state.save).toHaveBeenCalledWith('update_account_preferences', {
+    account: 'personal',
+    changes: { destroy_newsletter_after_submit: 1 },
+  })
+})
+it('puts a Sent folder switch back when its save is refused', async () => {
+  state.save.mockImplementation(async (id: string) => {
+    if (id === 'update_account_preferences') throw new Error('Server refused the update')
+  })
+  const root = mount()
+  const row = () =>
+    Array.from(root.querySelectorAll('section')).find((section) =>
+      section.textContent.startsWith('Don’t keep sent newsletters'),
+    )
+  const toggle = () => requireTestElement(row()?.querySelector('button'), HTMLButtonElement)
+  toggle().click()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  expect(state.save).toHaveBeenCalledTimes(1)
+  expect(toggle().getAttribute('aria-checked')).toBe('false')
 })

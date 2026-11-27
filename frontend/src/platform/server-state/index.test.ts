@@ -280,12 +280,15 @@ describe('Suite API references and shared client', () => {
     fetcher.mockImplementation(async (url) => {
       const path = String(url)
       if (path.endsWith('/account')) return answer(null)
-      if (path.includes('inbox-summary')) return answer({ unread: 7 })
+      if (path.includes('inbox-summary')) return answer({ unread: 7, accounts: [] })
       if (path.includes('nodes/old')) return old.promise
       return answer(node('Forecast', 'new'))
     })
     expect(await engine.client.query(api.suite.account.get)).toBeNull()
-    expect(await engine.client.query(api.mail.inbox.summary)).toEqual({ unread: 7 })
+    expect(await engine.client.query(api.mail.inbox.summary)).toEqual({
+      unread: 7,
+      accounts: [],
+    })
     const selection = ref('old')
     const detail = observe(() =>
       engine.useQuery(api.drive.nodes.get, () =>
@@ -739,10 +742,10 @@ describe('Mail settings through the shared client', () => {
         !('changes' in input) ||
         !input.changes ||
         typeof input.changes !== 'object' ||
-        !('enable_screening' in input.changes) ||
-        (input.changes.enable_screening !== 0 && input.changes.enable_screening !== 1)
+        !('block_remote_images' in input.changes) ||
+        (input.changes.block_remote_images !== 0 && input.changes.block_remote_images !== 1)
       )
-        throw new Error('Expected account screening preferences')
+        throw new Error('Expected account image preferences')
       Object.assign(settings.get(input.account)!, input.changes)
       return answer(null)
     })
@@ -751,22 +754,22 @@ describe('Mail settings through the shared client', () => {
     await flush()
     await engine.client.mutation(api.mail.settings.updateAccount, {
       account: 'alice',
-      changes: { enable_screening: 1 },
+      changes: { block_remote_images: 1 },
     })
     await flush()
-    expect(alice.data?.enable_screening).toBe(1)
-    expect(bob.data?.enable_screening).toBe(0)
+    expect(alice.data?.block_remote_images).toBe(1)
+    expect(bob.data?.block_remote_images).toBe(0)
     expect(reads.filter((account) => account === 'alice')).toHaveLength(2)
     expect(reads.filter((account) => account === 'bob')).toHaveLength(1)
 
     refuse = true
     const save = observe(() => engine.useMutation(api.mail.settings.updateAccount))
     await expect(
-      save.run({ account: 'bob', changes: { enable_screening: 1 } }),
+      save.run({ account: 'bob', changes: { block_remote_images: 1 } }),
     ).rejects.toMatchObject({ type: 'PermissionError' })
     expect(save.isPending).toBe(false)
     expect(save.error?.message).toBe('Account is read only')
-    expect(bob.data?.enable_screening).toBe(0)
+    expect(bob.data?.block_remote_images).toBe(0)
     expect(reads.filter((account) => account === 'bob')).toHaveLength(1)
     expect(feedback).toHaveBeenCalledTimes(1)
   })

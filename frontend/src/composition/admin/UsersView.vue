@@ -35,6 +35,7 @@ import { DashboardLayout, DashboardListSkeleton } from '@/platform/dashboard'
 import { LoadFailed } from '@/platform/load-failed'
 import { translate as __ } from '@/platform/translation'
 
+import LocalUsers from './LocalUsersView.vue'
 import UsersTabs from './UsersTabs.vue'
 
 const storage = useQuery(api.suite.storage.get)
@@ -59,11 +60,6 @@ const UsersLoading = {
 }
 const MailUsers = defineAsyncComponent({
   loader: loadMailAdminUsers,
-  delay: 0,
-  loadingComponent: UsersLoading,
-})
-const LocalUsers = defineAsyncComponent({
-  loader: () => import('./LocalUsersView.vue'),
   delay: 0,
   loadingComponent: UsersLoading,
 })

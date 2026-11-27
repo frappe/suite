@@ -22,6 +22,8 @@ class UserPreferences(TypedDict, total=False):
     inbox_tabs: list[Literal["primary", "updates", "forums", "promotions", "social"]]
     # Off, the Inbox is one list; the choice of tabs is kept for when it is on again.
     split_inbox: Flag
+    # Whether a split Inbox ends with All mail, every category in one list.
+    all_mail_tab: Flag
 
 
 class Credentials(TypedDict):
@@ -53,7 +55,7 @@ class AccountChanges(TypedDict, total=False):
     destroy_email_after_submit: Flag
     destroy_newsletter_after_submit: Flag
     keep_forwarded_email_in_thread: Flag
-    enable_screening: Flag
+    # No enable_screening: a personal account is always screened, and a shared one is set up in Desk.
     block_remote_images: Flag
     on_block_old_mail: Literal["Ask", "Move to Junk", "Keep"]
     default_outgoing_email: str | None
@@ -150,6 +152,7 @@ def update_preferences(
     undo_send_period: str | None = None,
     inbox_tabs: list[str] | None = None,
     split_inbox: Flag | None = None,
+    all_mail_tab: Flag | None = None,
 ) -> None:
     changes = {
         key: value
@@ -158,6 +161,7 @@ def update_preferences(
             "show_reading_pane": show_reading_pane,
             "undo_send_period": undo_send_period,
             "split_inbox": split_inbox,
+            "all_mail_tab": all_mail_tab,
         }.items()
         if value is not None
     }

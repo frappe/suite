@@ -6,8 +6,8 @@ import AudioIcon from '@/apps/mail/components/Icons/AudioIcon.vue'
 import ImageIcon from '@/apps/mail/components/Icons/ImageIcon.vue'
 import PDFIcon from '@/apps/mail/components/Icons/PDFIcon.vue'
 import VideoIcon from '@/apps/mail/components/Icons/VideoIcon.vue'
-import { FOLDER_ICON_MAP } from '@/apps/mail/constants'
-import type { ComposeMailData, MailboxData, Recipient } from '@/apps/mail/types'
+import { FOLDER_ICON_CLASS_MAP, FOLDER_ICON_MAP } from '@/apps/mail/constants'
+import type { ComposeMailData, Mail, MailboxData, Recipient } from '@/apps/mail/types'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { preserveEditorColors } from '@/apps/mail/utils/editorColors'
 import { flattenMentions } from '@/apps/mail/utils/mentions'
@@ -134,6 +134,39 @@ export const raisePromiseToast = async (
  */
 export const afterLanding = (forward: Promise<unknown>, undo: () => void) => () =>
   void forward.then(undo, () => {})
+
+// Every Undo's inverse still to be sent or still in flight: see `undoOnClick`.
+let undoing: Promise<unknown> = Promise.resolve()
+
+/**
+ * The Undo for a write still in flight, in two halves. `restore` puts the screen back on the click.
+ * `inverse` is sent only once the write has landed, as `afterLanding`'s is; `restore` is handed its
+ * promise, which settles once the inverse has, at once and without it if the write was refused (that
+ * left everything as it was), and is rejected if the inverse is. The inverse is sent as it is,
+ * never through `afterUndoing`, which would have it wait for itself.
+ */
+export const undoOnClick =
+  (
+    forward: Promise<unknown>,
+    restore: (inverted: Promise<void>) => void,
+    inverse: () => Promise<unknown>,
+  ) =>
+  () => {
+    const inverted = forward.then(
+      () => inverse().then(() => {}),
+      () => {},
+    )
+    // Chained: a second Undo made while the first's inverse waits must not let new writes past it.
+    undoing = Promise.all([undoing, inverted.catch(() => {})])
+    restore(inverted)
+  }
+
+/**
+ * Sends a write once the last Undo's inverse has gone. An Undo puts rows back before that inverse is
+ * sent, so they can be acted on again in the meantime; the new write, sent first, would be
+ * overturned by the inverse landing after it.
+ */
+export const afterUndoing = <T>(send: () => Promise<T>): Promise<T> => undoing.then(send)
 
 /**
  * When an action's toast shows, which its caller says. `onClick`: the screen already shows the change
@@ -354,6 +387,32 @@ export const extractQuotedContent = (htmlBody?: string) => {
   return { quoted_content, html_body: doc.body.innerHTML }
 }
 
+/**
+ * A saved draft as a composer takes it up again: who it goes to, what it says in the editor, and
+ * what it quotes kept apart, as it was written.
+ */
+export const composeOfDraft = (mail: Mail): ComposeMailData => {
+  const { to, cc, bcc } = getGroupedRecipients(mail.recipients, false)
+  const asDraft = (recipients: Recipient[]) =>
+    recipients.map(({ email, display_name }) => ({
+      email,
+      display_name: display_name ?? undefined,
+    }))
+  return {
+    name: mail.name,
+    id: mail.id,
+    from_email: mail.from_email,
+    to: asDraft(to),
+    cc: asDraft(cc),
+    bcc: asDraft(bcc),
+    subject: mail.subject || '',
+    in_reply_to: mail.message_id,
+    in_reply_to_id: mail.id,
+    attachments: mail.attachments || [],
+    ...extractQuotedContent(mail.html_body),
+  }
+}
+
 export const isMac = navigator.platform.toUpperCase().includes('MAC')
 
 export const isOverlayPresent = () =>
@@ -504,6 +563,11 @@ export const getIcon = (mailbox: {
   if (icon !== undefined) return icon
   return 'folder'
 }
+
+// A folder icon as a class, for where the icon is drawn by class. A folder's own icon, chosen in
+// its settings, is not in the map: its class has a style only if the source spells it out.
+export const getIconClass = (icon: string) =>
+  Object.entries(FOLDER_ICON_CLASS_MAP).find(([name]) => name === icon)?.[1] ?? `lucide-${icon}`
 
 export const getMailboxName = (mailbox: MailboxData) => mailbox._name
 

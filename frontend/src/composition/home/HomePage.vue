@@ -2,7 +2,7 @@
   <div class="flex h-full min-h-0 flex-col">
     <PageHeader v-if="!isMobile">
       <div class="flex w-full items-center justify-between gap-3">
-        <PageHeaderTitle :title="__('Home')" />
+        <PageHeaderTitle class="md:-ms-1" :title="__('Home')" />
         <Dropdown :options="newMenuItems" align="end">
           <Button
             :loading="createDocumentMutation.isPending"

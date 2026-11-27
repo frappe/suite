@@ -15,11 +15,11 @@ import type {
   MailSearchFilterBadge,
   MailSearchResult,
 } from '@/apps/mail/components/CommandPalette/types'
+import { useRecentMailSearches } from '@/apps/mail/composables/recentMailSearches'
 import { FOLDER_ICON_COLOR_MAP } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import { getIcon } from '@/apps/mail/utils'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
-import { getSessionUser } from '@/utils/session'
 
 export interface MailFilterOption {
   key: string
@@ -42,16 +42,6 @@ const mailFilterOptions: MailFilterOption[] = [
 ]
 
 const ALL_ACCOUNTS_STORAGE_KEY = 'mail-search-all-accounts'
-
-// The searches the reader ran last, for the phone's search page to offer before anything is
-// typed. Five, since the page is a list and this is its whole content until a word arrives;
-// in the browser, like the all-accounts preference — a convenience of the device someone
-// searches from, and not worth a round trip on every opening. Under the user's name, since a
-// browser is shared more often than a search is: what one person looked for is not the next
-// person's to see on their empty page.
-const RECENT_SEARCHES_STORAGE_KEY = 'mail-recent-searches'
-const recentSearchesKey = () => `${RECENT_SEARCHES_STORAGE_KEY}:${getSessionUser() ?? 'guest'}`
-const RECENT_SEARCHES = 5
 
 // As many mails as the palette shows at once, with the way past them being the row at the bottom
 // of the results rather than a longer list to scroll.
@@ -120,38 +110,29 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
   })
   // --- Recent searches ---
 
-  const recentSearches = useStorage<MailRecentSearch[]>(recentSearchesKey(), [])
-
-  // A remembered search is known by what it asked — the words and the badges — which is what
-  // makes a repeat a repeat and what a row stands for. Not by `at`: two searches committed in
-  // the same millisecond share one, and forgetting the second forgot both.
-  const searchKey = (entry: Pick<MailRecentSearch, 'text' | 'filters'>) =>
-    `${entry.text}\u0000${JSON.stringify(entry.filters)}`
+  const {
+    recentSearches,
+    rememberSearch: keepSearch,
+    forgetSearch,
+    clearRecentSearches,
+    searchKey,
+  } = useRecentMailSearches()
 
   /**
    * Keeps the search as it stands — the words as typed and the badges as applied — as the most
-   * recent, dropping an earlier copy of the same one. Called when a search is committed to,
-   * not on every keystroke: opening a result, or going to the results page. Recording as the
-   * query changed would have kept every prefix on the way to the word that was meant.
+   * recent. Called when a search is committed to, not on every keystroke: opening a result, or
+   * going to the results page. Recording as the query changed would have kept every prefix on the
+   * way to the word that was meant.
    */
-  const rememberSearch = () => {
-    const text = query.value.trim()
-    const filters = filterValues.value
-    if (!text && !Object.keys(filters).length) return
-    const label = [text, ...appliedFilters.value.map(getFilterLabel)].filter(Boolean).join(' · ')
-    const key = searchKey({ text, filters })
-    recentSearches.value = [
-      {
-        resultType: 'mail-recent-search' as const,
-        text,
-        filters,
-        label,
-        account: account.value,
-        at: Date.now(),
-      },
-      ...recentSearches.value.filter((entry) => searchKey(entry) !== key),
-    ].slice(0, RECENT_SEARCHES)
-  }
+  const rememberSearch = () =>
+    keepSearch({
+      text: query.value.trim(),
+      filters: filterValues.value,
+      label: [query.value.trim(), ...appliedFilters.value.map(getFilterLabel)]
+        .filter(Boolean)
+        .join(' · '),
+      account: account.value,
+    })
 
   /**
    * Puts a remembered search back as it ran: the words on the line, the badges applied. All but
@@ -164,15 +145,6 @@ export function useMailCommandPaletteSearch(query: Ref<string>, active: Ref<bool
     const folderApplies = inMailbox && entry.account === account.value && !searchesAllAccounts.value
     setFilters(folderApplies ? { ...filters, inMailbox } : filters)
     query.value = entry.text
-  }
-
-  const forgetSearch = (entry: MailRecentSearch) => {
-    const key = searchKey(entry)
-    recentSearches.value = recentSearches.value.filter((kept) => searchKey(kept) !== key)
-  }
-
-  const clearRecentSearches = () => {
-    recentSearches.value = []
   }
 
   const operatorContext = computed(() =>

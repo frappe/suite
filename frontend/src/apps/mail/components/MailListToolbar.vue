@@ -12,22 +12,12 @@
       </button>
     </Dropdown>
   </DefineSelector>
-  <!-- Mobile: the filter selector alone, in a row the caller places and borders. The
-	     mailbox's row sits inside a header block (title, auto-delete banner, selection
-	     variant) whose border spans all of it; All Inboxes has no such block. So the row
-	     owns no border of its own. -->
-  <div v-if="isMobile" class="relative flex h-12 items-center px-4">
-    <!-- The selector label carries the active filters ("Unread", "Unread +1");
-		     unticking them in the sheet clears them, so no dismissal chip needed. -->
-    <AdaptiveDropdown :options="filterOptions" :title="__('Filter')">
-      <button class="touch-target flex min-w-0 items-center gap-1.5 text-base !font-medium">
-        <ListFilter class="text-ink-gray-6 h-4 w-4 shrink-0" />
-        <span class="truncate">{{ title }}</span>
-        <ChevronDown class="text-ink-gray-5 h-4 w-4 shrink-0" />
-      </button>
-    </AdaptiveDropdown>
-    <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
-    <div class="-mr-1.5 ml-auto flex items-center"><slot name="mobile-actions" /></div>
+  <!-- Mobile: the filter chips alone, under the title, in a row that scrolls sideways when
+	     they don't fit; the list's own ⋯ sits in the title row. The caller places and borders
+	     the row: the mailbox's sits inside a header block (title, auto-delete banner,
+	     selection variant) whose border spans all of it; All Inboxes has no such block. -->
+  <div v-if="isMobile" class="overflow-x-auto px-4 pb-3 pt-1 [scrollbar-width:none]">
+    <slot name="filter" />
   </div>
 
   <!-- Desktop -->
@@ -48,8 +38,11 @@
     <template v-else>
       <ReuseSelector v-if="showFilter" />
       <!-- Not every title is the filter's: a selection count and a search result count
-		     both land here, and neither opens a menu. -->
-      <p v-else class="pb-0.5">{{ title }}</p>
+		     both land here, and neither opens a menu. Cut short where the buttons beside it need the
+		     room: they are what the row is for, and the ticks say how many. -->
+      <Tooltip v-else :text="title" :disabled="!titleCut">
+        <p ref="titleText" class="min-w-0 truncate">{{ title }}</p>
+      </Tooltip>
     </template>
 
     <div class="-mr-1.5 ml-auto flex shrink-0 items-center space-x-2 pl-2">
@@ -81,14 +74,13 @@
 
 <script setup lang="ts">
 import { createReusableTemplate, useResizeObserver } from '@vueuse/core'
-import { Button, Divider, Dropdown } from 'frappe-ui'
+import { Button, Divider, Dropdown, Tooltip } from 'frappe-ui'
 import { ChevronDown, ListFilter, RefreshCw } from 'lucide-vue-next'
-import { Comment, computed, Fragment, ref, type VNode } from 'vue'
+import { Comment, computed, Fragment, ref, watch, type VNode } from 'vue'
 
 import { useScreenSize } from '@/apps/mail/utils/composables'
 import type { FilterOption } from '@/apps/mail/utils/listFilter'
 import { GROUP_LINE } from '@/apps/mail/utils/toolbarGroups'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
 
 // The row above the list, shared by the mailbox list and the merged All Inboxes list:
 // filter selector on the left, Split View and Refresh on the right. The two lists differ
@@ -137,4 +129,14 @@ const chipsWidth = ref(0)
 useResizeObserver(area, ([entry]) => (areaWidth.value = entry.contentRect.width))
 useResizeObserver(chips, () => (chipsWidth.value = chips.value?.scrollWidth ?? 0))
 const chipsFit = computed(() => !chipsWidth.value || chipsWidth.value <= areaWidth.value)
+
+// The plain title says itself in full in a tooltip, only while it is cut short.
+const titleText = ref<HTMLElement>()
+const titleCut = ref(false)
+const measureTitle = () => {
+  const el = titleText.value
+  titleCut.value = !!el && el.scrollWidth > el.clientWidth
+}
+useResizeObserver(titleText, measureTitle)
+watch(() => title, measureTitle, { flush: 'post' })
 </script>

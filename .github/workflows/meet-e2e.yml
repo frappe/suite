@@ -111,14 +111,6 @@ jobs:
       contents: read
 
     services:
-      redis-cache:
-        image: redis:alpine
-        ports:
-          - 13000:6379
-      redis-queue:
-        image: redis:alpine
-        ports:
-          - 11000:6379
       mariadb:
         image: mariadb:10.6
         env:
@@ -135,13 +127,6 @@ jobs:
           persist-credentials: false
           allow-unsafe-pr-checkout: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository }}
 
-      - name: Clone Frappe
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          repository: frappe/frappe
-          path: .frappe-source
-          persist-credentials: false
-
       - name: Setup Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -156,55 +141,33 @@ jobs:
         # Frappe and the e2e package use Yarn 1. Frappe builds Suite with pnpm.
         run: corepack enable && corepack prepare yarn@1.22.22 --activate
 
-      - name: Install GitHub-hosted dependencies
-        if: runner.environment == 'github-hosted'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends mariadb-client
-          python -m pip install uv
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
 
       - name: Add to Hosts
         run: echo "127.0.0.1 meet.test" | sudo tee -a /etc/hosts
 
-      - name: Setup Bench
-        run: |
-          rm -rf "$RUNNER_TEMP/frappe-bench"
-          if [ "$(bench --version 2>/dev/null || true)" != "5.31.0" ]; then
-            python -m pip install "frappe-bench==5.31.0"
-          fi
-          bench init --frappe-path "$GITHUB_WORKSPACE/.frappe-source" --skip-redis-config-generation --skip-assets --python "$(which python)" "$RUNNER_TEMP/frappe-bench"
-
-      - name: Install Suite
-        working-directory: ${{ runner.temp }}/frappe-bench
-        run: |
-          rm -rf apps/suite sites/meet.test sites/assets/suite
-          git clone "$GITHUB_WORKSPACE" apps/suite
-          uv pip install --quiet -e "$PWD/apps/suite" --python "$PWD/env/bin/python"
-          (cd apps/suite && corepack pnpm install --frozen-lockfile)
-          python -c 'from bench.bench import Bench; Bench(".").apps.sync(app_name="suite", app_dir="suite")'
-          bench build --app suite
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'"
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
-          bench new-site --db-root-password root --admin-password admin meet.test
-          bench --site meet.test install-app suite
-        env:
-          CI: "Yes"
+      - name: Set up Pilot
+        run: bash .github/scripts/setup-pilot-e2e.sh
 
       - name: Configure Site for E2E
-        working-directory: ${{ runner.temp }}/frappe-bench
+        working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          bench --site meet.test set-config sfu_secret "e2e-test-secret-key-12345"
-          bench --site meet.test set-config sfu_server_url "http://localhost"
-          bench --site meet.test set-config sfu_server_port "3000"
-          bench --site meet.test set-config ignore_csrf 1
-          bench --site meet.test set-config allow_tests true
-          bench --site meet.test set-config host_name "http://meet.test:8000"
+          pilot new-site meet.test --admin-password admin --apps frappe suite --skip-assets
+          pilot frappe --site meet.test set-config sfu_secret "e2e-test-secret-key-12345"
+          pilot frappe --site meet.test set-config sfu_server_url "http://localhost"
+          pilot frappe --site meet.test set-config sfu_server_port "3000"
+          pilot frappe --site meet.test set-config ignore_csrf 1
+          pilot frappe --site meet.test set-config allow_tests true
+          pilot frappe --site meet.test set-config host_name "http://meet.test:8000"
           if [ "${{ github.event_name }}" = "schedule" ]; then
-            bench set-config -g scheduler_tick_interval 5
-            bench --site meet.test enable-scheduler
-            bench --site meet.test execute suite.tests.ci_smoke.enable_scheduler_smoke_logging
+            pilot frappe set-config -g scheduler_tick_interval 5
+            pilot frappe --site meet.test enable-scheduler
+            pilot frappe --site meet.test execute suite.tests.ci_smoke.enable_scheduler_smoke_logging
+          else
+            pilot frappe --site meet.test disable-scheduler
           fi
-          bench --site meet.test clear-cache
+          pilot frappe --site meet.test clear-cache
 
       - name: Build SFU Server
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
@@ -224,18 +187,11 @@ jobs:
         working-directory: ${{ github.workspace }}/e2e
         run: yarn playwright install-deps chromium
 
-      - name: Start Frappe Server
+      - name: Wait for the test site
         id: start-frappe
-        working-directory: ${{ runner.temp }}/frappe-bench
         run: |
-          sed -i 's/^watch:/# watch:/g' Procfile
-          if [ "${{ github.event_name }}" != "schedule" ]; then
-            sed -i 's/^schedule:/# schedule:/g' Procfile
-          fi
-          bench start &> bench_start.log &
-          echo "Waiting for Frappe server to start..."
-          timeout 60 bash -c 'until curl -s http://meet.test:8000 > /dev/null; do sleep 2; done'
-          echo "Frappe server is ready!"
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
+            http://meet.test:8000/api/method/ping
 
       - name: Start SFU Server
         working-directory: ${{ github.workspace }}/suite/meet/sfu-server
@@ -267,8 +223,8 @@ jobs:
 
       - name: Check Scheduled Job Execution
         if: always() && github.event_name == 'schedule' && steps.start-frappe.outcome == 'success'
-        working-directory: ${{ runner.temp }}/frappe-bench
-        run: timeout 90 bash -c 'until [ "$(bench --site meet.test execute suite.tests.ci_smoke.scheduler_smoke_ran)" = "true" ]; do sleep 5; done'
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: timeout 90 bash -c 'until [ "$(pilot frappe --site meet.test execute suite.tests.ci_smoke.scheduler_smoke_ran)" = "true" ]; do sleep 5; done'
 
       - name: Upload Test Results
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -279,7 +235,7 @@ jobs:
             e2e/meet/playwright-report/
             e2e/meet/test-results/
             e2e/meet/results.xml
-            ${{ runner.temp }}/frappe-bench/bench_start.log
+            ${{ runner.temp }}/pilot.log
           compression-level: 1
           retention-days: 14
 

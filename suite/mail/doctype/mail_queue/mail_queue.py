@@ -53,6 +53,7 @@ from suite.mail.jmap import (
 from suite.mail.utils import get_config, log_mail_error
 from suite.mail.utils.dt import parsedate_to_datetime
 from suite.mail.utils.html_to_text import html_to_text, to_flowed
+from suite.mail.utils.quoted_content import unlink_lookalike_links
 from suite.mail.utils.user import is_jmap_configured
 from suite.utils.permissions import OwnerFromUser
 from suite.utils.user import is_administrator
@@ -184,9 +185,9 @@ class MailQueue(OwnerFromUser, Document):
             if kwargs.get(field):
                 setattr(doc, field, json.dumps(kwargs[field]))
 
-        doc.html_body = kwargs.html_body
+        doc.html_body = unlink_lookalike_links(kwargs.html_body)
         doc.text_body = (
-            to_flowed(kwargs.text_body) if kwargs.text_body else html_to_text(kwargs.html_body, flowed=True)
+            to_flowed(kwargs.text_body) if kwargs.text_body else html_to_text(doc.html_body, flowed=True)
         ) or None
         doc.reaction = kwargs.reaction
         doc.forwarded_from_id = kwargs.forwarded_from_id

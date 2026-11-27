@@ -26,7 +26,10 @@
     </SettingsSidebar>
     <SettingsContent>
       <SettingsPanel v-if="canManageMeeting" :value="CONTROLS_TAB">
-        <MeetingAccessSettingsTab v-if="meetingId" :meeting-id="meetingId" />
+        <MeetingAccessSettingsTab
+          v-if="open && activeTab === CONTROLS_TAB && meetingId"
+          :meeting-id="meetingId"
+        />
       </SettingsPanel>
       <SettingsPanel v-for="tab in tabs" :key="tab.id" :value="tab.id">
         <component :is="bodies.get(tab.id)" v-bind="bodyProps(tab.id)" />
@@ -45,11 +48,17 @@ import {
   SettingsPanel,
   SettingsSidebar,
 } from 'frappe-ui'
-import { computed, defineAsyncComponent, defineComponent, h, ref, type Component } from 'vue'
+import {
+  computed,
+  defineAsyncComponent,
+  defineComponent,
+  h,
+  inject,
+  ref,
+  type Component,
+} from 'vue'
 
-import { api, useQuery } from '@/api'
 import { meetSettings } from '@/apps/meet/settings'
-import { useSession } from '@/platform/session'
 import { translate as __ } from '@/platform/translation'
 
 import MeetingAccessSettingsTab from './MeetingAccessSettingsTab.vue'
@@ -75,20 +84,11 @@ const emit = defineEmits<{
 const open = defineModel<boolean>('open', { default: false })
 const activeTab = ref<string>('meet.devices')
 
-const session = useSession()
-
-const meetingDoc = useQuery(api.meet.rooms.get, () =>
-  props.meetingId && session.user.value ? { name: props.meetingId } : false,
+const isHost = inject('isCurrentUserHost', ref(false))
+const isCohost = inject('isCurrentUserCohost', ref(false))
+const canManageMeeting = computed(
+  () => !props.isPreview && Boolean(props.meetingId) && (isHost.value || isCohost.value),
 )
-
-const canManageMeeting = computed(() => {
-  const user = session.user.value?.id
-  if (props.isPreview || !user) return false
-  return (
-    meetingDoc.data?.owner === user ||
-    Boolean(meetingDoc.data?.co_hosts?.some((row) => row.user === user))
-  )
-})
 
 // Layout arranges the call grid, so the preview has no use for it.
 const tabs = computed(() =>

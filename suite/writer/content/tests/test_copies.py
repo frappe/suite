@@ -36,7 +36,7 @@ class TestReadableCopies(CheckpointCase):
             writer_content.APP,
             self.doc.id,
             rev,
-            html=html,
+            render=lambda _state: html,
             html_copy=writer_content.EDITOR.readable_copy,
             **fields,
         )
@@ -259,7 +259,7 @@ class TestStagedRenders(CheckpointCase):
             1,
             self.doc.lineage,
             int(self.doc.q_epoch),
-            "<p>one</p>",
+            lambda _state: "<p>one</p>",
             writer_content.EDITOR.readable_copy,
         )
         stale_renders = [

@@ -15,6 +15,19 @@ export const pushToTalkEnabled: Ref<boolean> = ref(readBoolean('mediaPref.pushTo
 
 export const autoHideToolbar: Ref<boolean> = ref(readBoolean('mediaPref.autoHideToolbar', false))
 
+export type VideoFit = 'fill' | 'fit'
+
+const videoFitPreferenceKey = 'mediaPref.defaultVideoFit'
+const savedVideoFit = readString(videoFitPreferenceKey)
+export const defaultVideoFit = ref<VideoFit | undefined>(
+  savedVideoFit === 'fill' || savedVideoFit === 'fit' ? savedVideoFit : undefined,
+)
+
+export function setDefaultVideoFit(value: VideoFit): void {
+  defaultVideoFit.value = value
+  writeString(videoFitPreferenceKey, value)
+}
+
 export function setNoiseCancellationEnabled(val: boolean): void {
   noiseCancellationEnabled.value = !!val
   writeBoolean('mediaPref.noiseCancellation', noiseCancellationEnabled.value)
@@ -55,7 +68,17 @@ export function setSelectedSpeakerId(deviceId: string): void {
   writeString('mediaPref.speakerId', selectedSpeakerId.value)
 }
 
+export const automaticPictureInPicture = ref(
+  readBoolean('mediaPref.automaticPictureInPicture', true),
+)
+
+export function setAutomaticPictureInPicture(value: boolean): void {
+  automaticPictureInPicture.value = value
+  writeBoolean('mediaPref.automaticPictureInPicture', value)
+}
+
 export function loadMediaPreferences(): void {
+  automaticPictureInPicture.value = readBoolean('mediaPref.automaticPictureInPicture', true)
   micEnabled.value = readBoolean('mediaPref.mic', true)
   cameraEnabled.value = readBoolean('mediaPref.camera', true)
   selectedCameraId.value = readString('mediaPref.cameraId', '')

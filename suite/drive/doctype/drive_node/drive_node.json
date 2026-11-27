@@ -12,6 +12,7 @@
   "blob",
   "size",
   "mime",
+  "read_only",
   "url",
   "content_doctype",
   "content_docname",
@@ -72,6 +73,13 @@
    "fieldname": "mime",
    "fieldtype": "Data",
    "label": "MIME Type"
+  },
+  {
+   "default": "0",
+   "fieldname": "read_only",
+   "fieldtype": "Check",
+   "label": "Read-only Content",
+   "read_only": 1
   },
   {
    "fieldname": "url",

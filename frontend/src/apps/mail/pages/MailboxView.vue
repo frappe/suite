@@ -27,18 +27,18 @@
       <InboxHeaderTabs
         v-else
         class="-my-2.5 min-w-0 self-stretch"
-        :tabs="inboxTabs"
+        :tabs="byLatestMail(inboxTabs, categoryCards)"
         :active="inboxTab"
         :route-for="routeForTab"
       />
     </div>
     <div class="flex h-12 shrink-0 items-center py-2.5">
-      <HeaderActions view-menu :inbox="mailbox === mailboxIds.inbox" />
+      <HeaderActions view-menu :inbox="mailbox === store.mailboxIds.inbox" />
     </div>
   </PageHeader>
 
-  <!-- On mobile this banner renders below the title header instead (inside the mobile
-	     header block) — above it, it read as page chrome sitting on top of the title. -->
+  <!-- A computer's Trash/Junk banner. A phone says it in a line under the title, with Empty in
+       the title's menu. -->
   <div v-if="showDeleteBanner && !isMobile" class="space-x-1 border-b px-3 py-2.5 sm:px-5">
     <span class="text-ink-gray-5">
       {{ __('Items in this folder will be automatically deleted after 30 days.') }}
@@ -65,74 +65,87 @@
         @touch-start="onThreadTouchStart"
         @touch-move="onThreadTouchMove"
         @touch-end="onThreadTouchEnd"
+        @touch-cancel="onThreadTouchCancel"
       >
         <template #list>
           <!-- The search view's own header: the query (click to edit) + removable filter pills, above
 					     the results toolbar. It owns the query surface; the results below just read the route. -->
-          <SearchResultsHeader v-if="mailbox === 'search'" />
+          <SearchResultsHeader v-if="mailbox === 'search' && !isMobile" />
+          <!-- A phone's search is this screen: the field and its chips, over the results. -->
+          <PhoneSearchBar
+            v-if="mailbox === 'search' && isMobile"
+            ref="phoneSearch"
+            :count="searchCount"
+          />
 
           <!-- Mobile header: title row (folders · mailbox + count · search) over
 					     a toolbar row (filter selector on the left, filter/refresh pills on the
-					     right). In selection mode the toolbar row swaps to ✕ / count / Select All.
-					     Search skips both rows (SearchResultsHeader is the header there; no tab
-					     in the bar reads as active), keeping only the selection
-					     toolbar and the loading bar — the border goes with the rows it underlines. -->
-          <div
-            v-if="isMobile"
-            class="relative shrink-0"
-            :class="{ 'border-b': mailbox !== 'search' || !!selections.length }"
-          >
+					     right). Selecting leaves it as it is: the selection bar floats at the bottom
+					     (MobileSelectionBar), so the list never shifts. Search skips both rows
+					     (SearchResultsHeader is the header there; no tab in the bar reads as
+					     active), keeping only the loading bar. No line under the rows: the list
+					     starts right under the filter chips. -->
+          <div v-if="isMobile" class="relative shrink-0">
             <!-- In a category other than Primary the title names it and leads back to Primary. -->
             <MobileTitleHeader
-              v-if="inboxTab && inboxTab !== 'primary'"
-              with-back
-              :title="tabName(inboxTab)"
+              v-if="mailbox !== 'search'"
+              :with-back="!!inboxTab && inboxTab !== 'primary'"
+              :with-menu="!inboxTab || inboxTab === 'primary'"
+              :title="inboxTab && inboxTab !== 'primary' ? tabName(inboxTab) : mailboxName"
               @back="router.push(routeForTab('primary'))"
-            />
-            <MobileTitleHeader v-else-if="mailbox !== 'search'" with-menu :title="mailboxName" />
-
-            <!-- Trash/Junk auto-delete banner — below the title (its desktop slot above
-						     the whole header read as chrome on top of the page). Borderless: it
-						     reads as part of the header block, not a boxed-off strip. -->
-            <div v-if="showDeleteBanner && mailbox !== 'search'" class="space-x-1 px-4">
-              <span class="text-ink-gray-5">
-                {{ __('Items in this folder will be automatically deleted after 30 days.') }}
-              </span>
-              <Button
-                :label="__('Empty {0}', [mailboxName])"
-                variant="ghost"
-                theme="red"
-                @click="showEmptyMailbox = true"
-              />
-            </div>
-
-            <InboxTabs
-              v-if="inboxTab && !selections.length"
-              :tabs="inboxTabs"
-              :active="inboxTab"
-              :route-for="routeForTab"
-            />
-
-            <!-- Both toolbar variants share h-12 so toggling selection mode doesn't shift the list. -->
-            <!-- px-1/gap-1 match the title row above, so the ✕ shares the hamburger's
-						     axis and the count text starts where the title does. -->
-            <MobileSelectionHeader
-              v-if="selections.length"
-              :count="selections.length"
-              :all-selected="isAllSelected"
-              @toggle-all="toggleSelectAll"
-            />
-            <!-- No `loading`: the bar below spans this whole header block, so it
-						     also covers selection mode and search, where this row is absent. -->
-            <MailListToolbar
-              v-else-if="mailbox !== 'search'"
-              :title="title"
-              :filter-options="FILTER_OPTIONS"
             >
-              <template v-if="clearScope" #mobile-actions>
-                <ClearListMenu :scope="clearScope" :target="{ account: accountId, mailbox }" />
+              <!-- Actions on the list as a whole, such as clearing an Inbox tab. -->
+              <template v-if="clearScope || showDeleteBanner" #actions>
+                <div class="mr-2.5 flex items-center">
+                  <ClearListMenu
+                    :scope="clearScope"
+                    :empty-folder="showDeleteBanner ? __('Empty {0}', [mailboxName]) : undefined"
+                    :empty="listState === 'empty'"
+                    :target="{ account: accountId, mailbox }"
+                    :inbox="
+                      mailbox === store.mailboxIds.inbox && (!inboxTab || inboxTab === 'primary')
+                    "
+                    @empty-folder="showEmptyMailbox = true"
+                  />
+                </div>
               </template>
-            </MailListToolbar>
+            </MobileTitleHeader>
+
+            <!-- On a phone these scroll with the list, at its top. -->
+            <PhoneListHead :into="listTop">
+              <CategoryCards
+                v-if="inboxTab === 'primary'"
+                :cards="categoryCards"
+                :ready="categoryCardsReady"
+                :route-for="routeForTab"
+              />
+
+              <!-- Trash/Junk: what happens to the folder, under its title. Emptying it now is in
+                   the title's menu, where a tap can't empty it by mistake. -->
+              <p
+                v-if="showDeleteBanner && mailbox !== 'search'"
+                class="text-p-sm text-ink-gray-5 px-4 pb-3"
+              >
+                {{ __('Deleted forever after 30 days') }}
+              </p>
+
+              <!-- No `loading`: the bar below spans this whole header block, so it
+						     also covers search, where this row is absent. -->
+              <MailListToolbar
+                v-if="mailbox !== 'search'"
+                :title="title"
+                :filter-options="FILTER_OPTIONS"
+              >
+                <template #filter>
+                  <ListFilterChips
+                    :filter-options="FILTER_OPTIONS"
+                    :filter="filter"
+                    :clear="clearFilter"
+                    :outline="inboxTab === 'primary' && !categoryCardsReady"
+                  />
+                </template>
+              </MailListToolbar>
+            </PhoneListHead>
           </div>
 
           <!-- Toolbar/Actions -->
@@ -166,7 +179,7 @@
 
             <template #actions>
               <ClearListMenu
-                v-if="clearScope && !selections.length"
+                v-if="clearScope && !selections.length && listState !== 'empty'"
                 :scope="clearScope"
                 :target="{ account: accountId, mailbox }"
               />
@@ -179,21 +192,31 @@
             </template>
           </MailListToolbar>
 
-          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. -->
-          <MailListSkeleton
-            v-if="listState === 'loading'"
-            class="min-h-0 flex-1 overflow-hidden"
-            :selectable="!isAllAccountsSearch"
-            :date-headers="headersVisible"
+          <!-- The gap a pull to refresh opens above the list. -->
+          <PullToRefreshIndicator
+            v-if="isMobile"
+            :offset="pull.offset"
+            :progress="pull.progress"
+            :pulling="pull.pulling"
+            :refreshing="pull.refreshing"
           />
+          <!-- Loading: the list's rows in outline, under the frame the rows will sit under. Each
+               state starts with the top of the list (`listTop`), where a phone draws the cards and
+               chips, so they sit in the same place whether the list is loading, empty or there. -->
+          <div v-if="listState === 'loading'" class="min-h-0 flex-1 overflow-hidden">
+            <div ref="listTop" />
+            <MailListSkeleton :selectable="!isAllAccountsSearch" :date-headers="headersVisible" />
+          </div>
 
           <!-- Mail list -->
           <div
             v-else-if="threadRows.length"
             ref="mailList"
-            class="h-full overflow-y-auto overscroll-contain max-sm:pb-20"
+            class="h-full overflow-y-auto overscroll-contain max-sm:pb-[calc(9rem+env(safe-area-inset-bottom))]"
+            :style="pull.listStyle"
             @focusin="onListFocusIn"
           >
+            <div ref="listTop" />
             <div v-for="(group, key) in groupedThreads" :key="key">
               <MailGroupHeader
                 v-if="headersVisible"
@@ -229,10 +252,11 @@
 									     rows below they never need the all-accounts cross-account handling. -->
                   <StackListItem
                     v-if="row.type === 'stack'"
-                    :drafts="mailbox === mailboxIds.drafts"
+                    :drafts="mailbox === store.mailboxIds.drafts"
                     :unarchive="true"
                     :threads="row.threads"
                     :expanded="row.expanded"
+                    :selection-mode="mobileSelectionMode"
                     :is-selected="isStackSelected(row.threads.map((t) => t.thread_id))"
                     :class="rowClasses(row)"
                     :data-row-key="row.key"
@@ -253,7 +277,7 @@
                   <MailListItem
                     v-else
                     :mailbox
-                    :drafts="mailbox === mailboxIds.drafts"
+                    :drafts="mailbox === store.mailboxIds.drafts"
                     :unarchive="!isAllAccountsSearch"
                     :mail="row.thread"
                     :account-id="isAllAccountsSearch ? row.thread.account : undefined"
@@ -264,7 +288,9 @@
                     :selection-mode="mobileSelectionMode"
                     :is-selected="selections.includes(row.thread.thread_id)"
                     :hide-sender="row.inStack"
-                    :draggable="!isMobile && !isAllAccountsSearch && mailbox !== mailboxIds.drafts"
+                    :draggable="
+                      !isMobile && !isAllAccountsSearch && mailbox !== store.mailboxIds.drafts
+                    "
                     :screened="screener.active.value && screener.isScreened(row.thread)"
                     :pinnable="pinnable"
                     :class="rowClasses(row)"
@@ -290,46 +316,77 @@
 						     batch (appended, never refetching loaded rows). Sits after all groups so collapsing
 						     a group can't disable it. -->
             <div ref="loadMoreSentinel" class="h-px" />
-            <div v-if="loadingMore" class="flex justify-center py-3">
-              <LoaderCircle class="text-ink-gray-5 h-4 w-4 animate-spin" />
+            <!-- On a phone, the pull to refresh spinner's size and band (PullToRefreshIndicator). -->
+            <div v-if="loadingMore" class="flex justify-center py-4 sm:py-3">
+              <LoaderCircle class="text-ink-gray-5 size-5 animate-spin sm:size-4" />
             </div>
           </div>
-          <div v-else class="flex h-full items-center justify-center">
-            <LoadError
-              v-if="listState === 'error'"
-              :title="__('Could not load the list.')"
-              :error="activeThreads.error"
-              @retry="retryList"
+          <div v-else class="flex h-full flex-col">
+            <div ref="listTop" />
+            <PhoneSearchRecents
+              v-if="isMobile && mailbox === 'search' && !hasSearchQuery && listState !== 'error'"
+              class="min-h-0 flex-1 overflow-y-auto"
             />
-            <p v-else class="text-ink-gray-5">
-              {{
-                mailbox !== 'search'
-                  ? filter
-                    ? __('No mails found for the selected filter.')
-                    : __('No mails in {0}.', [inboxTab ? tabName(inboxTab) : mailboxName])
-                  : hasSearchQuery
-                    ? __('No results found for the given query.')
-                    : __('Search your mail')
-              }}
-            </p>
+            <div v-else class="flex min-h-0 flex-1 items-center justify-center">
+              <LoadError
+                v-if="listState === 'error'"
+                :title="__('Could not load the list.')"
+                :error="activeThreads.error"
+                @retry="retryList"
+              />
+              <!-- An empty list shows the empty-folder picture, filtered or not, unless the reading
+                 pane beside it (Split View) already shows it; a search says so in words alone. -->
+              <div v-else class="text-ink-gray-5 flex flex-col items-center">
+                <NoMails
+                  v-if="mailbox !== 'search' && (isMobile || !showReadingPane)"
+                  class="text-ink-gray-2 mb-2 size-16"
+                />
+                <p>
+                  {{
+                    mailbox !== 'search'
+                      ? filter
+                        ? __('No mails found for the selected filter.')
+                        : __('No mails in {0}.', [
+                            inboxCategory ? tabName(inboxCategory) : mailboxName,
+                          ])
+                      : hasSearchQuery
+                        ? searchedText
+                          ? __('No mail matches “{0}”', [searchedText])
+                          : __('No mail matches these filters')
+                        : __('Search your mail')
+                  }}
+                </p>
+                <!-- The way out of a search that found nothing: the filters narrowing it. -->
+                <Button
+                  v-if="mailbox === 'search' && hasSearchQuery && searchFilterCount"
+                  class="mt-3"
+                  :label="__('Remove filters')"
+                  @click="removeSearchFilters"
+                />
+              </div>
+            </div>
           </div>
         </template>
 
+        <!-- The open thread, and on a phone the ones either side of it, ready for a swipe. Only the
+             open one acts, so its handlers are the open thread's. -->
         <MailThread
-          ref="mailThread"
-          :slide="threadSlide"
+          v-for="pane in threadPanes"
+          :key="pane.key"
+          :ref="holdThreadPane(pane)"
+          :swipe="threadSwipe"
+          :beside="pane.beside"
           :mailbox
-          :thread-i-d
+          :thread-i-d="pane.id"
           :threads="threadIDs"
           :threads-loading="listState === 'loading'"
-          :messages="currentThread?.messages"
-          :land-on="mailbox === 'search' ? currentThread?.match_id : undefined"
+          :messages="pane.row?.messages"
+          :land-on="mailbox === 'search' ? pane.row?.match_id : undefined"
           :can-go-next="canGoNext"
-          :returned="!!currentThread?.returned"
-          :no-reply="!!currentThread?.no_reply"
-          :snoozed-at="currentThread?.snoozed_at"
-          :returned-at="currentThread?.returned_at"
-          @slide-done="threadSlide = ''"
+          :returned="!!pane.row?.returned"
+          :no-reply="!!pane.row?.no_reply"
+          :snoozed-at="pane.row?.snoozed_at"
+          :returned-at="pane.row?.returned_at"
           @reload-mails="resetThreads"
           @set-seen="
             (seen: boolean, ids: string[]) =>
@@ -389,8 +446,8 @@
     </div>
   </div>
 
-  <Dialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
-  <Dialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
+  <AdaptiveDialog v-model:open="showEmptyMailbox" v-bind="emptyMailboxOptions" />
+  <AdaptiveDialog v-model:open="showJunkOrDeleteThreads" v-bind="junkOrDeleteThreadsOptions" />
   <!-- The phone's selection bar; the folder menus open from its More sheet as sheets of their own. -->
   <SnoozeMenu
     v-model:open="showSnooze"
@@ -402,12 +459,15 @@
     :open="mobileSelectionMode"
     :actions="selectActions"
     :extra-options="folderSelectionOptions"
+    :count="selections.length"
+    :all-selected="isAllSelected"
+    @toggle-all="toggleSelectAll"
   />
 </template>
 <script setup lang="ts">
-import { Breadcrumbs, Button, Checkbox, Dialog, PageHeader } from 'frappe-ui'
+import { Breadcrumbs, Button, Checkbox, PageHeader } from 'frappe-ui'
 import { FolderInput, Folders, LoaderCircle } from 'lucide-vue-next'
-import { computed, h, onMounted, onUnmounted, ref, useTemplateRef, watch } from 'vue'
+import { computed, h, onMounted, onUnmounted, reactive, ref, useTemplateRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { api, client, useInfiniteQuery, useMutation, type InputOf } from '@/api'
@@ -415,10 +475,8 @@ import ClearListMenu from '@/apps/mail/components/ClearListMenu.vue'
 import HeaderActions from '@/apps/mail/components/HeaderActions.vue'
 import NoMails from '@/apps/mail/components/Icons/NoMails.vue'
 import InboxHeaderTabs from '@/apps/mail/components/InboxHeaderTabs.vue'
-import InboxTabs from '@/apps/mail/components/InboxTabs.vue'
 import ListFilterChips from '@/apps/mail/components/ListFilterChips.vue'
 import MobileSelectionBar from '@/apps/mail/components/ListSelection/MobileSelectionBar.vue'
-import MobileSelectionHeader from '@/apps/mail/components/ListSelection/MobileSelectionHeader.vue'
 import SelectActionButtons from '@/apps/mail/components/ListSelection/SelectActionButtons.vue'
 import SelectAllCheckbox from '@/apps/mail/components/ListSelection/SelectAllCheckbox.vue'
 import LoadError from '@/apps/mail/components/LoadError.vue'
@@ -427,11 +485,18 @@ import MailListItem from '@/apps/mail/components/MailListItem.vue'
 import MailListSkeleton from '@/apps/mail/components/MailListSkeleton.vue'
 import MailListToolbar from '@/apps/mail/components/MailListToolbar.vue'
 import MailThread from '@/apps/mail/components/MailThread.vue'
+import CategoryCards from '@/apps/mail/components/mobile/CategoryCards.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
+import PhoneListHead from '@/apps/mail/components/mobile/PhoneListHead.vue'
+import PhoneSearchBar from '@/apps/mail/components/mobile/PhoneSearchBar.vue'
+import PhoneSearchRecents from '@/apps/mail/components/mobile/PhoneSearchRecents.vue'
+import PullToRefreshIndicator from '@/apps/mail/components/PullToRefreshIndicator.vue'
 import SearchResultsHeader from '@/apps/mail/components/SearchResultsHeader.vue'
 import SnoozeMenu from '@/apps/mail/components/SnoozeMenu.vue'
 import StackListItem from '@/apps/mail/components/StackListItem.vue'
 import ThreadPane from '@/apps/mail/components/ThreadPane.vue'
+import { hidePhoneBarsOnScroll } from '@/apps/mail/composables/phoneBarsAway'
+import { byLatestMail, useCategoryCards } from '@/apps/mail/composables/useCategoryCards'
 import { listScope } from '@/apps/mail/composables/useClearList'
 import { useClearReturned } from '@/apps/mail/composables/useClearReturned'
 import { tabName, useInboxTabs } from '@/apps/mail/composables/useInboxTabs'
@@ -439,9 +504,12 @@ import { useKeptRead } from '@/apps/mail/composables/useKeptRead'
 import { useListRows, type NavRow } from '@/apps/mail/composables/useListRows'
 import { useListSelection } from '@/apps/mail/composables/useListSelection'
 import { PAGE_LENGTH, usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
+import { usePullToRefresh } from '@/apps/mail/composables/usePullToRefresh'
+import { useRestoredRows } from '@/apps/mail/composables/useRestoredRows'
 import { useScreener } from '@/apps/mail/composables/useScreener'
 import { useThreadDrag } from '@/apps/mail/composables/useThreadDrag'
 import { useThreadPin } from '@/apps/mail/composables/useThreadPin'
+import { useThreadSwipe } from '@/apps/mail/composables/useThreadSwipe'
 import { useMailSocket } from '@/apps/mail/socket'
 import { takesPins, userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Thread } from '@/apps/mail/types'
@@ -453,12 +521,12 @@ import {
   shouldIgnoreKeypress,
 } from '@/apps/mail/utils'
 import {
+  mailSearchRoute,
   useDiscardingDrafts,
   useListReload,
   useMobileSearch,
   useReadingPane,
   useScreenSize,
-  useSwipeNav,
   useUndo,
 } from '@/apps/mail/utils/composables'
 import { utcDayEnd, utcDayStart } from '@/apps/mail/utils/datetime'
@@ -479,6 +547,7 @@ import { threadRow } from '@/apps/mail/utils/threadRows'
 import { timeMenuOptions } from '@/apps/mail/utils/timeMenuOptions'
 import { mailboxParam } from '@/apps/mail/utils/unifiedFolders'
 import { useThreadActions } from '@/apps/mail/utils/useThreadActions'
+import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import { appDocumentTitle, usePageTitle } from '@/platform/page-meta'
 import { translate as __ } from '@/platform/translation'
 
@@ -494,12 +563,12 @@ const {
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useScreenSize()
-const { listReloadRequest } = useListReload()
+const { listReloadRequest, rowReloadRequest } = useListReload()
 const { dropViewUndo } = useUndo()
 const socket = useMailSocket()
 // MailLayout's overlay layer; see the selection bar's Teleport.
 const store = userStore()
-const { mailboxes, mailboxIds } = store
+const { mailboxes } = store
 
 // Appearance
 
@@ -537,6 +606,10 @@ const {
   busy: () => emptyMailbox.isPending || refillPending.value,
   asked: () => mailbox !== 'search' || hasSearchQuery.value,
 })
+// The phone's floating bars step aside while the list scrolls down.
+hidePhoneBarsOnScroll(mailListRef)
+// Where the category cards and the filter chips move into on a phone (see PhoneListHead).
+const listTop = ref<HTMLElement | null>(null)
 
 // Rows and the cursor
 
@@ -549,7 +622,7 @@ const {
 //                  covers all-accounts search (a subset of 'search'), whose rows must be acted on
 //                  through per-row cross-account handlers a stack could not use.
 const stackingEnabled = computed(
-  () => !['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox),
+  () => !['search', 'starred', store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox),
 )
 
 // Mail from a sender nobody has decided on yet sits in the Inbox, marked unscreened (see useScreener).
@@ -572,6 +645,7 @@ const {
   navigableRows,
   focusedRowKey,
   cursorRowKey,
+  showCursor,
   onListFocusIn,
   focusedRow,
   focusRow,
@@ -615,7 +689,6 @@ watch(
 
 // Selection
 
-const mailThreadRef = useTemplateRef('mailThread')
 // The ticked threads, and the phone's selection mode (see useListSelection).
 const {
   selections,
@@ -631,6 +704,17 @@ const {
   keys: () => threadIDs.value,
   groupKeys: (dateKey) => getGroupThreads(dateKey),
 })
+
+// A pull down from the top of the list, on a phone, refreshes it (see usePullToRefresh). Not while
+// rows are ticked, where the toolbar's refresh steps aside too.
+const pull = reactive(
+  usePullToRefresh({
+    scroller: () => mailListRef.value,
+    enabled: () => isMobile.value && !mobileSelectionMode.value,
+    refresh: () => refreshThreads(),
+    screen: () => route.fullPath,
+  }),
+)
 
 // The folder menus join the phone selection bar's More sheet, each opening as a sheet of its own.
 const folderSelectionOptions = computed(() => [
@@ -698,12 +782,15 @@ const handleEnter = (e: KeyboardEvent) => {
   toggleGroupCollapse(row.dateKey)
 }
 // Esc lets go of the nearest thing first: the ticks (the toolbar shows them, over the open thread
-// too), then the open thread, then the cursor.
+// too), then the open thread, then the cursor. Closing the thread leaves the cursor's bar on its row
+// (see showCursor).
 const handleEscape = (e: KeyboardEvent) => {
   e.preventDefault()
   if (selections.value.length) resetSelections()
-  else if (threadID) goToMailbox()
-  else focusedRowKey.value = undefined
+  else if (threadID) {
+    showCursor()
+    goToMailbox()
+  } else focusedRowKey.value = undefined
 }
 const handleThreadActions = (e: KeyboardEvent, key: string) => {
   const thread_ids = selections.value.length ? selections.value : [threadID!]
@@ -712,15 +799,15 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   if (key === (isMac ? 'backspace' : 'delete')) {
     e.preventDefault()
     // Trash and Drafts let go for good: a draft is discarded rather than filed in Trash.
-    if (e.shiftKey || mailbox === mailboxIds.trash || mailbox === mailboxIds.drafts)
+    if (e.shiftKey || mailbox === store.mailboxIds.trash || mailbox === store.mailboxIds.drafts)
       return junkOrDeleteThreads(thread_ids, false)
     return handleMoveThreads({
-      [mailboxIds.trash]: thread_ids,
+      [store.mailboxIds.trash]: thread_ids,
     })
   }
 
   // Drafts offers only Discard: a draft isn't read, archived or junked.
-  if (mailbox === mailboxIds.drafts) return
+  if (mailbox === store.mailboxIds.drafts) return
 
   // Mark as read/unread (u)
   if (key === 'u') {
@@ -733,7 +820,11 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   // Archive (e): Archive and Unarchive share a place, so E does whichever it shows — and nothing
   // where neither has anything to do.
   const acted = threadRows.value.filter((t) => thread_ids.includes(t.thread_id))
-  const boxes = { sent: mailboxIds.sent, archive: mailboxIds.archive, inbox: mailboxIds.inbox }
+  const boxes = {
+    sent: store.mailboxIds.sent,
+    archive: store.mailboxIds.archive,
+    inbox: store.mailboxIds.inbox,
+  }
   const messagesOf = (t: Thread) => (t.messages?.length ? t.messages : [t])
   if (key === 'e') {
     e.preventDefault()
@@ -746,7 +837,7 @@ const handleThreadActions = (e: KeyboardEvent, key: string) => {
   // Mark as junk (!): only mail you received is junked.
   if (key === '!') {
     e.preventDefault()
-    if (!acted.some((t) => holdsReceivedMail(messagesOf(t), mailboxIds.sent))) return
+    if (!acted.some((t) => holdsReceivedMail(messagesOf(t), store.mailboxIds.sent))) return
     return junkOrDeleteThreads(thread_ids, true)
   }
 }
@@ -784,15 +875,15 @@ const handleArrowNavigation = (e: KeyboardEvent, key: string) => {
 const selectActions = buildSelectActions(
   () => selectedRows.value,
   () => ({
-    archive: mailbox === mailboxIds.archive,
-    trash: mailbox === mailboxIds.trash,
-    drafts: mailbox === mailboxIds.drafts,
+    archive: mailbox === store.mailboxIds.archive,
+    trash: mailbox === store.mailboxIds.trash,
+    drafts: mailbox === store.mailboxIds.drafts,
     pinnable: pinnable.value,
-    snoozable: canSnooze.value && mailbox !== mailboxIds.snoozed,
-    snoozed: !!mailbox && mailbox === mailboxIds.snoozed,
-    sent: mailboxIds.sent,
-    archiveId: mailboxIds.archive,
-    inboxId: mailboxIds.inbox,
+    snoozable: canSnooze.value && mailbox !== store.mailboxIds.snoozed,
+    snoozed: !!mailbox && mailbox === store.mailboxIds.snoozed,
+    sent: store.mailboxIds.sent,
+    archiveId: store.mailboxIds.archive,
+    inboxId: store.mailboxIds.inbox,
   }),
   {
     star: () => setFlaggedByThreadIDs(selections.value, true),
@@ -801,7 +892,7 @@ const selectActions = buildSelectActions(
     unarchive: () => handleUnarchiveThreads(selections.value),
     junk: () => junkOrDeleteThreads(selections.value, true),
     notJunk: () => handleSetSpamStatus({ 0: selections.value }),
-    trash: () => handleMoveThreads({ [mailboxIds.trash]: selections.value }),
+    trash: () => handleMoveThreads({ [store.mailboxIds.trash]: selections.value }),
     delete: () => junkOrDeleteThreads(selections.value, false),
     read: () => handleSetSeen({ 1: selections.value }),
     unread: () => handleSetSeen({ 0: selections.value }),
@@ -834,7 +925,7 @@ const selectActions = buildSelectActions(
 // submenu; a phone's selection bar has none to hang one off, so it asks in the list's sheet, as a
 // time of the reader's own is asked in its dialog, and what they asked about is held here meanwhile.
 const canSnooze = computed(() =>
-  [mailboxIds.inbox, mailboxIds.archive, mailboxIds.snoozed].includes(mailbox),
+  [store.mailboxIds.inbox, store.mailboxIds.archive, store.mailboxIds.snoozed].includes(mailbox),
 )
 const showSnooze = ref(false)
 const pickingSnooze = ref(false)
@@ -891,6 +982,40 @@ const shortAccountLabel = (name?: string | null) =>
 // (all_accounts is scope, not a search condition, so it alone doesn't count as a query).
 const { hasSearchQuery } = useMobileSearch()
 
+// How many a search found. Null until the current search resolves: a neutral word, rather than a
+// stale or zero count.
+const searchResultsLabel = computed(() => {
+  if (searchTotal.value === null) return __('Searching…')
+  return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
+})
+// A phone's search, under its chips: how many it found, selecting or not (the selection says itself
+// in the bar at the bottom), and null while it looks, so its line is held. None found, or a search
+// that failed, is the list's to say.
+const searchCount = computed(() => {
+  if (!hasSearchQuery.value || listState.value === 'error') return undefined
+  if (searchTotal.value === null) return null
+  return searchTotal.value ? searchResultsLabel.value : undefined
+})
+// The words searched for, and how many filters narrow them: what a search that found nothing says.
+const searchedText = computed(() =>
+  typeof route.query.text === 'string' ? route.query.text.trim() : '',
+)
+const searchFilterCount = computed(
+  () => Object.keys(route.query).filter((key) => !['text', 'all_accounts'].includes(key)).length,
+)
+const removeSearchFilters = () =>
+  router.replace(
+    mailSearchRoute(store.accountId, searchedText.value ? { text: searchedText.value } : {}),
+  )
+// A search taken up by opening one of its results is one worth offering again.
+const phoneSearch = useTemplateRef<{ remember: () => void }>('phoneSearch')
+watch(
+  () => threadID,
+  (opened) => {
+    if (opened && mailbox === 'search') phoneSearch.value?.remember()
+  },
+)
+
 // Null while a search is pending — the count is only known once the fetch resolves (set in the
 // searchResults transform below, reset in resetThreads). Guards the title against a stale or zero count.
 const searchTotal = ref<number | null>(null)
@@ -946,27 +1071,41 @@ const {
   filterTitle,
 } = useListFilter({
   onChange: () => resetThreads(false),
-  starrable: () => ![mailboxIds.trash, 'starred'].includes(mailbox),
-  screenable: () => mailbox === mailboxIds.inbox && screener.active.value,
+  starrable: () => ![store.mailboxIds.trash, 'starred'].includes(mailbox),
+  screenable: () => mailbox === store.mailboxIds.inbox && screener.active.value,
+  drafts: () => mailbox === store.mailboxIds.drafts,
 })
 
 // The Inbox's category tabs; `inboxTab` is the open one, and undefined in any other list or when the
-// Inbox isn't split.
+// Inbox isn't split. `inboxCategory` is what the list asks for: none in All mail, the whole Inbox.
 const {
   tabs: inboxTabs,
   active: inboxTab,
+  category: inboxCategory,
   routeFor: routeForTab,
 } = useInboxTabs(
-  () => mailbox === mailboxIds.inbox && 'account',
+  () => mailbox === store.mailboxIds.inbox && 'account',
   () => ({ name: 'mail-mailbox', params: { accountId, mailbox: route.params.mailbox } }),
-  () => resetThreads(false),
+  // Another category is another list: it opens unfiltered, as another folder does.
+  () => {
+    reloadFilter()
+    resetThreads(false)
+  },
 )
 // What the list's menu clears (see listScope). Not offered where there is no folder to clear
-// (Starred, a search) or nothing unread to clear (Sent, Drafts).
+// (Starred, a search), nothing unread to clear (Sent, Drafts), or nothing worth reading (Trash and
+// Junk, on their way out: a phone's menu empties them instead).
 const clearScope = computed(() =>
-  ['search', 'starred', mailboxIds.sent, mailboxIds.drafts].includes(mailbox)
+  [
+    'search',
+    'starred',
+    store.mailboxIds.sent,
+    store.mailboxIds.drafts,
+    store.mailboxIds.trash,
+    store.mailboxIds.junk,
+  ].includes(mailbox)
     ? undefined
-    : listScope(inboxTab.value, mailboxName.value, filter.value),
+    : listScope(inboxCategory.value, mailboxName.value, filter.value),
 )
 
 // Reset resource for a mailbox: the window starts at the top and runs as deep as the composable asks
@@ -981,7 +1120,7 @@ const threads = useInfiniteQuery(api.mail.threads.list, () =>
         limit: PAGE_LENGTH,
         start: 0,
         filter_by: filter.value,
-        category: inboxTab.value,
+        category: inboxCategory.value,
       }
     : false,
 )
@@ -993,26 +1132,35 @@ const keptRead = useKeptRead({
   scope: () => [mailbox, accountId, filter.value, inboxTab.value],
   key: (thread) => thread.thread_id,
 })
+// Put back by an Undo before its inverse is sent, the server listing them again only after it.
+const restoredRows = useRestoredRows({
+  key: (thread) => thread.thread_id,
+  scope: () => [mailbox, accountId, filter.value, inboxTab.value],
+  reread: () => refreshList(),
+})
 const threadRows = computed(() =>
-  keptRead.withKept(
-    activeThreads.value.rows
-      // On the page only so that paging by row count holds (see get_threads).
-      .filter((row) => !('reaction_only' in row && row.reaction_only))
-      .map((row) => threadRow(row, store.accountId))
-      .filter((row) => !isDiscarding(row, { inDrafts: mailbox === mailboxIds.drafts }))
-      .map(withoutHeldDrafts),
+  restoredRows.withRestored(
+    keptRead.withKept(
+      activeThreads.value.rows
+        // On the page only so that paging by row count holds (see get_threads).
+        .filter((row) => !('reaction_only' in row && row.reaction_only))
+        .map((row) => threadRow(row, store.accountId))
+        .filter((row) => !isDiscarding(row, { inDrafts: mailbox === store.mailboxIds.drafts }))
+        .map(withoutHeldDrafts),
+    ),
   ),
 )
 watch(threadRows, keptRead.keep)
 
-// The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so show it whenever the
-// mailbox has threads — or a filter is applied (the filtered view may be empty while the mailbox isn't).
+// The Trash/Junk "auto-deleted after 30 days" banner is about the whole mailbox, so it goes by the
+// folder's own count, not by the list: it stays up while the list loads, pages or is read again (each
+// read, Refresh and poll did that, and the banner went and came back, moving the list by its height),
+// and under a filter that shows nothing. Only an empty folder has nothing to say it about.
 // The layout below reserves height for it only when it's actually rendered, so the two stay in sync.
 const showDeleteBanner = computed(
   () =>
-    [mailboxIds.trash, mailboxIds.junk].includes(mailbox) &&
-    !activeThreads.value.isFetching &&
-    (!!threadRows.value?.length || !!filter.value) &&
+    [store.mailboxIds.trash, store.mailboxIds.junk].includes(mailbox) &&
+    !!mailboxObj.value?.total_emails &&
     (showReadingPane.value || !threadID),
 )
 
@@ -1027,7 +1175,7 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
   reloadMailboxes = true,
   mailboxRoles = [],
 ) => {
-  if (mailboxRoles.length && !mailboxRoles.map((m) => mailboxIds[m]).includes(mailbox)) return
+  if (mailboxRoles.length && !mailboxRoles.map((m) => store.mailboxIds[m]).includes(mailbox)) return
 
   // This reload supersedes any pending refill (its own, or an interrupting mailbox switch); from here
   // the query's own state drives the list's, so the flag has done its job.
@@ -1043,24 +1191,39 @@ const resetThreads: (reloadMailboxes?: boolean, mailboxRoles?: MailboxRole[]) =>
       return
     }
   }
-  void refetchThreads()
+  // A search asked again (its filters taken off, say) can answer from what the query kept, before
+  // this reset; the read then changes no total, and the watch above stays quiet. The count is the
+  // read's, once it is in.
+  // Only for the search it ran for: an earlier one landing late leaves a newer one's count alone.
+  const asked = JSON.stringify(route.query)
+  void refetchThreads().then(() => {
+    if (mailbox === 'search' && JSON.stringify(route.query) === asked)
+      searchTotal.value = searchResults.total ?? null
+  })
   if (reloadMailboxes) void store.refreshCounts()
 }
 
 // The composer lives in the layout now, above every route, so it has no view to hand an event to —
 // it announces a send or a draft saved instead (see useListReload). Drafts and Sent are the two lists
-// that answer: everywhere else the mail it wrote does not belong.
-watch(listReloadRequest, () => resetThreads(true, ['drafts', 'sent']))
+// that answer: everywhere else the mail it wrote does not belong. A refresh, which waits for a read
+// already under way: the phone's compose page saves on its way back to Drafts, as the list reads
+// itself again, and a reset joined that read, from before the draft was there.
+watch(listReloadRequest, () => {
+  const answering = [store.mailboxIds.drafts, store.mailboxIds.sent]
+  if (answering.includes(mailbox)) refreshThreads()
+})
+// A reply saved in a conversation the reader has left, when its row is here (see useListReload).
+watch(rowReloadRequest, (request) => {
+  if (threadRows.value.some((row) => row.thread_id === request?.threadId)) refreshThreads()
+})
 // A Screener verdict moves mail in or out of this list.
 watch(screener.version, () => refreshThreads(false))
 
 // Check for new mail without losing the reader's place: refetch the newest window and prepend only the
 // threads not already loaded (see onResetSuccess), keeping scroll position and the loaded rows. Used by
 // the Refresh button, the periodic poll, and the new-mail socket. Selections are preserved.
-const refreshThreads = (reloadMailboxes = true) => {
-  refreshList()
-  if (reloadMailboxes) void store.refreshCounts()
-}
+const refreshThreads = (reloadMailboxes = true) =>
+  Promise.all([refreshList(), reloadMailboxes && store.refreshCounts()])
 
 // Ask again for a list that failed to load, settling its drafts like any other read.
 const retryList = () => void refetchThreads()
@@ -1080,21 +1243,24 @@ const syncAfterAction = () => {
 const removedFrom = new WeakMap<Thread, number>()
 const removeThreadsFromList = (ids: string[]): Thread[] => {
   // Taken before letting go of them, while the rows read here are still on the list.
-  const removed = threadRows.value.filter((row) => ids.includes(row.thread_id))
+  const list = threadRows.value
+  const removed = list.filter((row) => ids.includes(row.thread_id))
   const at = keptRead.current()
   removed.forEach((row) => removedFrom.set(row, at))
   keptRead.release(ids)
+  restoredRows.leaving(removed, list)
   return removed
 }
 const refillIfEmpty = () => {
   refillPending.value = false
 }
-const restoreThreadsToList = (rows: Thread[]) => {
+const restoreThreadsToList = (rows: Thread[], inverted?: Promise<unknown>) => {
   for (const row of rows) {
     const at = removedFrom.get(row)
     if (at !== undefined) keptRead.restore([row], at)
   }
-  void refetchThreads()
+  if (inverted) restoredRows.hold(rows, inverted)
+  else void refetchThreads()
 }
 watch(
   () => [mailbox, accountId],
@@ -1136,7 +1302,9 @@ const onMailChanged = () => refreshThreads()
 // in a conversation this list holds, whose open thread would otherwise go on without it.
 const onNewMail = (updatedMailboxes: string[]) => {
   if (
-    [mailbox, mailboxIds.sent, mailboxIds.drafts].some((id) => id && updatedMailboxes.includes(id))
+    [mailbox, store.mailboxIds.sent, store.mailboxIds.drafts].some(
+      (id) => id && updatedMailboxes.includes(id),
+    )
   )
     refreshThreads()
 }
@@ -1172,9 +1340,8 @@ const goToMailbox = () =>
   })
 
 const goToThread = (threadID: string) => {
-  threadSlide.value = pendingThreadSlide
   if (threadID)
-    router.push({
+    return router.push({
       name: 'mail-mail',
       params: { accountId, mailbox: mailboxInUrl(), threadID },
       query: route.query,
@@ -1188,24 +1355,21 @@ const goToThreadByOffset = (offset: number) => {
 
 // Swipe on the open thread (mobile): left → next thread, right → previous.
 const {
+  swipe: threadSwipe,
+  slots: threadPanes,
+  holdPane: holdThreadPane,
+  openPane: mailThreadRef,
   onTouchStart: onThreadTouchStart,
   onTouchMove: onThreadTouchMove,
   onTouchEnd: onThreadTouchEnd,
-} = useSwipeNav(
-  () => isMobile.value && !!threadID,
-  (offset) => {
-    // Arms the paging animation for this navigation only — goToThread consumes it, so
-    // taps/arrows (which never set it) keep swapping instantly.
-    pendingThreadSlide = offset > 0 ? 'page-next' : 'page-prev'
-    goToThreadByOffset(offset)
-    pendingThreadSlide = ''
-  },
-)
-
-// MailThread's slide name while a swipe navigation renders; cleared on its slide-done
-// (and left empty for every other thread change, which should swap instantly).
-const threadSlide = ref('')
-let pendingThreadSlide = ''
+  onTouchCancel: onThreadTouchCancel,
+} = useThreadSwipe<InstanceType<typeof MailThread>, Thread>({
+  enabled: () => isMobile.value && !!threadID,
+  open: () => threadID,
+  byOffset: threadByOffset,
+  rowOf: (id) => loadedRow(id),
+  step: goToThreadByOffset,
+})
 
 // Down the list first, then up: triaging from the oldest mail lives at the bottom, where there is
 // never anything below (see neighbourAfterRemoval). Only an emptied list falls back to the mailbox.
@@ -1371,7 +1535,7 @@ const rowArchive = (mail: Thread) => {
       mail,
       mail.archive,
       __('Archiving…'),
-      __('Thread archived'),
+      __('Conversation archived'),
       __('No Archive folder for this account'),
     )
   return handleArchiveThreads([mail.thread_id])
@@ -1383,10 +1547,10 @@ const rowTrash = (mail: Thread) => {
       mail,
       mail.trash,
       __('Moving to Trash…'),
-      __('Thread moved to Trash'),
+      __('Conversation moved to Trash'),
       __('No Trash folder for this account'),
     )
-  return handleMoveThreads({ [mailboxIds.trash]: [mail.thread_id] })
+  return handleMoveThreads({ [store.mailboxIds.trash]: [mail.thread_id] })
 }
 
 // A stack's hover actions apply to its whole run in one operation — one request, one toast, one undo,
@@ -1402,7 +1566,7 @@ const stackSetSeen = (threads: Thread[], seen: boolean) =>
 const stackArchive = (threads: Thread[]) => handleArchiveThreads(stackIDs(threads))
 const stackTrash = (threads: Thread[]) =>
   handleMoveThreads({
-    [mailboxIds.trash]: stackIDs(threads),
+    [store.mailboxIds.trash]: stackIDs(threads),
   })
 const stackDelete = (threads: Thread[]) => junkOrDeleteThreads(stackIDs(threads), false)
 const showEmptyMailbox = ref(false)
@@ -1457,24 +1621,22 @@ const mailboxName = computed(() => {
 })
 const unreadThreads = computed(() => mailboxObj.value?.unread_threads)
 const unreadThreadsPrefix = computed(() => (unreadThreads.value ? `(${unreadThreads.value})` : ''))
-const currentThread = computed(() =>
-  threadRows.value?.find((t: Thread) => t.thread_id === threadID),
-)
+const loadedRow = (id?: string) => threadRows.value?.find((t: Thread) => t.thread_id === id)
+const currentThread = computed(() => loadedRow(threadID))
 usePageTitle(() =>
   threadID ? '' : appDocumentTitle(`${unreadThreadsPrefix.value} ${mailboxName.value}`, 'Mail'),
 )
 const title = computed(() => {
-  if (selections.value.length)
-    return selections.value.length === 1
-      ? __('1 item selected')
-      : __('{0} items selected', [String(selections.value.length)])
-  if (mailbox === 'search') {
-    // Null until the current search resolves — show a neutral label rather than a stale/zero count.
-    if (searchTotal.value === null) return __('Searching…')
-    return searchTotal.value === 1 ? __('1 result') : __('{0} results', [String(searchTotal.value)])
-  }
+  if (selections.value.length) return __('{0} selected', [String(selections.value.length)])
+  if (mailbox === 'search') return searchResultsLabel.value
   return filterTitle.value
 })
+
+// The categories other than Primary, the newest mail first: a phone's cards, and a desktop's tab order.
+const { cards: categoryCards, ready: categoryCardsReady } = useCategoryCards(
+  () => mailbox === store.mailboxIds.inbox && 'account',
+  () => inboxTabs.value,
+)
 </script>
 
 <style scoped>

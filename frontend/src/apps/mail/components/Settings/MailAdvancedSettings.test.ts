@@ -102,12 +102,6 @@ vi.mock('frappe-ui', () => ({
         })
     },
   }),
-  Switch: defineComponent({
-    emits: ['update:modelValue'],
-    setup(_, { emit }) {
-      return () => h('button', { onClick: () => emit('update:modelValue', true) })
-    },
-  }),
   SettingsRow: defineComponent({
     props: { title: { type: String, default: '' } },
     setup(props, { slots }) {
@@ -190,14 +184,6 @@ it('keeps Login details open, with the reason, when the save is refused', async 
   const root = mount()
   await saveNewUsername(await openLoginDetails(root))
   expect(root.querySelector('dialog')?.textContent).toContain('Wrong app password')
-})
-it('saves a Sent copies switch as it is flipped, sending only that preference', async () => {
-  rowButton(mount(), 'Delete newsletters once they are sent').click()
-  await nextTick()
-  expect(state.change).toHaveBeenCalledWith('update_account_preferences', {
-    account: 'personal',
-    changes: { destroy_newsletter_after_submit: 1 },
-  })
 })
 it.each([
   ['login-details', 'Login details'],

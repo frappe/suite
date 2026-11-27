@@ -5,6 +5,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { translate as __ } from '@/platform/translation'
 
 import type { RecordingState } from '../composables/useRecording'
+import { captureActivityLabel, captureLabel, captureNotice } from '../utils/capturePresentation'
 
 const props = withDefaults(defineProps<{ recording: RecordingState; canStop?: boolean }>(), {
   canStop: false,
@@ -29,13 +30,14 @@ const elapsed = computed(() => {
 })
 
 const interruptionLabel = computed(() => {
-  if (!props.recording.interruption_deadline) return __('Recording interrupted')
+  const activity = captureActivityLabel(props.recording) || __('Capture')
+  if (!props.recording.interruption_deadline) return __('{0} interrupted', [activity])
   const deadline = props.recording.interruption_deadline.includes('T')
     ? props.recording.interruption_deadline
     : props.recording.interruption_deadline.replace(' ', 'T')
   const timestamp = /(?:Z|[+-]\d\d:\d\d)$/.test(deadline) ? deadline : `${deadline}Z`
   const seconds = Math.max(0, Math.ceil((new Date(timestamp).getTime() - now.value) / 1000))
-  return __('Recording interrupted - {0}s', [seconds])
+  return __('{0} interrupted - {1}s', [activity, seconds])
 })
 
 onMounted(() => (timer = setInterval(() => (now.value = Date.now()), 1000)))
@@ -48,11 +50,22 @@ onUnmounted(() => timer && clearInterval(timer))
     variant="subtle"
     size="sm"
     :icon-left="recording.status === 'Interrupted' ? 'lucide-triangle-alert' : 'lucide-circle-stop'"
-    :label="recording.status === 'Interrupted' ? interruptionLabel : __('REC {0}', [elapsed])"
+    :label="
+      recording.status === 'Interrupted'
+        ? interruptionLabel
+        : `${captureActivityLabel(recording)} ${elapsed}`
+    "
+    :aria-label="
+      recording.status === 'Interrupted'
+        ? interruptionLabel
+        : `${captureNotice(recording)} ${elapsed}`
+    "
     :disabled="!canStop || recording.status === 'Stopping'"
     role="status"
     aria-live="polite"
-    :tooltip="canStop ? __('Stop recording') : __('This meeting is being recorded')"
+    :tooltip="
+      canStop ? __('Stop {0}', [captureLabel(recording).toLowerCase()]) : captureNotice(recording)
+    "
     @click="emit('click')"
   />
 </template>

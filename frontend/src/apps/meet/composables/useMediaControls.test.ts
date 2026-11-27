@@ -1,4 +1,4 @@
-import { toast } from 'frappe-ui'
+import { dialog, toast } from 'frappe-ui'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createApp, defineComponent, ref } from 'vue'
 
@@ -19,7 +19,7 @@ import { useBackgroundEffects } from './useBackgroundEffects'
 import { useMediaControls } from './useMediaControls'
 
 vi.mock('frappe-ui', () => ({
-  confirmDialog: vi.fn(),
+  dialog: { confirm: vi.fn() },
   toast: {
     create: vi.fn(),
     error: vi.fn(),
@@ -431,6 +431,10 @@ function createCameraHarness({
       dispose,
       processedStream: ref(null),
     })
+  Object.defineProperty(navigator, 'permissions', {
+    configurable: true,
+    value: { query: async () => ({ state: 'granted' }) },
+  })
   Object.defineProperty(navigator, 'mediaDevices', {
     configurable: true,
     value: { getDisplayMedia, getUserMedia },
@@ -559,6 +563,18 @@ describe('useMediaControls', () => {
       remoteScreen,
       'owned',
     )
+  })
+
+  it('requests display capture synchronously from the override confirmation', async () => {
+    const getDisplayMedia = vi.fn().mockRejectedValue(new DOMException('', 'NotAllowedError'))
+    const harness = createCameraHarness({ getDisplayMedia })
+    harness.state.activeScreenShareConsumers.push(fromPartial({ participantId: 'remote' }))
+
+    const pending = harness.controls.toggleScreenShare()
+    expect(getDisplayMedia).not.toHaveBeenCalled()
+    vi.mocked(dialog.confirm).mock.calls.at(-1)?.[0].onConfirm?.()
+    expect(getDisplayMedia).toHaveBeenCalledOnce()
+    await pending
   })
 
   it('does not signal screen-share start when publication resolves after stop', async () => {

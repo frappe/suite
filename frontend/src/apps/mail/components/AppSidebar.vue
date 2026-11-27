@@ -5,36 +5,30 @@
   <!-- On a phone it is the folders sheet, as develop's was: each folder with its count and nothing
        else (editing a folder is Settings' there), no title, and one height, so More opens in it. -->
   <AreaSidebar area="mail" :title="__('Mail')" :sheet-title="false" steady-sheet>
-    <!-- The active account leads. Its menu lists the accounts, and every account at once. With
-         one account, or on the dashboard, there is nothing to pick: it is just named. A phone
-         switches accounts on the Profile page instead, so its folders sheet is folders only. -->
-    <!-- Rows look the same on a touch screen: touch-target-row grows their hit area only where no
-         other row is, and needs its section isolated. -->
-    <SidebarSection v-if="!isMobile" class="isolate !mt-0">
-      <Dropdown v-if="accountMenu.length" :options="accountMenu" :match-trigger-width="true">
-        <SidebarItem
-          :label="subtitle || __('Account')"
-          icon="lucide-circle-user-round"
-          class="touch-target-row"
-        >
-          <template #suffix>
-            <span
-              class="lucide-chevrons-up-down mr-2 size-3.5 text-ink-gray-5"
-              aria-hidden="true"
-            />
-          </template>
-        </SidebarItem>
-      </Dropdown>
-      <SidebarItem
-        v-else
-        :label="subtitle || __('Account')"
-        icon="lucide-circle-user-round"
-        class="touch-target-row"
-      />
-    </SidebarSection>
+    <!-- The active account leads. Its menu lists the accounts, and every account at once, each
+         with what is unread in its Inbox. With one account, or on the dashboard, there is nothing
+         to pick: it is just named. A phone switches accounts on the Profile page instead, so its
+         folders sheet is folders only. -->
+    <AccountSwitcher
+      v-if="!isMobile"
+      :accounts="user.data?.accounts"
+      :active-id="store.accountId"
+      :label="subtitle || __('Account')"
+      :all="allAccounts"
+      :unread="unifiedInbox?.unread_by_account"
+      :fixed="!!route.meta.isDashboard"
+      @select="switchAccount"
+    />
     <!-- A section's own action (the folders' "+") sits over the right end of its heading:
 	     SidebarSection draws the heading itself and leaves no place in it for one. -->
-    <div v-for="section in sidebarItems" :key="section.key ?? section.label" class="relative mt-4">
+    <!-- Each section stands off what is above it; a phone's first has nothing above it but the
+         sheet's own top, so it starts there. -->
+    <div
+      v-for="(section, index) in sidebarItems"
+      :key="section.key ?? section.label"
+      class="relative"
+      :class="isMobile && index === 0 ? 'mt-0' : 'mt-4'"
+    >
       <!-- Small and muted, lined up with the folders' counts below it. On a touch screen its area
            is the heading's height, h-7, and stops short of the first folder row's ⋯ below. -->
       <Tooltip v-if="sectionAction(section)" :text="sectionAction(section)!.label">
@@ -166,7 +160,7 @@ import {
   unifiedFolderIcon,
   unifiedFolderRoute,
 } from '@/apps/mail/utils/unifiedFolders'
-import { accountSubmenu, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
+import { AccountSwitcher, AreaSidebar, AreaSidebarFooter } from '@/platform/area-sidebar'
 
 const route = useRoute()
 const router = useRouter()
@@ -352,17 +346,15 @@ const goToMailbox = () => {
     })
 }
 
-// The account menu: the reader's own account first, the rest as they come, then all of them at
-// once. Empty when there is nothing to pick.
-const accountMenu = computed(() =>
-  (user.data?.accounts?.length ?? 0) > 1 && !route.meta.isDashboard
-    ? accountSubmenu(user.data?.accounts ?? [], store.accountId, switchAccount, {
-        label: __('All accounts'),
-        active: isUnified.value,
-        onSelect: switchToAll,
-      })
-    : [],
-)
+// Every account at once, below the accounts in the account menu, with what is unread across all
+// their Inboxes. A system folder's slug is its role.
+const unifiedInbox = computed(() => unifiedFolders.data?.find((folder) => folder.slug === 'inbox'))
+const allAccounts = computed(() => ({
+  label: __('All accounts'),
+  active: isUnified.value,
+  onSelect: switchToAll,
+  unread: unifiedInbox.value?.unread_threads,
+}))
 
 const dashboardItems = [
   {
@@ -464,7 +456,7 @@ const mailboxItems = computed(
 )
 
 // The folder list of "All accounts", grouped as an account's is: system folders and Starred, then the
-// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, New Folder —
+// custom folders, then Junk/Archive/Trash under More. Nothing account-bound — Outbox, New folder —
 // has a merged form, so none of it is offered here.
 const unifiedSidebarItems = computed(() => {
   const folders: UnifiedFolder[] = unifiedFolders.data ?? []
@@ -502,7 +494,7 @@ const unifiedSidebarItems = computed(() => {
   ]
 })
 
-// The one thing a section's heading offers to do, if anything (only the folders' "New Folder").
+// The one thing a section's heading offers to do, if anything (only the folders' "New folder").
 type SectionAction = { label: string; onClick: () => void }
 interface SidebarSection {
   key?: string
@@ -593,9 +585,9 @@ const sidebarItems = computed<SidebarSection[]>(() => {
     key: 'folders',
     items: yourFolders.length
       ? yourFolders
-      : [{ label: __('New Folder'), icon: Plus, to: undefined, onClick: newFolder }],
+      : [{ label: __('New folder'), icon: Plus, to: undefined, onClick: newFolder }],
   }
-  if (yourFolders.length) folders.action = { label: __('New Folder'), onClick: newFolder }
+  if (yourFolders.length) folders.action = { label: __('New folder'), onClick: newFolder }
   const groups = [{ label: '', key: 'lead', items: withMore(leadItems, secondaryItems) }, folders]
 
   return groups

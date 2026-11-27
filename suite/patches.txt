@@ -106,6 +106,8 @@ suite.mail.patches.add_attach_drive_files_rate_limit
 suite.mail.patches.classify_mail_at_delivery
 # Mail that was sent, or a draft that was replaced, could stay cached as a draft.
 suite.mail.patches.drop_cached_drafts
+# Every existing account starts with the default message cache quota.
+suite.mail.patches.set_default_message_cache_quota
 # --- calendar ---
 # (no patches)
 # --- suite_core ---
@@ -143,3 +145,5 @@ suite.drive.patches.cleanup
 suite.drive.patches.grant_admin_creators_edit
 # A notification may point at a download instead of an activity.
 suite.drive.patches.optional_notification_activity
+# Screening is always on for a personal account: switch it back on where it was turned off.
+suite.mail.patches.screen_every_personal_account

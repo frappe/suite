@@ -425,8 +425,23 @@ export const operationInboxSummary: Validators<InboxSummaryInput, InboxSummaryOu
     assertSchema(
       value,
       {
-        properties: { unread: { title: 'Unread', type: 'integer' } },
-        required: ['unread'],
+        $defs: {
+          AccountUnread: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              unread: { title: 'Unread', type: 'integer' },
+              personal: { title: 'Personal', type: 'boolean' },
+            },
+            required: ['name', 'unread', 'personal'],
+            title: 'AccountUnread',
+            type: 'object',
+          },
+        },
+        properties: {
+          unread: { title: 'Unread', type: 'integer' },
+          accounts: { items: { $ref: '#/$defs/AccountUnread' }, title: 'Accounts', type: 'array' },
+        },
+        required: ['unread', 'accounts'],
         title: 'InboxSummary',
         type: 'object',
       },
@@ -906,6 +921,7 @@ export const operationUpdatePreferences: Validators<
             type: 'array',
           },
           split_inbox: { enum: [0, 1], title: 'Split Inbox', type: 'integer' },
+          all_mail_tab: { enum: [0, 1], title: 'All Mail Tab', type: 'integer' },
         },
         required: [],
         additionalProperties: false,
@@ -1029,7 +1045,6 @@ export const operationUpdateAccountPreferences: Validators<
                 title: 'Keep Forwarded Email In Thread',
                 type: 'integer',
               },
-              enable_screening: { enum: [0, 1], title: 'Enable Screening', type: 'integer' },
               block_remote_images: { enum: [0, 1], title: 'Block Remote Images', type: 'integer' },
               on_block_old_mail: {
                 enum: ['Ask', 'Move to Junk', 'Keep'],
@@ -1093,8 +1108,9 @@ export const operationSaveIdentity: Validators<SaveIdentityInput, SaveIdentityOu
             anyOf: [{ type: 'string' }, { type: 'null' }],
             title: 'Html Signature',
           },
+          signature: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Signature' },
         },
-        required: ['account', 'id', 'name', 'reply_to', 'bcc', 'html_signature'],
+        required: ['account', 'id', 'name', 'reply_to', 'bcc', 'html_signature', 'signature'],
         additionalProperties: false,
         $defs: {
           Address: {
@@ -1137,8 +1153,9 @@ export const operationSignatures: Validators<SignaturesInput, SignaturesOutput> 
               name: { title: 'Name', type: 'string' },
               signature_name: { title: 'Signature Name', type: 'string' },
               html_body: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Html Body' },
+              identities: { items: { type: 'string' }, title: 'Identities', type: 'array' },
             },
-            required: ['name', 'signature_name', 'html_body'],
+            required: ['name', 'signature_name', 'html_body', 'identities'],
             title: 'Signature',
             type: 'object',
           },
@@ -1725,6 +1742,7 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
                 type: 'array',
               },
               split_inbox: { enum: [0, 1], title: 'Split Inbox', type: 'integer' },
+              all_mail_tab: { enum: [0, 1], title: 'All Mail Tab', type: 'integer' },
               email_classification: { title: 'Email Classification', type: 'boolean' },
               is_suite_cloud_configured: { title: 'Is Suite Cloud Configured', type: 'boolean' },
               accounts: {
@@ -1756,6 +1774,7 @@ export const operationGetUserInfo: Validators<GetUserInfoInput, GetUserInfoOutpu
               'max_attachment_size',
               'inbox_tabs',
               'split_inbox',
+              'all_mail_tab',
               'email_classification',
               'is_suite_cloud_configured',
               'accounts',
@@ -1809,6 +1828,11 @@ export const operationGetUnifiedFolders: Validators<
               name: { title: 'Name', type: 'string' },
               role: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Role' },
               unread_threads: { title: 'Unread Threads', type: 'integer' },
+              unread_by_account: {
+                additionalProperties: { type: 'integer' },
+                title: 'Unread By Account',
+                type: 'object',
+              },
               accounts: { items: { type: 'string' }, title: 'Accounts', type: 'array' },
               icon: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Icon' },
               color: {
@@ -1819,7 +1843,16 @@ export const operationGetUnifiedFolders: Validators<
                 title: 'Color',
               },
             },
-            required: ['slug', 'name', 'role', 'unread_threads', 'accounts', 'icon', 'color'],
+            required: [
+              'slug',
+              'name',
+              'role',
+              'unread_threads',
+              'unread_by_account',
+              'accounts',
+              'icon',
+              'color',
+            ],
             title: 'UnifiedFolder',
             type: 'object',
           },

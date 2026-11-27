@@ -5,6 +5,7 @@ import TableOfContents, {
 import type { Node } from '@tiptap/pm/model'
 import { Plugin, PluginKey, type PluginSpec } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import { nextTick } from 'vue'
 
 // Opening or watching a document must never write to it. Ids are assigned
 // only on the user's own edits; headings saved without one get an anchor drawn
@@ -58,24 +59,47 @@ function renderedAnchors(doc: Node) {
   return DecorationSet.create(doc, decorations)
 }
 
-function withRenderedIds(anchors: TableOfContentData, scrollPosition: number) {
-  if (anchors.every((anchor) => anchor.id)) {
-    return anchors
-  }
+// A heading is active once it passes a line a third of the way down the view,
+// so a section that fills the view is active before its heading reaches the top
+const ACTIVE_LINE = 1 / 3
 
-  const nextRenderedId = renderedIds()
-  function withId(anchor: TableOfContentDataItem) {
-    const id = anchor.id || nextRenderedId(anchor.textContent)
+function viewOf(scrollParent: HTMLElement | Window) {
+  if (scrollParent instanceof HTMLElement) {
+    const { top, height } = scrollParent.getBoundingClientRect()
+    const { scrollTop, clientHeight, scrollHeight } = scrollParent
     return {
-      ...anchor,
-      id,
-      isScrolledOver: scrollPosition >= anchor.dom.offsetTop,
+      activeLine: top + height * ACTIVE_LINE,
+      isAtBottom: scrollTop > 0 && scrollTop + clientHeight >= scrollHeight - 1,
     }
   }
 
-  const anchorsWithIds = anchors.map(withId)
-  const activeAnchor = anchorsWithIds.findLast((item) => item.isScrolledOver)
-  return anchorsWithIds.map((item) => ({ ...item, isActive: item === activeAnchor }))
+  const { scrollY, innerHeight } = scrollParent
+  return {
+    activeLine: innerHeight * ACTIVE_LINE,
+    isAtBottom: scrollY > 0 && scrollY + innerHeight >= document.documentElement.scrollHeight - 1,
+  }
+}
+
+// Headings in hidden tabs have no box, so they are never active
+function withActiveStates(anchors: TableOfContentData, scrollParent: HTMLElement | Window | null) {
+  const view = scrollParent && viewOf(scrollParent)
+  function withState(anchor: TableOfContentDataItem) {
+    const [box] = anchor.dom.getClientRects()
+    const isScrolledOver = !!view && !!box && (view.isAtBottom || box.top <= view.activeLine)
+    return { ...anchor, isScrolledOver }
+  }
+
+  const withStates = anchors.map(withState)
+  const activeAnchor = withStates.findLast((anchor) => anchor.isScrolledOver)
+  return withStates.map((anchor) => ({ ...anchor, isActive: anchor === activeAnchor }))
+}
+
+function withRenderedIds(anchors: TableOfContentData) {
+  const nextRenderedId = renderedIds()
+  return anchors.map((anchor) => ({
+    ...anchor,
+    id: anchor.id || nextRenderedId(anchor.textContent),
+  }))
 }
 
 function anchorDecorationsPlugin() {
@@ -104,8 +128,10 @@ export const HeadingAnchors = TableOfContents.extend({
   onBeforeCreate() {
     const callerOnUpdate = this.options.onUpdate
     this.options.onUpdate = (anchors, isInitial) => {
-      const anchorsWithIds = withRenderedIds(anchors, this.storage.scrollPosition)
-      callerOnUpdate?.(anchorsWithIds, isInitial)
+      const { scrollParent: option } = this.options
+      const scrollParent = (typeof option === 'function' ? option() : option) ?? null
+      const shownAnchors = withActiveStates(withRenderedIds(anchors), scrollParent)
+      callerOnUpdate?.(shownAnchors, isInitial)
     }
   },
 
@@ -124,6 +150,12 @@ export const HeadingAnchors = TableOfContents.extend({
     } finally {
       view.dispatch = originalDispatch
     }
+
+    // Opening at a tab, or changing tab, shows other headings with no scroll
+    // or edit; Vue applies it a tick later
+    const remeasure = () => void nextTick(() => this.storage.scrollHandler())
+    remeasure()
+    view.dom.addEventListener('tab-changed', remeasure)
   },
 
   addProseMirrorPlugins() {

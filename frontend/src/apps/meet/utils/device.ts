@@ -21,5 +21,17 @@ export function isMobileDevice(): boolean {
 }
 
 export function canScreenShare(): boolean {
-  return 'getDisplayMedia' in navigator.mediaDevices
+  return typeof navigator.mediaDevices?.getDisplayMedia === 'function'
+}
+
+export function isFirefoxDesktop(): boolean {
+  return /Firefox\//.test(navigator.userAgent) && !isMobileDevice()
+}
+
+export function supportsAutomaticMeetingPip(): boolean {
+  return (
+    'documentPictureInPicture' in window &&
+    !isFirefoxDesktop() &&
+    typeof navigator.mediaSession?.setActionHandler === 'function'
+  )
 }

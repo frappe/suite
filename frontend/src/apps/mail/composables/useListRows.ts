@@ -47,6 +47,13 @@ interface ListRowsOptions {
   hasMore?: () => boolean
 }
 
+/** Whether all of `row` shows inside the scrolling `list`. */
+const inView = (row: Element, list: Element) => {
+  const shown = list.getBoundingClientRect()
+  const { top, bottom } = row.getBoundingClientRect()
+  return top >= shown.top && bottom <= shown.bottom
+}
+
 /**
  * The rows a thread list renders, and the keyboard cursor that walks them.
  *
@@ -206,24 +213,29 @@ export const useListRows = ({
   )
 
   /**
-   * Scrolls the row marked `data-row-key` into the centre of the list. Skipped on mobile, where the
-   * thread pane slides over the list and the jump would only show behind it. Waits a tick because
-   * the row may have only just been revealed (a stack or day group expanding, a route change
-   * landing); a no-op when nothing changed.
+   * Scrolls the row marked `data-row-key` into the centre of the list, or, with `ifHidden`, only when
+   * some of it is out of view. Skipped on mobile, where the thread pane slides over the list and the
+   * jump would only show behind it. Waits a tick because the row may have only just been revealed (a
+   * stack or day group expanding, a route change landing); a no-op when nothing changed.
    */
-  const scrollRowIntoView = (key: string) => {
+  const scrollRowIntoView = (key: string, ifHidden = false) => {
     if (isMobile.value) return
     nextTick(() => {
-      container.value
-        ?.querySelector(`[data-row-key="${key}"]`)
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const list = container.value
+      const row = list?.querySelector(`[data-row-key="${key}"]`)
+      if (!list || !row) return
+      if (ifHidden && inView(row, list)) return
+      row.scrollIntoView({ behavior: 'smooth', block: 'center' })
     })
   }
 
-  /** Puts the cursor on a row and brings it into view, without drawing its bar (see cursorShown). */
-  const placeCursor = (key: string) => {
+  /**
+   * Puts the cursor on a row and brings it into view, without drawing its bar (see cursorShown). With
+   * `ifHidden`, a row already in full view stays where it is.
+   */
+  const placeCursor = (key: string, ifHidden = false) => {
     focusedRowKey.value = key
-    scrollRowIntoView(key)
+    scrollRowIntoView(key, ifHidden)
   }
 
   /** The keys move the cursor: it lands on the row, with its bar. */
@@ -259,6 +271,14 @@ export const useListRows = ({
    */
   const cursorShown = ref(false)
   useEventListener(window, 'pointerdown', () => (cursorShown.value = false))
+
+  /**
+   * Esc closed the open thread: the reader is on the keys, and the next one walks the list from that
+   * thread's row. The cursor followed the thread there (see revealThread), under the open row's own
+   * bar; marked here, its bar is on that row once the pane closes. Unmarked, a thread opened or
+   * stepped to with a click closed onto a list with no cursor to be seen.
+   */
+  const showCursor = () => (cursorShown.value = true)
 
   /** The row the cursor's bar is drawn on, if any: the cursor's row while its bar shows. */
   const cursorRowKey = computed(() => (cursorShown.value ? focusedRowKey.value : undefined))
@@ -358,14 +378,16 @@ export const useListRows = ({
    *
    * The focus is deferred a tick because the row may only just have been revealed by the two lines
    * above it, and because callers run this from a watcher whose immediate run fires mid-setup. The
-   * route opened the thread, not a key, so the cursor's bar is left as it was.
+   * route opened the thread, not a key, so the cursor's bar is left as it was. A row already in full
+   * view is not scrolled: opening one mail after another down the list centred each in turn, and the
+   * list crept up under the pointer with every click.
    */
   const revealThread = (key: string) => {
     expandedStacks.value.add(key)
 
     setTimeout(() => {
       const row = rowForThread(key)
-      if (row) placeCursor(row.key)
+      if (row) placeCursor(row.key, true)
     })
 
     for (const group of collapsedGroups.value) {
@@ -386,6 +408,7 @@ export const useListRows = ({
     navigableRows,
     focusedRowKey,
     cursorRowKey,
+    showCursor,
     onListFocusIn,
     focusedRow,
     focusRow,

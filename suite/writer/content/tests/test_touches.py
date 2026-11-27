@@ -1,5 +1,4 @@
 import json
-from contextlib import contextmanager
 from datetime import datetime, timedelta
 from itertools import product
 from unittest.mock import patch
@@ -11,7 +10,6 @@ from suite import drive
 from suite.content import jobs, scheduling, touches
 from suite.content.http import routes
 from suite.content.tables import table
-from suite.drive._core import content as drive_content
 from suite.drive._core.principals import Principals
 from suite.drive._core.versions import read_version
 from suite.tests.utils import ensure_user
@@ -22,14 +20,6 @@ from suite.writer.content.tests.support import OUTSIDER, WRITER
 class TestWriterTouches(DriveCallbackCase):
     def content_modified(self, node: str):
         return frappe.db.get_value("Drive Node", node, "content_modified")
-
-    @contextmanager
-    def frozen_clock(self, at: datetime):
-        with (
-            patch.object(touches, "now_datetime", return_value=at),
-            patch.object(drive_content, "now_datetime", return_value=at),
-        ):
-            yield
 
     def test_pushes_move_the_documents_last_change_at_most_every_ten_minutes(self):
         node = self.new_document()

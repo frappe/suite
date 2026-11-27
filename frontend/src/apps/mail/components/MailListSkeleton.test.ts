@@ -54,7 +54,8 @@ const outlineRow = ({ readingPane, ...props }: Setting) =>
     '[role=status] > div',
   )!
 
-// SAFETY: MailRow with no `to` renders one div as its root, the mount point's only child.
+// SAFETY: MailRow with no `to` renders the row as a div, the last child of the box it swipes in,
+// which is the mount point's only child.
 const mailRow = ({ readingPane, ...props }: Setting) =>
   mount(
     () =>
@@ -64,7 +65,7 @@ const mailRow = ({ readingPane, ...props }: Setting) =>
         { sender: () => 'Dana', subject: () => 'Brief', preview: () => 'See the brief.' },
       ),
     readingPane,
-  ).firstElementChild as HTMLElement
+  ).firstElementChild?.lastElementChild as HTMLElement
 
 // A row's height comes from its vertical padding; the outline must take the same.
 const padding = (el: HTMLElement) => [...el.classList].filter((c) => /(^|:|!)py-/.test(c)).sort()

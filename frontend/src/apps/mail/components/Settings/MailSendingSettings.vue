@@ -1,8 +1,11 @@
 <template>
-  <AppSettingsHeader :title="__('Sending')" />
+  <AppSettingsHeader :title="__('Outgoing')" />
   <AppSettingsBody>
-    <div class="flex flex-col gap-10">
-      <SettingsSection :title="__('Addresses and signatures')">
+    <!-- Shown once what it says is read, all of it at once: the rows that need the preferences and
+         the auto-reply's line would otherwise come in after the rest. Hidden, not left out, so every
+         part starts reading as the page opens rather than once it shows. -->
+    <div v-show="settled && autoReply.status !== 'pending'" class="flex flex-col gap-10">
+      <SettingsSection :title="__('Identity')">
         <div class="divide-y divide-outline-gray-1">
           <SettingsDialogRow
             :title="__('Send-as addresses')"
@@ -26,18 +29,39 @@
         </div>
       </SettingsSection>
 
-      <SettingsSection :title="__('When you send')">
+      <SettingsSection :title="__('Sending')">
         <div class="divide-y divide-outline-gray-1">
           <ComposeSettings />
+          <!-- Last: each one costs the copy of what you send, and a copy that was never kept can't
+               be found or answered from later. -->
+          <template v-if="preferences">
+            <SettingsRow
+              :title="__('Don’t keep sent mail')"
+              :description="
+                __(
+                  'Mail you send isn’t saved in Sent, so you can’t find it, forward it or reply from it later.',
+                )
+              "
+            >
+              <Switch v-model="dropSentMail" />
+            </SettingsRow>
+            <SettingsRow
+              :title="__('Don’t keep sent newsletters')"
+              :description="
+                __('Bulk mail your apps send through this account isn’t saved in Sent.')
+              "
+            >
+              <Switch v-model="dropSentNewsletters" />
+            </SettingsRow>
+          </template>
         </div>
       </SettingsSection>
 
-      <SettingsSection :title="__('Away')">
+      <SettingsSection :title="__('Out of office')">
         <SettingsDialogRow
           :title="__('Auto-reply')"
           section="mail.sending.auto-reply"
-          :description="__('Answers mail for you while you are away.')"
-          :status="autoReplyStatus"
+          :description="autoReplyStatus ?? __('Answers mail for you while you are away.')"
           :action="__('Edit')"
           size="2xl"
         >
@@ -51,6 +75,7 @@
 </template>
 
 <script setup lang="ts">
+import { SettingsRow, Switch } from 'frappe-ui'
 import { computed } from 'vue'
 
 import { api, useQuery } from '@/api'
@@ -58,6 +83,7 @@ import ComposeSettings from '@/apps/mail/components/Settings/ComposeSettings.vue
 import IdentitySettings from '@/apps/mail/components/Settings/IdentitySettings.vue'
 import SignatureSettings from '@/apps/mail/components/Settings/SignatureSettings.vue'
 import VacationResponseSettings from '@/apps/mail/components/Settings/VacationResponseSettings.vue'
+import { useAccountPreferences } from '@/apps/mail/composables/useAccountPreferences'
 import { userStore } from '@/apps/mail/stores/user'
 import { formatDateTime, inUserTimeZone, useMinuteClock } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
@@ -67,13 +93,18 @@ import SettingsDialogRow from '@/platform/settings/SettingsDialogRow.vue'
 import SettingsSection from '@/platform/settings/SettingsSection.vue'
 import { translate as __ } from '@/platform/translation'
 
+const { preferences, settled, flag } = useAccountPreferences()
+const dropSentMail = flag('destroy_email_after_submit')
+const dropSentNewsletters = flag('destroy_newsletter_after_submit')
+
 // The dialog reads the same reply, so a save there shows on the row
 const store = userStore()
 const autoReply = useQuery(
   api.mail.vacation.get,
   () => !!store.accountId && { account: store.accountId },
 )
-// The status moves on when a start or an end passes in a page left open
+// What the reply does, said as where it stands once it is set: read without opening it. It moves
+// on when a start or an end passes in a page left open
 const clock = useMinuteClock()
 const autoReplyStatus = computed(() => {
   const reply = autoReply.data
@@ -82,23 +113,23 @@ const autoReplyStatus = computed(() => {
   }
 
   if (!reply.enabled) {
-    return __('Off')
+    return undefined
   }
 
   const now = dayjs(clock.value)
   if (reply.from_date && inUserTimeZone(reply.from_date).isAfter(now)) {
-    return __('Starts {0}', [formatDateTime(reply.from_date, 'D MMM')])
+    return __('Starts answering mail for you on {0}.', [formatDateTime(reply.from_date, 'D MMM')])
   }
 
   if (!reply.to_date) {
-    return __('On')
+    return __('Answering mail for you now.')
   }
 
   const end = formatDateTime(reply.to_date, 'D MMM')
   if (inUserTimeZone(reply.to_date).isBefore(now)) {
-    return __('Ended {0}', [end])
+    return __('Stopped answering mail on {0}.', [end])
   }
 
-  return __('On until {0}', [end])
+  return __('Answering mail for you until {0}.', [end])
 })
 </script>

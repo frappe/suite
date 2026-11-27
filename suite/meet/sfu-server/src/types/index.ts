@@ -1,4 +1,9 @@
 import type {
+	ChatReactionRequest,
+	ChatReactionsUpdated,
+	ChatSnapshot,
+} from '../../../types/chatReactions';
+import type {
 	AppData,
 	AudioLevelObserver,
 	Consumer,
@@ -130,7 +135,10 @@ export interface ServerToClientEvents {
 	host_control_update: (data: HostControlUpdateEvent) => void;
 	screen_share_started: (data: ScreenShareStartedEvent) => void;
 	screen_share_stopped: (data: ScreenShareStoppedEvent) => void;
+	'chat:snapshot': (data: ChatSnapshot) => void;
+	'chat:message_evicted': (data: { messageId: string }) => void;
 	'chat:message': (data: ChatMessage) => void;
+	'chat:reactions_updated': (data: ChatReactionsUpdated) => void;
 	'chat:restriction_updated': (data: { enabled: boolean }) => void;
 	'chat:pin_updated': (data: { pinned: PinnedChatMessage | null }) => void;
 	existing_pinned_message: (data: { pinned: PinnedChatMessage | null }) => void;
@@ -262,6 +270,10 @@ export interface ClientToServerEvents {
 			response: SFUResponse & { timestamp?: string; messageId?: string },
 		) => void,
 	) => void;
+	'chat:react': (
+		data: ChatReactionRequest,
+		callback?: (response: SFUResponse) => void,
+	) => void;
 	'chat:toggle_restriction': (data: { enabled: boolean }) => void;
 	'chat:pin': (
 		data: {
@@ -355,6 +367,7 @@ export type ClientTelemetryEvent =
 	  };
 
 export interface SocketData {
+	speechContext?: import('../speechHints').SpeechScope;
 	userId: string;
 	peerId?: string;
 	userName: string;
@@ -467,6 +480,7 @@ export interface ExistingProducer {
 
 // Mediasoup Manager types
 export interface Room {
+	speechContext?: import('../speechHints').SpeechScope;
 	id: string;
 	workerId: number;
 	router: Router;
@@ -544,6 +558,7 @@ export interface WebRTCServerOptions {
 
 // JWT types
 export interface JWTPayload {
+	speech_context?: import('../speechHints').SpeechScope;
 	user_id: string;
 	user_name: string;
 	meeting_id: string;
@@ -599,6 +614,7 @@ interface PollPayloadFE {
 // Socket.IO module augmentation
 declare module 'socket.io' {
 	interface Socket {
+		speechContext?: import('../speechHints').SpeechScope;
 		userId: string;
 		peerId?: string;
 		userName: string;

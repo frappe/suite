@@ -1,9 +1,14 @@
 // Generated from src/apps/mail/client/contract.json. Do not edit.
 import type { MutationRef, PageRef, QueryRef } from '@/platform/transport'
 
+export type InboxSummaryOutputAccountUnread = { name: string; unread: number; personal: boolean }
+
 export type InboxSummaryInput = Record<string, never>
 
-export type InboxSummaryOutput = { unread: number }
+export type InboxSummaryOutput = {
+  unread: number
+  accounts: Array<InboxSummaryOutputAccountUnread>
+}
 
 export type InboxSummaryError = never
 
@@ -374,6 +379,7 @@ export type UpdatePreferencesInput = {
   undo_send_period?: '5' | '10' | '20' | '30'
   inbox_tabs?: Array<'primary' | 'updates' | 'forums' | 'promotions' | 'social'>
   split_inbox?: 0 | 1
+  all_mail_tab?: 0 | 1
 }
 
 export type UpdatePreferencesOutput = null
@@ -439,7 +445,6 @@ export type UpdateAccountPreferencesInputAccountChanges = {
   destroy_email_after_submit?: 0 | 1
   destroy_newsletter_after_submit?: 0 | 1
   keep_forwarded_email_in_thread?: 0 | 1
-  enable_screening?: 0 | 1
   block_remote_images?: 0 | 1
   on_block_old_mail?: 'Ask' | 'Move to Junk' | 'Keep'
   default_outgoing_email?: string | null
@@ -509,6 +514,7 @@ export type SaveIdentityInput = {
   reply_to: Array<SaveIdentityInputAddress>
   bcc: Array<SaveIdentityInputAddress>
   html_signature: string | null
+  signature: string | null
 }
 
 export type SaveIdentityOutput = null
@@ -536,6 +542,7 @@ export type SignaturesOutputSignature = {
   name: string
   signature_name: string
   html_body: string | null
+  identities: Array<string>
 }
 
 export type SignaturesInput = Record<string, never>
@@ -970,6 +977,7 @@ export type GetUserInfoOutputUserInfo = {
   max_attachment_size: number
   inbox_tabs: Array<'primary' | 'updates' | 'forums' | 'promotions' | 'social'>
   split_inbox: 0 | 1
+  all_mail_tab: 0 | 1
   email_classification: boolean
   is_suite_cloud_configured: boolean
   accounts: Array<GetUserInfoOutputUserAccount>
@@ -1028,6 +1036,7 @@ export type GetUnifiedFoldersOutputUnifiedFolder = {
   name: string
   role: string | null
   unread_threads: number
+  unread_by_account: { [key: string]: number }
   accounts: Array<string>
   icon: string | null
   color: ('Gray' | 'Blue' | 'Green' | 'Amber' | 'Red' | 'Purple') | null

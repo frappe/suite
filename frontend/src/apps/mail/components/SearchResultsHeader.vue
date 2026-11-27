@@ -1,25 +1,8 @@
 <template>
-  <!-- Mobile mirrors the search overlay's header exactly (same row, same input classes) —
-	     searching and results are one page; tapping the readonly input resumes editing. -->
-  <div :class="isMobile ? '' : 'flex flex-col gap-2.5 border-b px-3.5 py-3 sm:px-5'">
-    <!-- A flat h-14, the height every mobile header in the product stands at (see
-		     MobileTitleHeader), rather than py-2 around the input: the editor's row above is
-		     the same 56px, so dismissing it onto this swaps the row rather than resizing it.
-		     Sideways too: a 12px gutter, the icon, then gap-2 plus the forms plugin's 12px on
-		     the bare input — the calendar search header's measures, and the editor's. -->
-    <div v-if="isMobile" class="flex h-14 items-center gap-2 border-b px-3">
-      <Search class="text-ink-gray-5 h-4 w-4 shrink-0" />
-      <input
-        readonly
-        :value="searchQuery"
-        :placeholder="__('Search')"
-        :aria-label="__('Edit search')"
-        class="placeholder-ink-gray-4 w-full cursor-pointer border-none bg-transparent text-base focus:ring-0"
-        @mousedown.prevent="openSearch"
-      />
-    </div>
+  <!-- A desktop's search results header: the query, which reopens the palette to edit it, and the
+       filters as removable pills. A phone searches on a screen of its own (see PhoneSearchBar). -->
+  <div class="flex flex-col gap-2.5 border-b px-3.5 py-3 sm:px-5">
     <FormControl
-      v-else
       type="text"
       size="sm"
       class="w-full cursor-pointer [&_input]:cursor-pointer"
@@ -35,19 +18,11 @@
         <Search class="text-ink-gray-5 size-4" />
       </template>
     </FormControl>
-    <div
-      v-if="searchFilterChips.length"
-      class="flex flex-wrap items-center gap-1.5"
-      :class="{ 'px-4 py-2': isMobile }"
-    >
+    <div v-if="searchFilterChips.length" class="flex flex-wrap items-center gap-1.5">
       <span
         v-for="chip in searchFilterChips"
         :key="chip.key"
-        class="bg-surface-gray-2 inline-flex items-center gap-1 rounded-4 pl-2 pr-1"
-        :class="[
-          isMobile ? 'h-8 text-sm' : 'h-7 text-xs',
-          'hover:bg-surface-gray-3 cursor-pointer',
-        ]"
+        class="bg-surface-gray-2 hover:bg-surface-gray-3 inline-flex h-7 cursor-pointer items-center gap-1 rounded-4 pl-2 pr-1 text-xs"
         @click="openSearch"
       >
         <span class="max-w-40 truncate">{{ chip.label }}</span>
@@ -60,12 +35,7 @@
         </button>
       </span>
 
-      <Button
-        variant="ghost"
-        :class="isMobile ? 'text-sm' : 'text-xs'"
-        :label="__('Clear all')"
-        @click="clearSearch"
-      />
+      <Button variant="ghost" class="text-xs" :label="__('Clear all')" @click="clearSearch" />
     </div>
   </div>
 </template>
@@ -79,7 +49,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { getAttachmentOptions, getReadStatusOptions } from '@/apps/mail/constants'
 import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData, UserResource } from '@/apps/mail/types'
-import { mailSearchRoute, useScreenSize } from '@/apps/mail/utils/composables'
+import { mailSearchRoute } from '@/apps/mail/utils/composables'
 import { useRootStore } from '@/stores/root'
 
 // The search view's own header: the query (click to edit) and the filters as removable pills.
@@ -91,8 +61,8 @@ const route = useRoute()
 const router = useRouter()
 const user = inject<UserResource>('$user')
 if (!user) throw new Error('Missing required user provider')
-const { isMobile } = useScreenSize()
-const { accountId, mailboxes, mailboxIds } = userStore()
+const store = userStore()
+const { mailboxes } = store
 const root = useRootStore()
 
 const showReadingPane = computed(() => !!user.data?.show_reading_pane)
@@ -148,7 +118,7 @@ const searchFilterChips = computed(() => {
 // search view for the Inbox.
 const searchWith = (query: Record<string, string>) => {
   if (!Object.keys(query).length) return exitSearch()
-  router.push(mailSearchRoute(accountId, query))
+  router.push(mailSearchRoute(store.accountId, query))
 }
 const removeSearchFilter = (key: string) => {
   const query: Record<string, string> = {}
@@ -162,5 +132,8 @@ const removeSearchFilter = (key: string) => {
 const clearSearch = () => searchWith(searchQuery.value ? { text: searchQuery.value } : {})
 
 const exitSearch = () =>
-  router.push({ name: 'mail-mailbox', params: { accountId, mailbox: mailboxIds.inbox } })
+  router.push({
+    name: 'mail-mailbox',
+    params: { accountId: store.accountId, mailbox: store.mailboxIds.inbox },
+  })
 </script>

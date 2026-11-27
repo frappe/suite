@@ -49,12 +49,12 @@ Scope, decided 2026-09-11:
   route decisions. A new Drive backend need is an ask on the Drive program,
   not a decision here.
 - Inputs from the Drive program: superseded tickets
-  [32](../drive-layer-spec/implementation/issues/32-frontend-drive-adoption.md),
-  [33](../drive-layer-spec/implementation/issues/33-frontend-sharing-and-links.md)
+  32,
+  33
   and
-  [34](../drive-layer-spec/implementation/issues/34-frontend-content-adoption.md).
+  34.
   Cleanup activation
-  ([36](../drive-layer-spec/implementation/issues/36-cleanup-later-release.md))
+  (36)
   waits on this effort.
 - Facts checked 2026-09-11: the frontend is one Vite app with one router and
   a per-app registry (`frontend/src/apps/registry.ts`); the shell is an empty
@@ -87,6 +87,8 @@ Scope, decided 2026-09-11:
 
 ### Local tracker conventions
 
+- The tickets, progress notes and handoffs were removed before this branch merged.
+  They are in git history at `fd03f7c75`.
 - Tickets live in `tickets/`, one file each, frontmatter: `id`, `title`,
   `label` (`wayfinder:<type>`), `status` (open/closed), `assignee`
   (empty = unclaimed), `blocked-by` (list of ids).
@@ -96,7 +98,7 @@ Scope, decided 2026-09-11:
 
 ## Decisions so far
 
-- [Fold decisions into the spec and plan](tickets/022-fold-decisions-into-the-spec-and-plan.md) —
+- Fold decisions into the spec and plan —
   The destination is reached. [`unified-frontend-spec.md`](unified-frontend-spec.md)
   and [`unified-frontend-plan.md`](unified-frontend-plan.md) carry every
   decision, audited twice. Faris approved `vue-tsc` and `hash-wasm`. The
@@ -107,14 +109,14 @@ Scope, decided 2026-09-11:
   Faris approved the spec on 2026-09-29. Error tracking is Sentry, with
   the reporter in `platform/`; the backend reporter is proposed, not decided.
 
-- [Product methods and the zero-call gate](tickets/017-product-methods-and-the-zero-call-gate.md) —
+- Product methods and the zero-call gate —
   No `suite.drive.api.*` dotted path outlives Drive Cleanup (Faris); only
   `/dav` stays. Five new Drive routes replace the product methods (Drive
   issue 39), Cleanup deletes every legacy name (Drive issue 40), and the
   zero-call gate and counter cover all 69 names. Drive leads; the other
   apps move off dotted paths in their own efforts.
 
-- [Unmapped legacy routes and the /files path](tickets/020-unmapped-legacy-routes-and-the-files-path.md) —
+- Unmapped legacy routes and the /files path —
   The area prefix is `/drive` and the rail label is "Drive" (Faris); the
   flip key selects the old or new route table under `/drive` until flip 2,
   and `/drive/f/<id>` resolves by kind. Orphan old listings go to
@@ -122,7 +124,7 @@ Scope, decided 2026-09-11:
   rows; a lookup with no node falls through. Frappe ask filed as
   frappe/frappe#43523.
 
-- [Branches, backend asks and the release path](tickets/019-branches-backend-asks-and-release-path.md) —
+- Branches, backend asks and the release path —
   One development branch, `forge/drive-layer`, merge only (Faris; merged
   and pushed as `a8cb8ff6e`). One `develop` release carries Build and
   stages 0 to 12 with both keys off; flip 1 and then flip 2 follow on it
@@ -130,13 +132,13 @@ Scope, decided 2026-09-11:
   Faris sets the keys on Frappe Cloud by hand. Drive asks D10 to D28 are
   Drive issues 41 to 46.
 
-- [Account menu, Files entry points and icons](tickets/021-account-menu-files-entry-points-and-icons.md) —
+- Account menu, Files entry points and icons —
   lucide on every surface (Faris). Upgrade plan and Open Desk show to
   system managers only; Upgrade plan waits on ask S5. The Files New menu
   gains Upload folder and From template; a dropped OS folder runs the
   folder upload flow.
 
-- [Flip 1 rollback with deleted app chrome](tickets/018-flip-1-rollback-with-deleted-app-chrome.md) —
+- Flip 1 rollback with deleted app chrome —
   Mail, Calendar and Meet keep their standalone chrome in code and draw
   it only outside the shell; it goes with the keys at deletion. On
   2026-09-29 Faris ruled that the keys turn areas on in order and are not
@@ -148,14 +150,14 @@ Scope, decided 2026-09-11:
   UI are deleted, the rail lists every area, and Mail, Calendar and Meet
   render inside the shell on every route.
 
-- [Draft the spec and plan](tickets/015-draft-the-spec-and-plan.md) —
+- Draft the spec and plan —
   Both documents are drafted and audited against every resolution: the
   spec in 16 sections with an ask table and 24 open items, the plan in 16
   stages from the verified state at HEAD. Nine small orchestrator rulings
   await Faris's veto. Five decisions only Faris can make became tickets
   017 to 021; ticket 022 folds them in.
 
-- [Rollout, redirects and old-page deletion](tickets/014-rollout-redirects-and-old-page-deletion.md) —
+- Rollout, redirects and old-page deletion —
   Two flips, each one `frappe.conf` key: the shell with Mail, Meet and
   Calendar, then Home, Files and documents. One server redirect table
   keeps old links working forever with 302s (Faris dropped the 301 on
@@ -164,7 +166,7 @@ Scope, decided 2026-09-11:
   at zero, which is the evidence Drive Cleanup needs. One Drive ask: that
   counter.
 
-- [Settings dialog groups and account surfaces](tickets/016-settings-dialog-and-account-surfaces.md) —
+- Settings dialog groups and account surfaces —
   Products hand settings to one composition list; one heading per product
   (Account, Files, Mail, Calendar, Meet, then Workspace); tab bodies load on
   click; phone gets a shell drill-in list. The desktop avatar menu holds
@@ -172,7 +174,7 @@ Scope, decided 2026-09-11:
   go when their apps flip; Meet keeps its in-call dialog. Tab ids are typed
   and namespaced.
 
-- [Guest and link routes](tickets/011-guest-and-link-routes.md) —
+- Guest and link routes —
   The server resolves `/l/<token>` and redirects to the node route with the
   token in the URL fragment; unlock is a 401 state on that route, with a
   `Retry-After` countdown on lockout. A guest gets the shell with no rail
@@ -181,7 +183,7 @@ Scope, decided 2026-09-11:
   stays; the setup gate skips guest routes. Withdraws ticket 008's
   `GET /links/<token>` ask; two new Drive asks.
 
-- [Mail, Meet and Calendar adoption contract](tickets/010-mail-meet-calendar-adoption-contract.md) —
+- Mail, Meet and Calendar adoption contract —
   The shell gives a rail and a full box; a page draws its own sidebar through
   the platform's `<AreaSidebar>`, and `AreaDefinition` loses `loadPanel`.
   Mail and Calendar keep their sidebars and their phone bars and drop the
@@ -191,7 +193,7 @@ Scope, decided 2026-09-11:
   Calendar imports and per-app catalogs stay as debt. All three flip
   together. Amends tickets 001, 002 and 012.
 
-- [Sharing dialog and link credentials](tickets/008-sharing-dialog-and-link-credentials.md) —
+- Sharing dialog and link credentials —
   The Drive client owns link codes: nodes reached through a link are tagged
   with its code, the store is `localStorage` with eviction and clear on sign
   out, and reads over 20 codes split while writes refuse. The dialog has
@@ -199,7 +201,7 @@ Scope, decided 2026-09-11:
   local rows, Deny on inherited ones; roles per principal table. Outsiders
   get their own emailed link. Seven Drive asks and one Suite people search.
 
-- [Upload, restore and batch outcomes](tickets/007-upload-restore-and-batch-outcomes.md) —
+- Upload, restore and batch outcomes —
   Drive owns the upload queue and tracker over the platform `upload()`.
   Uploads survive area changes and resume after reload (IndexedDB record,
   re-pick check, sha256 on resume). The Files rail item shows queue
@@ -209,7 +211,7 @@ Scope, decided 2026-09-11:
   `DriveRestoreDestinationRequired` error. Batch purge and Empty trash get
   routes; batch outcomes have no Retry button. Six Drive asks recorded.
 
-- [Frontend module layout and import boundaries](tickets/013-frontend-module-layout-and-boundaries.md) —
+- Frontend module layout and import boundaries —
   Drive owns separate `files` and deletable `legacy` subtrees; eight decided
   platform modules move on day one behind compatibility shims. Package-root
   product seams and the full acyclic import graph are enforced with shrinking
@@ -219,7 +221,7 @@ Scope, decided 2026-09-11:
   visible. Suite architecture paths belong to `@netchampfaris`, and Drive is
   co-owned by `@BreadGenie` and `@netchampfaris`.
 
-- [Home, palette and notifications at launch](tickets/012-home-palette-and-notifications-at-launch.md) —
+- Home, palette and notifications at launch —
   Home Recent is 12 Drive recents in one uncursored window; Upcoming is
   Calendar events only from now to end of tomorrow, across every account,
   with a typed conferencing field driving Join. New carries three document
@@ -230,7 +232,7 @@ Scope, decided 2026-09-11:
   Sections never hide and fail inline. The shell ships upstream's Cmd+K
   palette; search across products is out of scope.
 
-- [Files area: listing, navigation and roots](tickets/006-files-area-listing-and-navigation.md) —
+- Files area: listing, navigation and roots —
   My files and Organization files are direct panel locations; Shared with me,
   Recent, Starred and root-tabbed Trash are saved views. Listings use opaque
   infinite cursors, server-owned folders-first sorting/grouping, exact
@@ -240,7 +242,7 @@ Scope, decided 2026-09-11:
   view access, search breadcrumbs, folder archives and payload-free realtime
   invalidation are recorded backend asks.
 
-- [Content page contract](tickets/009-content-page-contract.md) — one generic
+- Content page contract — one generic
   host opens a live Drive `DocumentSession` and mounts a fresh product adapter
   per node; each product owns its complete document surface, body,
   collaboration, panels, geometry and leave guard. The session owns node
@@ -248,7 +250,7 @@ Scope, decided 2026-09-11:
   handles; one composition registry drives opening and generic Drive creation,
   and legacy pages remain separate until ticket 014 flips their redirects.
 
-- [REST endpoint structure beyond Drive](tickets/003-rest-endpoint-structure.md) —
+- REST endpoint structure beyond Drive —
   Drive is the reference for resource-shaped `/api/suite/<owner>/...` routes;
   one composition dispatcher selects product-owned typed route tables, while
   Suite owns account, site, user and invitation resources. New shell
@@ -257,7 +259,7 @@ Scope, decided 2026-09-11:
   executable conformance kit before legacy removal follows a zero-caller
   proof.
 
-- [Shell and platform interface](tickets/002-shell-and-platform-interface.md) —
+- Shell and platform interface —
   products export small area definitions through their public seams;
   composition owns ordering and capability filtering; typed route metadata
   selects shell frame and scroll ownership; the platform owns session,
@@ -267,7 +269,7 @@ Scope, decided 2026-09-11:
   shell surface, and frappe-ui's existing page-header target is the flexible
   page-to-shell seam.
 
-- [Route grammar](tickets/001-route-grammar.md) — canonical areas are
+- Route grammar — canonical areas are
   `/home`, `/drive`, `/mail`, and `/calendar`; `/` redirects to `/home`;
   roots use memorable `/drive` and `/drive/organization` routes, folders use
   `/drive/f/<node-id>/<decorative-slug>`, and content uses
@@ -276,14 +278,14 @@ Scope, decided 2026-09-11:
   and unauthenticated visitors use the Guest surface. Ticket 020 renamed the
   `/files` prefix to `/drive`.
 
-- [frappe-ui shell component gap](tickets/004-frappe-ui-shell-component-gap.md) —
+- frappe-ui shell component gap —
   no gap: all 28 prototype components exist at suite's pin; no bump needed;
   `v1.0.0-beta.56` would cost one toast migration; use `frappe-ui/list`,
   add no `frappe-ui/experimental` imports; Rail and Sidebar need suite
   wrappers for geometry, scroll and badges; node_modules is stale against
   the lock.
 
-- [Legacy Drive client inventory](tickets/005-legacy-drive-client-inventory.md) —
+- Legacy Drive client inventory —
   60 legacy names, all in Drive UI (Writer repeats six); 29 have an exact
   REST route, 31 do not (17 product methods stay on `/api/method/` by
   design); four backend asks surfaced: root discovery, unread count, folder
@@ -321,7 +323,7 @@ Scope, decided 2026-09-11:
 ## Out of scope
 
 - Global search across products. Ruled out under
-  [Home, palette and notifications at launch](tickets/012-home-palette-and-notifications-at-launch.md):
+  Home, palette and notifications at launch:
   the unified shell ships upstream's Cmd+K palette, which searches only the
   current area, and no rail Search button. Search that spans products is a
   separate effort.
@@ -336,5 +338,5 @@ Scope, decided 2026-09-11:
 - One storage pool for Mail and Meet bytes: Meet recordings as Drive Nodes,
   Mail usage read from Stalwart into the quota, and the Mail composer's
   orphaned `File` rows. Findings are in
-  [Upload, restore and batch outcomes](tickets/007-upload-restore-and-batch-outcomes.md);
+  Upload, restore and batch outcomes;
   the Drive, Mail and Meet programs own them.

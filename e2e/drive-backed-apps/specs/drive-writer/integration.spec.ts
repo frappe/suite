@@ -52,7 +52,11 @@ test("a Writer document is renamed, moved, trashed, restored and reopened from D
 	const title = uniqueWriterTitle(run.run_id, "lifecycle");
 	const renamedTitle = `${title} renamed`;
 	const content = `Writer lifecycle content ${run.run_id}`;
-	const embedContent = `Writer embed content ${run.run_id}`;
+	// A 16 px PNG: an embed is a picture or a video.
+	const embedPicture = Buffer.from(
+		"iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGklEQVR4nGP4z8BAEhrVMKphVMOohlENQ1UDAOWw/wF6FG3VAAAAAElFTkSuQmCC",
+		"base64",
+	);
 	const file = await createWriterDocument(page.request, title);
 	const folder = await createFolder(page.request, uniqueName(run.run_id, "writer-folder"));
 
@@ -62,9 +66,9 @@ test("a Writer document is renamed, moved, trashed, restored and reopened from D
 		multipart: {
 			file_id: file.name,
 			file: {
-				name: "writer-embed.txt",
-				mimeType: "text/plain",
-				buffer: Buffer.from(embedContent),
+				name: "writer-embed.png",
+				mimeType: "image/png",
+				buffer: embedPicture,
 			},
 		},
 	});
@@ -95,7 +99,7 @@ test("a Writer document is renamed, moved, trashed, restored and reopened from D
 	// Trash makes the document read-only, not unreadable: its owner still reaches the embed.
 	expect(await embedStatus()).toBe(true);
 	await restoreNode(page.request, file.name);
-	expect(await (await page.request.get(embed.file_url)).text()).toBe(embedContent);
+	expect(await (await page.request.get(embed.file_url)).body()).toEqual(embedPicture);
 
 	await page.goto(`/drive/f/${folder.name}`);
 	await row(page, file.name).click();

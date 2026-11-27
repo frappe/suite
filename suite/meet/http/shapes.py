@@ -31,6 +31,7 @@ RecordingStatus = Literal[
     "Partial",
     "Failed",
     "Cancelled",
+    "Captured",
 ]
 
 
@@ -43,12 +44,18 @@ class RecordingState(TypedDict):
     interruption_id: NotRequired[str | None]
     interrupted_at: NotRequired[str | None]
     interruption_deadline: NotRequired[str | None]
+    video_enabled: NotRequired[bool]
+    transcription_enabled: NotRequired[bool]
+    transcription_language: NotRequired[Literal["en"] | None]
+    transcription_capture_state: NotRequired[Literal["capturing", "complete", "partial", "failed"] | None]
+    video_capture_state: NotRequired[Literal["starting", "capturing", "complete", "failed"] | None]
 
 
 class RecordingCommand(TypedDict):
     name: str
     status: RecordingStatus
     grant_delivered: NotRequired[bool]
+    state_revision: NotRequired[int]
 
 
 class RecordingSummary(TypedDict):
@@ -68,6 +75,9 @@ class RejectedRecording(TypedDict):
 class RecordingPreflight(TypedDict):
     eligible: bool
     global_enabled: bool
+    transcription_available: bool
+    video_enabled: bool
+    transcription_enabled: bool
     e2ee_conflict: bool
     storage_available: bool
     recorder_available: bool

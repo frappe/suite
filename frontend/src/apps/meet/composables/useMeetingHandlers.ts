@@ -54,7 +54,6 @@ interface MeetingHandlersDeps {
   sfuConnection: SFUConnectionActions
   mediaControls: MediaControlsActions
   lobby: LobbyActions
-  refreshMeeting: () => Promise<unknown>
   meetingId: string
   isCurrentUserHost: Ref<boolean>
   isPeopleOpen: Ref<boolean>
@@ -209,7 +208,6 @@ export function useMeetingHandlers(deps: MeetingHandlersDeps) {
 
       if (response.meeting_id) {
         toast.success(__('User promoted to co-host'))
-        await deps.refreshMeeting()
       }
     } catch (error) {
       console.error('Failed to promote participant:', error)

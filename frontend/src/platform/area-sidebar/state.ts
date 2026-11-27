@@ -1,5 +1,6 @@
-import { useMediaQuery } from '@vueuse/core'
 import { ref, type InjectionKey, type Ref } from 'vue'
+
+import { isPhoneWidth } from '@/platform/phone-width'
 
 /**
  * The window event that asks the active area's sidebar to open its phone
@@ -19,8 +20,8 @@ export const AREA_SIDEBAR_TARGET_ID = 'suite-area-sidebar'
 export const AREA_SIDEBAR_FOOTER_KEY: InjectionKey<Readonly<Ref<HTMLElement | null>>> =
   Symbol('area-sidebar-footer')
 
-/** Same breakpoint as the shell's phone layout (`shell/useIsMobile.ts`). */
-export const isPhone = useMediaQuery('(max-width: 767px)')
+/** The shell's phone layout: the same state as the shell's, so the two switch together. */
+export const isPhone = isPhoneWidth
 
 const mounted = ref<Readonly<Record<string, number>>>({})
 

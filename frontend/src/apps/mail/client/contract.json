@@ -14,14 +14,47 @@
       "query": null,
       "body": null,
       "output": {
+        "$defs": {
+          "AccountUnread": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "unread": {
+                "title": "Unread",
+                "type": "integer"
+              },
+              "personal": {
+                "title": "Personal",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "name",
+              "unread",
+              "personal"
+            ],
+            "title": "AccountUnread",
+            "type": "object"
+          }
+        },
         "properties": {
           "unread": {
             "title": "Unread",
             "type": "integer"
+          },
+          "accounts": {
+            "items": {
+              "$ref": "#/$defs/AccountUnread"
+            },
+            "title": "Accounts",
+            "type": "array"
           }
         },
         "required": [
-          "unread"
+          "unread",
+          "accounts"
         ],
         "title": "InboxSummary",
         "type": "object"
@@ -1002,6 +1035,14 @@
             ],
             "title": "Split Inbox",
             "type": "integer"
+          },
+          "all_mail_tab": {
+            "enum": [
+              0,
+              1
+            ],
+            "title": "All Mail Tab",
+            "type": "integer"
           }
         },
         "title": "UserPreferences",
@@ -1173,14 +1214,6 @@
                   1
                 ],
                 "title": "Keep Forwarded Email In Thread",
-                "type": "integer"
-              },
-              "enable_screening": {
-                "enum": [
-                  0,
-                  1
-                ],
-                "title": "Enable Screening",
                 "type": "integer"
               },
               "block_remote_images": {
@@ -1364,6 +1397,17 @@
               }
             ],
             "title": "Html Signature"
+          },
+          "signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Signature"
           }
         },
         "required": [
@@ -1372,7 +1416,8 @@
           "name",
           "reply_to",
           "bcc",
-          "html_signature"
+          "html_signature",
+          "signature"
         ],
         "title": "SaveIdentity",
         "type": "object"
@@ -1419,12 +1464,20 @@
                   }
                 ],
                 "title": "Html Body"
+              },
+              "identities": {
+                "items": {
+                  "type": "string"
+                },
+                "title": "Identities",
+                "type": "array"
               }
             },
             "required": [
               "name",
               "signature_name",
-              "html_body"
+              "html_body",
+              "identities"
             ],
             "title": "Signature",
             "type": "object"
@@ -3075,6 +3128,14 @@
                 "title": "Split Inbox",
                 "type": "integer"
               },
+              "all_mail_tab": {
+                "enum": [
+                  0,
+                  1
+                ],
+                "title": "All Mail Tab",
+                "type": "integer"
+              },
               "email_classification": {
                 "title": "Email Classification",
                 "type": "boolean"
@@ -3114,6 +3175,7 @@
               "max_attachment_size",
               "inbox_tabs",
               "split_inbox",
+              "all_mail_tab",
               "email_classification",
               "is_suite_cloud_configured",
               "accounts"
@@ -3201,6 +3263,13 @@
                 "title": "Unread Threads",
                 "type": "integer"
               },
+              "unread_by_account": {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "title": "Unread By Account",
+                "type": "object"
+              },
               "accounts": {
                 "items": {
                   "type": "string"
@@ -3244,6 +3313,7 @@
               "name",
               "role",
               "unread_threads",
+              "unread_by_account",
               "accounts",
               "icon",
               "color"

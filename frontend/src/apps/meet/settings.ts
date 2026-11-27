@@ -33,6 +33,12 @@ export const meetSettings = {
       body: () => import('@/apps/meet/components/settings/NotificationSettingsTab.vue'),
     },
     {
+      id: 'meet.reactions',
+      label: () => __('Reactions'),
+      icon: 'lucide-smile',
+      body: () => import('@/apps/meet/components/settings/ReactionSettingsTab.vue'),
+    },
+    {
       id: 'meet.layout',
       label: () => __('Layout'),
       icon: 'lucide-layout-dashboard',

@@ -242,6 +242,9 @@ importers:
       '@codemirror/view':
         specifier: ^6.0.0
         version: 6.43.4
+      '@emoji-mart/data':
+        specifier: 1.2.1
+        version: 1.2.1
       '@floating-ui/dom':
         specifier: ^1.7.4
         version: 1.7.6
@@ -350,6 +353,9 @@ importers:
       echarts:
         specifier: ^6.1.0
         version: 6.1.0
+      emoji-mart:
+        specifier: 5.6.0
+        version: 5.6.0
       exceljs:
         specifier: 4.4.0
         version: 4.4.0
@@ -362,9 +368,6 @@ importers:
       frappe-ui:
         specifier: ^1.0.0
         version: 1.0.0(@codemirror/lang-css@6.3.1)(@codemirror/lang-html@6.4.11)(@codemirror/lang-javascript@6.2.5)(@codemirror/lang-json@6.0.2)(@codemirror/lang-markdown@6.5.0)(@codemirror/lang-python@6.2.1)(@codemirror/lang-sass@6.0.2)(@codemirror/lang-sql@6.10.0)(@codemirror/lang-xml@6.1.0)(@codemirror/lang-yaml@6.1.3)(@codemirror/lint@6.9.7)(@vue/compiler-dom@3.5.42)(rolldown@1.1.3)(rollup@4.62.2)(supports-color@11.0.0)(tailwindcss@3.4.19(yaml@2.9.0))(vite@8.1.0(@types/node@26.6.4)(jiti@1.21.7)(sass@1.101.0)(terser@5.48.0)(yaml@2.9.0))(vue-router@4.6.4(vue@3.5.39(typescript@6.0.3)))(vue@3.5.39(typescript@6.0.3))
-      gemoji:
-        specifier: ^8.1.0
-        version: 8.1.0
       hash-wasm:
         specifier: ^4.12.0
         version: 4.12.0
@@ -1226,6 +1229,9 @@ packages:
 
   '@emnapi/wasi-threads@1.2.2':
     resolution: {integrity: sha512-c95qOXkHdydNKhscBTebqEC1CVAZpyqOfVfBzQ1qgzyl3gfeldUjIggDbIZgDKsHLgnsM+igH7TJ/eAasaVuMA==}
+
+  '@emoji-mart/data@1.2.1':
+    resolution: {integrity: sha512-no2pQMWiBy6gpBEiqGeU77/bFejDqUTRY7KX+0+iur13op3bqUsXdnwoZs6Xb1zbv0gAj5VvS1PWoUUckSr5Dw==}
 
   '@eslint-community/eslint-utils@4.10.1':
     resolution: {integrity: sha512-cuadcxVFE8sDK6iWJbs8Sn0av2Nrh2QSGQhVlBW9AaAHqHwjWsZHT8LJ4hFGPh7ASBV2deFdM7H/DPjulmh8rg==}
@@ -3571,6 +3577,9 @@ packages:
   electron-to-chromium@1.5.380:
     resolution: {integrity: sha512-W6d5AbuEoRayO447cqrg6lKJIlscgRnnxOZl/08kfV71BQDoEBC7Wwis68z87LjyK6f4kWyTaubuDbhHKrZkbA==}
 
+  emoji-mart@5.6.0:
+    resolution: {integrity: sha512-eJp3QRe79pjwa+duv+n7+5YsNhRcMl812EcFVwrnRvYKoNPoQb5qxU8DG6Bgwji0akHdp6D4Ln6tYLG58MFSow==}
+
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
 
@@ -3927,9 +3936,6 @@ packages:
 
   fuzzysort@3.1.0:
     resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
-
-  gemoji@8.1.0:
-    resolution: {integrity: sha512-HA4Gx59dw2+tn+UAa7XEV4ufUKI4fH1KgcbenVA9YKSj1QJTT0xh5Mwv5HMFNN3l2OtUe3ZIfuRwSyZS5pLIWw==}
 
   generator-function@2.0.1:
     resolution: {integrity: sha512-SFdFmIJi+ybC0vjlHN0ZGVGHc3lgE0DxPAT0djjVg+kjOnSqclqmj0KQ7ykTOLP6YxoqOvuAODGdcHJn+43q3g==}
@@ -4528,8 +4534,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-static@1.31.0:
-    resolution: {integrity: sha512-XFX9NO+gcLsOkXISmeQZYGJa2siGWZc/lgT/BK1b83h9RdOiz3cj1eQP5nWhELiB1KhW5ryk0nmMopOgm/CuSA==}
+  lucide-static@1.33.0:
+    resolution: {integrity: sha512-jNGgvTNcLUfVRX4N9PH9pVVTJzoph/BmYmgU838bYBQodkUJL4nAThkuymFz1x3OUYMhJxPndC7rdg1sxOPYKg==}
 
   lucide-vue-next@1.0.0:
     resolution: {integrity: sha512-V6SPvx1IHTj/UY+FrIYWV5faISsPSb8BnWSFDxAtezWKvWc9ZZ40PDrdu1/Qb5vg4lHWr1hs1BAMGVGm6V1Xdg==}
@@ -6962,6 +6968,8 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@emoji-mart/data@1.2.1': {}
+
   '@eslint-community/eslint-utils@4.10.1(eslint@10.12.0(jiti@1.21.7)(supports-color@11.0.0))':
     dependencies:
       eslint: 10.12.0(jiti@1.21.7)(supports-color@11.0.0)
@@ -9261,6 +9269,8 @@ snapshots:
 
   electron-to-chromium@1.5.380: {}
 
+  emoji-mart@5.6.0: {}
+
   emoji-regex@8.0.0: {}
 
   encoding-sniffer@0.2.1:
@@ -9681,7 +9691,7 @@ snapshots:
       highlight.js: 11.11.1
       idb-keyval: 6.2.5
       lowlight: 3.3.0
-      lucide-static: 1.31.0
+      lucide-static: 1.33.0
       magic-string: 0.30.21
       marked: 15.0.12
       reka-ui: 2.10.1(vue@3.5.39(typescript@6.0.3))
@@ -9769,8 +9779,6 @@ snapshots:
   functions-have-names@1.2.3: {}
 
   fuzzysort@3.1.0: {}
-
-  gemoji@8.1.0: {}
 
   generator-function@2.0.1: {}
 
@@ -10346,7 +10354,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-static@1.31.0: {}
+  lucide-static@1.33.0: {}
 
   lucide-vue-next@1.0.0(vue@3.5.39(typescript@6.0.3)):
     dependencies:

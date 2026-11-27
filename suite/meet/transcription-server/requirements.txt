@@ -1,0 +1,7 @@
+# Torch 2.8.0 + CUDA 12.8 are supplied by the pinned base image.
+transformers==5.19.0
+accelerate==1.13.0
+huggingface-hub==2.2.0
+numpy==1.26.4
+safetensors==0.8.0
+soundfile==0.13.1

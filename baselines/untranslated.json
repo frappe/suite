@@ -16,14 +16,13 @@
   "frontend/src/apps/drive/files/features/uploads/DropOverlay.vue": 1,
   "frontend/src/apps/drive/files/pages/FilesPage.vue": 12,
   "frontend/src/apps/drive/files/pages/FilesPanel.vue": 7,
-  "frontend/src/apps/mail/components/EmojiPicker.vue": 1,
   "frontend/src/apps/mail/components/LoginLayout.vue": 1,
   "frontend/src/apps/mail/components/Modals/AddAccountModal.vue": 3,
   "frontend/src/apps/mail/components/Modals/AddDomainModal.vue": 1,
   "frontend/src/apps/mail/components/Modals/AddPushSubscriptionModal.vue": 2,
   "frontend/src/apps/mail/components/Modals/FolderModal.vue": 2,
   "frontend/src/apps/mail/components/Settings/ContactsExportSettings.vue": 1,
-  "frontend/src/apps/mail/components/Settings/IdentitySettings.vue": 2,
+  "frontend/src/apps/mail/components/Settings/IdentitySettings.vue": 1,
   "frontend/src/apps/mail/components/Settings/MailExportSettings.vue": 1,
   "frontend/src/apps/mail/pages/ForgotPasswordView.vue": 1,
   "frontend/src/apps/mail/pages/LoginView.vue": 1,
@@ -84,6 +83,5 @@
   "frontend/src/composition/DocumentHost.vue": 4,
   "frontend/src/composition/home/HomePage.vue": 1,
   "frontend/src/shell/GuestSurface.vue": 1,
-  "frontend/src/shell/NotFoundView.vue": 2,
   "frontend/src/shell/SuiteCommandPalette.vue": 17
 }

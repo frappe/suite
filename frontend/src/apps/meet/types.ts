@@ -1,3 +1,5 @@
+import type { RecordingStateOutput } from './client/generated'
+
 export type Platform = 'win' | 'mac' | 'linux' | 'unknown'
 
 export interface ParticipantPreview {
@@ -82,21 +84,7 @@ export interface JoinPayload {
   host_only_chat?: boolean
   recording_enabled?: boolean
   user_data?: JoinUserData
-  recording?: {
-    name: string
-    status:
-      | 'Pending'
-      | 'Recording'
-      | 'Interrupted'
-      | 'Stopping'
-      | 'Processing'
-      | 'Ready'
-      | 'Partial'
-      | 'Failed'
-    started_at?: string
-    capture_started_at?: string
-    state_revision: number
-  } | null
+  recording?: RecordingStateOutput
 }
 
 export interface JoinRoomMediaState {
@@ -149,6 +137,7 @@ function normalizeJoinUserData(value: unknown): JoinUserData | undefined {
 
 const RECORDING_STATUSES = [
   'Pending',
+  'Starting',
   'Recording',
   'Interrupted',
   'Stopping',
@@ -156,6 +145,8 @@ const RECORDING_STATUSES = [
   'Ready',
   'Partial',
   'Failed',
+  'Cancelled',
+  'Captured',
 ] as const
 
 function normalizeRecording(value: unknown): JoinPayload['recording'] | undefined {
@@ -175,6 +166,26 @@ function normalizeRecording(value: unknown): JoinPayload['recording'] | undefine
     status,
     started_at: optionalString(value.started_at),
     capture_started_at: optionalString(value.capture_started_at),
+    video_enabled: optionalBoolean(value.video_enabled),
+    transcription_enabled: optionalBoolean(value.transcription_enabled),
+    transcription_language: value.transcription_language === 'en' ? 'en' : undefined,
+    interruption_id: optionalString(value.interruption_id),
+    interrupted_at: optionalString(value.interrupted_at),
+    interruption_deadline: optionalString(value.interruption_deadline),
+    transcription_capture_state:
+      value.transcription_capture_state === 'capturing' ||
+      value.transcription_capture_state === 'complete' ||
+      value.transcription_capture_state === 'partial' ||
+      value.transcription_capture_state === 'failed'
+        ? value.transcription_capture_state
+        : undefined,
+    video_capture_state:
+      value.video_capture_state === 'starting' ||
+      value.video_capture_state === 'capturing' ||
+      value.video_capture_state === 'complete' ||
+      value.video_capture_state === 'failed'
+        ? value.video_capture_state
+        : undefined,
     state_revision: value.state_revision,
   }
 }

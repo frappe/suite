@@ -6,24 +6,27 @@ import MailTabBar from '@/apps/mail/components/mobile/MailTabBar.vue'
 
 const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehorn'))
 
-const calls = vi.hoisted(() => ({ search: 0, folders: fromPartial<string[]>([]) }))
+const calls = vi.hoisted(() => ({
+  search: 0,
+  compose: 0,
+  folders: fromPartial<string[]>([]),
+  selecting: false,
+}))
 
-// Unit tests alias frappe-ui to a stub. The bar and its items are the real
-// components here, so a wrong prop name fails the test.
+// Unit tests alias frappe-ui to a stub; the island lands on the body, as it does without Mail's
+// overlay layer.
 vi.mock('frappe-ui', async (original) => {
   const { defineComponent, h } = await import('vue')
   return {
     ...(await original<object>()),
     toast: { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
-    MobileNav: (
-      await import('../../../../../../node_modules/frappe-ui/src/components/MobileNav/MobileNav.vue')
-    ).default,
-    MobileNavItem: (
-      await import('../../../../../../node_modules/frappe-ui/src/components/MobileNav/MobileNavItem.vue')
-    ).default,
     Avatar: defineComponent({ setup: () => () => h('span') }),
+    usePortalTarget: () => undefined,
   }
 })
+vi.mock('@/apps/mail/composables/composeHandoff', () => ({
+  openComposePage: () => calls.compose++,
+}))
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'a',
@@ -42,9 +45,13 @@ vi.mock('@/apps/mail/stores/user', () => ({
     },
   }),
 }))
-vi.mock('@/apps/mail/utils/composables', () => ({
-  useMobileSearch: () => ({ openSearch: () => calls.search++ }),
-}))
+vi.mock('@/apps/mail/utils/composables', async () => {
+  const { ref } = await import('vue')
+  return {
+    useMobileSearch: () => ({ openSearch: () => calls.search++ }),
+    useMobileSelection: () => ({ isMobileSelectionActive: ref(calls.selecting) }),
+  }
+})
 vi.mock('@/platform/area-sidebar', () => ({
   openAreaSidebar: (area: string) => calls.folders.push(area),
 }))
@@ -65,7 +72,9 @@ let cleanup: (() => void) | undefined
 afterEach(() => {
   cleanup?.()
   calls.search = 0
+  calls.compose = 0
   calls.folders = []
+  calls.selecting = false
 })
 
 async function mountAt(path: string) {
@@ -93,19 +102,18 @@ async function mountAt(path: string) {
     app.unmount()
     root.remove()
   }
-  const items = () =>
-    [...root.querySelectorAll<HTMLElement>('[data-slot="mobile-nav-item"]')].map((item) =>
-      item.getAttribute('aria-label'),
-    )
-  const item = (label: string) =>
-    root.querySelector<HTMLElement>(`[data-slot="mobile-nav-item"][aria-label="${label}"]`)!
-  return { router, items, item }
+  const nav = () => document.querySelector<HTMLElement>('nav[aria-label="Mail"]')
+  const tabs = () => [...(nav()?.querySelectorAll<HTMLElement>('button') ?? [])]
+  const items = () => tabs().map((tab) => tab.textContent?.trim())
+  const item = (label: string) => tabs().find((tab) => tab.textContent?.trim() === label)!
+  const compose = () => document.querySelector<HTMLElement>('button[aria-label="Compose"]')
+  return { router, nav, items, item, compose }
 }
 
 describe("Mail's bottom bar", () => {
   it('holds the folder you are in, Search and your profile, and no other app', async () => {
     const { items } = await mountAt('/mail/account/a/mailbox/receipts')
-    expect(items()).toEqual(['Receipts', 'Search', 'Profile'])
+    expect(items()).toEqual(['Receipts', 'Search', 'Settings'])
   })
 
   it('opens the folders from the folder you are in', async () => {
@@ -147,7 +155,7 @@ describe("Mail's bottom bar", () => {
 
   it("opens Mail's profile page from Profile, and goes back to the Inbox from there", async () => {
     const { item, router } = await mountAt('/mail/account/a/mailbox/inbox')
-    item('Profile').click()
+    item('Settings').click()
     await vi.waitFor(() =>
       expect(router.currentRoute.value.fullPath).toBe('/mail/account/a/profile'),
     )
@@ -157,6 +165,25 @@ describe("Mail's bottom bar", () => {
     )
     expect(calls.folders).toEqual([])
   })
+  it('offers Compose in a folder, and not in search results or on the profile page', async () => {
+    const { compose, router } = await mountAt('/mail/account/a/mailbox/receipts')
+    compose()!.click()
+    expect(calls.compose).toBe(1)
+    await router.push('/mail/account/a/mailbox/search')
+    await nextTick()
+    expect(compose()).toBeNull()
+    await router.push('/mail/account/a/profile')
+    await nextTick()
+    expect(compose()).toBeNull()
+  })
+
+  it('steps aside while mail is selected', async () => {
+    calls.selecting = true
+    const { nav, compose } = await mountAt('/mail/account/a/mailbox/inbox')
+    expect(nav()).toBeNull()
+    expect(compose()).toBeNull()
+  })
+
   it("goes back to every account's Inbox from Profile, when All accounts was chosen", async () => {
     localStorage.setItem('mail-unified', '1')
     try {

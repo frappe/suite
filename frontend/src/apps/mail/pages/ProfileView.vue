@@ -12,49 +12,71 @@
     :accounts
     :account-id="store.accountId"
     app="mail"
-    :all-accounts="{ active: showingAll }"
+    :all-accounts="{ active: showingAll, unread: unifiedInbox?.unread_threads }"
+    :unread="unifiedInbox?.unread_by_account"
     :logout
     @switch-account="onSwitchAccount"
-    @switch-to-all="switchToAll"
+    @switch-to-all="onSwitchToAll"
   >
-    <!-- Same title row AND the same header box as the other tab destinations — this is
-		     one of the four, not a pushed page. The wrapper's paddings are copied verbatim
-		     from ScreenerView rather than trimmed to what this view needs: the two headers
-		     are reached from the same sheet, so they have to measure the same. Its sub-pages
-		     keep the compact back-chevron bar. -->
+    <!-- The title bar every tab of Mail's opens on (Inbox, Search): no line under it. -->
     <template #header>
-      <header
-        class="flex shrink-0 items-center justify-between border-b px-3 py-2.5 max-sm:p-0 sm:px-5"
-      >
-        <MobileTitleHeader class="min-w-0 flex-1" :title="__('Profile')" />
-      </header>
+      <MobileTitleHeader :title="__('Settings')" />
+    </template>
+    <template #account>
+      <MailStorageCard />
     </template>
   </MobileProfilePage>
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
+import { api, client } from '@/api'
+import MailStorageCard from '@/apps/mail/components/mobile/MailStorageCard.vue'
 import MobileTitleHeader from '@/apps/mail/components/mobile/MobileTitleHeader.vue'
 import { sessionStore } from '@/apps/mail/stores/session'
 import { userStore } from '@/apps/mail/stores/user'
 import { useAccountSwitch } from '@/apps/mail/utils/composables'
 import { prefersUnified } from '@/apps/mail/utils/unifiedFolders'
 import MobileProfilePage from '@/components/MobileProfilePage.vue'
+import { whenIdle } from '@/platform/idle'
 
 const store = userStore()
 const { logout } = sessionStore()
 
+// What the Incoming and Outgoing pages open on, read while this page is idle: they open with their
+// switches and rows set, not filled in once the page is up. A read that fails is read again there.
+onMounted(() =>
+  whenIdle(() => {
+    const account = store.accountId
+    if (!account) return
+    for (const read of [
+      client.query(api.mail.settings.account, { account }),
+      client.query(api.mail.vacation.get, { account }),
+      client.query(api.mail.signatures.list),
+    ])
+      read.catch(() => undefined)
+  }),
+)
+
 const accounts = computed(() => store.userResource?.data?.accounts ?? [])
+// What is unread in each account's Inbox, and across them all. A system folder's slug is its role.
+const unifiedInbox = computed(() =>
+  store.unifiedFolders.data?.find((folder) => folder.slug === 'inbox'),
+)
 
 // Shared with the sidebar's account submenu. This route carries an accountId, so
 // switching stays on Profile with the new account (see useAccountSwitch).
 const { switchAccount, switchToAll } = useAccountSwitch()
 // Whether the reader has every account showing at once: the lists open that way until an account
-// is picked. "All accounts" opens the merged Inbox.
+// is picked. Picking either stays here, as switching does on any page.
 const showingAll = ref(prefersUnified())
 const onSwitchAccount = (accountId: string) => {
   showingAll.value = false
   void switchAccount(accountId)
+}
+const onSwitchToAll = () => {
+  showingAll.value = true
+  switchToAll()
 }
 </script>

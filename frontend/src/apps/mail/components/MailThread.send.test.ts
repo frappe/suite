@@ -102,6 +102,7 @@ vi.mock('@/apps/mail/utils/accountScope', async () => {
       identities: ref({ data: [{ email: 'alice@example.com' }] }),
       screenedAddresses: ref({ data: [] }),
       mailboxIds: ref({ sent: 'sent', drafts: 'drafts' }),
+      mailboxes: ref({ data: [] }),
     }),
   }
 })
@@ -112,6 +113,8 @@ vi.mock('@/apps/mail/utils/composables', async () => {
     useComposeMail: () => ({ requestCompose: () => {} }),
     useSettings: () => ({}),
     useTheme: () => ({ dataTheme: ref('light') }),
+    useListReload: () => ({ requestListReload: () => {} }),
+    useUndo: () => ({ setUndoAction: () => {}, retireUndoAction: () => {} }),
     useDiscardingDrafts: () => ({
       isHeld: () => false,
       heldDrafts: ref(new Set()),

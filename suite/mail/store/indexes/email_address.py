@@ -45,12 +45,12 @@ class EmailAddressIndex(SearchStore):
     """Shared, per-account index of email addresses for recipient suggestions.
 
     Sources (cached messages, contact cards, JMAP lookups) feed in address dicts —
-    ``{name, email, last_sent_at?, is_contact?}`` — keyed by the lowercased address, so the same
-    address upserts across sources. Every field merges in a way that is safe to repeat: a name is
-    kept unless a newer one arrives, `last_sent_at` only moves forward, and `is_contact` only turns
-    on. Re-indexing what is already indexed therefore changes nothing. The index is cumulative —
-    nothing is removed when a source is evicted — so it doubles as an address book of everyone the
-    account has corresponded with.
+    ``{name, email, last_sent_at?, is_contact?, is_refetched?}`` — keyed by the lowercased
+    address, so the same address upserts across sources. Every field merges in a way that is
+    safe to repeat: a name is kept unless a newer one arrives, `last_sent_at` only moves forward,
+    and `is_contact` only turns on. Re-indexing what is already indexed therefore changes nothing.
+    The index is cumulative — nothing is removed when a source is evicted — so it doubles as an
+    address book of everyone the account has corresponded with.
     """
 
     ENTITY = "email_address"
@@ -80,19 +80,25 @@ class EmailAddressIndex(SearchStore):
             "text": " ".join(filter(None, (name, email))),
             "last_sent_at": int(address.get("last_sent_at") or 0),
             "is_contact": bool(address.get("is_contact")),
+            "is_refetched": bool(address.get("is_refetched")),
         }
 
     def merge_document(self, document: dict, existing: dict | None) -> dict:
         """Fold what is already indexed for the address into `document`.
 
         A batch carrying the same address twice merges here too, so the rules hold within a batch:
-        a nameless sighting never erases a name, and dates and the contact flag never go back.
+        a nameless sighting never erases a name, and dates and the contact flag never go back. A
+        refetched sighting is old mail back after eviction: it fills in a missing name only.
         """
 
+        is_refetched = document.pop("is_refetched", False)
         if existing is None:
             return document
 
-        document["name"] = document["name"] or existing.get("name")
+        indexed_name = existing.get("name")
+        document["name"] = (
+            (indexed_name or document["name"]) if is_refetched else (document["name"] or indexed_name)
+        )
         document["text"] = " ".join(filter(None, (document["name"], document["email"])))
         document["last_sent_at"] = max(document["last_sent_at"], existing.get("last_sent_at") or 0)
         document["is_contact"] = document["is_contact"] or bool(existing.get("is_contact"))
@@ -124,3 +130,14 @@ class EmailAddressIndex(SearchStore):
 
         hits, _total = self.search_prefix(tokens, limit=None)
         return hits
+
+    def get_recent_addresses(self, limit: int) -> list[dict]:
+        """Return up to `limit` addresses the account has sent mail to, most recently sent first.
+
+        What a recipient field offers before anything is typed. The index cannot sort by
+        `last_sent_at` itself (it is not a fast field, and making it one would wipe the index), so
+        every sent-to address is read and sorted here: one read, as a sheet opens.
+        """
+
+        sent = self.search_range("last_sent_at", 1, 2**62)
+        return sorted(sent, key=lambda address: -(address.get("last_sent_at") or 0))[:limit]

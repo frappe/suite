@@ -32,6 +32,33 @@ function token(
 }
 
 describe('AuthManager', () => {
+	it('accepts only signed supported speech context and clears it on cleanup', () => {
+		const manager = new AuthManager(SECRET);
+		const socket = createMockSocket();
+		socket.handshake.auth = {
+			token: token({
+				speech_context: {
+					vocabulary_version: 'frappe-v1',
+					title: 'Atlas review',
+				},
+			}),
+		};
+		expect(manager.authenticateSocket(socket)).toBe(true);
+		expect(socket.speechContext).toEqual({
+			vocabulary_version: 'frappe-v1',
+			title: 'Atlas review',
+		});
+		manager.cleanupSocket(socket);
+		expect(socket.speechContext).toBeUndefined();
+		for (const context of [
+			{ vocabulary_version: 'unknown', title: '' },
+			{ vocabulary_version: 'frappe-v1', title: 'x'.repeat(161) },
+		]) {
+			socket.handshake.auth.token = token({ speech_context: context });
+			expect(manager.authenticateSocket(socket)).toBe(false);
+		}
+	});
+
 	it('binds the JWT site claim to the socket', () => {
 		const manager = new AuthManager(SECRET);
 		const authToken = token();
@@ -132,30 +159,33 @@ describe('AuthManager', () => {
 	it.each([
 		['missing', {}],
 		['changed', { guest_generation: 4 }],
-	] as const)('rejects guest token refresh with %s generation', (_case, claims) => {
-		const manager = new AuthManager(SECRET);
-		const socket = createMockSocket({
-			userId: 'guest_1',
-			meetingId: 'room-1',
-			site: 'site-a',
-			scope: 'full',
-			isGuest: true,
-			guestGeneration: 3,
-			handshake: fromPartial({
-				auth: {},
-				query: {},
-				headers: {},
-				address: '127.0.0.1',
-			}),
-		});
+	] as const)(
+		'rejects guest token refresh with %s generation',
+		(_case, claims) => {
+			const manager = new AuthManager(SECRET);
+			const socket = createMockSocket({
+				userId: 'guest_1',
+				meetingId: 'room-1',
+				site: 'site-a',
+				scope: 'full',
+				isGuest: true,
+				guestGeneration: 3,
+				handshake: fromPartial({
+					auth: {},
+					query: {},
+					headers: {},
+					address: '127.0.0.1',
+				}),
+			});
 
-		expect(() =>
-			manager.updateSocketToken(
-				socket,
-				token({ user_id: 'guest_1', is_guest: true, ...claims }),
-			),
-		).toThrow();
-	});
+			expect(() =>
+				manager.updateSocketToken(
+					socket,
+					token({ user_id: 'guest_1', is_guest: true, ...claims }),
+				),
+			).toThrow();
+		},
+	);
 
 	it('rejects guest token refresh with a different guest identity', () => {
 		const manager = new AuthManager(SECRET);

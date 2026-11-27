@@ -7,6 +7,7 @@ import { CallbackClient } from './CallbackClient.js';
 import { CaptureWorker, type CaptureWorkerOptions } from './CaptureWorker.js';
 import { CaptureWorkerManager } from './CaptureWorkerManager.js';
 import type { CaptureSegment } from './captureTypes.js';
+import { logger } from './logger.js';
 import type { ManagedProcess, ProcessSupervisor } from './ProcessSupervisor.js';
 import { FakeRendererBridge, TEST_PUBLIC_JWK } from './RendererBridge.js';
 import { SegmentWatcher } from './SegmentWatcher.js';
@@ -64,18 +65,15 @@ afterEach(async () => {
 });
 
 describe('capture lifecycle', () => {
-	it('reports the next durable segment after a progress connection reset recovers', async () => {
+	it('keeps capturing after all progress callback retries time out', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
+		const timeout = new DOMException('request timed out', 'TimeoutError');
 		const fetch = vi
 			.fn()
-			.mockRejectedValueOnce(
-				new TypeError('fetch failed', {
-					cause: Object.assign(new Error('connection reset'), {
-						code: 'ECONNRESET',
-					}),
-				}),
-			)
+			.mockRejectedValueOnce(timeout)
+			.mockRejectedValueOnce(timeout)
+			.mockRejectedValueOnce(timeout)
 			.mockImplementation(
 				async () =>
 					new Response(
@@ -164,7 +162,7 @@ describe('capture lifecycle', () => {
 				fetch.mock.calls.map(
 					(call) => JSON.parse(String(call[1].body)).captured_bytes,
 				),
-			).toEqual([5, 5, 11]);
+			).toEqual([5, 5, 5, 11]);
 			expect(onStopRequested).not.toHaveBeenCalled();
 		} finally {
 			await worker.stop();
@@ -885,9 +883,13 @@ describe('capture lifecycle', () => {
 	it('recovers FFmpeg capture with a durable bounded interruption', async () => {
 		const root = join(tmpdir(), `capture-lifecycle-${crypto.randomUUID()}`);
 		roots.push(root);
-		const exits: Array<() => void> = [];
-		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> =
-			[];
+		const exits: Array<
+			NonNullable<Parameters<ProcessSupervisor['start']>[2]['onUnexpectedExit']>
+		> = [];
+		const errors = vi
+			.spyOn(logger, 'error')
+			.mockImplementation(() => undefined);
+		const adopted: Array<(segment: CaptureSegment) => void | Promise<void>> = [];
 		let now = Date.parse('2026-08-30T12:00:30.000Z');
 		const supervisor = {
 			start: vi.fn(
@@ -947,11 +949,11 @@ describe('capture lifecycle', () => {
 			});
 		});
 
-		exits[0]?.();
+		exits[0]?.({ code: null, signal: 'SIGKILL' });
 		await vi.waitFor(() => expect(onInterrupted).toHaveBeenCalledOnce());
 		await vi.waitFor(() => expect(adopted).toHaveLength(2));
 		const adoption = adopted[1]?.(fromPartial({}));
-		exits[1]?.();
+		exits[1]?.({ code: 1, signal: null });
 		await adoption;
 		await vi.waitFor(() => expect(adopted).toHaveLength(3));
 		expect(onRecovered).not.toHaveBeenCalled();
@@ -987,6 +989,13 @@ describe('capture lifecycle', () => {
 			},
 		]);
 		await worker.stop();
+		expect(errors).toHaveBeenCalledWith({
+			event: 'capture_process_exited',
+			job: 'ffmpeg-recovery',
+			exit_code: null,
+			signal: 'SIGKILL',
+		});
+		errors.mockRestore();
 	});
 
 	it('keeps recovery launch timestamps nondecreasing when the clock regresses', async () => {

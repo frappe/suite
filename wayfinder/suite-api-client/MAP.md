@@ -30,7 +30,7 @@ and migration gates are settled. Another session can implement from the recorded
   prototype for caller examples, and technical-writing for records.
 - Existing guidance is an input, not an automatic decision for this redesign:
   [Server-state client guideline](../unified-frontend/references/server-state-client.md)
-  and [Shell and platform interface](../unified-frontend/tickets/002-shell-and-platform-interface.md).
+  and Shell and platform interface.
   That guideline uses descriptors, places effects outside Python, and specifies non-throwing
   request results. Record any replacement rule here before updating its implementation.
 - Current evidence, inspected at `7a6b419a4` on branch `forge/drive-layer`:
@@ -45,6 +45,8 @@ and migration gates are settled. Another session can implement from the recorded
   node/share-link calls, and Mail calls. Treat unconverted products as migration inputs,
   not evidence that one product's behavior fits every product.
 - Preserve historical maps. New decisions live in this map's tickets.
+- The tickets, progress notes and handoffs were removed before this branch merged.
+  They are in git history at `fd03f7c75`.
 - Local tracker conventions match the existing maps: child tickets live in `tickets/`.
   Frontmatter contains `id`, `title`, `label`, `status`, `assignee`, and `blocked-by`.
   A frontier ticket is open, unassigned, and blocked only by closed tickets.
@@ -57,7 +59,7 @@ and migration gates are settled. Another session can implement from the recorded
   recommended answers. Use working defaults for routine choices and surface consequential
   tradeoffs only. This replaces one-question rounds and the one-human-ticket-per-session
   limit for this effort. Keep dependencies and individual decision records intact.
-- The [cross-product caller prototype](tickets/007-cross-product-caller-prototype.md)
+- The cross-product caller prototype
   is available for review on `prototype/suite-api-client-20261006` at `3b8593f5e`.
   Its ticket links the live demo, standalone artifact, typed examples, and verification
   limits. Faris accepted the caller convention with “looks good” on 2026-10-06.
@@ -70,14 +72,14 @@ and migration gates are settled. Another session can implement from the recorded
 
 ## Decisions so far
 
-- [Convex client guarantees we can adopt](tickets/001-convex-client-guarantees.md): [research note](references/convex-client-guarantees.md) recorded. No client policy selected.
-- [Operation kinds and generated references](tickets/002-operation-kinds-and-references.md) — explicit backend kinds and generated contracts, with client-owned policies attached once.
-- [Suite API catalog and product ownership](tickets/003-catalog-and-product-ownership.md) — one namespaced catalog, lightweight owner API entries, and resource-oriented names.
-- [Reactive and imperative call semantics](tickets/004-call-and-error-semantics.md) — awaited failures reject, one-shot reads fetch by default, and both forms share policies.
-- [Cache effects and product request policies](tickets/005-cache-and-product-policies.md) — each mutation declares effects or none, with coverage checked and scope applied automatically.
-- [Pagination, uploads, and exceptional operations](tickets/006-paging-uploads-and-exceptions.md) — typed paging and transfer helpers hide assembly, without adding an action kind by default.
-- [Cross-product caller examples](tickets/007-cross-product-caller-prototype.md) — Faris accepted the prototype's shared references and caller convention; production guarantees still require verification.
-- [Migration and verification contract](tickets/008-migration-and-verification.md) — staged conversion, temporary adapter removal gates, and behavioral, contract, import, and bundle checks.
+- Convex client guarantees we can adopt: [research note](references/convex-client-guarantees.md) recorded. No client policy selected.
+- Operation kinds and generated references — explicit backend kinds and generated contracts, with client-owned policies attached once.
+- Suite API catalog and product ownership — one namespaced catalog, lightweight owner API entries, and resource-oriented names.
+- Reactive and imperative call semantics — awaited failures reject, one-shot reads fetch by default, and both forms share policies.
+- Cache effects and product request policies — each mutation declares effects or none, with coverage checked and scope applied automatically.
+- Pagination, uploads, and exceptional operations — typed paging and transfer helpers hide assembly, without adding an action kind by default.
+- Cross-product caller examples — Faris accepted the prototype's shared references and caller convention; production guarantees still require verification.
+- Migration and verification contract — staged conversion, temporary adapter removal gates, and behavioral, contract, import, and bundle checks.
 
 ## Not yet specified
 

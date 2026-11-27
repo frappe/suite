@@ -81,6 +81,7 @@ def _calendar_rows(account: str) -> list[dict]:
                 "visible",
                 "may_write_all",
                 "may_delete",
+                "include_in_availability",
             ]
         }
         for cal in calendars

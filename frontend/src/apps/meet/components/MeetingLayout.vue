@@ -46,6 +46,7 @@
         v-if="showLocalTile"
         :key="`local-${localParticipant.user_id}`"
         :participant="localParticipant"
+        :interactive="interactive"
         :is-local="true"
         :is-video-enabled="isCameraOn"
         :is-audio-enabled="isMicOn"
@@ -70,7 +71,10 @@
 
       <!-- Remote participants -->
       <template v-for="participant in allParticipants" :key="`group-${participant.user_id}`">
-        <ParticipantTile v-bind="getParticipantTileBindings(participant)" />
+        <ParticipantTile
+          v-bind="getParticipantTileBindings(participant)"
+          @toggle-video-pause="toggleVideoPause(participant.user_id)"
+        />
       </template>
 
       <!-- Overflow tile -->
@@ -96,6 +100,7 @@
 </template>
 
 <script setup lang="ts">
+import { useEventListener } from '@vueuse/core'
 import { computed, inject, onBeforeUnmount, ref, watch, type ComputedRef, type Ref } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
@@ -179,6 +184,35 @@ const isMicOn = computed(() => meetingCtx.mediaState.isMicOn)
 const activeSpeakerIds = computed(() => meetingCtx.participantStore.activeSpeakerIds)
 const pinnedTiles = computed(() => meetingCtx.gridLayout.pinnedTiles.value)
 const displayScreenShares = computed(() => meetingCtx.gridLayout.displayScreenShares.value)
+const pausedVideoParticipants = ref(new Set<string>())
+const fullscreenCameraId = ref<string>()
+
+useEventListener(document, 'fullscreenchange', () => {
+  const element = document.fullscreenElement
+  const tileId =
+    element instanceof HTMLElement && container.value?.contains(element)
+      ? element.dataset.tileId
+      : undefined
+  fullscreenCameraId.value = tileId?.startsWith('participant-')
+    ? tileId.slice('participant-'.length)
+    : undefined
+})
+
+function toggleVideoPause(participantId: string) {
+  if (!pausedVideoParticipants.value.delete(participantId)) {
+    pausedVideoParticipants.value.add(participantId)
+  }
+}
+
+watch(
+  () => Object.keys(participants.value),
+  (participantIds) => {
+    const present = new Set(participantIds)
+    for (const id of pausedVideoParticipants.value) {
+      if (!present.has(id)) pausedVideoParticipants.value.delete(id)
+    }
+  },
+)
 
 // ── Pinned area data ──────────────────────────────────────────────────────────
 
@@ -220,6 +254,7 @@ const getScreenShareTileBindings = (shareTile: ScreenShareTile) => {
   return {
     participant: shareTile.participant,
     isLocal: false,
+    interactive: interactive.value,
     isVideoEnabled: true,
     isAudioEnabled: false,
     videoRef: wrappedVideoRef,
@@ -227,7 +262,6 @@ const getScreenShareTileBindings = (shareTile: ScreenShareTile) => {
     style: isPinned ? pinnedTileStyles.value[`screenshare-${shareTile.pinId}`] : tileStyle.value,
     pinType: 'screenshare' as const,
     pinId: shareTile.pinId,
-    videoObjectFitClass: isPinned ? 'object-contain' : undefined,
     videoBackgroundClass: isPinned ? 'bg-gray-900' : undefined,
     tileBackgroundClass: isPinned ? 'bg-black' : undefined,
     showAvatar: !isPinned,
@@ -243,15 +277,19 @@ const getParticipantTileBindings = (
   participant: Participant & { isVisible: boolean; slotIndex: number },
 ) => {
   const isPinned = isPinnedParticipant(participant.user_id)
+  const isVisible = participant.isVisible || isPinned
 
   return {
     class: {
-      'hidden-tile': !participant.isVisible && !isPinned,
+      'hidden-tile': !isVisible,
       'pinned-tile': isPinned,
     },
     participant,
+    inert: !isVisible && fullscreenCameraId.value !== participant.user_id,
     isLocal: false,
+    interactive: interactive.value,
     isVideoEnabled: participant.video_enabled,
+    isVideoPaused: pausedVideoParticipants.value.has(participant.user_id),
     isAudioEnabled: participant.audio_enabled,
     isActiveSpeaker: activeSpeakerIds.value.includes(participant.user_id),
     videoRef: getRemoteVideoRef(participant.user_id),
@@ -324,13 +362,19 @@ watch(
     () => sfuManager?.value ?? null,
     () =>
       allParticipants.value
-        .filter((participant) => participant.isVisible || isPinnedParticipant(participant.user_id))
+        .filter(
+          (participant) =>
+            participant.isVisible ||
+            isPinnedParticipant(participant.user_id) ||
+            fullscreenCameraId.value === participant.user_id,
+        )
         .map((participant) => participant.user_id),
+    () => [...pausedVideoParticipants.value],
   ],
-  ([manager, participantIds]) => {
+  ([manager, participantIds, pausedParticipantIds]) => {
     if (!manager) return
     void manager
-      .setVisibleRemoteVideoParticipants(participantIds)
+      .setVisibleRemoteVideoParticipants(participantIds, pausedParticipantIds)
       .catch((error) => console.warn('Failed to update visible video subscriptions:', error))
   },
   { immediate: true },

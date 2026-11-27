@@ -96,13 +96,14 @@ test("a failed next window keeps the loaded rows and offers a retry", async ({ p
 	await expect(failure, `failed next-window requests so far: ${failed}`).toBeVisible();
 	await expect(rows).toHaveCount(60);
 
-	// Bring the explicit retry into view while requests still fail.
 	const retry = failure.getByRole("button", { name: "Retry" });
-	await retry.scrollIntoViewIfNeeded();
-	await expect(retry).toBeInViewport();
+	await expect(retry).toBeVisible();
 	failing = false;
-	const nextWindow = page.waitForResponse((response) => /\/children\?.*cursor=/.test(response.url()) && response.ok());
-	await retry.click();
-	await nextWindow;
+	await Promise.all([
+		page.waitForResponse((response) => /\/children\?.*cursor=/.test(response.url()) && response.ok()),
+		retry.click(),
+	]);
 	await expect(rows).toHaveCount(TOTAL, { timeout: 20_000 });
+	await expect(page.getByText("row-065", { exact: true })).toBeVisible();
+	await expect(failure).toBeHidden();
 });

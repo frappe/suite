@@ -31,6 +31,7 @@ from suite.drive._core.nodes import (
     decode_cursor,
     page_limit,
     page_of,
+    require_replaceable,
 )
 from suite.drive._core.principals import Principals
 from suite.drive._core.quota import admit, release
@@ -352,6 +353,7 @@ def restore_version(principals: Principals, node: str, seq: int) -> int:
     _validate_seq(seq)
     current = _lock_node(node)
     via_link = require(current, EDIT, principals)
+    require_replaceable(current)
     _require_content_version_node(current)
     target = _version(current.name, seq, for_update=True)
     target_blob = _validated_version_blob(target)

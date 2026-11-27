@@ -246,3 +246,31 @@ curl -H "Authorization: Bearer $METRICS_TOKEN" https://sfu.example.com/metrics
 Metrics include process health, authenticated socket connections, bounded disconnect reasons, room join/rejoin outcomes and latency, WebRTC transport operations, current SFU resource counts, and sampled browser outcomes for first remote media, receive stalls, and recovery success. Browser sampling is fixed at 5%. Lifecycle logs are emitted as JSON without meeting, participant, socket, or transport identifiers.
 
 Set `SENTRY_DSN` to report unexpected process failures and mediasoup worker deaths. `SENTRY_ENVIRONMENT` defaults to `production`; set `SENTRY_RELEASE` to the deployed image or commit version. Expected authentication, client-state, and WebRTC operation failures remain in metrics and logs rather than being reported as Sentry issues.
+
+## Saved transcription capture
+
+Set `TRANSCRIPTION_RECORDER_ORIGIN` to the exact trusted recorder origin to enable
+new durable audio captures; blank disables them. The backend reserves recorder
+source space before sending `POST /v1/transcriptions/:capture/start` with JSON
+`{recorder_origin,source_token,max_duration_ms}`. It stops with POST to `/stop` (202 acknowledges asynchronous source flush/sealing) and
+queries with GET on the base path. These endpoints require HS256 control tokens
+signed with the SFU JWT secret, `typ=meet-transcription-command+jwt`, audience
+`meet-transcription-control`, issuer equal to the exact site origin, and claims
+`site`, `origin`, `room`, `capture`, `operation` (`start`, `stop`, `query`), `iat`,
+`exp` (maximum 120-second validity). Only the backend mints these tokens.
+
+The SFU rejects encrypted rooms, missing participants, a second active capture in
+the room, changed capture configuration, durations above four hours and recorder
+URLs outside the configured origin. Per-producer capture has its own decoder and
+CPU speech detector. It never opens an ASR stream and is independent of caption
+subscribers or caption inference availability. It attaches new microphone
+producers, stops when the last human leaves or the duration expires, and emits
+`transcription:state` room events on state changes or interruption. The backend's
+durable recording/capture state remains the participant-facing source of truth.
+
+Source PCM, timing, authentication, storage, retry and cleanup contracts are
+specified in the [recorder README](../recorder-server/README.md#durable-transcription-sources).
+On shutdown the SFU flushes speech and seals a partial capture before mediasoup
+cleanup. Hard SFU failure is recovered by the backend polling its durable recorder
+manifest; no capture automatically resumes after a service restart. Source upload
+failures stop the capture and preserve acknowledged segments with marked gaps.

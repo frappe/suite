@@ -41,6 +41,9 @@ export interface SelectAction {
   // The same asked as a submenu where the actions fold into the More menu, the choices one click
   // each. Called as that menu opens, so its times are the time now.
   submenu?: () => TimeMenuOptions
+  // Offered beside its opposite only when the selection is mixed, so the first to give up its
+  // button on a full phone bar (see phoneBar).
+  spare?: boolean
 }
 
 /** A menu of where the ticked threads are filed (Move To, Folders): its rows as the thread toolbar's
@@ -147,6 +150,7 @@ export const selectActions = (
       shortLabel: __('Unarchive'),
       onClick: () => run.unarchive?.(),
       icon: ArchiveRestore,
+      spare: true,
       condition: () =>
         !!run.unarchive &&
         notDrafts((t) => !!boxesOf(t).archive && unarchivable(messagesOf(t), boxesOf(t)))(),
@@ -165,6 +169,7 @@ export const selectActions = (
       shortLabel: __('Not Junk'),
       onClick: run.notJunk,
       icon: CircleCheck,
+      spare: true,
       condition: some((t) => t.junk === 1),
     },
     {
@@ -187,7 +192,7 @@ export const selectActions = (
     },
     {
       group: 'act',
-      label: __('Delete Threads (Shift+Delete)'),
+      label: __('Delete Conversations (Shift+Delete)'),
       shortLabel: __('Delete'),
       onClick: run.delete,
       icon: Trash2,
@@ -248,4 +253,41 @@ export const selectActions = (
       condition: notDrafts((t) => t.flagged === 1),
     },
   ]
+}
+
+/**
+ * The toolbar folded, where the reading pane leaves it little room: the actions that keep a button,
+ * and the More menu's groups, in the toolbar's order with a line between them. What is done to the
+ * mail, read or taken away, keeps its buttons: a selection is most often ticked for those. Move To
+ * and Folders go in the menu, each a submenu; they had the only buttons, and the rest was a menu
+ * away. Snooze, Pin and Star share one group: a menu this short needs no more lines. The count
+ * beside the buttons gives way to them (see MailListToolbar).
+ */
+export const foldedToolbar = (actions: SelectAction[], filing: FilingMenu[]) => {
+  const shown = actions.filter((action) => action.condition())
+  const inGroup = (group: SelectAction['group']) => shown.filter((action) => action.group === group)
+  const menu: (SelectAction | FilingMenu)[][] = [
+    filing,
+    [...inGroup('later'), ...inGroup('selection')],
+  ]
+  return { buttons: inGroup('act'), menu: menu.filter((group) => group.length) }
+}
+
+/** As many buttons as a phone's selection bar holds, More among them. */
+export const PHONE_BAR_BUTTONS = 6
+
+/**
+ * The phone's selection bar: what is done to the mail keeps its buttons, More included, up to
+ * PHONE_BAR_BUTTONS; past that, the spare ones (Unarchive, Not Junk), then the last, fold into More,
+ * which then has them at its top. `withMore`: More has something of its own to hold.
+ */
+export const phoneBar = (acts: SelectAction[], withMore: boolean) => {
+  if (acts.length + (withMore ? 1 : 0) <= PHONE_BAR_BUTTONS) return { buttons: acts, folded: [] }
+  const over = acts.length - (PHONE_BAR_BUTTONS - 1)
+  const last = [...acts].reverse()
+  const folding = new Set([...new Set([...last.filter((a) => a.spare), ...last])].slice(0, over))
+  return {
+    buttons: acts.filter((a) => !folding.has(a)),
+    folded: acts.filter((a) => folding.has(a)),
+  }
 }

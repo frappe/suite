@@ -1,3 +1,4 @@
+import re
 import time
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -1075,6 +1076,7 @@ def download_blobs(
 # RFC 3676. MailQueue guarantees the text body is encoded this way, generated or supplied.
 # delsp=no keeps the space at a soft break, which is the word separator the reader rejoins on.
 TEXT_PLAIN_FLOWED = "text/plain; format=flowed; delsp=no"
+PRINTABLE_ASCII = re.compile(r"[\x20-\x7e]+")
 
 
 def build_email_draft(
@@ -1117,8 +1119,14 @@ def build_email_draft(
         if rcpts := [{"name": r.get("name"), "email": r["email"]} for r in recipients if r["type"] == kind]:
             draft[kind] = rcpts
 
-    if subject:
-        draft["subject"] = subject
+    if subject := (subject or "").strip():
+        # Stalwart Q-encodes a `subject` over 77 bytes instead of folding it, which Rspamd scores
+        # as SUBJ_EXCESS_QP. The raw form is only folded, never encoded, so it carries printable
+        # ASCII; anything else (non-ASCII, or a CR/LF that would start a new header) is encoded.
+        if PRINTABLE_ASCII.fullmatch(subject):
+            draft["header:Subject"] = subject
+        else:
+            draft["subject"] = subject
 
     if sent_at:
         # Mail Queue's sent_at holds system time; Stalwart wants the UTC ``...Z`` form.
@@ -1129,7 +1137,7 @@ def build_email_draft(
     draft.update(
         {
             "header:User-Agent": f"Frappe Mail v{__version__} (Frappe v{frappe.__version__})",
-            "header:X-Mailer": "Frappe Mail",
+            "header:X-Mailer": f"Frappe Mail v{__version__}",
             "header:X-Mail-Queue": queue_name,
         }
     )

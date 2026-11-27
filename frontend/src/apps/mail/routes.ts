@@ -124,6 +124,8 @@ export const routes: RouteRecordRaw[] = [
         name: 'mail-unified',
         component: () => import('@/apps/mail/pages/UnifiedFolderView.vue'),
         props: true,
+        // A list runs on under the phone's floating bar (see DefaultLayout).
+        meta: { scrollsUnderPhoneBar: true },
       },
       // The merged view with a thread open, so opening a mail keeps you in the merged folder
       // instead of navigating into the owning account's mailbox. Same component as the list-only
@@ -151,6 +153,8 @@ export const routes: RouteRecordRaw[] = [
         name: 'mail-mailbox',
         component: () => import('@/apps/mail/pages/MailboxView.vue'),
         props: mailboxProps,
+        // A list runs on under the phone's floating bar (see DefaultLayout).
+        meta: { scrollsUnderPhoneBar: true },
       },
       {
         path: 'account/:accountId/mailbox/:mailbox/:threadID',

@@ -103,15 +103,23 @@
                 @move="moveRecipient"
                 @show-cc-bcc="showCcBcc = true"
               />
-              <!-- Named in words, not a bare chevron: the fields it opens are the ones people look for. -->
+              <!-- A chevron, as on a phone: it opens Cc and Bcc under To, and its tooltip names them. -->
               <Button
                 v-if="!(mail.cc?.length || mail.bcc?.length)"
                 variant="ghost"
-                class="shrink-0 !text-ink-gray-5"
-                :label="__('Cc Bcc')"
+                class="shrink-0"
+                :label="__('Cc and Bcc')"
+                :tooltip="__('Cc and Bcc')"
                 :aria-expanded="showCcBcc"
                 @click="toggleCcBcc"
-              />
+              >
+                <template #icon>
+                  <component
+                    :is="showCcBcc ? ChevronUp : ChevronDown"
+                    class="text-ink-gray-5 h-4 w-4"
+                  />
+                </template>
+              </Button>
             </div>
             <template v-if="showCcBcc">
               <div
@@ -226,11 +234,19 @@
                   <Button
                     v-if="!(mail.cc?.length || mail.bcc?.length)"
                     variant="ghost"
-                    class="shrink-0 !text-ink-gray-5"
-                    :label="__('Cc Bcc')"
+                    class="shrink-0"
+                    :label="__('Cc and Bcc')"
+                    :tooltip="__('Cc and Bcc')"
                     :aria-expanded="showCcBcc"
                     @click="toggleCcBcc"
-                  />
+                  >
+                    <template #icon>
+                      <component
+                        :is="showCcBcc ? ChevronUp : ChevronDown"
+                        class="text-ink-gray-5 h-4 w-4"
+                      />
+                    </template>
+                  </Button>
                 </div>
               </div>
               <template v-if="showCcBcc">
@@ -316,11 +332,13 @@
             :class="{ 'opacity-30': isDragging }"
             @click.stop
           >
-            <!-- Show quoted content -->
+            <!-- The quote this reply carries, folded away. Labelled, as the reader's toggle is: a bare
+                 '···' chip was easy to miss, and read as dots. -->
             <Button
               v-if="mail?.quoted_content"
-              label="&middot;&middot;&middot;"
-              class="max-h-4 w-fit"
+              variant="subtle"
+              icon-left="lucide-align-left"
+              :label="__('Show quoted text')"
               @click="openQuotedContent"
             />
 
@@ -396,7 +414,15 @@
 <script setup lang="ts">
 import { Button, Combobox, Dropdown, Tooltip, UploadError, useFileUpload } from 'frappe-ui'
 import { Editor, EditorContent } from 'frappe-ui/editor'
-import { ExternalLink, Forward, Reply, ReplyAll, UploadCloud } from 'lucide-vue-next'
+import {
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Forward,
+  Reply,
+  ReplyAll,
+  UploadCloud,
+} from 'lucide-vue-next'
 import {
   computed,
   inject,

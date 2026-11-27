@@ -179,18 +179,6 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
   const enqueueMicrophoneTransition = <T>(operation: () => Promise<T>) =>
     captureSession.runMicrophoneTransition(operation)
 
-  const confirmScreenShareOverride = () =>
-    new Promise<boolean>((resolve) => {
-      dialog.confirm({
-        title: __('Start screen share anyway?'),
-        message: __(
-          'Someone is already sharing their screen. Starting yours may result in multiple active screen shares.',
-        ),
-        onConfirm: () => resolve(true),
-        onCancel: () => resolve(false),
-      })
-    })
-
   const getScreenShareStopMetadata = (
     reason: ScreenShareStopReason,
     extra: ScreenShareStopExtra = {},
@@ -866,11 +854,26 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     }
   }
 
+  const hasMediaPermission = async (name: 'camera' | 'microphone') => {
+    try {
+      return (await navigator.permissions?.query({ name }))?.state === 'granted'
+    } catch {
+      return false
+    }
+  }
+
   const initializeCameraImplementation = async () => {
     const operation = createCameraOperation()
     try {
       assertCurrentCameraOperation(operation)
-      mediaState.setMedia(prefMicEnabled.value, prefCameraEnabled.value)
+      // An unanswered permission prompt can hold getUserMedia open indefinitely.
+      // Request new permissions only from the explicit camera and microphone controls.
+      const [micOn, cameraOn] = await Promise.all([
+        prefMicEnabled.value && hasMediaPermission('microphone'),
+        prefCameraEnabled.value && hasMediaPermission('camera'),
+      ])
+      assertCurrentCameraOperation(operation)
+      mediaState.setMedia(micOn, cameraOn)
 
       if (mediaState.isCameraOn || mediaState.isMicOn) {
         const { stream } = await acquireUserMedia(
@@ -1189,105 +1192,93 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
     await manager?.stopScreenShare(metadata)
   }
 
-  const toggleScreenShare = async () => {
+  const startScreenShare = async () => {
     try {
-      if (mediaState.isScreenSharing) {
-        await stopScreenShare('user-click')
-      } else {
-        const hasOngoingRemoteShare = (mediaState.activeScreenShareConsumers || []).length > 0
-        if (hasOngoingRemoteShare) {
-          const shouldContinue = await confirmScreenShareOverride()
-          if (!shouldContinue) {
-            return
-          }
+      type ScreenShareOptions = DisplayMediaStreamOptions & {
+        displaySurface?: 'monitor' | 'window' | 'browser'
+        selfBrowserSurface?: 'include' | 'exclude'
+        surfaceSwitching?: 'include' | 'exclude'
+      }
+      const screenShareOptions: ScreenShareOptions = {
+        video: {
+          width: { ideal: 1920, max: 1920 },
+          height: { ideal: 1080, max: 1080 },
+          frameRate: { ideal: 10, max: 20 },
+        },
+        displaySurface: 'window',
+        selfBrowserSurface: 'exclude',
+        surfaceSwitching: 'include',
+      }
+
+      const screenStream = await navigator.mediaDevices.getDisplayMedia(screenShareOptions)
+      if (!screenStream) throw new Error('Failed to obtain screen share stream')
+
+      mediaState.screenShareStream = screenStream
+      mediaState.isScreenSharing = true
+      mediaState.localScreenShareStartedAt = Date.now()
+
+      try {
+        const screenTrack = screenStream.getVideoTracks()[0]
+        const manager = sfuManager.value
+        if (!screenTrack || !manager) {
+          throw new Error('Screen share transport is not available')
         }
 
-        type ScreenShareOptions = DisplayMediaStreamOptions & {
-          displaySurface?: 'monitor' | 'window' | 'browser'
-          selfBrowserSurface?: 'include' | 'exclude'
-          surfaceSwitching?: 'include' | 'exclude'
-        }
-        const screenShareOptions: ScreenShareOptions = {
-          video: {
-            width: { ideal: 1920, max: 1920 },
-            height: { ideal: 1080, max: 1080 },
-            frameRate: { ideal: 10, max: 20 },
-          },
-          displaySurface: 'window',
-          selfBrowserSurface: 'exclude',
-          surfaceSwitching: 'include',
-        }
-
-        const screenStream = await navigator.mediaDevices.getDisplayMedia(screenShareOptions)
-        if (!screenStream) throw new Error('Failed to obtain screen share stream')
-
-        mediaState.screenShareStream = screenStream
-        mediaState.isScreenSharing = true
-        mediaState.localScreenShareStartedAt = Date.now()
-
-        try {
-          const screenTrack = screenStream.getVideoTracks()[0]
-          const manager = sfuManager.value
-          if (!screenTrack || !manager) {
-            throw new Error('Screen share transport is not available')
-          }
-
-          screenTrack.addEventListener('ended', () => {
-            if (mediaState.isScreenSharing && mediaState.screenShareStream === screenStream) {
-              stopScreenShare('track-ended').catch((err) => {
-                console.error('track-ended screen share cleanup failed:', err)
-              })
-            }
-          })
-
-          const publication = await manager.publishScreenTrack(screenTrack)
-          if (!publication) {
-            if (mediaState.isScreenSharing && mediaState.screenShareStream === screenStream) {
-              await stopScreenShare(
-                screenTrack.readyState === 'ended' ? 'track-ended' : 'publish-failed',
-              )
-            }
-            return
-          }
-
-          // Ensure audio producer is available
-          const audioProducer = manager.getLocalProducerState('audio')
-          const micTrack = mediaState.localStream?.getAudioTracks?.()[0]
-          if (micTrack) {
-            try {
-              await manager.reconcileLocalProducerTrack('audio', micTrack, {
-                resume: true,
-              })
-            } catch (err) {
-              console.warn('Failed to publish audio after starting screen share', err)
-            }
-          } else if (audioProducer?.paused) {
-            manager.resumeLocalProducer('audio')
-          }
-
-          const currentScreenPublication = manager.getLocalProducerState('screen')
-          if (
-            sfuManager.value === manager &&
-            mediaState.isScreenSharing &&
-            mediaState.screenShareStream === screenStream &&
-            screenTrack.readyState === 'live' &&
-            currentScreenPublication?.id === publication.id &&
-            currentScreenPublication.track === screenTrack &&
-            sfuClient.isConnected()
-          ) {
-            sfuClient.sendScreenShare('start_share', {
-              startedAt: mediaState.localScreenShareStartedAt,
-            })
-          }
-        } catch (pubErr) {
-          console.error('Failed to publish screen share producer:', pubErr)
+        screenTrack.addEventListener('ended', () => {
           if (mediaState.isScreenSharing && mediaState.screenShareStream === screenStream) {
-            await stopScreenShare('publish-failed', {
-              message: pubErr instanceof Error ? pubErr.message : undefined,
+            stopScreenShare('track-ended').catch((err) => {
+              console.error('track-ended screen share cleanup failed:', err)
             })
           }
-          throw pubErr
+        })
+
+        const publication = await manager.publishScreenTrack(screenTrack)
+        if (!publication) {
+          if (mediaState.isScreenSharing && mediaState.screenShareStream === screenStream) {
+            await stopScreenShare(
+              screenTrack.readyState === 'ended' ? 'track-ended' : 'publish-failed',
+            )
+          }
+          return
         }
+
+        // Ensure audio producer is available
+        const audioProducer = manager.getLocalProducerState('audio')
+        const micTrack = mediaState.localStream?.getAudioTracks?.()[0]
+        if (micTrack) {
+          try {
+            await manager.reconcileLocalProducerTrack('audio', micTrack, {
+              resume: true,
+            })
+          } catch (err) {
+            console.warn('Failed to publish audio after starting screen share', err)
+          }
+        } else if (audioProducer?.paused) {
+          manager.resumeLocalProducer('audio')
+        }
+
+        const currentScreenPublication = manager.getLocalProducerState('screen')
+        if (
+          sfuManager.value === manager &&
+          mediaState.isScreenSharing &&
+          mediaState.screenShareStream === screenStream &&
+          screenTrack.readyState === 'live' &&
+          currentScreenPublication?.id === publication.id &&
+          currentScreenPublication.track === screenTrack &&
+          sfuClient.isConnected()
+        ) {
+          sfuClient.sendScreenShare('start_share', {
+            startedAt: mediaState.localScreenShareStartedAt,
+          })
+        }
+      } catch (pubErr) {
+        console.error('Failed to publish screen share producer:', pubErr)
+        if (mediaState.isScreenSharing && mediaState.screenShareStream === screenStream) {
+          await stopScreenShare('publish-failed', {
+            message: pubErr instanceof Error ? pubErr.message : undefined,
+          })
+        }
+        throw pubErr
       }
     } catch (error) {
       if (errorName(error) === 'NotAllowedError') {
@@ -1297,6 +1288,33 @@ export function useMediaControls(deps: MediaControlsDeps): MediaControlsAPI {
         toast.error(__('Could not start screen sharing'))
       }
     }
+  }
+
+  const toggleScreenShare = async () => {
+    if (mediaState.isScreenSharing) {
+      await stopScreenShare('user-click').catch((error) => {
+        console.error('Screen share failed:', error)
+        toast.error(__('Could not stop screen sharing'))
+      })
+      return
+    }
+    if (mediaState.activeScreenShareConsumers.length) {
+      await new Promise<void>((resolve) => {
+        dialog.confirm({
+          title: __('Start screen share anyway?'),
+          message: __(
+            'Someone is already sharing their screen. Starting yours may result in multiple active screen shares.',
+          ),
+          onConfirm: () => {
+            // Start the picker inside the confirmation click's activation.
+            void startScreenShare().finally(resolve)
+          },
+          onCancel: () => resolve(),
+        })
+      })
+      return
+    }
+    await startScreenShare()
   }
 
   function setLocalVideoRef(el: HTMLVideoElement | null) {

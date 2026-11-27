@@ -4,7 +4,9 @@ import { api, client, useInfiniteQuery, useMutation, useQuery, useUpload } from 
 
 it('keeps input, output, kind, and capability types on lazy references', () => {
   function callers(file: Blob) {
-    expectTypeOf(client.query(api.mail.inbox.summary)).toEqualTypeOf<Promise<{ unread: number }>>()
+    expectTypeOf(client.query(api.mail.inbox.summary)).toEqualTypeOf<
+      Promise<{ unread: number; accounts: { name: string; unread: number; personal: boolean }[] }>
+    >()
     useQuery(api.suite.account.get)
     useQuery(api.drive.nodes.get, () => false)
     useInfiniteQuery(api.suite.people.list, { q: 'a' })

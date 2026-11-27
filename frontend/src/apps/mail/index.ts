@@ -54,14 +54,16 @@ export function installMailReminders({ open }: { open: (path: string) => void })
   }
 }
 
-/** Mail's Settings group. Loads when Settings opens. */
-export const loadMailSettings = () =>
-  import('@/apps/mail/settings').then((module) => module.mailSettings)
+/** Mail's Settings group. */
+export { mailSettings } from '@/apps/mail/settings'
 
 export const loadMailAdminRoutes = () => import('@/apps/mail/adminRoutes')
 export const loadMailAdminUsers = () => import('@/apps/mail/pages/dashboard/AdminUsersView.vue')
 export const loadStorageLimitDialog = () =>
   import('@/apps/mail/components/Modals/StorageLimitDialog.vue')
+
+/** Unread Inbox mail across the reader's accounts, and in each. */
+export type InboxSummary = import('@/apps/mail/client/generated').InboxSummaryOutput
 
 export function useInboxSummary(enabled: () => boolean = () => true) {
   return useQuery(api.mail.inbox.summary, () => (enabled() ? {} : false))
@@ -125,3 +127,13 @@ export function useMailCompose(): MailCompose {
     },
   }
 }
+
+/** The Mail account's storage, for the Storage tab in Settings. */
+export const MailStorageUsage = defineAsyncComponent(
+  () => import('@/apps/mail/components/Settings/MailStorageUsage.vue'),
+)
+
+/** The Mail server's locale and time zone, as rows for Preferences in Settings. */
+export const MailRegionSettings = defineAsyncComponent(
+  () => import('@/apps/mail/components/Settings/MailRegionSettings.vue'),
+)

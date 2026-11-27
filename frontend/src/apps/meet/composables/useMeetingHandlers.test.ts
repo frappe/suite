@@ -21,7 +21,6 @@ const createRemovalHarness = (sendHostControl: ReturnType<typeof vi.fn> | null) 
   const handlers = useMeetingHandlers(
     fromPartial({
       meetingId: 'room-1',
-      refreshMeeting: vi.fn(),
       sfuConnection: { sfuManager: ref(sendHostControl ? { sendHostControl } : null) },
     }),
   )

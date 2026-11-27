@@ -1,0 +1,230 @@
+"""Writing a document's body from Markdown in a request with no tab open, as an agent does.
+
+The Markdown becomes HTML as frappe makes it, then a body through the converter old documents take, so a
+body an agent writes is one the editor could have made. What the converter can't keep refuses the write.
+"""
+
+import uuid
+from typing import Literal, cast
+
+import frappe
+import pycrdt
+from bs4 import BeautifulSoup
+from frappe import _
+from frappe.utils import md_to_html
+
+from suite import content, drive
+from suite.content import checker, compaction, convert, jobs, restores
+from suite.writer.content import APP, EDITOR, converter
+from suite.writer.content.files import BODY_FRAGMENT
+
+MARKDOWN_MAX = 128 * 1024
+# Where a heading keeps its id
+HEADING_IDS = ("id", "data-toc-id")
+# The layer's refusals that pass by themselves: another push holds the document, a compaction makes room,
+# or a restore is landing or landed under the write
+PASSING = ("busy", "compacting", "restoring", "restored")
+PLAIN_REASONS = {
+    # The converter's check names no tag; in Markdown it fails on HTML the editor has no place for
+    "check": "a link or HTML the editor can't hold",
+    # The same Markdown meets these again, so they are not for trying again
+    "child_timeout": "the converter ran out of time on it",
+    "child_crash": "the converter failed on it",
+}
+
+
+class MarkdownRefused(frappe.ValidationError):
+    """The Markdown holds what a document can't keep."""
+
+    http_status_code = 422
+
+
+class WriteRefused(frappe.ValidationError):
+    """The document refuses the write, for the reason a tab's edit gets."""
+
+    http_status_code = 409
+
+
+class WriteBusy(frappe.ValidationError):
+    """The document or the converter is busy; the same call works later."""
+
+    http_status_code = 429
+
+    def __init__(self, *args: object, retry_ms: int | None = None) -> None:
+        super().__init__(*args)
+        self.retry_ms = retry_ms
+
+
+def create(parent: str, title: str, markdown: str) -> tuple[str, int]:
+    """Create a document in the folder `parent` with `markdown` as its body, and answer its node and rev."""
+    # Before the converter runs, so a user who can't add here takes none of its turn
+    drive.check(parent, drive.UPLOAD)
+    body = body_state(markdown)
+    node = drive.create_document(parent, title, content_doctype=EDITOR.doctype)
+    return node, write_body(node, body, "replace")
+
+
+def write(node: str, markdown: str, mode: Literal["replace", "append"]) -> int:
+    """Replace the document's body with `markdown`, or append it, and answer the rev that makes."""
+    if drive.check(node, drive.EDIT) != EDITOR.doctype:
+        raise drive.DriveNotFound(_("That document was not found"))
+
+    body = body_state(markdown)
+    if mode == "replace":
+        doc = content.find(APP, node)
+        # A document with no log refuses the write below, so it keeps no version
+        if doc:
+            keep_version(node, doc.id, bytes(doc.head_chain))
+
+    return write_body(node, body, mode)
+
+
+def keep_version(node: str, doc_id: str, head_chain: bytes) -> None:
+    """Nothing is replaced without a version of the head first, as nothing is restored without one."""
+    # A replace refused after its version is asked again, and the head it kept has not moved
+    if restores.has_milestone(APP, doc_id, head_chain):
+        return
+
+    try:
+        # A milestone, as a restore's: an automatic version thins with age, and a named one is a person's
+        drive.take_version(node, kind="milestone", label=_("Before a replace from Markdown"))
+    except drive.DriveConflict as away:
+        # The versions are away while the log changes or waits to be compacted, so the same call works later
+        raise WriteBusy(_("No version could be kept before the replace: {0}").format(away)) from None
+    except drive.DriveError as error:
+        raise WriteRefused(_("No version could be kept before the replace: {0}").format(error)) from None
+
+    restores.milestone_taken(APP, doc_id, head_chain)
+    # The write reads in a transaction of its own, so the version is saved before the body goes
+    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+
+
+def body_state(markdown: str) -> bytes:
+    """Convert `markdown` to the state of a document that holds all of it."""
+    if len(markdown.encode()) > MARKDOWN_MAX:
+        # More than this takes the Markdown reader many seconds, and the converter its memory
+        raise MarkdownRefused(_("The Markdown is over 128 KB. Write it in parts."))
+
+    soup = BeautifulSoup(md_to_html(markdown), "html.parser")
+    # frappe decorates three tags in ways the converter refuses
+    for table in soup.select('table[class="table table-bordered"]'):
+        del table["class"]
+        for section in table.select("thead, tbody"):
+            section.unwrap()
+
+    for image in soup.select('img[class="screenshot"]'):
+        del image["class"]
+
+    for code in soup.select("pre > code"):
+        # The Markdown reader ends the code with a newline that a typed block doesn't have
+        code.string = code.get_text().removesuffix("\n")
+
+    for code in soup.select("pre > code[class]"):
+        language = code["class"][-1]
+        if code["class"] == [language.removeprefix("language-"), language]:
+            code["class"] = language
+
+    body = converted(str(soup))
+    if body.dropped:
+        kinds = ", ".join(sorted({drop["kind"] for drop in body.dropped}))
+        raise MarkdownRefused(_("A document can't keep this Markdown: {0}").format(kinds))
+
+    return body.state
+
+
+def converted(html: str) -> convert.Converted:
+    """Run the converter on `html` as an old body, refusing what it refuses."""
+    legacy = {"content": None, "html": html, "collab": 0, "ycomments": None}
+    try:
+        answer = converter.run(legacy)
+    except (checker.CheckerBusy, convert.ConverterChanged):
+        # Another child held the site's one turn, or a deploy changed the bundle under the request
+        answer = None
+
+    if isinstance(answer, convert.Converted):
+        return answer
+
+    if answer is None or answer.reason == "bad_answer":
+        raise WriteBusy(_("The converter gave no answer. Try again in a moment."))
+
+    refusal = PLAIN_REASONS.get(answer.reason, answer.reason)
+    raise MarkdownRefused(_("A document can't keep this Markdown: {0}").format(refusal))
+
+
+def write_body(node: str, body: bytes, mode: Literal["replace", "append"]) -> int:
+    """Push `body`'s blocks to the document as the request's user, and answer the rev they make."""
+    blocks = compaction.load_doc([body]).get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
+    if mode == "append" and all(is_empty_paragraph(block) for block in blocks.children):
+        # Empty Markdown, or only what shows nothing, converts to one empty paragraph
+        raise MarkdownRefused(_("The Markdown holds nothing to append"))
+
+    def change(state: pycrdt.Doc) -> None:
+        fragment = state.get(BODY_FRAGMENT, type=pycrdt.XmlFragment)
+        if mode == "replace":
+            del fragment.children[:]
+
+        append_copy(fragment, blocks)
+
+    try:
+        return content.write(APP, node, change)
+    except content.Refusal as refusal:
+        reason = refusal.body["collab"]
+        if reason == "not_found":
+            # The document went away after the access check
+            raise drive.DriveNotFound(_("That document was not found")) from None
+
+        if reason == "paused" and refusal.body.get("reason") == "restoring":
+            reason = "restoring"
+
+        if reason in PASSING:
+            raise WriteBusy(reason, retry_ms=cast("int | None", refusal.body.get("retry_ms"))) from None
+
+        if reason == "unconverted":
+            jobs.request_conversion(APP, node)
+
+        raise WriteRefused(reason) from None
+
+
+def is_empty_paragraph(block: pycrdt.XmlText | pycrdt.XmlElement) -> bool:
+    """Whether `block` is a paragraph with nothing in it."""
+    # The converter gives an empty paragraph one text with nothing in it
+    return (
+        isinstance(block, pycrdt.XmlElement)
+        and block.tag == "paragraph"
+        and not any(str(child) for child in block.children)
+    )
+
+
+def append_copy(
+    parent: pycrdt.XmlFragment | pycrdt.XmlElement, source: pycrdt.XmlFragment | pycrdt.XmlElement
+) -> None:
+    """Write `source`'s children again under `parent`, so they are the writing session's own."""
+    for child in source.children:
+        if isinstance(child, pycrdt.XmlText):
+            append_text(parent, child)
+        elif isinstance(child, pycrdt.XmlElement):
+            append_copy(append_element(parent, child), child)
+
+
+def append_text(parent: pycrdt.XmlFragment | pycrdt.XmlElement, source: pycrdt.XmlText) -> None:
+    """Write `source`'s runs again, with their marks, as new text under `parent`."""
+    text = parent.children.append(pycrdt.XmlText())
+    for run, marks in source.diff():
+        text.insert(len(text), run, marks or {})
+
+
+def append_element(
+    parent: pycrdt.XmlFragment | pycrdt.XmlElement, source: pycrdt.XmlElement
+) -> pycrdt.XmlElement:
+    """Add an element under `parent` with `source`'s tag and attributes, and answer it."""
+    element = parent.children.append(pycrdt.XmlElement(source.tag))
+    for name, value in compaction.attributes_of(source).items():
+        element.attributes[name] = value
+
+    if source.tag == "heading":
+        # The converter's ids repeat across conversions, so a heading gets its own, as a typed one does
+        own_id = str(uuid.uuid4())
+        for name in HEADING_IDS:
+            element.attributes[name] = own_id
+
+    return element

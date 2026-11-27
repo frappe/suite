@@ -6,6 +6,7 @@ import frappe
 
 from suite.composition.http import Route
 from suite.mail.doctype.identity.identity import add_identity, bulk_delete
+from suite.mail.doctype.mail_signature.mail_signature import link_identity, linked_identities
 from suite.mail.http.shapes import AccountInput, Address, Identity
 
 
@@ -24,6 +25,8 @@ class SaveIdentity(AccountInput):
     reply_to: list[Address]
     bcc: list[Address]
     html_signature: str | None
+    # The saved signature the address was given, or None when its words were written by hand.
+    signature: str | None
 
 
 class DeleteIdentities(TypedDict):
@@ -34,6 +37,8 @@ class Signature(TypedDict):
     name: str
     signature_name: str
     html_body: str | None
+    # The identities that use it: an edit reaches them while they still carry its words.
+    identities: list[str]
 
 
 class SignatureFields(TypedDict):
@@ -57,21 +62,25 @@ def save_identity(
     reply_to: list[Address],
     bcc: list[Address],
     html_signature: str | None,
+    signature: str | None,
 ) -> None:
     doc = frappe.get_doc("Identity", f"{account}|{id}")
     doc.check_permission("write")
     doc.update({"_name": name, "reply_to": reply_to, "bcc": bcc, "html_signature": html_signature})
     doc.save()
+    link_identity(doc.name, signature, html_signature)
 
 
 @frappe.whitelist(methods=["GET"])
 def signatures() -> list[Signature]:
-    return frappe.get_list(
+    rows = frappe.get_list(
         "Mail Signature",
-        fields=list(Signature.__annotations__),
+        fields=["name", "signature_name", "html_body"],
         filters={"user": frappe.session.user},
         limit_page_length=0,
     )
+    links = linked_identities([row.name for row in rows])
+    return [{**row, "identities": links.get(row.name, [])} for row in rows]
 
 
 @frappe.whitelist(methods=["POST"])

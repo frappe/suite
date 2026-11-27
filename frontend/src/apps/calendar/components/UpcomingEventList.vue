@@ -56,22 +56,27 @@ const participantsByEvent = computed(
             <span class="shrink-0">{{ event.time }}</span>
             <template v-if="participantsByEvent.get(event.id)?.length">
               <span aria-hidden="true">{{ '・' }}</span>
-              <span class="flex items-center -space-x-2" :aria-label="__('Invited people')">
+              <span
+                class="isolate flex items-center -space-x-1.5"
+                :aria-label="__('Invited people')"
+              >
                 <span
-                  v-for="participant in participantsByEvent.get(event.id)?.slice(0, 5)"
+                  v-for="(participant, index) in participantsByEvent.get(event.id)?.slice(0, 5)"
                   :key="participant.email"
                   :title="participant.name"
-                  class="flex size-5 shrink-0"
+                  class="relative flex size-5 shrink-0"
+                  :style="{ zIndex: 5 - index }"
                 >
                   <Avatar
-                    class="size-5 rounded-full border-2 border-outline-gray-1"
+                    class="rounded-full border-2 border-[var(--surface-gray-1)]"
+                    size="sm"
                     :image="participant.image"
                     :label="participant.name"
                   />
                 </span>
                 <span
                   v-if="(participantsByEvent.get(event.id)?.length || 0) > 5"
-                  class="flex size-5 items-center justify-center rounded-full border-2 border-outline-gray-1 bg-surface-gray-2 text-xs text-ink-gray-5"
+                  class="relative z-0 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[var(--surface-gray-1)] bg-surface-gray-2 px-1 text-2xs font-medium text-ink-gray-6"
                   :title="
                     participantsByEvent
                       .get(event.id)
@@ -79,7 +84,7 @@ const participantsByEvent = computed(
                       .map((participant) => participant.name)
                       .join(', ')
                   "
-                  >{{ (participantsByEvent.get(event.id)?.length || 0) - 5 }}+</span
+                  >+{{ (participantsByEvent.get(event.id)?.length || 0) - 5 }}</span
                 >
               </span>
             </template>

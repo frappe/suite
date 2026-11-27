@@ -13,9 +13,9 @@ API after the event is written to JMAP.
 
 import re
 from copy import deepcopy
+from email.message import MIMEPart
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from email.utils import formataddr, formatdate, make_msgid
 from zoneinfo import ZoneInfo
 
@@ -62,6 +62,9 @@ RESPONSE_LOGO_EMBED = "event-logo.png"
 
 # Shared font stack for the event email templates (passed into the render context).
 EMAIL_FONT = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+
+# RFC 5322 2.1.1: at most 998 characters in a line, without the CRLF.
+SMTP_MAX_LINE_LENGTH = 998
 
 # `strip_html_tags` only drops the tags, so the <style> block that carries the templates'
 # responsive rules would otherwise land in the text/plain part as raw CSS.
@@ -456,14 +459,15 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
     root["To"] = to_email
     # usegmt keeps the header independent of the container's OS zone.
     root["Date"] = formatdate(usegmt=True)
-    root["Message-ID"] = make_msgid()
+    # The default domain is the host name, which has no dot in a container (Rspamd MID_RHS_NOT_FQDN).
+    root["Message-ID"] = make_msgid(domain=organizer.rpartition("@")[2])
 
     alternative = MIMEMultipart("alternative")
-    alternative.attach(MIMEText(_plain_text(html), "plain", "utf-8"))
-    alternative.attach(MIMEText(html, "html", "utf-8"))
+    alternative.attach(_text_part(_plain_text(html), "plain"))
+    alternative.attach(_text_part(html, "html"))
 
     # Inline calendar part carries the iTIP method so clients can offer native controls.
-    inline_calendar = MIMEText(ics, "calendar", "utf-8")
+    inline_calendar = _text_part(ics, "calendar")
     inline_calendar.set_param("method", method)
     inline_calendar.set_param("component", "VEVENT")
     alternative.attach(inline_calendar)
@@ -490,7 +494,7 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
         root.attach(alternative)
 
     # A downloadable copy so any calendar app can import the event.
-    attachment = MIMEText(ics, "calendar", "utf-8")
+    attachment = _text_part(ics, "calendar")
     attachment.set_param("method", method)
     attachment.add_header("Content-Disposition", "attachment", filename="invite.ics")
     root.attach(attachment)
@@ -498,6 +502,22 @@ def _build_mime(from_name, organizer, to_email, subject, html, ics, method) -> s
     # CRLF line endings, as RFC 5322 requires. Python's default is a bare LF, which a relay
     # rewrites in transit: the DKIM body hash then fails and the invite lands in Junk.
     return root.as_string(policy=root.policy.clone(linesep="\r\n"))
+
+
+def _text_part(text: str, subtype: str) -> MIMEPart:
+    """Returns a UTF-8 text part: 7bit for ASCII text that is safe to relay as-is, else quoted-printable.
+
+    `MIMEText(text, subtype, "utf-8")` encodes in base64, or in quoted-printable after Frappe changes
+    the global utf-8 charset. Spam filters score base64 text (Rspamd MIME_BASE64_TEXT_BOGUS).
+    Quoted-printable encodes trailing whitespace, which some relays strip and so break DKIM.
+    """
+
+    is_7bit = text.isascii() and all(
+        len(line) <= SMTP_MAX_LINE_LENGTH and line == line.rstrip(" \t") for line in text.splitlines()
+    )
+    part = MIMEPart()
+    part.set_content(text, subtype=subtype, charset="utf-8", cte="7bit" if is_7bit else "quoted-printable")
+    return part
 
 
 def _plain_text(html: str) -> str:

@@ -7,12 +7,15 @@ import { useChangeSync } from '@/apps/mail/composables/useChangeSync'
 const server = vi.hoisted<{
   syncs: number
   failing: boolean
+  // Never answers, as a request a phone left hanging when it put the app away.
+  hanging: boolean
   found: { new_mail_in: string[]; changed: boolean; failed: boolean }
   // What happens on this side while the ask is out.
   meanwhile?: () => void
 }>(() => ({
   syncs: 0,
   failing: false,
+  hanging: false,
   found: { new_mail_in: [], changed: false, failed: false },
 }))
 
@@ -20,8 +23,13 @@ const server = vi.hoisted<{
 vi.mock('@/api', () => ({
   api: { mail: { changes: { sync: 'mail.sync_changes' } } },
   client: {
-    mutation: async () => {
+    mutation: async (_ref: unknown, _input: unknown, options?: { signal?: AbortSignal }) => {
       server.syncs += 1
+      if (server.hanging)
+        // Only its own abort ends it, as the transport's does.
+        return new Promise((_, reject) =>
+          options?.signal?.addEventListener('abort', () => reject(new Error('Aborted'))),
+        )
       await Promise.resolve()
       server.meanwhile?.()
       if (server.failing) throw new Error('Internal Server Error')
@@ -87,6 +95,7 @@ beforeEach(() => {
   vi.useFakeTimers()
   server.syncs = 0
   server.failing = false
+  server.hanging = false
   serverUnavailable = false
   server.found = { new_mail_in: [], changed: false, failed: false }
   server.meanwhile = undefined
@@ -245,6 +254,17 @@ describe('useChangeSync keeps the lists up with the mail server', () => {
     await vi.advanceTimersByTimeAsync(45_000)
 
     expect(server.syncs - answered).toBe(3)
+  })
+
+  it('gives up an ask that never answers, and asks again', async () => {
+    server.hanging = true
+    start()
+    await vi.advanceTimersByTimeAsync(0)
+    expect(server.syncs).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(2 * 60_000)
+
+    expect(server.syncs).toBeGreaterThan(1)
   })
 
   it('stops asking once the mail server is shown as unavailable', async () => {

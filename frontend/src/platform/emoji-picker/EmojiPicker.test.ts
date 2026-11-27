@@ -1,0 +1,220 @@
+import { Picker } from 'emoji-mart'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, ref } from 'vue'
+
+import EmojiPicker from '@/platform/emoji-picker/EmojiPicker.vue'
+import { translationPlugin } from '@/platform/translation'
+
+import { prepareEmojiPicker } from './prepareEmojiPicker'
+
+// The real popover: its trigger toggles on a press by itself, which is what opening on hover has to
+// work with. A stand-in without that passed while a tap did nothing at all.
+vi.mock('frappe-ui', async () => ({
+  ...(await import('../../../../node_modules/frappe-ui/src/components/Popover')),
+  Button: defineComponent({
+    setup(_, { attrs }) {
+      return () => h('button', { 'data-plus': '', ...attrs }, 'plus')
+    },
+  }),
+}))
+vi.mock('./prepareEmojiPicker', () => ({ prepareEmojiPicker: vi.fn() }))
+vi.mock('./EmojiGrid.vue', () => ({
+  default: defineComponent({
+    setup() {
+      return () => h('button', { 'data-emoji-grid': '' }, 'Full emoji grid')
+    },
+  }),
+}))
+
+const pointer = (type: string, pointerType: string) =>
+  Object.assign(new Event(type, { bubbles: type === 'click' }), { pointerType })
+
+const paletteIsOpen = () => document.body.textContent?.includes('🙏') ?? false
+const fullListIsOpen = () => !!document.body.querySelector('[data-emoji-grid]')
+
+let cleanup: (() => void) | undefined
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.mocked(prepareEmojiPicker).mockReset().mockResolvedValue(Picker)
+})
+afterEach(() => {
+  cleanup?.()
+  document.body.innerHTML = ''
+  vi.useRealTimers()
+})
+
+function render(openOnHover: boolean, startsWithPalette = true) {
+  const shortPalette = ref(startsWithPalette)
+  const root = document.createElement('div')
+  document.body.append(root)
+  const app = createApp({
+    render: () =>
+      h(
+        EmojiPicker,
+        {
+          openOnHover,
+          reaction: shortPalette.value,
+          'onUpdate:reaction': (value?: boolean) => (shortPalette.value = value ?? false),
+        },
+        {
+          default: ({
+            press,
+            hover,
+            toggle,
+          }: {
+            press: (event: Event) => void
+            hover: object
+            toggle: () => void
+          }) =>
+            h('button', {
+              'data-trigger': '',
+              ...hover,
+              onClick: (event: Event) => (openOnHover ? press(event) : toggle()),
+            }),
+        },
+      ),
+  })
+  app.use(translationPlugin).mount(root)
+  cleanup = () => app.unmount()
+  const trigger = root.querySelector<HTMLButtonElement>('[data-trigger]')!
+  const after = async (ms = 0) => {
+    await vi.advanceTimersByTimeAsync(ms)
+    for (let i = 0; i < 20; i++) await nextTick()
+  }
+  return { trigger, after }
+}
+
+describe('EmojiPicker opening on hover', () => {
+  it('opens when a mouse rests on the button', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('pointerenter', 'mouse'))
+    await after(1000)
+    expect(paletteIsOpen()).toBe(true)
+  })
+
+  it('does not open for a mouse just passing over', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('pointerenter', 'mouse'))
+    await after(50)
+    trigger.dispatchEvent(pointer('pointerleave', 'mouse'))
+    await after(1000)
+    expect(paletteIsOpen()).toBe(false)
+  })
+
+  it('closes when the mouse leaves', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('pointerenter', 'mouse'))
+    await after(1000)
+    trigger.dispatchEvent(pointer('pointerleave', 'mouse'))
+    await after(1000)
+    expect(paletteIsOpen()).toBe(false)
+  })
+
+  it('stays open when clicked after hovering, rather than closing', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('pointerenter', 'mouse'))
+    await after(1000)
+    trigger.dispatchEvent(pointer('click', 'mouse'))
+    await after()
+    expect(paletteIsOpen()).toBe(true)
+  })
+
+  it('opens on a click from a mouse that had not rested yet', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('click', 'mouse'))
+    await after()
+    expect(paletteIsOpen()).toBe(true)
+  })
+
+  it('opens and closes on a tap, and a touch alone does not open it', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('pointerenter', 'touch'))
+    await after(1000)
+    expect(paletteIsOpen()).toBe(false)
+    trigger.dispatchEvent(pointer('click', 'touch'))
+    await after()
+    expect(paletteIsOpen()).toBe(true)
+    trigger.dispatchEvent(pointer('click', 'touch'))
+    await after()
+    expect(paletteIsOpen()).toBe(false)
+  })
+
+  it('opens on a key press, which has no pointer type', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('click', ''))
+    await after()
+    expect(paletteIsOpen()).toBe(true)
+  })
+
+  it('keeps the full list open when the mouse leaves it', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('pointerenter', 'mouse'))
+    await after(1000)
+    document.body.querySelector<HTMLButtonElement>('[data-plus]')?.click()
+    await after()
+    expect(fullListIsOpen()).toBe(true)
+    trigger.dispatchEvent(pointer('pointerleave', 'mouse'))
+    await after(1000)
+    expect(fullListIsOpen()).toBe(true)
+  })
+
+  it('opens on the short palette again after the full list', async () => {
+    const { trigger, after } = render(true)
+    trigger.dispatchEvent(pointer('click', 'touch'))
+    await after()
+    document.body.querySelector<HTMLButtonElement>('[data-plus]')?.click()
+    await after()
+    trigger.dispatchEvent(pointer('click', 'touch'))
+    await after()
+    trigger.dispatchEvent(pointer('click', 'touch'))
+    await after()
+    expect(paletteIsOpen()).toBe(true)
+    expect(fullListIsOpen()).toBe(false)
+  })
+})
+
+describe("the short palette's way to the full list", () => {
+  it('is named for what it opens', async () => {
+    const { trigger, after } = render(false)
+    trigger.click()
+    await after()
+    document.body.querySelector<HTMLButtonElement>('button[aria-label="More reactions"]')?.click()
+    await after()
+    expect(fullListIsOpen()).toBe(true)
+  })
+})
+
+describe('EmojiPicker without it, as in the composer', () => {
+  it('does not open on hover', async () => {
+    const { trigger, after } = render(false)
+    trigger.dispatchEvent(pointer('pointerenter', 'mouse'))
+    await after(1000)
+    expect(paletteIsOpen()).toBe(false)
+  })
+
+  it('still opens and closes on a click', async () => {
+    const { trigger, after } = render(false)
+    trigger.click()
+    await after()
+    expect(paletteIsOpen()).toBe(true)
+    trigger.click()
+    await after()
+    expect(paletteIsOpen()).toBe(false)
+  })
+})
+
+it('opens directly to the grid once the first request is ready', async () => {
+  const preparation = Promise.withResolvers<typeof Picker>()
+  vi.mocked(prepareEmojiPicker).mockReturnValue(preparation.promise)
+  const { trigger, after } = render(false, false)
+
+  trigger.click()
+  await after()
+  expect(trigger.getAttribute('aria-expanded')).toBe('false')
+  expect(fullListIsOpen()).toBe(false)
+
+  preparation.resolve(Picker)
+  await after()
+  expect(trigger.getAttribute('aria-expanded')).toBe('true')
+  expect(fullListIsOpen()).toBe(true)
+})

@@ -29,7 +29,7 @@ vi.mock('frappe-ui/editor', () => ({ EditorFixedMenu: { render: () => null } }))
 vi.mock('@/apps/mail/components/ComposeReminderButton.vue', () => ({
   default: { render: () => null },
 }))
-vi.mock('@/apps/mail/components/EmojiPicker.vue', async () => {
+vi.mock('@/platform/emoji-picker/EmojiPicker.vue', async () => {
   const { defineComponent } = await import('vue')
   return {
     default: defineComponent({

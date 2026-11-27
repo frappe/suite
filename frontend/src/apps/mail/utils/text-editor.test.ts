@@ -74,6 +74,29 @@ describe('mailEditorKit', () => {
     }
   })
 
+  it.each([
+    ['the composer', composerExtensions],
+    ['a signature', () => mailEditorKit()],
+    ['the vacation message', () => mailEditorKit({ divParagraphs: false })],
+  ])('keeps a pasted Drive link as a link in %s', (_, extensions) => {
+    const url = 'https://drive.google.com/file/d/1AbC/view?usp=sharing'
+    const editor = new Editor({ element: document.createElement('div'), extensions: extensions() })
+    try {
+      // jsdom has no clipboard, so the paste carries a stand-in holding just the copied text.
+      const paste = new Event('paste', { bubbles: true, cancelable: true })
+      Object.defineProperty(paste, 'clipboardData', {
+        value: { getData: (type: string) => (type === 'text/plain' ? url : '') },
+      })
+      editor.view.dom.dispatchEvent(paste)
+      const host = document.createElement('div')
+      host.innerHTML = editor.getHTML()
+      expect(host.querySelector('iframe')).toBeNull()
+      expect(host.querySelector('a')?.getAttribute('href')).toBe(url)
+    } finally {
+      editor.destroy()
+    }
+  })
+
   it('leaves the vacation message in paragraphs', () => {
     expect(roundTrip('<p>Away</p>', mailEditorKit({ divParagraphs: false }))).toBe('<p>Away</p>')
   })

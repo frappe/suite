@@ -94,6 +94,42 @@ class TestNodeLifecycle(IntegrationTestCase):
             mime=blob.mime_type,
         )
 
+    def test_a_read_only_file_refuses_content_replacement(self):
+        frappe.set_user(USER)
+        owner = Principals(USER, (USER,), ("$PUBLIC",))
+        node = drive.store_file(self.root.name, "Original.txt", io.BytesIO(b"original"), read_only=True)
+        replacement = self._blob(b"replacement")
+
+        with self.assertRaises(DriveForbidden):
+            update(
+                owner,
+                node,
+                blob=replacement.name,
+                size=replacement.file_size,
+                mime=replacement.mime_type,
+            )
+
+        stream, _mime = drive.read_file(node)
+        with stream:
+            self.assertEqual(stream.read(), b"original")
+
+    def test_a_read_only_file_can_be_moved_trashed_restored_and_shared(self):
+        frappe.set_user(USER)
+        owner = Principals(USER, (USER,), ("$PUBLIC",))
+        node = drive.store_file(self.root.name, "Original.txt", io.BytesIO(b"original"), read_only=True)
+        folder = create_folder(owner, self.root.name, "Archive")
+
+        self.assertEqual(update(owner, node, parent_node=folder).parent_node, folder)
+        self.assertEqual(update(owner, node, state="Trashed").state, "Trashed")
+        restored = update(owner, node, state="Active")
+        self.assertEqual((restored.state, restored.parent_node), ("Active", folder))
+        grant(node, OTHER, READ, owner)
+
+        frappe.set_user(OTHER)
+        stream, _mime = drive.read_file(node)
+        with stream:
+            self.assertEqual(stream.read(), b"original")
+
     def test_create_folder_and_link_enforce_shapes_and_document_leaf_boundary(self):
         folder = create_folder(self.admin, self.root.name, "Folder")
         link = create_link(self.admin, folder, "Guide", url="https://example.test/guide")

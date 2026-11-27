@@ -1,14 +1,16 @@
 <template>
-  <div class="flex flex-col gap-3">
-    <SettingsDialogActions>
+  <!-- The page's one action sits in its header, or in the bar on a phone, as every list tab's does. -->
+  <SettingsPage :title="__('Folders')">
+    <template #actions>
       <Button
-        variant="solid"
         icon-left="lucide-plus"
-        :label="__('New folder')"
+        :label="isMobile ? __('New') : __('New folder')"
+        :variant="isMobile ? 'ghost' : 'subtle'"
         :size="buttonSize"
         @click="editMailbox()"
       />
-    </SettingsDialogActions>
+    </template>
+    <!-- Rows as tall as a phone's other settings rows there, so each is an easy tap. -->
     <div v-if="managedMailboxes.length">
       <div
         v-for="mailbox in managedMailboxes"
@@ -17,7 +19,7 @@
       >
         <button
           type="button"
-          class="text-ink-gray-6 flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+          class="text-ink-gray-6 flex min-w-0 flex-1 items-center gap-2 py-2 text-left max-sm:gap-3 max-sm:py-3"
           @click="editMailbox(mailbox)"
         >
           <Icon
@@ -43,10 +45,9 @@
       :title="__('No folders yet')"
       :description="__('Folders let you file your mail.')"
     />
-
     <FolderModal v-model="showFolderModal" :mailbox="selectedMailbox" />
     <DeleteFolderModal v-model="showDeleteFolderModal" :mailbox="selectedMailbox" />
-  </div>
+  </SettingsPage>
 </template>
 
 <script setup lang="ts">
@@ -63,9 +64,9 @@ import { userStore } from '@/apps/mail/stores/user'
 import type { MailboxData } from '@/apps/mail/types'
 import { getIcon } from '@/apps/mail/utils'
 import { useScreenSize } from '@/apps/mail/utils/composables'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
 import SettingsEmptyList from '@/platform/settings/SettingsEmptyList.vue'
+import SettingsPage from '@/platform/settings/SettingsPage.vue'
 
 const { mailboxes } = userStore()
 const { isMobile } = useScreenSize()

@@ -131,6 +131,11 @@
                     />
                   </div>
                 </div>
+                <!-- Under the labels of the rows above it: the note is about their time. -->
+                <div v-if="conflicts.length" class="flex gap-3 px-3.5 py-2.5">
+                  <span :class="ICON_BLANK" />
+                  <ConflictNote :conflicts="conflicts" class="min-w-0 flex-1" />
+                </div>
                 <button :class="ROW" @click="emit('toggleRepeat')">
                   <Repeat :class="ICON" />
                   <span class="shrink-0">{{ __('Repeat') }}</span>
@@ -168,14 +173,40 @@
 							     are read as one group. -->
               <div ref="locationsEl" :class="GROUP">
                 <div :class="ROW">
-                  <img :src="meetLogo" :alt="__('Frappe Meet')" class="size-4 shrink-0" />
-                  <template v-if="meetUrl">
+                  <MeetIcon class="size-4 shrink-0 text-[#E54E17]" />
+                  <template v-if="isNew && inviteRooms.length && (meetUrl || event.addMeetLink)">
+                    <div class="min-w-0 flex-1">
+                      <MeetRoomPicker
+                        :label="roomChoiceLabel"
+                        :url="meetUrl"
+                        :rooms="inviteRooms"
+                        size="sm"
+                        @pick="emit('pickInviteRoom', $event)"
+                      />
+                    </div>
+                    <Switch
+                      :model-value="true"
+                      :aria-label="__('Frappe Meet video call')"
+                      @update:model-value="emit('setMeet', $event)"
+                    />
+                  </template>
+                  <template v-else-if="meetUrl">
                     <span class="min-w-0 flex-1 truncate">{{ meetLinkDisplay }}</span>
-                    <Button :label="__('Join')" size="sm" @click="emit('joinMeet')" />
+                    <Button v-if="!isNew" :label="__('Join')" size="sm" @click="emit('joinMeet')" />
+                    <Switch
+                      v-if="isNew"
+                      :model-value="true"
+                      :aria-label="__('Frappe Meet video call')"
+                      @update:model-value="emit('setMeet', $event)"
+                    />
                   </template>
                   <template v-else>
                     <span class="flex-1">{{ __('Add Frappe Meet video call') }}</span>
-                    <Switch v-model="event.addMeetLink" />
+                    <Switch
+                      :model-value="event.addMeetLink"
+                      :aria-label="__('Frappe Meet video call')"
+                      @update:model-value="emit('setMeet', $event)"
+                    />
                   </template>
                 </div>
                 <div v-for="(_, i) in event.locations" :key="i" :class="ROW">
@@ -421,9 +452,12 @@ import {
 } from 'lucide-vue-next'
 import { computed, h, nextTick, onMounted, ref, useTemplateRef, watch } from 'vue'
 
+import ConflictNote from '@/apps/calendar/components/ConflictNote.vue'
+import MeetRoomPicker from '@/apps/calendar/components/MeetRoomPicker.vue'
 import MobileScreenHeader from '@/apps/calendar/components/mobile/MobileScreenHeader.vue'
 import ParticipantSelector from '@/apps/calendar/components/ParticipantSelector.vue'
 import { requestAlertPermission } from '@/apps/calendar/reminders'
+import type { BusyCandidate } from '@/apps/calendar/utils/availability'
 import { eventColor } from '@/apps/calendar/utils/color'
 import dayjs from '@/apps/calendar/utils/dayjs'
 import {
@@ -434,21 +468,31 @@ import {
   VISIBILITY_OPTIONS,
 } from '@/apps/calendar/utils/eventOptions'
 import { formatAlertPhrase, getRepeatMessage, type EventAlert } from '@/apps/calendar/utils/format'
-import AdaptiveDropdown from '@/components/AdaptiveDropdown.vue'
-import { useKeyboardInsets } from '@/composables/useKeyboardInsets'
-import { meetLogo } from '@/platform/brand'
+import { MeetIcon } from '@/apps/meet'
+import AdaptiveDropdown from '@/platform/feedback/AdaptiveDropdown.vue'
+import { useKeyboardInsets } from '@/platform/keyboard-insets'
 
-const { event, isNew, participants, calendarChoices } = defineProps<{
+const {
+  event,
+  isNew,
+  participants,
+  calendarChoices,
+  conflicts = [],
+} = defineProps<{
   /** The form state EventModal owns; the rows edit it in place. */
   event: any
   title: string
   isNew: boolean
   disableSave: boolean
   participants: any[]
+  /** The writer's own events in the event's time; see useAvailability. */
+  conflicts?: (BusyCandidate & { title?: string | null })[]
   /** The calendars the event can go on, as `account|id` options; see EventModal. */
   calendarChoices: { label: string; value: string; color: string }[]
   meetUrl?: string
   meetLinkDisplay?: string
+  inviteRooms: { room: string; title: string | null; meeting_url: string }[]
+  roomChoiceLabel: string
 }>()
 
 /** The calendar it is on, as `account|id`. */
@@ -461,6 +505,8 @@ const emit = defineEmits<{
   setAllDay: [value: boolean]
   setAlerts: [alerts: any[]]
   joinMeet: []
+  setMeet: [on: boolean]
+  pickInviteRoom: [url: string | null]
 }>()
 
 const { height: viewportHeight, top: keyboardTop } = useKeyboardInsets()

@@ -1,0 +1,4 @@
+- targets:
+    - transcription.example.com
+  labels:
+    environment: production

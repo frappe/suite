@@ -11,11 +11,13 @@ const manifestName = '.vite/bundle-budget-manifest.json'
 const manifestPath = path.join(outputRoot, manifestName)
 const limit = 200 * 1024
 
-const build = spawnSync('pnpm', ['exec', 'vite', 'build', '--manifest', manifestName], {
-  cwd: appRoot,
-  stdio: 'inherit',
-})
-if (build.status !== 0) process.exit(build.status || 1)
+if (!process.argv.includes('--built')) {
+  const build = spawnSync('pnpm', ['exec', 'vite', 'build', '--manifest', manifestName], {
+    cwd: appRoot,
+    stdio: 'inherit',
+  })
+  if (build.status !== 0) process.exit(build.status || 1)
+}
 if (!fs.existsSync(manifestPath)) {
   console.error(`Vite did not emit ${manifestPath}.`)
   process.exit(1)

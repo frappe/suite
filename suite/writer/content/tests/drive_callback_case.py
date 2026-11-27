@@ -3,8 +3,9 @@
 import io
 import json
 import uuid
+from contextlib import contextmanager
 from dataclasses import replace
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import frappe
@@ -13,7 +14,9 @@ from frappe.utils import now_datetime
 
 import suite.drive._core as drive_core
 from suite import drive
+from suite.content import touches
 from suite.content.http import routes
+from suite.drive.framework import principals_for_request
 from suite.writer import content as writer_content
 from suite.writer import drive as writer_drive
 from suite.writer.content.tests.support import (
@@ -36,6 +39,12 @@ def move_as_writer(node: str, folder: str) -> None:
     drive_core.nodes.update(owner, node, parent_node=folder)
 
 
+def exported(node: str, file_format: str) -> str:
+    # Drive's export for the reader its GET route finds, so the app's callback runs inside Drive's own guard
+    stream, _mime, _filename = drive_core.content.export_document(principals_for_request(), node, file_format)
+    return stream.read().decode()
+
+
 def version_of(docname: str) -> dict:
     stream, mime = writer_drive.SPEC.version_bytes(docname)
     assert mime == "application/json"
@@ -55,6 +64,14 @@ def embed(media: str) -> str:
 
 
 class DriveCallbackCase(CheckpointCase):
+    @contextmanager
+    def frozen_clock(self, at: datetime):
+        with (
+            patch.object(touches, "now_datetime", return_value=at),
+            patch.object(drive_core.content, "now_datetime", return_value=at),
+        ):
+            yield
+
     def push_edit(self, node: str, change, schema: int = 1) -> None:
         sid = uuid.uuid4().hex
         session_body = json.dumps({"sid": sid}).encode()

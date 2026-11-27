@@ -28,6 +28,11 @@ interface ListFilterOptions {
    * waits marked until someone decides on them.
    */
   screenable?: () => boolean
+  /**
+   * The list is Drafts, where only Has attachments is offered: a draft is one's own, never unread,
+   * and isn't starred (see selectActions, whose Drafts bar offers only Discard).
+   */
+  drafts?: () => boolean
 }
 
 /**
@@ -40,6 +45,7 @@ export const useListFilter = ({
   onChange,
   starrable = () => true,
   screenable = () => false,
+  drafts = () => false,
 }: ListFilterOptions) => {
   const stored = ref<string[]>([])
   // A filter changed on a list already showing, so the list stays up while the filtered one loads
@@ -48,8 +54,8 @@ export const useListFilter = ({
 
   // Each filter in the order the menu lists it, with whether this list offers it.
   const FILTERS = [
-    { key: 'unread', label: () => __('Unread'), offered: () => true },
-    { key: 'starred', label: () => __('Starred'), offered: starrable },
+    { key: 'unread', label: () => __('Unread'), offered: () => !drafts() },
+    { key: 'starred', label: () => __('Starred'), offered: () => !drafts() && starrable() },
     { key: 'has_attachments', label: () => __('Has attachments'), offered: () => true },
     { key: 'unscreened', label: () => __('Unknown sender'), offered: screenable },
   ]
@@ -79,7 +85,7 @@ export const useListFilter = ({
     onChange()
   }
 
-  /** Start clear: another list (a mailbox switch) opens unfiltered. */
+  /** Start clear: another list (another folder, or another Inbox category) opens unfiltered. */
   const reloadFilter = () => {
     stored.value = []
     changed.value = false
@@ -108,7 +114,7 @@ export const useListFilter = ({
   /** What the toolbar's filter selector reads: the ticked filter's own label, as the menu shows
    *  it. Callers may show something else instead — a selection count, a result count. */
   const filterTitle = computed(() => {
-    if (!active.value.length) return __('All mail')
+    if (!active.value.length) return __('All')
     // Several at once: the first by name and a count of the rest ("Unread +1"); the menu's ticks
     // say which the rest are.
     if (active.value.length > 1)

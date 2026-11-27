@@ -237,7 +237,7 @@ describe('FilesListing paging', () => {
     await new Promise((resolve) => setTimeout(resolve))
   })
 
-  it('waits for an explicit retry after a next window fails', async () => {
+  it('keeps a failed next window available for explicit retry across a refresh', async () => {
     const { root, query } = mount({ rows })
     Object.assign(query, { status: 'error', hasNext: true, error: new Error('Window failed') })
     const fetchNext = vi.spyOn(query, 'fetchNext').mockImplementation(() => {
@@ -250,7 +250,19 @@ describe('FilesListing paging', () => {
       fromPartial<IntersectionObserver>({}),
     )
     expect(fetchNext).not.toHaveBeenCalled()
-    requireTestElement(root.querySelector('[label="Retry"]'), HTMLButtonElement).click()
+
+    query.isFetching = true
+    await nextTick()
+    const retry = () => requireTestElement(root.querySelector('[label="Retry"]'), HTMLButtonElement)
+    expect(retry().disabled).toBe(true)
+
+    // The first window refreshed successfully, but the failed continuation still needs Retry.
+    Object.assign(query, { status: 'success', isFetching: false })
+    await nextTick()
+    expect(root.querySelectorAll('[data-node]')).toHaveLength(rows.length)
+    expect(fetchNext).not.toHaveBeenCalled()
+    expect(retry().disabled).toBe(false)
+    retry().click()
     await nextTick()
     expect(fetchNext).toHaveBeenCalledOnce()
   })

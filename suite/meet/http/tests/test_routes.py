@@ -22,10 +22,10 @@ class TestHandlers(UnitTestCase):
         self.assertEqual(routes._duration("2026-09-15T10:00:00", "2026-09-15T11:30:00"), "PT5400S")
 
     @patch("suite.meet.api.meeting.create", return_value="abcd-efgh-ijkl")
-    @patch.object(routes, "get_url", return_value="https://slides.localhost/meet/abcd-efgh-ijkl")
+    @patch.object(routes.links, "meeting_url", return_value="https://slides.localhost/meet/abcd-efgh-ijkl")
     def test_room_type_uses_the_open_workflow(self, _url, create):
         self.assertEqual(
             routes.rooms_post("open"),
             {"code": "abcd-efgh-ijkl", "url": "https://slides.localhost/meet/abcd-efgh-ijkl"},
         )
-        create.assert_called_once_with(meeting_type="open")
+        create.assert_called_once_with(meeting_type="open", title=None, link=None)

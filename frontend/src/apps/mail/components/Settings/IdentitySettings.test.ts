@@ -64,9 +64,10 @@ vi.mock('@/apps/mail/utils', async (original) => ({
   ...(await original()),
   raiseToast: state.toast,
 }))
-vi.mock('@/apps/mail/utils/composables', () => ({
-  useScreenSize: () => ({ isMobile: { value: false } }),
-}))
+vi.mock('@/apps/mail/utils/composables', async () => {
+  const { ref } = await import('vue')
+  return { useScreenSize: () => ({ isMobile: ref(false) }) }
+})
 vi.mock('@/apps/mail/stores/user', () => ({
   userStore: () => ({
     accountId: 'oa',
@@ -89,8 +90,15 @@ vi.mock('@/api', async () => {
     useQuery: () =>
       reactive({
         data: [
-          { name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>' },
-          { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>' },
+          { name: 'sig-1', signature_name: 'Work', html_body: '<p>Regards</p>', identities: [] },
+          { name: 'sig-2', signature_name: 'Short', html_body: '<p>Thanks</p>', identities: [] },
+          // The same words as Short, given to the sales address
+          {
+            name: 'sig-3',
+            signature_name: 'Short again',
+            html_body: '<p>Thanks</p>',
+            identities: ['oa|b'],
+          },
         ],
       }),
     useMutation: (reference: { id: string }, options?: { silent?: boolean }) =>
@@ -295,7 +303,7 @@ async function pickSignature(label: string) {
 /** The lines of the list, each as the words a reader sees on it. */
 function lines() {
   return Array.from(root.querySelectorAll('button[type="button"]')).map((line) =>
-    Array.from(line.querySelectorAll('span'), (part) => part.textContent).join(' '),
+    Array.from(line.querySelectorAll('span:not(:has(span))'), (part) => part.textContent).join(' '),
   )
 }
 
@@ -339,13 +347,13 @@ afterEach(() => app.unmount())
 
 it('opens on the list of addresses, each with its name and email', () => {
   mount([me, sales])
-  expect(lines()).toEqual(['Me me@example.com Default', 'Sales sales@example.com'])
+  expect(lines()).toEqual(['Me Default me@example.com', 'Sales sales@example.com'])
   expect(field('Display name')).toBeNull()
 })
 it('marks the saved default address, whatever its letter case', () => {
   state.savedDefault = 'SALES@example.com'
   mount([me, sales])
-  expect(lines()).toEqual(['Me me@example.com', 'Sales sales@example.com Default'])
+  expect(lines()).toEqual(['Me me@example.com', 'Sales Default sales@example.com'])
 })
 it('makes an address the default from its menu, and offers that only on the others', async () => {
   mount([me, sales])
@@ -389,6 +397,7 @@ it('saves the address that is open, then shows the list', async () => {
     reply_to: [],
     bcc: [],
     html_signature: '',
+    signature: null,
   })
   expect(state.toast).toHaveBeenCalledWith('Address updated')
   expect(lines()).toHaveLength(2)
@@ -440,20 +449,39 @@ it('keeps an address open when a slow create ends after the new page was left', 
   await new Promise((resolve) => setTimeout(resolve, 0))
   expect(field('Display name')?.value).toBe('Sales team')
 })
-it('keeps Reply-to and Bcc behind a button until the address uses one', async () => {
+it('keeps Reply-to and Bcc each behind its own button until the address uses it', async () => {
   const support = { ...sales, bcc: [{ email: 'log@example.com', display_name: '' }] }
   mount([me, support])
   await openAddress('me@example.com')
   expect(addressList('Reply-to')).toBeNull()
 
-  await press('Add reply-to or Bcc')
+  await press('Add reply-to')
   expect(rows('Reply-to')).toEqual([['', '']])
-  expect(rows('Bcc')).toEqual([['', '']])
+  expect(addressList('Bcc')).toBeNull()
 
   await press('Back to addresses')
   await openAddress('sales@example.com')
-  expect(rows('Reply-to')).toEqual([])
+  expect(addressList('Reply-to')).toBeNull()
   expect(rows('Bcc')).toEqual([['log@example.com', '']])
+})
+it('puts the cursor in the email of the row just added, so it can be typed in at once', async () => {
+  mount([me])
+  // Only a field on the page takes the cursor
+  document.body.append(root)
+  await openAddress('me@example.com')
+  const lastEmail = (label: string) =>
+    Array.from(addressList(label)?.querySelectorAll('input[aria-label="Email address"]') ?? []).at(
+      -1,
+    )
+
+  await press('Add reply-to')
+  expect(document.activeElement).toBe(lastEmail('Reply-to'))
+
+  await typeInRow('Reply-to', 'help@example.com')
+  await pressIn('Reply-to', 'Add address')
+  expect(document.activeElement).toBe(lastEmail('Reply-to'))
+  expect(lastEmail('Reply-to')).toHaveProperty('value', '')
+  root.remove()
 })
 it('saves each address with the display name beside it, a new one and a changed one alike', async () => {
   const support = { ...sales, reply_to: [{ email: 'help@example.com', display_name: 'Help desk' }] }
@@ -464,7 +492,7 @@ it('saves each address with the display name beside it, a new one and a changed 
   await typeInRow('Reply-to', 'help@example.com', 'Helpers')
   await pressIn('Reply-to', 'Add address')
   await typeInRow('Reply-to', 'desk@example.com', 'Front desk')
-  await pressIn('Bcc', 'Add address')
+  await press('Add Bcc')
   await typeInRow('Bcc', 'log@example.com')
   await press('Save')
   expect(state.run).toHaveBeenCalledWith(
@@ -500,7 +528,8 @@ it('saves an address removed from its list as gone', async () => {
 it('sends no row that was left empty, and counts none as a change', async () => {
   mount([me])
   await openAddress('me@example.com')
-  await press('Add reply-to or Bcc')
+  await press('Add reply-to')
+  await press('Add Bcc')
   expect(findButton('Save')?.disabled).toBe(true)
 
   await typeInRow('Bcc', ' log@example.com ')
@@ -516,7 +545,8 @@ it('sends no row that was left empty, and counts none as a change', async () => 
 it('says which row is no email address when Save is pressed, and sends nothing', async () => {
   mount([me])
   await openAddress('me@example.com')
-  await press('Add reply-to or Bcc')
+  await press('Add reply-to')
+  await press('Add Bcc')
   await typeInRow('Reply-to', 'not an address', 'Help desk')
   expect(root.querySelector('[role="alert"]')).toBeNull()
 
@@ -550,14 +580,50 @@ it('reads a signature that matches a saved one as that one, and any other as Cus
   expect(pickedSignature()).toBe('Custom')
   expect(root.querySelector('textarea')?.value).toBe('<p>Sales desk</p>')
 })
-it('saves the words of the saved signature that is picked', async () => {
+it('saves the words of the saved signature that is picked, and which one it is', async () => {
   mount([me])
   await openAddress('me@example.com')
   await pickSignature('Work')
   await press('Save')
   expect(state.run).toHaveBeenCalledWith(
     'save_identity',
-    expect.objectContaining({ html_signature: '<p>Regards</p>' }),
+    expect.objectContaining({ html_signature: '<p>Regards</p>', signature: 'sig-1' }),
+  )
+})
+it('reads two saved signatures with the same words as the one the address was given', async () => {
+  mount([
+    { ...me, html_signature: '<p>Thanks</p>' },
+    { ...sales, html_signature: '<p>Thanks</p>' },
+  ])
+  await openAddress('sales@example.com')
+  expect(pickedSignature()).toBe('Short again')
+
+  await press('Back to addresses')
+  await openAddress('me@example.com')
+  expect(pickedSignature()).toBe('Short')
+})
+it('saves the one picked of two saved signatures with the same words', async () => {
+  mount([me])
+  await openAddress('me@example.com')
+  await pickSignature('Short again')
+  expect(pickedSignature()).toBe('Short again')
+
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '<p>Thanks</p>', signature: 'sig-3' }),
+  )
+})
+it('lets Custom be saved on the same words, so they no longer follow the saved signature', async () => {
+  mount([{ ...sales, html_signature: '<p>Thanks</p>' }])
+  await openAddress('sales@example.com')
+  await pickSignature('Custom')
+  expect(findButton('Save')?.disabled).toBe(false)
+
+  await press('Save')
+  expect(state.run).toHaveBeenCalledWith(
+    'save_identity',
+    expect.objectContaining({ html_signature: '<p>Thanks</p>', signature: null }),
   )
 })
 it('saves no signature once None is picked', async () => {
@@ -577,18 +643,23 @@ it('opens the editor on the words in use when Custom is picked', async () => {
   expect(pickedSignature()).toBe('Custom')
   expect(root.querySelector('textarea')?.value).toBe('<p>Thanks</p>')
 })
-it('creates an address on this account from New address, then shows the list', async () => {
+it('creates an address on this account from New address, with its reply-to, then shows the list', async () => {
   mount([me])
   await press('New address')
   expect(findButton('Save')?.disabled).toBe(true)
 
   await type('Email address', 'billing@example.com')
   await type('Display name', 'Billing')
+  await press('Add reply-to')
+  await typeInRow('Reply-to', 'accounts@example.com', 'Accounts')
   await press('Save')
   expect(state.run).toHaveBeenCalledWith('add_identity', {
     account: 'oa',
     email: 'billing@example.com',
     name: 'Billing',
+    reply_to: [{ email: 'accounts@example.com', display_name: 'Accounts' }],
+    bcc: [],
+    html_signature: '',
   })
   expect(state.toast).toHaveBeenCalledWith('Address created')
   expect(field('Email address')).toBeNull()
@@ -621,35 +692,6 @@ it('keeps the question open when the delete is refused', async () => {
   await press('Delete address')
   expect(root.querySelector('dialog')?.getAttribute('aria-label')).toBe('Delete this address?')
   expect(state.toast).not.toHaveBeenCalled()
-})
-it('offers Delete on an open address only when the server lets it go', async () => {
-  mount([me, sales])
-  await openAddress('me@example.com')
-  expect(findButton('Delete')).toBeUndefined()
-
-  await press('Back to addresses')
-  await openAddress('sales@example.com')
-  expect(findButton('Delete')).toBeDefined()
-})
-it('deletes the open address once the question is answered, then shows the list', async () => {
-  mount([me, sales])
-  await openAddress('sales@example.com')
-  await press('Delete')
-  expect(root.querySelector('dialog')?.textContent).toContain('This cannot be undone.')
-  expect(state.run).not.toHaveBeenCalled()
-
-  await press('Delete address')
-  expect(state.run).toHaveBeenCalledWith('delete_identity_names', { names: ['oa|b'] })
-  expect(field('Display name')).toBeNull()
-  expect(lines()).toHaveLength(2)
-})
-it('keeps the address open when its delete is refused', async () => {
-  state.run.mockRejectedValue(new Error('In use'))
-  mount([me, sales])
-  await openAddress('sales@example.com')
-  await press('Delete')
-  await press('Delete address')
-  expect(field('Display name')?.value).toBe('Sales')
 })
 /** What the page says is wrong, as a reader with the page in front of them sees it. */
 function alertText() {

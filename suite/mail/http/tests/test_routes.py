@@ -20,10 +20,26 @@ class TestHttpConformance(HttpConformanceMixin, UnitTestCase):
 
 
 class TestHandlers(UnitTestCase):
-    @patch.object(routes, "get_all_inbox_unread_count", return_value=9)
-    def test_inbox_summary_adapts_the_existing_all_account_count(self, unread):
-        self.assertEqual(routes.inbox_summary(), {"unread": 9})
-        unread.assert_called_once_with()
+    @patch.object(routes, "get_user_personal_jmap_account", return_value="mine")
+    @patch.object(
+        routes,
+        "get_inbox_unread_by_account",
+        return_value=[
+            {"account": "mine", "name": "me@example.com", "unread": 4},
+            {"account": "team", "name": "team@example.com", "unread": 5},
+        ],
+    )
+    def test_inbox_summary_counts_every_account_and_says_which_is_the_readers(self, unread, personal):
+        self.assertEqual(
+            routes.inbox_summary(),
+            {
+                "unread": 9,
+                "accounts": [
+                    {"name": "me@example.com", "unread": 4, "personal": True},
+                    {"name": "team@example.com", "unread": 5, "personal": False},
+                ],
+            },
+        )
 
 
 class TestInviteRefusals(UnitTestCase):

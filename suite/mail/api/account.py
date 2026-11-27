@@ -251,6 +251,7 @@ def get_user_info() -> dict | None:
             USER_SETTINGS.group_by_date,
             USER_SETTINGS.show_reading_pane,
             USER_SETTINGS.undo_send_period,
+            USER_SETTINGS.all_mail_tab,
             USER_SETTINGS.name.as_("user_settings"),
         )
         .where(USER.name == user)

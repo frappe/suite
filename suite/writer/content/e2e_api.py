@@ -195,7 +195,7 @@ def convert_now(node: str) -> str | None:
     """Convert `node`'s old body in this request, as the queued conversion would; answer the outcome."""
     job = getattr(frappe.local, "job", None)
     try:
-        # The converter runs only in background jobs
+        # As a job, so it waits for the converter's turn as the queued conversion does
         frappe.local.job = frappe._dict(job_name="e2e convert_now", after_job=CallbackManager())
         return conversions.convert_document(writer_content.APP, node)
     finally:

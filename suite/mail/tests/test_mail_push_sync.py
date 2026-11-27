@@ -143,6 +143,21 @@ class FetchChangesRealtime(unittest.TestCase):
     def test_deleted_mail_is_announced_to_the_user(self):
         self.assertEqual(self._events(destroyed=["e1"]), [mock.call("mail_changed", user=USER)])
 
+    def test_mail_deleted_on_the_server_is_removed_for_good(self):
+        server = _server()
+        server.respond("Email/changes", _changes(destroyed=["e1"]))
+
+        with (
+            mock.patch.object(mail_message, "get_sync_state", return_value="s1"),
+            mock.patch.object(mail_message, "update_sync_state"),
+            mock.patch.object(mail_message, "get_jmap_client", return_value=_client(server)),
+            mock.patch.object(mail_message, "_remove_cached_messages") as remove,
+            mock.patch.object(mail_message.frappe, "publish_realtime"),
+        ):
+            mail_message.fetch_changes(USER, ACCOUNT, email_state="s2")
+
+        remove.assert_called_once_with(ACCOUNT, ["e1"], is_destroyed=True)
+
     def test_updated_mail_is_announced_to_the_user(self):
         self.assertEqual(self._events(updated=["e1"]), [mock.call("mail_changed", user=USER)])
 
@@ -486,10 +501,9 @@ class FetchChangesReactions(unittest.TestCase):
 class FetchChangesInit(unittest.TestCase):
     """The push job with no stored sync state — how the state gets seeded.
 
-    A webhook carries the new state and initializes from it directly. A manual or
-    scheduled run carries none; storing that None would leave the account
-    re-"initializing" on every run with changes never fetched, so the state is seeded
-    from the server instead, read off an empty ``Email/get``.
+    The state is always seeded from the server, read off an empty ``Email/get``, also
+    when a webhook carries one. A manual or scheduled run carries none; storing that None
+    would leave the account re-"initializing" on every run with changes never fetched.
     """
 
     def _run(
@@ -527,11 +541,10 @@ class FetchChangesInit(unittest.TestCase):
         ]
         return update_sync_state, log_mail_error, gets
 
-    def test_webhook_state_initializes_directly(self):
-        update_sync_state, log_mail_error, gets = self._run("s2")
+    def test_the_first_state_is_the_servers_even_when_a_push_carries_one(self):
+        update_sync_state, log_mail_error, _ = self._run("s2", server_state="s5")
 
-        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s2")
-        self.assertEqual(gets, [])
+        update_sync_state.assert_called_once_with(ACCOUNT, type="email", state="s5")
         log_mail_error.assert_not_called()
 
     def test_missing_state_is_seeded_from_server(self):

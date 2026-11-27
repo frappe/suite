@@ -1,6 +1,6 @@
 # Suite API client implementation plan
 
-Status: complete. The [implementation report](implementation.md) records the operation inventory, removed adapters, retained protocols, and verification of the [specification](suite-api-client-spec.md). The [map](MAP.md) and [migration decision](tickets/008-migration-and-verification.md) record the approved direction. The prototype supplies caller examples, not runtime code. Each stage below names affected areas and a result a coding agent can verify. Proposed paths are marked **proposed**; inspect the checkout before fixing file names. Do not change stable operation IDs, URLs, permissions, or unrelated workflows.
+Status: complete. The [implementation report](implementation.md) records the operation inventory, removed adapters, retained protocols, and verification of the [specification](suite-api-client-spec.md). The [map](MAP.md) and migration decision record the approved direction. The prototype supplies caller examples, not runtime code. Each stage below names affected areas and a result a coding agent can verify. Proposed paths are marked **proposed**; inspect the checkout before fixing file names. Do not change stable operation IDs, URLs, permissions, or unrelated workflows.
 
 ## 0. Inventory and baseline
 

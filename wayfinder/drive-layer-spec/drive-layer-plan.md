@@ -8,7 +8,7 @@ The module structure and dependency rules come from
 architecture charter disagree about placement or imports, the charter wins;
 if either disagrees with the spec about behavior, the spec wins.
 
-The [implementation ticket index](implementation/README.md)
+The implementation ticket index
 refines these stages into 46 dependency-linked tickets. It includes the
 execution rules, verification evidence, and separate frontend/release gates.
 Tickets 39 to 46 are asks from the unified frontend effort.

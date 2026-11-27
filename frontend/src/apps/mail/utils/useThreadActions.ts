@@ -11,10 +11,12 @@ import { userStore, type MailboxRole } from '@/apps/mail/stores/user'
 import type { Mail, Mailbox, MailCopy, Thread } from '@/apps/mail/types'
 import {
   afterLanding,
+  afterUndoing,
   commitAfterUndo,
   getIcon,
   raiseOptimisticToast,
   raisePromiseToast,
+  undoOnClick,
   type ToastTiming,
 } from '@/apps/mail/utils'
 import { useDiscardingDrafts, useUndo } from '@/apps/mail/utils/composables'
@@ -43,6 +45,15 @@ interface MailThreadInstance {
  * List/reading-pane thread actions performed directly on mail ids (the full thread is loaded, so the
  * server doesn't need to resolve thread ids). Optimistic UI, undo and toasts live here too.
  */
+
+/** A folder's own icon in its own colour, as a menu of folders draws it: Move to's, and search's. */
+export const folderIcon = (
+  mailbox: Parameters<typeof getIcon>[0] & { color?: keyof typeof FOLDER_ICON_COLOR_MAP | null },
+) =>
+  h(Icon, {
+    name: getIcon(mailbox),
+    class: mailbox.color ? FOLDER_ICON_COLOR_MAP[mailbox.color] : undefined,
+  })
 
 /**
  * The confirmation for deleting threads for good: how many, that it can't be undone, and a button
@@ -83,8 +94,10 @@ export function useThreadActions(deps: {
   syncAfterAction: () => void
   // Drop the given threads from the loaded list optimistically; returns the removed rows for undo.
   removeThreadsFromList: (threadIds: string[]) => Thread[]
-  // Re-insert threads at their sorted position (undo of a move/junk) without jumping to top.
-  restoreThreadsToList: (threads: Thread[]) => void
+  // Re-insert threads at their sorted position (undo of a move/junk) without jumping to top. Given the
+  // Undo's inverse, the rows are held on the list until it lands and the list is read again: they
+  // come back on the click, before the server lists them.
+  restoreThreadsToList: (threads: Thread[], inverted?: Promise<unknown>) => void
   // Refetch the first window if an optimistic removal emptied the list while more threads exist. Call
   // only after the server mutation lands, or the refetch returns the not-yet-removed rows.
   refillIfEmpty: () => void
@@ -106,7 +119,7 @@ export function useThreadActions(deps: {
     goToNextThreadOrMailbox,
   } = deps
   const store = userStore()
-  const { mailboxes, mailboxIds } = store
+  const { mailboxes } = store
   const { setUndoAction, retireUndoAction, undo } = useUndo()
   const { holdDraft, releaseDraft } = useDiscardingDrafts()
   const screener = useScreener()
@@ -172,8 +185,12 @@ export function useThreadActions(deps: {
   const fileMails = useMutation(api.mail.messages.file)
   const snoozeMails = useMutation(api.mail.messages.snooze)
   const unsnoozeMails = useMutation(api.mail.messages.unsnooze)
-  const fileMailsSubmit = (input: Omit<InputOf<typeof api.mail.messages.file>, 'account'>) =>
-    fileMails.run({ account: store.accountId, ...input })
+  // Behind any Undo's inverse still to be sent (see afterUndoing), as is every write here that files
+  // mail; an inverse is sent straight.
+  const fileMailsSubmit = (input: Omit<InputOf<typeof api.mail.messages.file>, 'account'>) => {
+    const account = store.accountId
+    return afterUndoing(() => fileMails.run({ account, ...input }))
+  }
 
   // Where the selection can go, read off the selection itself rather than off the open mailbox —
   // so the menu is just as answerable in Search and Starred, which are queries and not mailboxes.
@@ -181,13 +198,10 @@ export function useThreadActions(deps: {
   const moveToOptions = computed(() => {
     const filedIn = commonMailboxIds(selectedRows.value)
     return mailboxes.data
-      ?.filter((m) => canMoveToMailbox(m.id, filedIn, mailboxIds))
+      ?.filter((m) => canMoveToMailbox(m.id, filedIn, store.mailboxIds))
       .map((m) => ({
         label: m._name,
-        icon: h(Icon, {
-          name: getIcon(m),
-          class: FOLDER_ICON_COLOR_MAP[m.color],
-        }),
+        icon: folderIcon(m),
         onClick: () =>
           handleMoveThreads({
             [m.id]: selections.value,
@@ -198,7 +212,7 @@ export function useThreadActions(deps: {
   const showMoveTo = computed(
     () =>
       !!selections.value.length &&
-      mailbox.value !== mailboxIds.drafts &&
+      mailbox.value !== store.mailboxIds.drafts &&
       !!moveToOptions.value?.length,
   )
   const addMails = useMutation(api.mail.messages.addToFolder)
@@ -208,7 +222,7 @@ export function useThreadActions(deps: {
       ids,
       mailbox_id,
     }
-    await addMails.run(input)
+    await afterUndoing(() => addMails.run(input))
   }
   const removeMails = useMutation(api.mail.messages.removeFromFolder)
   async function removeMailsSubmit({ ids, mailbox_id }: { ids: string[]; mailbox_id: string }) {
@@ -217,7 +231,7 @@ export function useThreadActions(deps: {
       ids,
       mailbox_id,
     }
-    await removeMails.run(input)
+    await afterUndoing(() => removeMails.run(input))
   }
 
   // Restores each mail to an exact snapshot (mailbox set + junk) — used to undo a move precisely.
@@ -248,9 +262,13 @@ export function useThreadActions(deps: {
   const showFolders = computed(
     () =>
       !!selections.value.length &&
-      !['search', 'starred', mailboxIds.junk, mailboxIds.trash, mailboxIds.drafts].includes(
-        mailbox.value,
-      ),
+      ![
+        'search',
+        'starred',
+        store.mailboxIds.junk,
+        store.mailboxIds.trash,
+        store.mailboxIds.drafts,
+      ].includes(mailbox.value),
   )
   const folderOptions = computed(() => {
     if (!showFolders.value) return []
@@ -339,9 +357,9 @@ export function useThreadActions(deps: {
     }
     // Not a draft, ever; and your own mail never into the Inbox or Archive, which are for mail you
     // received (see filing.py) — it is filed into folders of yours only.
-    const toInboxOrArchive = [mailboxIds.inbox, mailboxIds.archive].includes(mailboxId)
+    const toInboxOrArchive = [store.mailboxIds.inbox, store.mailboxIds.archive].includes(mailboxId)
     const mailIds = threadMails(threadIds)
-      .filter((m) => !m.draft && (!toInboxOrArchive || isReceived(m, mailboxIds.sent)))
+      .filter((m) => !m.draft && (!toInboxOrArchive || isReceived(m, store.mailboxIds.sent)))
       .map((m) => m.id)
     if (!mailIds.length) return
     applyAdd() // optimistic: tag shown before the request
@@ -362,7 +380,8 @@ export function useThreadActions(deps: {
     })()
     if (isUndo) {
       // Undo of a remove — immediate confirmation, no further undo.
-      const success = threadIds.length === 1 ? __('Thread added back') : __('Threads added back')
+      const success =
+        threadIds.length === 1 ? __('Conversation added back') : __('Conversations added back')
       return raiseOptimisticToast(forward, { onClick: success })
     }
 
@@ -372,8 +391,8 @@ export function useThreadActions(deps: {
     )
     const success =
       threadIds.length === 1
-        ? __('Thread added to {0}', [mailboxName])
-        : __('Threads added to {0}', [mailboxName])
+        ? __('Conversation added to {0}', [mailboxName])
+        : __('Conversations added to {0}', [mailboxName])
     raiseOptimisticToast(forward, { onClick: success }, undo)
     return forward.then(
       () => true,
@@ -440,8 +459,8 @@ export function useThreadActions(deps: {
     const mailboxName = mailboxes.data?.find((m) => m.id === mailboxId)?._name
     const success =
       threadIdsToBeUpdated.length === 1
-        ? __('Thread removed from {0}', [mailboxName])
-        : __('Threads removed from {0}', [mailboxName])
+        ? __('Conversation removed from {0}', [mailboxName])
+        : __('Conversations removed from {0}', [mailboxName])
 
     // Undo of an add — immediate confirmation, no further undo.
     if (isUndo) return raiseOptimisticToast(forward, { onClick: success })
@@ -457,7 +476,7 @@ export function useThreadActions(deps: {
 
   // In Drafts the bin discards: a draft is one's own unsent text, let go for good rather than filed
   // in Trash, and taken back with Undo rather than confirmed up front (see discardDrafts).
-  const isDraftsList = computed(() => mailbox.value === mailboxIds.drafts)
+  const isDraftsList = computed(() => mailbox.value === store.mailboxIds.drafts)
   // Marking as Junk is reversible (and may still prompt to block per the account setting), so it
   // runs inline with no confirmation; only the destructive delete keeps a confirmation dialog.
   const junkOrDeleteThreads = (threadIDs: string[], isJunk: boolean) => {
@@ -484,7 +503,7 @@ export function useThreadActions(deps: {
     const input: InputOf<typeof api.mail.messages.delete> = {
       names,
     }
-    await bulkDelete.run(input)
+    await afterUndoing(() => bulkDelete.run(input))
   }
 
   // Removes the given threads from the loaded list and returns them (so an undo can re-insert the exact
@@ -560,8 +579,8 @@ export function useThreadActions(deps: {
     // The seen flag already flipped — confirm immediately; roll back + error toast only if it fails.
     const success =
       selectedThreads.length === 1
-        ? __('Thread marked as {0}', [seen ? __('read') : __('unread')])
-        : __('Threads marked as {0}', [seen ? __('read') : __('unread')])
+        ? __('Conversation marked as {0}', [seen ? __('read') : __('unread')])
+        : __('Conversations marked as {0}', [seen ? __('read') : __('unread')])
     raiseOptimisticToast(
       setSeenSubmit({
         ids,
@@ -616,7 +635,7 @@ export function useThreadActions(deps: {
     if (!selectedThreads.length) return
 
     // Moving to Junk is the same as Mark as Junk: no undo, offer to block the sender instead.
-    if (Object.keys(threadIDs).length === 1 && Object.keys(threadIDs)[0] === mailboxIds.junk)
+    if (Object.keys(threadIDs).length === 1 && Object.keys(threadIDs)[0] === store.mailboxIds.junk)
       return handleSetSpamStatus({
         1: selectedThreads,
       })
@@ -629,7 +648,7 @@ export function useThreadActions(deps: {
     }
     if (JSON.stringify(originalState) === JSON.stringify(threadIDs)) return
     closeComposeWindowHolding(selectedThreads)
-    const movesAll = (t: string) => [mailboxIds.junk, mailboxIds.trash].includes(t)
+    const movesAll = (t: string) => [store.mailboxIds.junk, store.mailboxIds.trash].includes(t)
 
     // Snapshot each affected mail's exact state now (while the threads are still loaded), so undo
     // restores every mail to its precise mailbox set + junk status — even mails in several mailboxes.
@@ -642,25 +661,25 @@ export function useThreadActions(deps: {
     // Trash keeps a non-junk/trash copy (and the flag), so the thread stays starred — either way the
     // row stays in the list.
     const keptInList =
-      (mailbox.value === mailboxIds.sent || mailbox.value === 'starred') &&
+      (mailbox.value === store.mailboxIds.sent || mailbox.value === 'starred') &&
       Object.keys(threadIDs).every((t) => !movesAll(t))
     // Only Search stays server-reconciled: its membership is a text query we can't re-evaluate locally.
     // Starred's rule (a non-junk/trash copy AND some flagged message) is computable from the loaded
     // thread, so a move to Trash removes the row optimistically below.
     const reconcileView = !keptInList && mailbox.value === 'search'
     // One filing per target: the server decides what each message does (sent mail keeps Sent, a draft
-    // stays in Drafts, Junk and Trash are their own rules).
-    const forward = Object.entries(threadIDs).map(
-      ([target, tids]) =>
-        () =>
-          fileMailsSubmit({
-            ids: threadMails(tids).map((m) => m.id),
-            action: 'move',
-            mailbox: target,
-            leaves: keptInList || reconcileView ? null : mailbox.value,
-            shows: keptInList ? expectedFolders('move', tids, target) : null,
-          }),
-    )
+    // stays in Drafts, Junk and Trash are their own rules). Read off the rows now, before they leave
+    // the list.
+    const forward = Object.entries(threadIDs).map(([target, tids]) => {
+      const input = {
+        ids: threadMails(tids).map((m) => m.id),
+        action: 'move' as const,
+        mailbox: target,
+        leaves: keptInList || reconcileView ? null : mailbox.value,
+        shows: keptInList ? expectedFolders('move', tids, target) : null,
+      }
+      return () => fileMailsSubmit(input)
+    })
 
     // Optimistic (plain mailbox, or a Starred thread leaving via Trash): drop the rows now, before any
     // request fires. Captured so a failure can restore them in place, and so undo can re-insert them.
@@ -671,25 +690,27 @@ export function useThreadActions(deps: {
       removedThreads = handleSuccessAndRemoveFromList(threadIDs, false)
     const moveToMailboxName = mailboxes.data?.find((m) => m.id === Object.keys(threadIDs)[0])?._name
     const movedBack =
-      selectedThreads.length === 1 ? __('Thread moved back') : __('Threads moved back')
+      selectedThreads.length === 1 ? __('Conversation moved back') : __('Conversations moved back')
     const success =
       selectedThreads.length === 1
-        ? __('Thread moved to {0}', [moveToMailboxName])
-        : __('Threads moved to {0}', [moveToMailboxName])
+        ? __('Conversation moved to {0}', [moveToMailboxName])
+        : __('Conversations moved to {0}', [moveToMailboxName])
 
     // Drop any prior undo so it isn't triggerable while this action is in flight.
     setUndoAction(undefined)
     if (!keptInList && !reconcileView) {
       // Optimistic path: confirm immediately, arm undo now, fire the request in the background.
+      let undone = false
       const forwardPromise = (async () => {
         try {
           for (const op of forward) await op()
           mailboxes.refetch().catch(() => {})
           refillIfEmpty()
         } catch (error) {
-          // Roll back the optimistic UI now, and undo any partial server move in the background
-          // (the snapshot restores the exact pre-move state) so the error toast isn't delayed.
-          restoreThreadsToList(removedThreads)
+          // Roll back the optimistic UI now (unless Undo already put the rows back), and undo any
+          // partial server move in the background (the snapshot restores the exact pre-move state)
+          // so the error toast isn't delayed.
+          if (!undone) restoreThreadsToList(removedThreads)
           setMailsMailboxesSubmit({
             mails: snapshot,
           }).catch(() => {})
@@ -698,19 +719,24 @@ export function useThreadActions(deps: {
         }
       })()
       setUndoAction(
-        afterLanding(forwardPromise, () => {
-          restoreThreadsToList(removedThreads)
-          setUndoAction(undefined)
-          const restore = setMailsMailboxesSubmit({
-            mails: snapshot,
-          })
-            .then(() => mailboxes.refetch().catch(() => {}))
-            .catch((error) => {
-              removeThreadsFromList(removedThreads.map((t) => t.thread_id))
-              throw error
+        undoOnClick(
+          forwardPromise,
+          (inverted) => {
+            undone = true
+            restoreThreadsToList(removedThreads, inverted)
+            setUndoAction(undefined)
+            raiseOptimisticToast(inverted, { onClick: movedBack })
+          },
+          () =>
+            setMailsMailboxesSubmit({
+              mails: snapshot,
             })
-          raiseOptimisticToast(restore, { onClick: movedBack })
-        }),
+              .then(() => mailboxes.refetch().catch(() => {}))
+              .catch((error) => {
+                removeThreadsFromList(removedThreads.map((t) => t.thread_id))
+                throw error
+              }),
+        ),
       )
       raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
       return forwardPromise.then(
@@ -800,36 +826,38 @@ export function useThreadActions(deps: {
         ;[t, ...(t.messages ?? [])].forEach((item) => {
           if (messageOf(item).draft) return
           const ids = item.mailboxes.map((m) => m.mailbox_id)
-          const own = ids.includes(mailboxIds.sent)
+          const own = ids.includes(store.mailboxIds.sent)
           let next: string[] | undefined
           if (action === 'move' && target)
             next = own
-              ? target === mailboxIds.inbox
-                ? [mailboxIds.sent]
-                : [mailboxIds.sent, target]
+              ? target === store.mailboxIds.inbox
+                ? [store.mailboxIds.sent]
+                : [store.mailboxIds.sent, target]
               : [target]
-          else if (action === 'unarchive' && ids.includes(mailboxIds.archive))
+          else if (action === 'unarchive' && ids.includes(store.mailboxIds.archive))
             // Out of Archive; back in the Inbox only if you received it.
             next = [
-              ...ids.filter((id) => id !== mailboxIds.archive && id !== mailboxIds.inbox),
-              ...(own ? [] : [mailboxIds.inbox]),
+              ...ids.filter(
+                (id) => id !== store.mailboxIds.archive && id !== store.mailboxIds.inbox,
+              ),
+              ...(own ? [] : [store.mailboxIds.inbox]),
             ]
           else if (own) {
             // Never archived; out of the Inbox only (see filing.py).
-            if (action !== 'archive' || !ids.includes(mailboxIds.inbox)) return
-            next = ids.filter((id) => id !== mailboxIds.inbox)
+            if (action !== 'archive' || !ids.includes(store.mailboxIds.inbox)) return
+            next = ids.filter((id) => id !== store.mailboxIds.inbox)
           } else if (action === 'archive')
             next = [
               ...ids.filter(
                 (id) =>
                   ![
-                    mailboxIds.inbox,
-                    mailboxIds.junk,
-                    mailboxIds.trash,
-                    mailboxIds.archive,
+                    store.mailboxIds.inbox,
+                    store.mailboxIds.junk,
+                    store.mailboxIds.trash,
+                    store.mailboxIds.archive,
                   ].includes(id),
               ),
-              mailboxIds.archive,
+              store.mailboxIds.archive,
             ]
           if (!next) return
           const entries = next.map(entry).filter((m): m is Mailbox => !!m)
@@ -862,14 +890,17 @@ export function useThreadActions(deps: {
     const account = store.accountId
     const ids = mails.map((m) => m.id)
     const leaving = leaves ? mailbox.value : null
+    let undone = false
     const forward = (
       action === 'snooze'
-        ? snoozeMails.run({ account: store.accountId, ids, until: until!, leaves: leaving })
+        ? afterUndoing(() => snoozeMails.run({ account, ids, until: until!, leaves: leaving }))
         : action === 'wake'
-          ? unsnoozeMails.run({ account, ids, leaves: leaving }).then((answer) => {
-              waited = answer.waited
-              return answer
-            })
+          ? afterUndoing(() => unsnoozeMails.run({ account, ids, leaves: leaving })).then(
+              (answer) => {
+                waited = answer.waited
+                return answer
+              },
+            )
           : fileMailsSubmit({
               ids,
               action,
@@ -892,28 +923,33 @@ export function useThreadActions(deps: {
         // The server may have filed some messages before refusing the rest: they are put back as
         // they were, or they would stay filed with no Undo left to take them back.
         void setMailsMailboxesSubmit({ mails: snapshot }).catch(() => {})
-        restoreThreadsToList(removed)
+        if (!undone) restoreThreadsToList(removed)
         setUndoAction(undefined)
         throw error
       },
     )
     setUndoAction(
-      afterLanding(forward, () => {
-        restoreThreadsToList(removed)
-        setUndoAction(undefined)
+      undoOnClick(
+        forward,
+        (inverted) => {
+          undone = true
+          restoreThreadsToList(removed, inverted)
+          setUndoAction(undefined)
+          // Rows that left come back on the click; rows that stayed change back once it lands.
+          const movedBack =
+            threadIds.length > 1 ? __('Conversations moved back') : __('Conversation moved back')
+          raiseOptimisticToast(inverted, leaves ? { onClick: movedBack } : { onAnswer: movedBack })
+        },
         // Unsnoozing ended its wait: only snoozing again has it come back at its time.
-        const restore = (
-          action === 'wake'
+        () =>
+          (action === 'wake'
             ? resnooze(account, waited)
             : setMailsMailboxesSubmit({ mails: snapshot })
-        ).then(() => {
-          mailboxes.refetch().catch(() => {})
-          if (mailbox.value === 'search') resetThreads()
-        })
-        // Rows that left come back on the click; rows that stayed change back once it lands.
-        const movedBack = threadIds.length > 1 ? __('Threads moved back') : __('Thread moved back')
-        raiseOptimisticToast(restore, leaves ? { onClick: movedBack } : { onAnswer: movedBack })
-      }),
+          ).then(() => {
+            mailboxes.refetch().catch(() => {})
+            if (mailbox.value === 'search') resetThreads()
+          }),
+      ),
     )
     raiseOptimisticToast(forward, told, undo)
     return forward.then(
@@ -928,8 +964,11 @@ export function useThreadActions(deps: {
   // toast says it was added to Archive rather than archived. A row leaving the Inbox, Junk or Trash
   // is archived for certain, so its toast comes with the click; elsewhere the answer decides.
   const archiveThreads = (threadIds: string[]) => {
-    const leaves = [mailboxIds.inbox, mailboxIds.junk, mailboxIds.trash].includes(mailbox.value)
-    const archived = threadIds.length > 1 ? __('Threads archived') : __('Thread archived')
+    const leaves = [store.mailboxIds.inbox, store.mailboxIds.junk, store.mailboxIds.trash].includes(
+      mailbox.value,
+    )
+    const archived =
+      threadIds.length > 1 ? __('Conversations archived') : __('Conversation archived')
     return fileInPlace(
       'archive',
       threadIds,
@@ -943,8 +982,9 @@ export function useThreadActions(deps: {
   // Archive reversed: the received mail goes back from Archive to the Inbox, every other folder kept,
   // and your own mail stays where it is. Only Archive loses the row.
   const unarchiveThreads = (threadIds: string[]) =>
-    fileInPlace('unarchive', threadIds, mailbox.value === mailboxIds.archive, {
-      onClick: threadIds.length > 1 ? __('Threads unarchived') : __('Thread unarchived'),
+    fileInPlace('unarchive', threadIds, mailbox.value === store.mailboxIds.archive, {
+      onClick:
+        threadIds.length > 1 ? __('Conversations unarchived') : __('Conversation unarchived'),
     })
 
   // A conversation waits in Snoozed until a chosen time (suite/mail/reminders.py). It leaves the Inbox
@@ -954,14 +994,14 @@ export function useThreadActions(deps: {
     fileInPlace(
       'snooze',
       threadIds,
-      [mailboxIds.inbox, mailboxIds.archive].includes(mailbox.value),
+      [store.mailboxIds.inbox, store.mailboxIds.archive].includes(mailbox.value),
       { onClick: snoozedMessage(threadIds.length, until) },
       until,
     )
 
   const unsnoozeThreads = (threadIds: string[]) =>
-    fileInPlace('wake', threadIds, mailbox.value === mailboxIds.snoozed, {
-      onClick: threadIds.length > 1 ? __('Threads unsnoozed') : __('Thread unsnoozed'),
+    fileInPlace('wake', threadIds, mailbox.value === store.mailboxIds.snoozed, {
+      onClick: threadIds.length > 1 ? __('Conversations unsnoozed') : __('Conversation unsnoozed'),
     })
 
   const setSpamStatus = (threadIDs: SetSeenParams) => {
@@ -991,7 +1031,9 @@ export function useThreadActions(deps: {
     // Sent keeps the conversation either way: your sent mail is never junked.
     // In Starred too: your own mail is never junked, and may be what keeps the thread starred.
     const reconcileView =
-      mailbox.value === 'search' || mailbox.value === mailboxIds.sent || mailbox.value === 'starred'
+      mailbox.value === 'search' ||
+      mailbox.value === store.mailboxIds.sent ||
+      mailbox.value === 'starred'
     const forward = () =>
       fileMailsSubmit({
         ids,
@@ -1011,17 +1053,18 @@ export function useThreadActions(deps: {
     // Undo flips the junk status back — name the resulting state, like the forward toast does.
     const restored =
       selectedThreads.length === 1
-        ? __('Thread marked as {0}', [spam ? __('Not Junk') : __('Junk')])
-        : __('Threads marked as {0}', [spam ? __('Not Junk') : __('Junk')])
+        ? __('Conversation marked as {0}', [spam ? __('Not Junk') : __('Junk')])
+        : __('Conversations marked as {0}', [spam ? __('Not Junk') : __('Junk')])
     const success =
       selectedThreads.length === 1
-        ? __('Thread marked as {0}', [spam ? __('Junk') : __('Not Junk')])
-        : __('Threads marked as {0}', [spam ? __('Junk') : __('Not Junk')])
+        ? __('Conversation marked as {0}', [spam ? __('Junk') : __('Not Junk')])
+        : __('Conversations marked as {0}', [spam ? __('Junk') : __('Not Junk')])
 
     // Drop any prior undo so it isn't triggerable while this action is in flight.
     setUndoAction(undefined)
     if (!reconcileView) {
       // Optimistic path: confirm immediately, arm undo now, fire in the background.
+      let undone = false
       const forwardPromise = (async () => {
         try {
           await forward()
@@ -1029,23 +1072,28 @@ export function useThreadActions(deps: {
           refillIfEmpty()
         } catch (error) {
           // Single request: the server is unchanged on failure, so just restore the UI.
-          restoreThreadsToList(removedThreads)
+          if (!undone) restoreThreadsToList(removedThreads)
           setUndoAction(undefined)
           throw error
         }
       })()
       setUndoAction(
-        afterLanding(forwardPromise, () => {
-          restoreThreadsToList(removedThreads)
-          setUndoAction(undefined)
-          const undoReq = setMailsMailboxesSubmit(restore)
-            .then(() => mailboxes.refetch().catch(() => {}))
-            .catch((error) => {
-              removeThreadsFromList(removedThreads.map((t) => t.thread_id))
-              throw error
-            })
-          raiseOptimisticToast(undoReq, { onClick: restored })
-        }),
+        undoOnClick(
+          forwardPromise,
+          (inverted) => {
+            undone = true
+            restoreThreadsToList(removedThreads, inverted)
+            setUndoAction(undefined)
+            raiseOptimisticToast(inverted, { onClick: restored })
+          },
+          () =>
+            setMailsMailboxesSubmit(restore)
+              .then(() => mailboxes.refetch().catch(() => {}))
+              .catch((error) => {
+                removeThreadsFromList(removedThreads.map((t) => t.thread_id))
+                throw error
+              }),
+        ),
       )
       return raiseOptimisticToast(forwardPromise, { onClick: success }, undo)
     }
@@ -1058,11 +1106,11 @@ export function useThreadActions(deps: {
       // never junked), but the mail you received is junked now: it leaves the open thread, as it
       // would on reading the conversation again.
       let unjunkPane = () => {}
-      if (mailbox.value === mailboxIds.sent || mailbox.value === 'starred') {
+      if (mailbox.value === store.mailboxIds.sent || mailbox.value === 'starred') {
         resetThreads()
         if (spam && threadID.value && selectedThreads.includes(threadID.value)) {
           const rollbacks = threadMails([threadID.value])
-            .filter((m) => isReceived(m, mailboxIds.sent))
+            .filter((m) => isReceived(m, store.mailboxIds.sent))
             .map((m) => mailThreadRef.value?.removeMailFromView(m.id).rollback)
           // Last out, first back: each put back where it stood before the ones after it left.
           unjunkPane = () => [...rollbacks].reverse().forEach((rollback) => rollback?.())
@@ -1100,7 +1148,7 @@ export function useThreadActions(deps: {
         throw error
       })
     raiseOptimisticToast(forward, {
-      onClick: thread_ids.length === 1 ? __('Thread deleted') : __('Threads deleted'),
+      onClick: thread_ids.length === 1 ? __('Conversation deleted') : __('Conversations deleted'),
     })
   }
 
@@ -1146,7 +1194,7 @@ export function useThreadActions(deps: {
       }
     },
     viewMailbox: () => mailbox.value,
-    outgoing: () => [mailboxIds.sent, mailboxIds.drafts].includes(mailbox.value),
+    outgoing: () => [store.mailboxIds.sent, store.mailboxIds.drafts].includes(mailbox.value),
     afterForward: refillIfEmpty,
   })
 
@@ -1244,7 +1292,7 @@ export function useThreadActions(deps: {
   const handleMoveThreads = (threadIDs: Record<string, string[]>) => {
     const touched = touchedRows(Object.values(threadIDs).flat())
     const result = moveThreads(threadIDs)
-    if (!(mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched, landedOf(result))
+    if (!(store.mailboxIds.junk in threadIDs)) screener.acceptOnAction(touched, landedOf(result))
     return result
   }
 

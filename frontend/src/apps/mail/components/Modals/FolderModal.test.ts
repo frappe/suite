@@ -36,8 +36,25 @@ vi.mock('frappe-ui', () => {
   return {
     Alert: empty,
     Button: empty,
-    SettingsRow: empty,
-    Switch: empty,
+    SettingsRow: defineComponent({
+      props: { title: { type: String, default: '' } },
+      setup(props, { slots }) {
+        return () => h('label', [props.title, slots.default?.()])
+      },
+    }),
+    Switch: defineComponent({
+      props: { modelValue: Boolean },
+      emits: ['update:modelValue'],
+      setup(props, { emit }) {
+        return () =>
+          h('input', {
+            type: 'checkbox',
+            checked: props.modelValue,
+            onChange: (event: Event) =>
+              emit('update:modelValue', requireTestElement(event.target, HTMLInputElement).checked),
+          })
+      },
+    }),
     Dialog: defineComponent({
       props: {
         open: Boolean,
@@ -77,7 +94,16 @@ vi.mock('frappe-ui', () => {
     }),
     Tabs: defineComponent({
       setup(_, { slots }) {
-        return () => h('div', slots['tab-panel']?.({ tab: { value: 'general' } }))
+        return () => h('div', slots.default?.())
+      },
+    }),
+    TabButtons: empty,
+    TabList: empty,
+    TabTrigger: empty,
+    TabPanel: defineComponent({
+      props: { value: { type: String, default: '' } },
+      setup(props, { slots }) {
+        return () => (props.value === 'general' ? h('div', slots.default?.()) : null)
       },
     }),
   }
@@ -144,4 +170,18 @@ it('opens again without what the last visit was refused', async () => {
   await nextTick()
   await open()
   expect(said()).toBeUndefined()
+})
+
+// The folder stores an opt-out, and the switch once showed it as such: on meant no notifications
+it('sends push notifications for a new folder until its switch is turned off', async () => {
+  const push = requireTestElement(root.querySelector('input[type="checkbox"]'), HTMLInputElement)
+  expect(push.closest('label')?.textContent).toBe('Notifications')
+  expect(push.checked).toBe(true)
+  push.checked = false
+  push.dispatchEvent(new Event('change'))
+  await saveAs('Bills')
+  expect(state.save).toHaveBeenCalledWith(
+    'create_mailbox',
+    expect.objectContaining({ disable_push_notification: true }),
+  )
 })

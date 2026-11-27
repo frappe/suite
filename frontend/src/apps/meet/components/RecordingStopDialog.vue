@@ -1,10 +1,14 @@
 <template>
-  <Dialog v-model:open="open" :title="__('Stop recording?')" size="sm">
+  <Dialog
+    v-model:open="open"
+    :title="__('Stop {0}?', [captureLabel(recording).toLowerCase()])"
+    size="sm"
+  >
     <template #default>
       <p class="text-base text-ink-gray-7">
         {{
           __(
-            "The recording will stop and the video will be saved privately to the room owner's Drive.",
+            "Capture will stop. Each selected output will be saved privately to the room owner's Drive when ready.",
           )
         }}
       </p>
@@ -18,7 +22,7 @@
           variant="solid"
           theme="red"
           icon-left="lucide-circle-stop"
-          :label="__('Stop recording')"
+          :label="__('Stop {0}', [captureLabel(recording).toLowerCase()])"
           :loading="loading"
           @click="emit('confirm')"
         />
@@ -33,10 +37,16 @@ import { computed } from 'vue'
 
 import { translate as __ } from '@/platform/translation'
 
-const props = withDefaults(defineProps<{ modelValue?: boolean; loading?: boolean }>(), {
-  modelValue: false,
-  loading: false,
-})
+import type { RecordingState } from '../composables/useRecording'
+import { captureLabel } from '../utils/capturePresentation'
+
+const props = withDefaults(
+  defineProps<{ modelValue?: boolean; loading?: boolean; recording?: RecordingState | null }>(),
+  {
+    modelValue: false,
+    loading: false,
+  },
+)
 const emit = defineEmits<{ 'update:modelValue': [value: boolean]; confirm: [] }>()
 const open = computed({
   get: () => props.modelValue,

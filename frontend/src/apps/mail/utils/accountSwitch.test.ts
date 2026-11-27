@@ -15,6 +15,7 @@ const routes = [
   { path: '/account/:accountId/mailbox/:mailbox', name: 'mail-mailbox', component: page },
   { path: '/account/:accountId/mailbox/:mailbox/:threadID', name: 'mail-mail', component: page },
   { path: '/account/:accountId/outbox', name: 'mail-outbox', component: page },
+  { path: '/account/:accountId/profile', name: 'mail-profile', component: page },
 ]
 
 let app: App | undefined
@@ -40,6 +41,10 @@ const switcherAt = async (path: string) => {
       await switcher.switchAccount(id)
       return router.currentRoute.value.fullPath
     },
+    switchToAll: async () => {
+      await switcher.switchToAll()
+      return router.currentRoute.value.fullPath
+    },
   }
 }
 
@@ -63,5 +68,19 @@ describe('switching accounts', () => {
   it('keeps the thread open when picking the account already shown', async () => {
     const { switchAccount } = await switcherAt('/account/alice/mailbox/receipts/t7')
     expect(await switchAccount('alice')).toBe('/account/alice/mailbox/receipts/t7')
+  })
+})
+
+describe('switching to every account at once', () => {
+  afterEach(() => localStorage.clear())
+
+  // On a phone the accounts are picked on Profile. Picking one stays there, so picking all of them
+  // does too; the Inbox tab then opens the merged Inbox.
+  it('stays on Profile, as picking an account does', async () => {
+    const { switchAccount, switchToAll } = await switcherAt('/account/alice/profile')
+    expect(await switchToAll()).toBe('/account/alice/profile')
+    expect(localStorage.getItem('mail-unified')).toBe('1')
+    expect(await switchAccount('bob')).toBe('/account/bob/profile')
+    expect(localStorage.getItem('mail-unified')).toBeNull()
   })
 })

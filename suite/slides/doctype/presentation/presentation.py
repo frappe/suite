@@ -115,10 +115,6 @@ class Presentation(drive.DriveContent, Document):
         self.drive_touch()
 
 
-def slug(text: str) -> str:
-    return text.lower().replace(" ", "-")
-
-
 @frappe.whitelist()
 def get_presentations() -> list[dict]:
     """The caller's own decks, newest change first, with their slide counts.
@@ -447,7 +443,7 @@ def get_templates():
     A template is a deck whose node carries `is_template` (§8.10), and who
     may use it is the grant on that node, so the list is scoped by READ.
     """
-    templates = _readable_templates()
+    templates = slides_drive.readable_templates()
     # a converted template's rows stopped at its conversion: the tab reads its saved slides
     is_on = log.enabled(APP)
     for template in templates:
@@ -485,38 +481,6 @@ def attach_row_layouts(templates: list[dict]) -> None:
                 if is_system_template(template["title"])
                 else ""
             )
-
-
-def _readable_templates() -> list[dict]:
-    """The readable template nodes, oldest first, under the keys the picker reads."""
-    nodes = frappe.get_all(
-        "Drive Node",
-        filters={"content_doctype": slides_drive.DOCTYPE, "is_template": 1, "state": "Active"},
-        fields=["name", "title", "content_docname", "creation"],
-        order_by="creation asc",
-        ignore_permissions=True,
-    )
-    if not nodes:
-        return []
-    readable = set(
-        frappe.get_list(
-            "Presentation",
-            filters={NODE_FIELD: ["in", [node["name"] for node in nodes]]},
-            pluck="name",
-        )
-    )
-    return [
-        {
-            "name": node["content_docname"],
-            "node": node["name"],
-            "title": node["title"],
-            "slug": slug(node["title"] or ""),
-            "creation": node["creation"],
-            "is_template": 1,
-        }
-        for node in nodes
-        if node["content_docname"] in readable
-    ]
 
 
 @frappe.whitelist(allow_guest=True)

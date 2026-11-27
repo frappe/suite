@@ -1,4 +1,3 @@
-import inspect
 import itertools
 import json
 import pathlib
@@ -37,7 +36,6 @@ from suite.drive._core.roots import create_root
 from suite.drive._core.versions import list_versions
 from suite.drive.framework import principals_for
 from suite.drive.http import routes
-from suite.drive.patches.build import comments as build_comments
 from suite.drive.patches.build.content_mapping import InvalidLegacyContent, epoch_millis
 from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.tests.utils import ensure_user, stub_db
@@ -371,6 +369,14 @@ class TestCommentWorkflows(IntegrationTestCase):
         )
         with self.assertRaises(DriveNotFound):
             comment_threads(self.outsider, self.document.name)
+
+        later, earlier = sorted((opener, answer))
+        for idx, name in enumerate((earlier, later), start=1):
+            frappe.db.set_value("Drive Comment", name, {"creation": "2000-01-01 00:00:00", "idx": idx})
+
+        listed = comment_threads(self.commenter, self.document.name)
+
+        self.assertEqual(listed[1]["comments"], [earlier, later])
 
     def test_installing_writes_old_threads_under_the_owner_at_their_own_times(self):
         zone = get_system_timezone()
@@ -1355,15 +1361,6 @@ class TestCommentLockOrder(UnitTestCase):
 
 class TestMigratedCommentOrdering(UnitTestCase):
     """Migration preserves tied timestamps, so runtime reads need full ties."""
-
-    def test_comment_order_carries_the_source_position_build_stores_in_idx(self):
-        # Build writes the source entry position into `idx`
-        # (`patches/build/comments.py`), and a migrated thread routinely holds
-        # several entries at one `creation`. Without `idx` between the two keys
-        # they read back ordered by a sha256 id.
-        source = pathlib.Path(build_comments.__file__).read_text()
-        self.assertIn('"idx": index', source)
-        self.assertIn("idx asc", inspect.getsource(comments._thread_views))
 
     def test_the_comment_columns_build_orders_by_exist_on_the_shipped_doctype(self):
         doctypes = pathlib.Path(comments.__file__).parents[1] / "doctype"

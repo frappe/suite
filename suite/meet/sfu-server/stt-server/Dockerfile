@@ -19,10 +19,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY sfu-server/stt-server/requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
-COPY server.py protocol.py resampling.py runtime.py context_bias.py ./
+COPY sfu-server/stt-server/server.py sfu-server/stt-server/protocol.py sfu-server/stt-server/resampling.py sfu-server/stt-server/runtime.py sfu-server/stt-server/context_bias.py ./
+COPY speech_context.py speech-vocabulary.json ./
 
 # Import the real service without loading the model or requiring a GPU.
 RUN python -c "import server"

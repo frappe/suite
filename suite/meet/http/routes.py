@@ -7,10 +7,12 @@ from typing import Literal, NotRequired, TypedDict
 
 import frappe
 from frappe import _
-from frappe.utils import get_system_timezone, get_url
+from frappe.rate_limiter import rate_limit
+from frappe.utils import get_system_timezone
 
 from suite.composition.http import BadRequest, Route
 from suite.mail.doctype.user_account.user_account import get_user_personal_jmap_account
+from suite.meet import links
 from suite.meet.api import meeting, recording, recordings, schedule
 from suite.meet.doctype.meet_room.meet_room import MeetRoom
 from suite.meet.http import shapes
@@ -20,6 +22,8 @@ Given = str | int | float | bool | list | dict | None
 
 class CreateRoom(TypedDict):
     type: Literal["open", "restricted"]
+    title: NotRequired[str]
+    link: NotRequired[str]
 
 
 class Room(TypedDict):
@@ -59,7 +63,13 @@ class GuestJoin(RoomRef):
     guest_session_token: NotRequired[str]
 
 
-class RecordingStart(RoomRef):
+class RecordingSelection(RoomRef):
+    video_enabled: NotRequired[bool]
+    transcription_enabled: NotRequired[bool]
+    language: NotRequired[Literal["en"]]
+
+
+class RecordingStart(RecordingSelection):
     request_id: str
 
 
@@ -109,16 +119,34 @@ class RoomLinkResult(TypedDict):
     meeting_url: str
 
 
+class LinkRef(TypedDict):
+    link: str
+
+
+class LinkAvailability(TypedDict):
+    status: links.LinkStatus
+
+
 ROUTES: tuple[Route, ...] = (
     Route(
         "POST",
         "rooms",
         "rooms_post",
         body=CreateRoom,
-        errors=(BadRequest,),
+        errors=(BadRequest, links.LinkError),
         output=Room,
         kind="mutation",
         public_name="rooms.create",
+    ),
+    Route(
+        "GET",
+        "rooms/link-availability",
+        "room_link_availability",
+        query=LinkRef,
+        output=LinkAvailability,
+        errors=(frappe.RateLimitExceededError,),
+        kind="query",
+        public_name="rooms.linkAvailability",
     ),
     Route(
         "POST",
@@ -240,7 +268,7 @@ ROUTES: tuple[Route, ...] = (
         "GET",
         "recordings/preflight",
         "recording_preflight",
-        query=RoomRef,
+        query=RecordingSelection,
         output=shapes.RecordingPreflight,
         kind="query",
         public_name="recordings.preflight",
@@ -291,9 +319,17 @@ ROUTES: tuple[Route, ...] = (
     ),
 )
 
+
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def room_preview(meeting_id: str) -> shapes.Preview:
+    try:
+        return {"title": meeting.get_public_meeting_preview(meeting_id)["title"]}
+    except frappe.PermissionError:
+        return {"title": ""}
+
+
 # Reuse the original whitelisted functions so the resource and legacy addresses
 # have exactly the same validation, authorization and transaction behavior.
-room_preview = meeting.get_public_meeting_preview
 room_access = meeting.check_meeting_access
 room_connection = meeting.get_sfu_connection_details
 room_presence_token = meeting.get_sfu_presence_preview_token
@@ -313,14 +349,18 @@ recording_list = recordings.get_recordings
 
 
 @frappe.whitelist(methods=["POST"])
-def rooms_post(type: Given = None) -> Room:
-    from suite.meet.api.meeting import create as create_meeting
-
+def rooms_post(type: Given = None, title: str | None = None, link: str | None = None) -> Room:
     kind = _required_text(type, "type")
     if kind not in ("open", "restricted"):
-        frappe.throw(_("Meet room type is invalid"), BadRequest)
-    meeting_id = create_meeting(meeting_type=kind)
-    return {"code": meeting_id, "url": get_url(f"/meet/{meeting_id}")}
+        frappe.throw(_("Meet type is invalid"), BadRequest)
+    meeting_id = meeting.create(meeting_type=kind, title=title, link=link)
+    return {"code": meeting_id, "url": links.meeting_url(meeting_id)}
+
+
+@frappe.whitelist(methods=["GET"])
+@rate_limit(limit=120, seconds=60, user_based=True)
+def room_link_availability(link: str) -> LinkAvailability:
+    return {"status": links.link_status(link)}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -491,6 +531,40 @@ enable_e2ee = MeetRoom.enable_e2ee
 update_settings = MeetRoom.update_settings
 
 
+class MyRoom(TypedDict):
+    name: str
+    title: str | None
+    meeting_type: Literal["open", "restricted"]
+    owner: str
+    modified: str
+    url: str
+
+
+@frappe.whitelist(methods=["GET"])
+def my_rooms() -> list[MyRoom]:
+    user = frappe.session.user
+    if user == "Guest":
+        frappe.throw(_("Authentication required"), frappe.AuthenticationError)
+    rooms = frappe.get_all(
+        "Meet Room",
+        fields=["name", "title", "meeting_type", "owner", "modified"],
+        or_filters=schedule.invite_room_filters(user),
+        order_by="modified desc",
+        limit=3,
+    )
+    return [
+        {
+            "name": room.name,
+            "title": room.title,
+            "meeting_type": room.meeting_type,
+            "owner": room.owner,
+            "modified": str(room.modified),
+            "url": links.meeting_url(room.name),
+        }
+        for room in rooms
+    ]
+
+
 class RoomSearch(TypedDict):
     q: str
 
@@ -511,7 +585,40 @@ def room_search(q: str) -> list[RoomSummary]:
     )
 
 
+class SetDefaultInviteRoom(TypedDict):
+    room: str | None
+
+
+default_invite_room = schedule.default_invite_room
+set_default_invite_room = schedule.set_default_invite_room
+
 ROUTES += (
+    Route(
+        "GET",
+        "rooms/default-invite",
+        "default_invite_room",
+        output=schedule.DefaultInviteRoom,
+        kind="query",
+        public_name="rooms.defaultInvite",
+    ),
+    Route(
+        "POST",
+        "rooms/default-invite",
+        "set_default_invite_room",
+        body=SetDefaultInviteRoom,
+        output=type(None),
+        errors=(frappe.PermissionError,),
+        kind="mutation",
+        public_name="rooms.setDefaultInvite",
+    ),
+    Route(
+        "GET",
+        "rooms/mine",
+        "my_rooms",
+        output=list[MyRoom],
+        kind="query",
+        public_name="rooms.mine",
+    ),
     Route(
         "GET",
         "rooms/search",

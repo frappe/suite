@@ -6,7 +6,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import cache, lru_cache, wraps
-from typing import Any, Literal
+from typing import Any, Literal, NoReturn
 
 import frappe
 
@@ -41,6 +41,26 @@ def refusals_as_bad_request[F: Callable[..., Any]](handler: F) -> F:
             raise BadRequest(*error.args) from error
 
     return wrapper  # type: ignore[return-value]
+
+
+def refuse(kind: type[Exception], message: str, **fields: object) -> NoReturn:
+    """Throw `kind` so the v2 envelope carries its message, and each of `fields` that has a value."""
+    # A refusal is an answer, not a crash, so it carries no server traceback
+    frappe.local.flags.disable_traceback = True
+    extra = {name: value for name, value in fields.items() if value is not None}
+    try:
+        frappe.throw(message, kind)
+    except kind as thrown:
+        refusal = thrown
+
+    # The envelope merges the message stamped with the error's id, so the fields go on that one;
+    # a muted throw stamps nothing, and matches no message
+    stamp = getattr(refusal, "__frappe_exc_id", object())
+    stamped = [entry for entry in frappe.local.message_log if entry.get("__frappe_exc_id") == stamp]
+    for entry in stamped:
+        entry.update(extra)
+
+    raise refusal
 
 
 @dataclass(frozen=True)

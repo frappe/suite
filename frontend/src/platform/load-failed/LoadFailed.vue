@@ -8,10 +8,12 @@ import { translate as __ } from '@/platform/translation'
 const {
   title,
   retry,
+  retryDisabled = false,
   variant = 'page',
 } = defineProps<{
   title: string
   retry: () => Promise<unknown>
+  retryDisabled?: boolean
   variant?: 'page' | 'section'
 }>()
 
@@ -56,6 +58,7 @@ async function onRetry() {
       :icon-left="variant === 'page' ? 'lucide-refresh-cw' : undefined"
       :label="__('Retry')"
       :loading="retrying"
+      :disabled="retryDisabled"
       @click="onRetry"
     />
   </div>

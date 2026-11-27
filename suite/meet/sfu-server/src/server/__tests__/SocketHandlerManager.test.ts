@@ -243,6 +243,7 @@ describe('SocketHandlerManager characterization', () => {
 			['resume_producer', { producerId: 'producer-1' }],
 			['create_plain_transport', {}],
 			['chat:send', { message: 'nope' }],
+			['chat:react', { messageId: 'message-1', emoji: '👍', active: true }],
 			['poll:create', { question: 'q', options: [{ text: 'a' }] }],
 			['poll:vote', { pollId: 'poll-1', optionId: 'option-1' }],
 			['poll:sync_encrypted', { pollId: 'p', question: 'q', options: [] }],
@@ -2293,61 +2294,84 @@ describe('SocketHandlerManager characterization', () => {
 		expect(harness.mediasoup.connectWebRtcTransport).not.toHaveBeenCalled();
 	});
 
-	it('chat:send broadcasts to other full-access participants in the same room and not back to the sender', async () => {
-		const harness = createManager();
+	it.each([
+		{
+			kind: 'plain text',
+			message: '🙂'.repeat(8192),
+			oversized: '🙂'.repeat(8192) + 'x',
+		},
+		{
+			kind: 'encrypted text',
+			message: 'e2ee:' + Buffer.alloc(32796).toString('base64'),
+			oversized: 'e2ee:' + Buffer.alloc(32797).toString('base64'),
+		},
+	])(
+		'chat:send delivers complete $kind at the limit and rejects larger messages',
+		async ({ message, oversized }) => {
+			const harness = createManager();
 
-		const sender = connectFullSocket(harness, {
-			id: 'sock-sender',
-			userId: 'sender-1',
-			userName: 'Sender',
-		});
-		emitJoin(sender, { userId: 'sender-1', name: 'Sender' });
-		await new Promise((r) => setImmediate(r));
+			const sender = connectFullSocket(harness, {
+				id: 'sock-sender',
+				userId: 'sender-1',
+				userName: 'Sender',
+			});
+			emitJoin(sender, { userId: 'sender-1', name: 'Sender' });
+			await new Promise((r) => setImmediate(r));
 
-		const receiver = connectFullSocket(harness, {
-			id: 'sock-receiver',
-			userId: 'receiver-1',
-			userName: 'Receiver',
-		});
-		emitJoin(receiver, { userId: 'receiver-1', name: 'Receiver' });
-		await new Promise((r) => setImmediate(r));
+			const receiver = connectFullSocket(harness, {
+				id: 'sock-receiver',
+				userId: 'receiver-1',
+				userName: 'Receiver',
+			});
+			emitJoin(receiver, { userId: 'receiver-1', name: 'Receiver' });
+			await new Promise((r) => setImmediate(r));
 
-		sender.emitCalls.length = 0;
-		receiver.emitCalls.length = 0;
-		const callback = vi.fn();
+			sender.emitCalls.length = 0;
+			receiver.emitCalls.length = 0;
+			const callback = vi.fn();
 
-		sender.fire('chat:send', { message: 'hello world' }, callback);
+			const rejected = vi.fn();
+			sender.fire('chat:send', { message: oversized }, rejected);
+			expect(rejected).toHaveBeenCalledWith({
+				success: false,
+				error: 'This message is too long. Shorten it and try again.',
+			});
+			expect(receiver.emitCalls.some((c) => c.event === 'chat:message')).toBe(false);
+			expect(sender.emitCalls.some((c) => c.event === 'chat:message')).toBe(false);
 
-		const receiverMsg = receiver.emitCalls.find(
-			(c) => c.event === 'chat:message',
-		);
-		expect(receiverMsg).toBeDefined();
-		expect(receiverMsg?.data).toEqual(
-			expect.objectContaining({
-				roomId: 'room-1',
-				message: 'hello world',
-				fromUser: 'sender-1',
-				fromName: 'Sender',
-				timestamp: expect.any(String),
-			}),
-		);
-		expect(callback).toHaveBeenCalledWith({
-			success: true,
-			timestamp: receiverMsg?.data.timestamp,
-			messageId: expect.any(String),
-		});
+			sender.fire('chat:send', { message }, callback);
 
-		const senderChatMessages = sender.emitCalls.filter(
-			(c) => c.event === 'chat:message',
-		);
-		expect(senderChatMessages.length).toBe(1);
-		expect(senderChatMessages[0]?.data).toEqual(
-			expect.objectContaining({
-				fromUser: 'sender-1',
-				message: 'hello world',
-			}),
-		);
-	});
+			const receiverMsg = receiver.emitCalls.find(
+				(c) => c.event === 'chat:message',
+			);
+			expect(receiverMsg).toBeDefined();
+			expect(receiverMsg?.data).toEqual(
+				expect.objectContaining({
+					roomId: 'room-1',
+					message,
+					fromUser: 'sender-1',
+					fromName: 'Sender',
+					timestamp: expect.any(String),
+				}),
+			);
+			expect(callback).toHaveBeenCalledWith({
+				success: true,
+				timestamp: receiverMsg?.data.timestamp,
+				messageId: expect.any(String),
+			});
+
+			const senderChatMessages = sender.emitCalls.filter(
+				(c) => c.event === 'chat:message',
+			);
+			expect(senderChatMessages.length).toBe(1);
+			expect(senderChatMessages[0]?.data).toEqual(
+				expect.objectContaining({
+					fromUser: 'sender-1',
+					message,
+				}),
+			);
+		},
+	);
 
 	it('chat:send with hostOnlyChat enabled and a non-host sender returns sfu_error HOST_ONLY_CHAT and broadcasts no chat:message', async () => {
 		const harness = createManager();
@@ -2504,6 +2528,118 @@ describe('SocketHandlerManager characterization', () => {
 			data: { enabled: true },
 		});
 	});
+
+	it('uses the stored message for quotes', async () => {
+		const harness = createManager();
+		const alice = connectFullSocket(harness, { id: 'alice-socket', userId: 'alice', userName: 'Alice' });
+		const bob = connectFullSocket(harness, { id: 'bob-socket', userId: 'bob', userName: 'Bob' });
+		emitJoin(alice, { userId: 'alice', name: 'Alice' });
+		await new Promise((resolve) => setImmediate(resolve));
+		emitJoin(bob, { userId: 'bob', name: 'Bob' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const sent = vi.fn();
+		alice.fire('chat:send', { message: 'Meet at noon?' }, sent);
+		const messageId = sent.mock.calls[0]?.[0].messageId;
+		const replied = vi.fn();
+		bob.fire('chat:send', {
+			message: 'Sounds good',
+			replyToId: messageId,
+			replyTo: { message: 'Forged quote', fromName: 'Mallory' },
+		}, replied);
+		expect(replied).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+		expect(alice.emitCalls.filter(({ event }) => event === 'chat:message').at(-1)?.data).toMatchObject({
+			fromName: 'Bob',
+			message: 'Sounds good',
+			replyTo: { messageId, fromName: 'Alice', message: 'Meet at noon?' },
+		});
+
+	});
+
+	it('enforces the chat history cutoff for replies and permits replies to the pin', async () => {
+		const harness = createManager();
+		const host = connectFullSocket(harness, {
+			id: 'cutoff-host-socket', userId: 'cutoff-host', userName: 'Host', isHost: true,
+		});
+		emitJoin(host, { userId: 'cutoff-host', name: 'Host' });
+		await new Promise((resolve) => setImmediate(resolve));
+		const sent = vi.fn();
+		host.fire('chat:send', { message: 'Earlier message' }, sent);
+		const messageId = sent.mock.calls[0]?.[0].messageId;
+
+		const late = connectFullSocket(harness, {
+			id: 'cutoff-late-socket', userId: 'cutoff-late', userName: 'Late',
+		});
+		emitJoin(late, { userId: 'cutoff-late', name: 'Late' });
+		await new Promise((resolve) => setImmediate(resolve));
+		const denied = vi.fn();
+		late.fire('chat:send', { message: 'Reply', replyToId: messageId }, denied);
+		expect(denied).toHaveBeenCalledWith(expect.objectContaining({ success: false }));
+		expect(host.emitCalls.filter(({ event }) => event === 'chat:message')).toHaveLength(1);
+
+		host.fire('chat:pin', { messageId, action: 'pin' }, vi.fn());
+		const allowed = vi.fn();
+		late.fire('chat:send', { message: 'Reply to the pin', replyToId: messageId }, allowed);
+		expect(allowed).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+		expect(host.emitCalls.filter(({ event }) => event === 'chat:message').at(-1)?.data)
+			.toMatchObject({ replyTo: { messageId, message: 'Earlier message' } });
+	});
+
+	it('broadcasts one reaction per participant and emoji and only removes the actor’s reaction', async () => {
+		const harness = createManager();
+		const alice = connectFullSocket(harness, { id: 'alice-socket', userId: 'alice', userName: 'Alice' });
+		const bob = connectFullSocket(harness, { id: 'bob-socket', userId: 'bob', userName: 'Bob' });
+		emitJoin(alice, { userId: 'alice', name: 'Alice' });
+		await new Promise((resolve) => setImmediate(resolve));
+		emitJoin(bob, { userId: 'bob', name: 'Bob' });
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const sent = vi.fn();
+		alice.fire('chat:send', { message: 'Hello' }, sent);
+		const messageId = sent.mock.calls[0]?.[0].messageId;
+		const add = { messageId, emoji: '👍', active: true };
+		const lastUpdate = (socket: MockSocket) =>
+			socket.emitCalls.filter(({ event }) => event === 'chat:reactions_updated').at(-1)?.data;
+
+		alice.fire('chat:react', add, vi.fn());
+		alice.fire('chat:react', add, vi.fn());
+		bob.fire('chat:react', add, vi.fn());
+		expect(lastUpdate(alice)).toEqual({
+			messageId,
+			reactions: [{ emoji: '👍', userIds: ['alice', 'bob'] }],
+		});
+
+		alice.fire('chat:react', { ...add, active: false, userId: 'bob' }, vi.fn());
+		expect(lastUpdate(bob)).toEqual({
+			messageId,
+			reactions: [{ emoji: '👍', userIds: ['bob'] }],
+		});
+		bob.fire('chat:react', { ...add, active: false }, vi.fn());
+		expect(lastUpdate(alice)).toEqual({ messageId, reactions: [] });
+
+	});
+
+	it('accepts searchable emoji sequences and rejects plain text reactions', async () => {
+		const harness = createManager();
+		const alice = connectFullSocket(harness);
+		emitJoin(alice);
+		await new Promise((resolve) => setImmediate(resolve));
+
+		const sent = vi.fn();
+		alice.fire('chat:send', { message: 'Hello' }, sent);
+		const messageId = sent.mock.calls[0]?.[0].messageId;
+		for (const emoji of ['🚀', '👩🏽‍💻', '🇮🇳', '1️⃣']) {
+			const callback = vi.fn();
+			alice.fire('chat:react', { messageId, emoji, active: true }, callback);
+			expect(callback).toHaveBeenCalledWith({ success: true });
+		}
+		for (const emoji of ['hello', '🚀🚀', '🚀\n']) {
+			const callback = vi.fn();
+			alice.fire('chat:react', { messageId, emoji, active: true }, callback);
+			expect(callback).toHaveBeenCalledWith({ success: false, error: 'Invalid chat reaction' });
+		}
+	});
+
 	it('chat:pin broadcasts pin and explicit unpin actions', async () => {
 		const harness = createManager();
 
@@ -2705,6 +2841,7 @@ describe('SocketHandlerManager characterization', () => {
 		host.fire('chat:send', { message: 'pinned greeting' }, sendCallback);
 		const messageId = sendCallback.mock.calls[0]?.[0].messageId;
 		host.fire('chat:pin', { messageId, action: 'pin' }, () => {});
+		host.fire('chat:react', { messageId, emoji: '👍', active: true }, () => {});
 
 		const lateJoiner = connectFullSocket(harness, {
 			id: 'sock-pin-late',
@@ -2714,6 +2851,16 @@ describe('SocketHandlerManager characterization', () => {
 		emitJoin(lateJoiner, { userId: 'pin-late-1', name: 'Late' });
 		await new Promise((r) => setImmediate(r));
 
+		expect(lateJoiner.emitCalls).toContainEqual({
+			event: 'chat:snapshot',
+			data: {
+				messages: [],
+				reactions: [{ messageId, reactions: [{ emoji: '👍', userIds: ['pin-host-3'] }] }],
+				pinnedId: messageId,
+				pinnedRetained: true,
+				hostOnlyChat: false,
+			},
+		});
 		const existing = lateJoiner.emitCalls.find(
 			(c) => c.event === 'existing_pinned_message',
 		);

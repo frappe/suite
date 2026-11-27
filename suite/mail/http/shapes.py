@@ -46,6 +46,8 @@ class UserInfo(TypedDict):
     max_attachment_size: int
     inbox_tabs: list[Literal["primary", "updates", "forums", "promotions", "social"]]
     split_inbox: Flag
+    # Whether a split Inbox ends with All mail, every category in one list.
+    all_mail_tab: Flag
     # Whether the site sorts mail into categories at all, so whether there is a choice of tabs to offer.
     email_classification: bool
     is_suite_cloud_configured: bool
@@ -82,6 +84,8 @@ class UnifiedFolder(TypedDict):
     name: str
     role: str | None
     unread_threads: int
+    # The same count split by account: account id to its unread threads in this folder.
+    unread_by_account: dict[str, int]
     accounts: list[str]
     icon: str | None
     color: Literal["Gray", "Blue", "Green", "Amber", "Red", "Purple"] | None

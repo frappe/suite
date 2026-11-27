@@ -17,6 +17,7 @@ import { useSession } from '@/platform/session'
 import { openSettings } from '@/platform/settings'
 import { translate as __ } from '@/platform/translation'
 import { useWorkspace } from '@/platform/workspace'
+import { isMobile } from '@/shell/useIsMobile'
 import WorkspaceBrandingForm from '@/shell/WorkspaceBrandingForm.vue'
 
 type TaskId = 'domain' | 'team' | 'import' | 'logo' | 'photo'
@@ -61,8 +62,9 @@ const teamDone = computed(() =>
     : (people.data?.rows ?? []).some((row) => isTeammate(row, session.user.value?.id)),
 )
 
+// Import and export is not among the phone's settings pages, so a phone has nowhere to send it.
 const importTask = computed<Task[]>(() =>
-  hasMail.value
+  hasMail.value && !isMobile.value
     ? [
         {
           id: 'import',

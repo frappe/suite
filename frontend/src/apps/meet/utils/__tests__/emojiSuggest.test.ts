@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import {
   clearRecentEmojis,
+  emojiLabel,
   findColonQuery,
   insertEmojiAtQuery,
   rememberEmoji,
@@ -26,25 +27,30 @@ describe('findColonQuery', () => {
   })
 })
 
-describe('suggestEmojis', () => {
-  it('ranks exact and prefix matches first', () => {
-    const hits = suggestEmojis('fire')
+describe('suggestEmojis', async () => {
+  it('ranks exact and prefix matches first', async () => {
+    const hits = await suggestEmojis('fire')
     expect(hits.length).toBeGreaterThan(0)
     expect(hits[0].name).toBe('fire')
     expect(hits[0].emoji).toBe('🔥')
   })
 
-  it('empty query with no recents falls back to default suggestions', () => {
-    const defaults = suggestEmojis('')
+  it('supports the thumbsup alias and names skin-tone variants', async () => {
+    expect((await suggestEmojis('thumbsup'))[0]).toEqual({ name: 'thumbsup', emoji: '👍' })
+    expect(emojiLabel('👍🏽')).toBe('thumbs up')
+  })
+
+  it('empty query with no recents falls back to default suggestions', async () => {
+    const defaults = await suggestEmojis('')
     expect(defaults).toHaveLength(5)
     // Same ranking as the old empty-query filter (shortest matching names first).
     expect(defaults.every((d) => d.emoji && d.name)).toBe(true)
   })
 
-  it('empty query puts recents first and pads to five with defaults', () => {
+  it('empty query puts recents first and pads to five with defaults', async () => {
     rememberEmoji({ name: 'fire', emoji: '🔥' })
     rememberEmoji({ name: 'thumbsup', emoji: '👍' })
-    const hits = suggestEmojis('')
+    const hits = await suggestEmojis('')
     expect(hits).toHaveLength(5)
     expect(hits[0]).toEqual({ name: 'thumbsup', emoji: '👍' })
     expect(hits[1]).toEqual({ name: 'fire', emoji: '🔥' })
@@ -53,7 +59,7 @@ describe('suggestEmojis', () => {
     expect(new Set(glyphs).size).toBe(glyphs.length)
   })
 
-  it('keeps only the last five recents, most recent first', () => {
+  it('keeps only the last five recents, most recent first', async () => {
     for (const [name, emoji] of [
       ['one', '1️⃣'],
       ['two', '2️⃣'],
@@ -64,16 +70,16 @@ describe('suggestEmojis', () => {
     ] as const) {
       rememberEmoji({ name, emoji })
     }
-    const recent = suggestEmojis('')
+    const recent = await suggestEmojis('')
     expect(recent).toHaveLength(5)
     expect(recent.map((r) => r.name)).toEqual(['six', 'five', 'four', 'three', 'two'])
   })
 
-  it('moves a re-used emoji to the front', () => {
+  it('moves a re-used emoji to the front', async () => {
     rememberEmoji({ name: 'fire', emoji: '🔥' })
     rememberEmoji({ name: 'wave', emoji: '👋' })
     rememberEmoji({ name: 'fire', emoji: '🔥' })
-    const hits = suggestEmojis('')
+    const hits = await suggestEmojis('')
     expect(hits).toHaveLength(5)
     expect(hits[0]).toEqual({ name: 'fire', emoji: '🔥' })
     expect(hits[1]).toEqual({ name: 'wave', emoji: '👋' })

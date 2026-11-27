@@ -3,15 +3,21 @@
        its name and its unread count; a header too narrow for them scrolls them sideways, and the
        row's bottom border is the header's. Which categories get a tab is chosen from the header's
        view menu (see ViewMenu). -->
-  <!-- As tall as the title bar (h-12), so each tab centres in it and underlines on its border. -->
+  <!-- As tall as the title bar (h-12), so each tab centres in it and underlines on its border. The
+       underline sits one pixel below the tabs, on that border, and a sideways scroller clips both
+       ways: pb-px reaches the scroller down over the border so the underline stays in view. -->
   <Tabs :model-value="active" class="flex h-12 min-w-0 items-stretch" data-testid="inbox-tabs">
-    <div ref="scroller" class="h-full min-w-0 overflow-x-auto [scrollbar-width:none]" :class="fade">
+    <div
+      ref="scroller"
+      class="box-content h-full min-w-0 overflow-x-auto pb-px [scrollbar-width:none]"
+      :class="fade"
+    >
       <TabList variant="underline" size="md" class="h-full data-[slot=tab-list]:border-b-0">
         <TabTrigger
           v-for="tab in tabs"
-          :key="tab.category"
-          :value="tab.category"
-          :route="routeFor(tab.category)"
+          :key="tab.id"
+          :value="tab.id"
+          :route="routeFor(tab.id)"
           :icon-left="tab.icon"
           :label="tab.label"
           class="shrink-0 items-center self-stretch"
@@ -29,13 +35,13 @@
 import { Badge, TabList, Tabs, TabTrigger } from 'frappe-ui'
 import type { RouteLocationRaw } from 'vue-router'
 
-import type { InboxCategory, InboxTab } from '@/apps/mail/composables/useInboxTabs'
+import type { InboxTab, InboxTabId } from '@/apps/mail/composables/useInboxTabs'
 import { useOverflowFade } from '@/apps/mail/composables/useOverflowFade'
 
 defineProps<{
   tabs: InboxTab[]
-  active: InboxCategory
-  routeFor: (category: InboxCategory) => RouteLocationRaw
+  active: InboxTabId
+  routeFor: (tab: InboxTabId) => RouteLocationRaw
 }>()
 
 const { scroller, fade } = useOverflowFade()

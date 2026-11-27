@@ -492,7 +492,13 @@ def visible_in_mailbox(
     participants, raising its message count, and lending it its preview and date, all for a message
     the pane then refused to render.
 
+    Junk shows the mail in the Junk folder as well as the mail marked junk: another mail client, or
+    a filter, files mail there without marking it, and Junk listed such a thread by its folder while
+    the pane, which went by the mark, had nothing to open.
+
     Falls back to the whole conversation rather than to nothing, so a thread is never a blank row.
+    The pane has no such fallback, so the two differ where it applies: outside Trash and Junk, for
+    a thread whose mail is all marked junk or in Trash.
     """
 
     def is_trashed(message: dict) -> bool:
@@ -502,7 +508,7 @@ def visible_in_mailbox(
         return [m for m in messages if is_trashed(m)] or messages
 
     if junk and mailbox == junk:
-        return [m for m in messages if m.get("junk")] or messages
+        return [m for m in messages if m.get("junk") or in_mailbox_view(m, junk)] or messages
 
     return [m for m in messages if not is_trashed(m) and not m.get("junk")] or messages
 
@@ -1041,11 +1047,17 @@ def get_unified_folders() -> list[dict]:
                     "name": mailbox["name"],
                     "role": (mailbox.get("role") or "").lower() or None,
                     "unread_threads": 0,
+                    "unread_by_account": {},
                     "accounts": [],
                     "_mailbox": (account["name"], mailbox["id"]),
                 },
             )
-            folder["unread_threads"] += cint(mailbox.get("unreadThreads"))
+            unread = cint(mailbox.get("unreadThreads"))
+            folder["unread_threads"] += unread
+            # What each account adds to the sum, for the account switcher to say where the unread
+            # mail is. Two folders of one account can share a slug, so this adds up too.
+            by_account = folder["unread_by_account"]
+            by_account[account["name"]] = by_account.get(account["name"], 0) + unread
             if account["name"] not in folder["accounts"]:
                 folder["accounts"].append(account["name"])
 
@@ -1076,19 +1088,21 @@ def get_unified_folders() -> list[dict]:
     return sorted(folders.values(), key=order)
 
 
-@frappe.whitelist()
-def get_all_inbox_unread_count() -> int:
-    """Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge).
+def get_inbox_unread_by_account() -> list[dict]:
+    """Returns the unread Inbox thread count of each of the user's accounts, personal first.
+
+    Each entry is the account's id (`account`), its address (`name`) and its count (`unread`). An
+    account whose mailboxes cannot be read is left out.
 
     Mailbox is a JMAP-backed virtual DocType, so it can't be queried across accounts with a table
     filter. Each account's Inbox unread count is fetched live (a fresh Mailbox/get, bypassing the
-    1-hour mailboxes cache) — the same source the per-account inbox badge uses — and summed.
+    1-hour mailboxes cache) — the same source the per-account inbox badge uses.
     """
 
     if not can_use_mail(frappe.session.user):
-        return 0
+        return []
 
-    total = 0
+    unread: list[dict] = []
     for account in get_user_jmap_accounts():
         client = get_account_client(account["name"])
         try:
@@ -1102,10 +1116,23 @@ def get_all_inbox_unread_count() -> int:
         for mailbox in mailboxes:
             wire = mailbox.to_wire()
             if (wire.get("role") or "").lower() == "inbox":
-                total += cint(wire.get("unreadThreads"))
+                unread.append(
+                    {
+                        "account": account["name"],
+                        "name": account["_name"],
+                        "unread": cint(wire.get("unreadThreads")),
+                    }
+                )
                 break
 
-    return total
+    return unread
+
+
+@frappe.whitelist()
+def get_all_inbox_unread_count() -> int:
+    """Returns the total unread Inbox thread count across all of the user's accounts (sidebar badge)."""
+
+    return sum(account["unread"] for account in get_inbox_unread_by_account())
 
 
 @frappe.whitelist()
@@ -1964,7 +1991,7 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
         # as every other list does.
         if trash and any(mb["mailbox_id"] == trash for mb in match["mailboxes"]):
             where = trash
-        elif junk and match.get("junk"):
+        elif junk and (match.get("junk") or in_mailbox_view(match, junk)):
             where = junk
         else:
             where = None
@@ -2549,6 +2576,8 @@ def allow_screening_senders(
     the interface holds on to these to undo the verdict.
     """
 
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
+
     if not from_emails:
         return {}
 
@@ -2582,6 +2611,8 @@ def screen_out_senders(account: str, from_emails: list[str]) -> dict[str, list[s
     Returns the ids junked, keyed by sender — see `allow_screening_senders` for why the interface
     needs them back.
     """
+
+    is_jmap_account_belongs_to_user(account, raise_exception=True)
 
     if not from_emails:
         return {}

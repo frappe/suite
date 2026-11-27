@@ -208,6 +208,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     // outDir/baseUrl/indexHtmlPath are owned by frappeui buildConfig above.
+    manifest: process.env.SUITE_BUILD_MANIFEST || false,
     sourcemap: true,
     target: 'esnext',
     commonjsOptions: {

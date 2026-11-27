@@ -2,6 +2,7 @@ import { defineAsyncComponent, defineComponent, h, type Component } from 'vue'
 import type { RouteMeta, RouteRecordRaw } from 'vue-router'
 
 import { RECOVERY_COPIES_TITLE } from '@/apps/drive'
+import { areaDefinitions } from '@/composition/appRegistry'
 import type { PhoneChromeOwner, ShellFrame } from '@/platform/contracts'
 import AppLoadErrorView from '@/shell/AppLoadErrorView.vue'
 
@@ -28,6 +29,20 @@ function areaMeta(
     allowGuest: options.allowGuest,
     title,
   }
+}
+
+/**
+ * The home of the app of its own on a phone (an area with its own phone bar, as Mail) that `target`
+ * is in. Its error pages lead back there: a phone app has no way out to the Suite.
+ */
+function phoneHomeAt(target: unknown) {
+  if (typeof target !== 'string') return undefined
+  // A failed page's address keeps its query and hash.
+  const path = target.split(/[?#]/)[0]
+  const area = areaDefinitions.find(
+    ({ phoneNav, to }) => phoneNav && (path === to || path.startsWith(`${to}/`)),
+  )
+  return area?.to
 }
 
 function placeholder(
@@ -183,12 +198,14 @@ export const routes: RouteRecordRaw[] = [
     path: '/suite/load-error',
     name: 'app-load-error',
     component: AppLoadErrorView,
+    props: (to) => ({ phoneHome: phoneHomeAt(to.query.redirect) }),
     meta: { frame: 'none', scroll: 'content', allowGuest: true, title: 'Frappe Suite' },
   },
   {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: () => import('@/shell/NotFoundView.vue'),
+    props: (to) => ({ phoneHome: phoneHomeAt(to.path) }),
     meta: {
       frame: 'none',
       scroll: 'content',
