@@ -30,7 +30,7 @@ const rectangle = {
 const scene = { rectangles: [rectangle], lines: [] }
 let unmount: (() => void) | undefined
 let persistence: DrawingPersistence
-async function editor(loadedScene: unknown = scene, contentDocname = crypto.randomUUID()) {
+async function editor(loadedScene: unknown = scene, contentDocname: string = crypto.randomUUID()) {
   network.query.mockResolvedValue({ content: JSON.stringify(loadedScene), modified: 'original' })
   network.mutation.mockResolvedValue({ modified: 'saved' })
   persistence = new DrawingPersistence(

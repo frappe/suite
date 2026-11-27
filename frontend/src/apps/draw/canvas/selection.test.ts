@@ -6,7 +6,7 @@ vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
 
 const legacyStroke = {
   id: 'stroke',
-  kind: 'freedraw',
+  kind: 'freedraw' as const,
   x: 12,
   y: 23,
   width: 28,
@@ -41,13 +41,11 @@ it.each([
 })
 
 it('computes bounds for a scene at both the object and freehand point limits', () => {
-  const stroke = {
-    ...legacyStroke,
-    points: Array.from({ length: 100_000 }, (_, index) => ({
-      x: index,
-      y: 100_000 - index,
-    })),
-  }
+  const points = Array.from({ length: 100_000 }, (_, index) => ({
+    x: index,
+    y: 100_000 - index,
+  }))
+  const stroke = { ...legacyStroke, points, pressures: Array<number>(points.length).fill(0.5) }
   const rectangles = Array.from({ length: 9_999 }, (_, index) => ({
     id: String(index),
     x: -index - 1,
@@ -82,7 +80,7 @@ it('computes bounds for a scene at both the object and freehand point limits', (
 })
 
 it('uses saved geometry for legacy empty strokes and returns no bounds for no shapes', () => {
-  expect(bounds([{ ...legacyStroke, points: [] }])).toMatchObject({
+  expect(bounds([{ ...legacyStroke, points: [], pressures: [] }])).toMatchObject({
     x: 12,
     y: 23,
     width: 28,
