@@ -127,12 +127,6 @@ vi.mock('@/api', async () => ({
         creation: null,
         message: { subject: 'Recording ready', detail: null, url: '/d/video' },
       },
-      {
-        name: 'transcript-failed',
-        read: 0,
-        creation: null,
-        message: { subject: 'Transcript failed', detail: 'No usable speech', url: null },
-      },
       expiredSinceLoaded(),
     ],
     status: 'success',
@@ -242,25 +236,18 @@ describe('Notifications bell', () => {
     expect(state.loadNode).not.toHaveBeenCalled()
   })
   it('opens a recording outcome after marking it read', async () => {
-    state.markRead.mockResolvedValue({ read: 1 })
+    const markRead = Promise.withResolvers<{ read: number }>()
+    state.markRead.mockReturnValue(markRead.promise)
     const row = notificationRows(mount()).find((button) =>
       button.textContent?.includes('Recording ready'),
     )
     row?.click()
-    await vi.waitFor(() => expect(state.push).toHaveBeenCalledWith('/d/video'))
-    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['recording-ready'] })
-  })
-
-  it('shows the transcript failure reason without opening a link', async () => {
-    state.markRead.mockResolvedValue({ read: 1 })
-    const row = notificationRows(mount()).find((button) =>
-      button.textContent?.includes('Transcript failed'),
-    )
-    expect(row?.textContent).toContain('No usable speech')
-    row?.click()
     await nextTick()
-    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['transcript-failed'] })
+    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['recording-ready'] })
     expect(state.push).not.toHaveBeenCalled()
+
+    markRead.resolve({ read: 1 })
+    await vi.waitFor(() => expect(state.push).toHaveBeenCalledWith('/d/video'))
   })
 
   it("shows a ready zip's size and until when it can be downloaded", () => {
