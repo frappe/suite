@@ -706,7 +706,7 @@ jobs:
         timeout-minutes: 20
         run: |
           yarn install --frozen-lockfile --non-interactive
-          yarn playwright install --with-deps chromium
+          yarn playwright install --with-deps --only-shell chromium
 
       - name: Start Frappe server
         working-directory: ${{ runner.temp }}/frappe-bench
