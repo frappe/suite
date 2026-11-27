@@ -62,7 +62,7 @@ curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>
 
 A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. Each sheet's `rows` sent back as a cell write from `A1` writes nothing.
 
-To see what a tab shows, read the values. The answer has the same shape, but a formula reads as its result, and a number as its format shows it, such as `"$1,200.00"` or `"15.0%"`. A date or time with no set style reads in US English, such as `"1/15/2026"`, and `NOW` and `TODAY` count in UTC. An error reads as a tab shows it, such as `"#DIV/0!"`, `"#CIRC!"`, `"#NAME?"` or `"#ERROR!"`. A formula that fills more cells, such as `=SEQUENCE(3)`, shows each filled cell at its place, and one with a typed cell in its way reads `"#SPILL!"`. `NOW`, `TODAY`, `RAND` and `RANDBETWEEN` are worked out again on each read, so their result can change. The values are each cell's result, not a picture of the tab: cells in hidden rows and columns and in rows a filter hides are in it, a sparkline reads blank, and a cell under a merge reads its own value, though a tab shows only the merge's top-left cell. Working out the values may take up to 10 seconds and about 1 GB of memory. A spreadsheet whose formulas need more is refused with `SheetsRefused`, and each values read is refused at once until the spreadsheet changes, for up to an hour: read it as typed.
+To see what a tab shows, read the values. The answer has the same shape, but a formula reads as its result, and a number as its format shows it, such as `"$1,200.00"` or `"15.0%"`. A date or time with no set style reads in US English, such as `"1/15/2026"`. A date typed as `"2026-01-15"` keeps that style. `NOW` and `TODAY` count in UTC. An error reads as a tab shows it, such as `"#DIV/0!"`, `"#CIRC!"`, `"#NAME?"` or `"#ERROR!"`. A formula that fills more cells, such as `=SEQUENCE(3)`, shows each filled cell at its place, and one with a typed cell in its way reads `"#SPILL!"`. `NOW`, `TODAY`, `RAND` and `RANDBETWEEN` are worked out again on each read, so their result can change. The values are each cell's result, not a picture of the tab: cells in hidden rows and columns and in rows a filter hides are in it, a sparkline reads blank, and a cell under a merge reads its own value, though a tab shows only the merge's top-left cell. Working out the values may take up to 10 seconds and about 1 GB of memory. A spreadsheet whose formulas need more is refused with `SheetsRefused`, and each values read is refused at once until the spreadsheet changes, for up to an hour: read it as typed.
 
 ```sh
 curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>/values
@@ -133,7 +133,9 @@ curl -H "$AUTH" $SITE/api/suite/drive/nodes/<node>/versions
 
 Each value in `rows` is typed into its cell as a user would type it:
 
-- Text is typed as it is. Text that starts with `=` is a formula, such as `"=SUM(B2:B3)"` or `"=Costs!B4"`.
+- Text that starts with `=` is a formula, such as `"=SUM(B2:B3)"` or `"=Costs!B4"`.
+- Text that looks like a number, a date or a percent becomes one, as in a tab: `"007"` types the number 7, and `"15%"` the number 0.15 shown as 15%. Other text is typed as it is.
+- A leading `'` keeps any text as text, a formula's text too: `"'007"` types the text `007`, and `"'=1+1"` the text `=1+1`. A read gives back `"'007"`, and a values read `"007"`.
 - A number is typed as its digits: `1200` and `"1200"` type the same.
 - `true` and `false` are typed as `TRUE` and `FALSE`.
 - `""` clears the cell.
@@ -149,6 +151,7 @@ To change a few cells, write just those cells, with `null` for any between them.
 - Two sheets in a spreadsheet can't share a name, whatever its case.
 - A spreadsheet holds up to 200 sheets.
 - A sheet runs to row 1,048,576 and column XFD, the 16,384th.
+- There is no call to rename, move or delete a sheet. A user does that in a tab.
 
 ## What a write does
 
@@ -193,7 +196,7 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value lands on a merged or protected cell, a read is over 1,000,000 cells, or a values read is over 50,000 cells with a value or its formulas take over 10 seconds or about 1 GB of memory to work out. The message names which, with the sheet and the cell when one is at fault. Nothing was written. The same call gets the same answer, so change it |
+| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value lands on a merged or protected cell, a read is over 1,000,000 cells, or a values read is over 50,000 cells with a value or its formulas take over 10 seconds or about 1 GB of memory to work out. The message names which. It names the sheet when its name is taken or missing or the rows run past it, and the cell and its sheet when a cell's text is too long or the cell is merged or protected. Nothing was written. The same call gets the same answer, so change it |
 | `WriteRefused` | 409 | The spreadsheet refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`. The same call gets the same answer until that changes. A write to a spreadsheet not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The spreadsheet is busy, a version is being restored into it or was just restored, the spreadsheet changed during a read, another call adding rows or a sheet was landing on the site, a read found it not converted yet, or the converter gave no answer: it was busy, ran out of time on a write or a typed read, or was being updated. The cells are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
