@@ -1,6 +1,12 @@
 name: Suite CI
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Benchmark runner image tag
+        required: true
+        type: string
 
 jobs:
   benchmark:
@@ -20,7 +26,7 @@ jobs:
           persist-credentials: false
       - name: Compare preinstalled tools in both orders
         env:
-          IMAGE: ghcr.io/frappe/suite-actions-runner:benchmark-1dc84252d5096c38648563708ace13a4753821a2
+          IMAGE: ghcr.io/frappe/suite-actions-runner:${{ inputs.image }}
         run: |
           docker pull "$IMAGE"
           frappe_sha="$(git ls-remote https://github.com/frappe/frappe.git refs/heads/develop | cut -f1)"
