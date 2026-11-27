@@ -370,7 +370,7 @@ def _client() -> RecorderClient:
 
 
 def _limits(recording) -> dict:
-    pending = recording.pending_deadline  # V1 commands use the deadline set at reservation.
+    pending = recording.pending_deadline
     reserved_end = add_to_date(pending, seconds=MAX_SECONDS) if pending else recording.max_ends_at
     return {
         "budget_bytes": recording.budget_bytes,
