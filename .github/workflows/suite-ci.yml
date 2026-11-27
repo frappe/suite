@@ -655,13 +655,15 @@ jobs:
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm typecheck
 
-      - name: Check frontend bundle budget
-        if: steps.frontend-changes.outputs.run == '1'
-        run: pnpm check:bundle-budget
-
       - name: Build
         if: steps.frontend-changes.outputs.run == '1'
         run: pnpm build
+        env:
+          SUITE_BUILD_MANIFEST: .vite/bundle-budget-manifest.json
+
+      - name: Check frontend bundle budget
+        if: steps.frontend-changes.outputs.run == '1'
+        run: pnpm check:bundle-budget --built
 
       - name: Test
         if: steps.frontend-changes.outputs.run == '1'
