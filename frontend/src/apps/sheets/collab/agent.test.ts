@@ -424,6 +424,21 @@ describe('agent values read', () => {
   )
 
   it(
+    'show a sparkline blank as a tab does, beside a formula',
+    async () => {
+      const doc = written(null, {
+        kind: 'sheets',
+        sheets: [{ name: 'Data', rows: [[1, 2, '=SPARKLINE(A1:B1)', '=A1+B1']] }],
+      })
+
+      expect(await values(doc)).toEqual({
+        sheets: [{ name: 'Data', rows: [['1', '2', '', '3']] }],
+      })
+    },
+    TIMEOUT,
+  )
+
+  it(
     'refuse over 50,000 typed cells',
     async () => {
       const doc = new Y.Doc()

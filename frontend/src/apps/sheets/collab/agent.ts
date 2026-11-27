@@ -12,6 +12,7 @@
 import * as Y from 'yjs'
 
 import { createFormatsEngine } from '../engine/formats'
+import { parseSparkline } from '../engine/sparkline'
 import { cellId, colLabel, parseCellId } from '../utils/cells'
 import { applyNumberFmt } from '../utils/format-number'
 import { MAX_COL, MAX_ROW, validSheetName } from '../utils/legacy-sheet'
@@ -97,12 +98,22 @@ export async function valuesAnswer(parts: Uint8Array[]) {
   const doc = docOf(parts)
   try {
     const sheets = readSheets(doc)
+    let count = 0
     const typed = sheets.map((sheet) =>
       sheet.rows.flatMap((row, r) =>
-        row.flatMap((input, c) => (input ? [{ row: r + 1, col: c + 1 }] : [])),
+        row.flatMap((input, c) => {
+          if (!input) return []
+          count++
+          // A tab draws a sparkline's chart in its cell and shows no text
+          if (parseSparkline(input)) {
+            row[c] = ''
+            return []
+          }
+          return [{ row: r + 1, col: c + 1 }]
+        }),
       ),
     )
-    if (typed.flat().length > VALUES_MAX) refuse('too_many_inputs')
+    if (count > VALUES_MAX) refuse('too_many_inputs')
     const client = await inProcessClient(null)
     const formats = createFormatsEngine()
     await buildWorkbookFromDoc(doc, client, { formats })

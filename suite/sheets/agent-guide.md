@@ -62,7 +62,7 @@ curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>
 
 A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. Each sheet's `rows` sent back as a cell write from `A1` writes nothing.
 
-To see what a tab shows, read the values. The answer has the same shape, but a formula reads as its result, and a number as its format shows it, such as `"$1,200.00"` or `"15.0%"`. A date or time with no set style is shown in the server's locale. An error reads as a tab shows it, such as `"#DIV/0!"`, `"#CIRC!"`, `"#NAME?"` or `"#ERROR!"`. `NOW`, `TODAY`, `RAND` and `RANDBETWEEN` give a new result on each read.
+To see what a tab shows, read the values. The answer has the same shape, but a formula reads as its result, and a number as its format shows it, such as `"$1,200.00"` or `"15.0%"`. A date or time with no set style reads in US English, such as `"1/15/2026"`, and `NOW` and `TODAY` count in UTC. An error reads as a tab shows it, such as `"#DIV/0!"`, `"#CIRC!"`, `"#NAME?"` or `"#ERROR!"`. `NOW`, `TODAY`, `RAND` and `RANDBETWEEN` are worked out again on each read, so their result can change. The values are each cell's result, not a picture of the tab: cells in hidden rows and columns and in rows a filter hides are in it, a sparkline reads blank, and a cell under a merge reads its own value, though a tab shows only the merge's top-left cell.
 
 ```sh
 curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>/values
