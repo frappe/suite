@@ -92,8 +92,6 @@ class IntegrationTestRecordingReservationBackfill(IntegrationTestCase):
                 "status": "Pending",
                 "recorder_job_id": frappe.generate_hash(length=32),
                 "request_id": str(uuid.uuid4()),
-                "estimated_seconds": 3600,
-                "estimated_bytes": budget_bytes,
                 "budget_bytes": budget_bytes,
                 "drive_home_folder": self.home_folder,
                 **upload,
