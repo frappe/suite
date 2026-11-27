@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
-import { agentAnswer } from './agent'
+import { agentAnswer, valuesAnswer } from './agent'
 import { addSheet, axis, cellKey, roots } from './schema'
 import { inputs, openTab, type, type Tab } from './test-tabs'
 
@@ -354,4 +354,94 @@ describe('agent reads', () => {
     roots(doc).inputs.set(cellKey(id, row, axis(doc, id, 'cols').ensure(0)), 'x')
     expect(ask(doc, { read: true })).toEqual({ refused: { reason: 'too_large' } })
   })
+})
+
+describe('agent values read', () => {
+  function values(doc: Y.Doc) {
+    return valuesAnswer([Y.encodeStateAsUpdate(doc)])
+  }
+
+  it(
+    'show a number format as a tab does, set from the toolbar or typed',
+    async () => {
+      const tab = await openTab('A')
+      const cases: [string, string, string | null, string][] = [
+        ['A1', '1200', 'currency:USD:2', '$1,200.00'],
+        ['A2', '0.15', 'percentage:1', '15.0%'],
+        ['A3', '46037', 'date:dmy', '15/01/2026'],
+        ['A4', '15%', null, '15%'],
+        ['A5', '$1.50', null, '$1.50'],
+        ['A6', '2026-01-15', null, '2026-01-15'],
+        ['A7', '=A1*2', 'currency:USD:2', '$2,400.00'],
+        ['A8', '1200', 'number:in:0', '1,200'],
+        ['A9', '46037.5', 'datetime:dmy_hm12', '15/01/2026, 12:00 PM'],
+      ]
+      for (const [id, input] of cases) await type(tab, 'Sheet1', id, input)
+      for (const [id, , format] of cases)
+        if (format) tab.stores.formats.applyToRange([id], { numberFormat: format }, 'Sheet1')
+      await tab.glue.commit()
+
+      expect(await values(tab.doc)).toEqual({
+        sheets: [{ name: 'Sheet1', rows: cases.map(([, , , shown]) => [shown]) }],
+      })
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'show a formula as its result and an error as a tab does, beside plain values',
+    async () => {
+      const doc = written(null, {
+        kind: 'sheets',
+        sheets: [
+          {
+            name: 'Data',
+            rows: [
+              ['Item', 2, '=B1*3', '=1/0'],
+              ['=NOSUCH(1)', '=Notes!A1'],
+            ],
+          },
+          { name: 'Notes', rows: [['n']] },
+          { name: 'Empty' },
+        ],
+      })
+
+      expect(await values(doc)).toEqual({
+        sheets: [
+          {
+            name: 'Data',
+            rows: [
+              ['Item', '2', '6', '#DIV/0!'],
+              ['#NAME?', 'n'],
+            ],
+          },
+          { name: 'Notes', rows: [['n']] },
+          { name: 'Empty', rows: [] },
+        ],
+      })
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'refuse over 50,000 typed cells',
+    async () => {
+      const doc = new Y.Doc()
+      const id = addSheet(doc, 'Big')
+      const rows = axis(doc, id, 'rows')
+      const cols = Array.from({ length: 100 }, (_, c) => axis(doc, id, 'cols').ensure(c))
+      doc.transact(() => {
+        for (let row = 0; row < 500; row++) {
+          const rowId = rows.ensure(row)
+          for (const col of cols) roots(doc).inputs.set(cellKey(id, rowId, col), '1')
+        }
+      })
+      const full = await values(doc)
+      expect('sheets' in full && full.sheets[0]!.rows[499]![99]).toBe('1')
+
+      roots(doc).inputs.set(cellKey(id, rows.ensure(500), cols[0]!), '1')
+      expect(await values(doc)).toEqual({ refused: { reason: 'too_many_inputs' } })
+    },
+    TIMEOUT,
+  )
 })

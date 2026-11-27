@@ -1,6 +1,6 @@
 import { initSync } from '@ironcalc/wasm'
 
-import { agentAnswer, type AgentHeader } from './agent'
+import { agentAnswer, valuesAnswer, type AgentHeader } from './agent'
 import { readFrames } from './child-input'
 import { convertSheetsData } from './conversion'
 
@@ -39,15 +39,15 @@ async function convertInput() {
   const input = JSON.parse(headerFrame!.toString()) as ConverterInput
 
   let result: Awaited<ReturnType<typeof convertSheetsData>> | undefined
+  if (input.legacy || input.values) initSync({ module: Buffer.from(__IRONCALC_WASM__, 'base64') })
   if (input.legacy) {
-    initSync({ module: Buffer.from(__IRONCALC_WASM__, 'base64') })
     result = await convertSheetsData(input.legacy.sheets_data, input.maxState ?? 0)
   }
   const answer =
     result?.kind === 'converted'
       ? { ...result, state: Buffer.from(result.state).toString('base64') }
       : result
-  const agent = agentAnswer(input, parts)
+  const agent = input.values ? await valuesAnswer(parts) : agentAnswer(input, parts)
   process.stdout.write(JSON.stringify({ ...answer, ...agent, version: __CONVERTER_VERSION__ }))
 }
 

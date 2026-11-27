@@ -11,9 +11,13 @@
 
 import * as Y from 'yjs'
 
-import { colLabel, parseCellId } from '../utils/cells'
+import { createFormatsEngine } from '../engine/formats'
+import { cellId, colLabel, parseCellId } from '../utils/cells'
+import { applyNumberFmt } from '../utils/format-number'
 import { MAX_COL, MAX_ROW, validSheetName } from '../utils/legacy-sheet'
+import { inProcessClient } from './conversion'
 import { docToHtml } from './html'
+import { buildWorkbookFromDoc } from './load'
 import { addSheet, axis, cellKey, initDoc, parseCellKey, roots, stateKey } from './schema'
 import { docSheets } from './stores'
 
@@ -23,6 +27,8 @@ const INPUT_MAX = 32_767
 const SHEETS_MAX = 200
 // A read's grid entries, its padding included, so a far cell can't make a huge answer
 const READ_MAX = 1_000_000
+// A values read's typed cells: IronCalc builds the whole workbook to work each one out
+const VALUES_MAX = 50_000
 
 type Value = string | number | boolean | null
 
@@ -30,6 +36,7 @@ type Value = string | number | boolean | null
 export interface AgentHeader {
   read?: true
   render?: true
+  values?: true
   write?: unknown
   /** The write session's client id: the update's structs are its. */
   client?: number
@@ -50,6 +57,7 @@ type Reason =
   | 'merged'
   | 'protected'
   | 'too_large'
+  | 'too_many_inputs'
 
 interface Refused {
   reason: Reason
@@ -73,10 +81,7 @@ function refuse(reason: Reason, sheet?: string, cell?: string): never {
 /** The answer for an agent header, or undefined when the header asks for none. */
 export function agentAnswer(header: AgentHeader, parts: Uint8Array[]) {
   if (!header.read && !header.render && header.write === undefined) return undefined
-  const doc = new Y.Doc()
-  if (header.client !== undefined) doc.clientID = header.client
-  // A log with no checkpoint sends an empty frame in its place
-  for (const part of parts) if (part.length) Y.applyUpdate(doc, part)
+  const doc = docOf(parts, header.client)
   try {
     if (header.read) return { sheets: readSheets(doc) }
     if (header.render) return { html: docToHtml(doc) }
@@ -85,6 +90,49 @@ export function agentAnswer(header: AgentHeader, parts: Uint8Array[]) {
     if (error instanceof Refusal) return { refused: error.refused }
     throw error
   }
+}
+
+/** Each sheet as a tab shows it, in the typed read's shape: a formula as its result. */
+export async function valuesAnswer(parts: Uint8Array[]) {
+  const doc = docOf(parts)
+  try {
+    const sheets = readSheets(doc)
+    const typed = sheets.map((sheet) =>
+      sheet.rows.flatMap((row, r) =>
+        row.flatMap((input, c) => (input ? [{ row: r + 1, col: c + 1 }] : [])),
+      ),
+    )
+    if (typed.flat().length > VALUES_MAX) refuse('too_many_inputs')
+    const client = await inProcessClient(null)
+    const formats = createFormatsEngine()
+    await buildWorkbookFromDoc(doc, client, { formats })
+    for (const [i, sheet] of sheets.entries()) {
+      const shown = await client.readCells({
+        sheet: sheet.name,
+        cells: typed[i]!,
+        what: ['display'],
+      })
+      for (const cell of shown.cells) {
+        const display = cell.display ?? ''
+        // As the grid shows it: a toolbar format is in the formats store only, never in IronCalc
+        const format = formats.get(cellId(cell.row - 1, cell.col - 1), sheet.name).numberFormat
+        sheet.rows[cell.row - 1]![cell.col - 1] = format ? applyNumberFmt(display, format) : display
+      }
+    }
+    client.terminate()
+    return { sheets }
+  } catch (error) {
+    if (error instanceof Refusal) return { refused: error.refused }
+    throw error
+  }
+}
+
+function docOf(parts: Uint8Array[], client?: number): Y.Doc {
+  const doc = new Y.Doc()
+  if (client !== undefined) doc.clientID = client
+  // A log with no checkpoint sends an empty frame in its place
+  for (const part of parts) if (part.length) Y.applyUpdate(doc, part)
+  return doc
 }
 
 /** Each sheet's typed inputs from A1 to its last used row, each row to its last used cell. */

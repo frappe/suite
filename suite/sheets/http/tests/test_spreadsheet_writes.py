@@ -405,6 +405,63 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         again = self.create(read["sheets"])
         self.assertEqual(self.cells(again), self.cells(node))
 
+    def test_a_values_read_gives_what_a_tab_shows_and_leaves_the_typed_read(self):
+        rows = [["Item", "Cost"], ["Rent", 1200], ["Food", 300], ["Total", "=SUM(B2:B3)"], ["Bad", "=B2/0"]]
+        node = self.create([{"name": "Costs", "rows": rows}, {"name": "Empty"}])
+        typed = {
+            "sheets": [
+                {
+                    "name": "Costs",
+                    "rows": [
+                        ["Item", "Cost"],
+                        ["Rent", "1200"],
+                        ["Food", "300"],
+                        ["Total", "=SUM(B2:B3)"],
+                        ["Bad", "=B2/0"],
+                    ],
+                },
+                {"name": "Empty", "rows": []},
+            ]
+        }
+        self.assertEqual(sheets_routes.spreadsheet_read(node), typed)
+
+        shown = sheets_routes.spreadsheet_values(node)
+
+        self.assertEqual(
+            shown,
+            {
+                "sheets": [
+                    {
+                        "name": "Costs",
+                        "rows": [
+                            ["Item", "Cost"],
+                            ["Rent", "1200"],
+                            ["Food", "300"],
+                            ["Total", "1500"],
+                            ["Bad", "#DIV/0!"],
+                        ],
+                    },
+                    {"name": "Empty", "rows": []},
+                ]
+            },
+        )
+        self.assertEqual(sheets_routes.spreadsheet_read(node), typed)
+
+    def test_a_values_read_over_50000_typed_cells_is_refused_for_the_typed_read(self):
+        # Five full writes and one cell, each through the agent's own write
+        block = [[1] * 100 for _ in range(100)]
+        node = self.create([{"name": "Data", "rows": block}])
+        for start in ("A101", "A201", "A301", "A401"):
+            sheets_routes.spreadsheet_cells_write(node, "Data", start, block)
+
+        sheets_routes.spreadsheet_rows_append(node, "Data", [[1]])
+
+        refused = "at most 50,000 typed cells: read the spreadsheet as typed"
+        with self.assertRaisesRegex(SheetsRefused, refused):
+            sheets_routes.spreadsheet_values(node)
+
+        self.assertEqual(len(sheets_routes.spreadsheet_read(node)["sheets"][0]["rows"]), 501)
+
     def test_a_cell_under_a_merge_or_protected_is_named_and_left(self):
         node = self.create([{"name": "Data", "rows": [["a", "b"], ["c"]]}])
         self.sheet_state(node, "merge", {"masterMap": {"A1": "A1:B1"}, "slaveMap": {"B1": "A1"}})
@@ -437,7 +494,9 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         self.assertEqual(shared.status_code, 200, shared.get_data(as_text=True))
 
         frappe.set_user(READER)
-        self.assertEqual(sheets_routes.spreadsheet_read(node)["sheets"], [{"name": "Data", "rows": [["a"]]}])
+        for reads in (sheets_routes.spreadsheet_read, sheets_routes.spreadsheet_values):
+            self.assertEqual(reads(node)["sheets"], [{"name": "Data", "rows": [["a"]]}])
+
         with self.assertRaises(drive.DriveForbidden):
             sheets_routes.spreadsheet_cells_write(node, "Data", "A1", [["b"]])
 
@@ -447,6 +506,9 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         frappe.set_user(OUTSIDER)
         with self.assertRaises(drive.DriveNotFound):
             sheets_routes.spreadsheet_read(node)
+
+        with self.assertRaises(drive.DriveNotFound):
+            sheets_routes.spreadsheet_values(node)
 
         with self.assertRaises(drive.DriveNotFound):
             sheets_routes.spreadsheet_cells_write(node, "Data", "A1", [["b"]])
@@ -466,6 +528,7 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             ("POST", f"spreadsheets/{node}/rows", {"sheet": "Data", "rows": [["x"]]}),
             ("POST", f"spreadsheets/{node}/sheets", {"name": "More"}),
             ("GET", f"spreadsheets/{node}", None),
+            ("GET", f"spreadsheets/{node}/values", None),
         )
         for method, path, body in calls:
             with self.subTest(method=method, path=path):
@@ -513,6 +576,9 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             sheets_routes.spreadsheet_read(self.folder)
 
         with self.assertRaises(drive.DriveNotFound):
+            sheets_routes.spreadsheet_values(self.folder)
+
+        with self.assertRaises(drive.DriveNotFound):
             sheets_routes.spreadsheet_rows_append(self.folder, "Data", [["x"]])
 
     def test_an_unconverted_spreadsheet_reads_busy_refuses_writes_and_asks_for_its_conversion(self):
@@ -524,10 +590,13 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             with self.assertRaisesRegex(WriteBusy, "not converted yet"):
                 sheets_routes.spreadsheet_read(node)
 
+            with self.assertRaisesRegex(WriteBusy, "not converted yet"):
+                sheets_routes.spreadsheet_values(node)
+
             with self.assertRaisesRegex(WriteRefused, "unconverted"):
                 sheets_routes.spreadsheet_cells_write(node, "Data", "A1", [["x"]])
 
-        self.assertEqual(asked.call_count, 2)
+        self.assertEqual(asked.call_count, 3)
 
     def test_a_busy_converter_answers_busy_and_creates_nothing(self):
         with (
@@ -563,6 +632,20 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         frappe.set_user(OUTSIDER)
         with self.assertRaises(drive.DriveError):
             call_route(lambda _node: write(), "")
+
+    def test_a_user_past_the_values_limit_waits_and_still_reads_as_typed(self):
+        frappe.cache.delete_keys("rl:suite.sheets")
+        self.addCleanup(frappe.cache.delete_keys, "rl:suite.sheets")
+
+        for _read in range(10):
+            with self.assertRaises(drive.DriveError):
+                call_route(sheets_routes.spreadsheet_values, "no node")
+
+        with self.assertRaises(frappe.RateLimitExceededError):
+            call_route(sheets_routes.spreadsheet_values, "no node")
+
+        with self.assertRaises(drive.DriveError):
+            call_route(sheets_routes.spreadsheet_read, "no node")
 
     def test_an_unknown_address_answers_not_found(self):
         frappe.db.commit()

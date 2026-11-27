@@ -136,6 +136,9 @@ write_limit = rate_limit(limit=WRITES_A_MINUTE, seconds=60, ip_based=False, user
 BODY_MAX = 1024 * 1024
 READS_A_MINUTE = 60
 read_limit = rate_limit(limit=READS_A_MINUTE, seconds=60, ip_based=False, user_based=True)
+# A values read builds the whole workbook in IronCalc, up to a second or more of the converter
+VALUES_A_MINUTE = 10
+values_limit = rate_limit(limit=VALUES_A_MINUTE, seconds=60, ip_based=False, user_based=True)
 
 
 def refusing(handler: Callable) -> Callable:
@@ -225,6 +228,14 @@ def spreadsheet_read(node: str) -> SpreadsheetCells:
     return agent.read(node)
 
 
+@frappe.whitelist(methods=["GET"])
+@values_limit
+@refusing
+def spreadsheet_values(node: str) -> SpreadsheetCells:
+    """Answer a spreadsheet's sheets as a tab shows them, a formula as its result."""
+    return agent.values(node)
+
+
 AGENT_GUIDE = Path(__file__).parents[1] / "agent-guide.md"
 GUIDE_SITE = "https://suite.example.com"
 
@@ -303,6 +314,15 @@ ROUTES = (
         errors=SHEETS_ERRORS,
         kind="query",
         public_name="spreadsheets.read",
+    ),
+    Route(
+        "GET",
+        "spreadsheets/{node}/values",
+        "spreadsheet_values",
+        output=SpreadsheetCells,
+        errors=SHEETS_ERRORS,
+        kind="query",
+        public_name="spreadsheets.readValues",
     ),
     Route(
         "GET",

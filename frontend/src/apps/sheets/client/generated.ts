@@ -463,6 +463,52 @@ const operationSpreadsheetRead: QueryRef<
   loadValidators: async () => (await import('./validators')).operationSpreadsheetRead,
 }
 
+export type SpreadsheetValuesOutputTypedSheet = { name: string; rows: Array<Array<string>> }
+
+export type SpreadsheetValuesInput = { node: string }
+
+export type SpreadsheetValuesOutput = { sheets: Array<SpreadsheetValuesOutputTypedSheet> }
+
+export type SpreadsheetValuesError =
+  | 'DriveError'
+  | 'RateLimitExceededError'
+  | 'DriveNotFound'
+  | 'DriveForbidden'
+  | 'DriveLocked'
+  | 'DriveLinkExpired'
+  | 'SheetsRefused'
+  | 'WriteRefused'
+  | 'WriteBusy'
+
+const operationSpreadsheetValues: QueryRef<
+  SpreadsheetValuesInput,
+  SpreadsheetValuesOutput,
+  SpreadsheetValuesError
+> = {
+  id: 'spreadsheet_values',
+  owner: 'sheets',
+  kind: 'query',
+  publicName: 'spreadsheets.readValues',
+  method: 'GET',
+  path: 'spreadsheets/{node}/values',
+  prefix: '/api/suite/sheets/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: [
+    'DriveError',
+    'RateLimitExceededError',
+    'DriveNotFound',
+    'DriveForbidden',
+    'DriveLocked',
+    'DriveLinkExpired',
+    'SheetsRefused',
+    'WriteRefused',
+    'WriteBusy',
+  ],
+  loadValidators: async () => (await import('./validators')).operationSpreadsheetValues,
+}
+
 export type AgentGuideInput = Record<string, never>
 
 export type AgentGuideOutput = Blob
@@ -664,6 +710,7 @@ export const api = {
     appendRows: operationSpreadsheetRowsAppend,
     addSheet: operationSpreadsheetSheetAdd,
     read: operationSpreadsheetRead,
+    readValues: operationSpreadsheetValues,
   },
   agentGuide: {
     read: operationAgentGuide,

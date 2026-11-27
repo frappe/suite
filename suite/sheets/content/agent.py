@@ -48,6 +48,7 @@ REASONS = {
     "merged": "{cell} on {sheet} is under a merged cell: send null for it",
     "protected": "{cell} on {sheet} is protected",
     "too_large": "The spreadsheet is too large to read in one call",
+    "too_many_inputs": "A values read shows at most 50,000 typed cells: read the spreadsheet as typed",
 }
 
 
@@ -127,11 +128,21 @@ def in_turn(node: str, write: dict) -> int:
 
 def read(node: str) -> dict:
     """Answer each sheet's cells as typed, from A1 to its last used row, in the form a write takes."""
+    return sheets_of(node, {"read": True})
+
+
+def values(node: str) -> dict:
+    """Answer each sheet's cells as a tab shows them, in the typed read's shape: a formula as its result."""
+    return sheets_of(node, {"values": True})
+
+
+def sheets_of(node: str, header: dict) -> dict:
+    """Answer the converter's sheets for `header` on the spreadsheet the user can read."""
     if drive.check(node, drive.READ) != EDITOR.doctype:
         raise drive.DriveNotFound(_("That spreadsheet was not found"))
 
     checkpoint, rows = logged_parts(node)
-    return {"sheets": answered({"read": True}, checkpoint, rows)["sheets"]}
+    return {"sheets": answered(header, checkpoint, rows)["sheets"]}
 
 
 def writable(node: str) -> None:

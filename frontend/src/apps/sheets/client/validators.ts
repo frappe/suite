@@ -27,6 +27,8 @@ import type {
   SpreadsheetRowsAppendOutput,
   SpreadsheetSheetAddInput,
   SpreadsheetSheetAddOutput,
+  SpreadsheetValuesInput,
+  SpreadsheetValuesOutput,
 } from './generated'
 
 export const operationSpreadsheetCreate: Validators<
@@ -757,6 +759,54 @@ export const operationSpreadsheetRead: Validators<SpreadsheetReadInput, Spreadsh
         type: 'object',
       },
       'spreadsheet_read output',
+    )
+  },
+}
+
+export const operationSpreadsheetValues: Validators<
+  SpreadsheetValuesInput,
+  SpreadsheetValuesOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetValuesInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { node: { type: 'string' } },
+        required: ['node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_values input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetValuesOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          TypedSheet: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              rows: {
+                items: { items: { type: 'string' }, type: 'array' },
+                title: 'Rows',
+                type: 'array',
+              },
+            },
+            required: ['name', 'rows'],
+            title: 'TypedSheet',
+            type: 'object',
+          },
+        },
+        properties: {
+          sheets: { items: { $ref: '#/$defs/TypedSheet' }, title: 'Sheets', type: 'array' },
+        },
+        required: ['sheets'],
+        title: 'SpreadsheetCells',
+        type: 'object',
+      },
+      'spreadsheet_values output',
     )
   },
 }

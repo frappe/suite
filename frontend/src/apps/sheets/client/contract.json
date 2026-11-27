@@ -1796,6 +1796,79 @@
       "bytes": false
     },
     {
+      "id": "spreadsheet_values",
+      "kind": "query",
+      "publicName": "spreadsheets.readValues",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "spreadsheets/{node}/values",
+      "pathParams": [
+        "node"
+      ],
+      "query": null,
+      "body": null,
+      "output": {
+        "$defs": {
+          "TypedSheet": {
+            "properties": {
+              "name": {
+                "title": "Name",
+                "type": "string"
+              },
+              "rows": {
+                "items": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "title": "Rows",
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "rows"
+            ],
+            "title": "TypedSheet",
+            "type": "object"
+          }
+        },
+        "properties": {
+          "sheets": {
+            "items": {
+              "$ref": "#/$defs/TypedSheet"
+            },
+            "title": "Sheets",
+            "type": "array"
+          }
+        },
+        "required": [
+          "sheets"
+        ],
+        "title": "SpreadsheetCells",
+        "type": "object"
+      },
+      "errors": [
+        "DriveError",
+        "RateLimitExceededError",
+        "DriveNotFound",
+        "DriveForbidden",
+        "DriveLocked",
+        "DriveLinkExpired",
+        "SheetsRefused",
+        "WriteRefused",
+        "WriteBusy"
+      ],
+      "entity": null,
+      "nodeParams": [
+        "node"
+      ],
+      "stream": false,
+      "bytes": false
+    },
+    {
       "id": "agent_guide",
       "kind": "query",
       "publicName": "agentGuide.read",

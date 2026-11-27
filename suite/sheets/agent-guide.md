@@ -62,6 +62,21 @@ curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>
 
 A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. Each sheet's `rows` sent back as a cell write from `A1` writes nothing.
 
+To see what a tab shows, read the values. The answer has the same shape, but a formula reads as its result, and a number as its format shows it, such as `"$1,200.00"` or `"15.0%"`. A date or time with no set style is shown in the server's locale. An error reads as a tab shows it, such as `"#DIV/0!"`, `"#CIRC!"`, `"#NAME?"` or `"#ERROR!"`. `NOW`, `TODAY`, `RAND` and `RANDBETWEEN` give a new result on each read.
+
+```sh
+curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>/values
+```
+
+```json
+{ "data": { "sheets": [
+  { "name": "Costs", "rows": [["Item", "Cost"], ["Rent", "1200"], ["Food", "300"], ["Total", "1500"]] },
+  { "name": "Notes", "rows": [] }
+] } }
+```
+
+To write, start from what the typed read gives, never the values: a result written back replaces its formula.
+
 **5. Write a block of cells.** The user needs edit access to the spreadsheet. `sheet` names the sheet, whatever its case. `start` is the cell the block's top left lands on, such as `B2`. Each row of `rows` lands in the next row down. The cells around the block stay as they are.
 
 ```sh
@@ -152,9 +167,11 @@ To change a few cells, write just those cells, with `null` for any between them.
 
 ## Limits
 
-One user makes up to 30 creates, 30 cell writes, 30 row adds and 30 sheet adds a minute, each counted on its own, and 60 reads. A call past that answers `RateLimitExceededError` until the minute ends.
+One user makes up to 30 creates, 30 cell writes, 30 row adds and 30 sheet adds a minute, each counted on its own, 60 reads and 10 values reads. A call past that answers `RateLimitExceededError` until the minute ends.
 
 A read gives up to 1,000,000 cells, the empty ones before each sheet's last used cell included. A larger spreadsheet is refused with `SheetsRefused`.
+
+A values read takes a spreadsheet of up to 50,000 typed cells. A larger one is refused with `SheetsRefused`: read it as typed.
 
 ## Refusals
 
@@ -176,7 +193,7 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value lands on a merged or protected cell, or a read is over 1,000,000 cells. The message names which, with the sheet and the cell when one is at fault. Nothing was written. The same call gets the same answer, so change it |
+| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value lands on a merged or protected cell, a read is over 1,000,000 cells, or a values read is over 50,000 typed cells. The message names which, with the sheet and the cell when one is at fault. Nothing was written. The same call gets the same answer, so change it |
 | `WriteRefused` | 409 | The spreadsheet refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`. The same call gets the same answer until that changes. A write to a spreadsheet not converted yet asks for its conversion, so write again in a minute |
 | `WriteBusy` | 429 | The spreadsheet is busy, a version is being restored into it or was just restored, the spreadsheet changed during a read, another call adding rows or a sheet was landing on the site, a read found it not converted yet, or the converter gave no answer: it was busy, ran out of time or was being updated. The cells are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
