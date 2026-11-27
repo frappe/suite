@@ -66,7 +66,7 @@ jobs:
       - name: Clone
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
 
       - name: Check changes
         id: changes
@@ -79,7 +79,7 @@ jobs:
             run_rehearsal=1
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
-              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+              changed_files="$(bash .github/scripts/pr-changed-files.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
             else
               if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
                 changed_files="$(git diff --name-only HEAD~1 HEAD)"
@@ -405,7 +405,7 @@ jobs:
       - name: Clone
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
 
       - name: Check node server changes
         id: node-server-changes
@@ -415,7 +415,7 @@ jobs:
             run_meet=1
             run_recorder=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            changed_files="$(bash .github/scripts/pr-changed-files.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
             printf '%s\n' "$changed_files" | grep -Eq '^(realtime/|\.github/workflows/suite-ci\.yml)' && run_realtime=1 || run_realtime=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/sfu-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_meet=1 || run_meet=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/meet/recorder-server/|suite/meet/types/|\.github/workflows/suite-ci\.yml)' && run_recorder=1 || run_recorder=0
@@ -512,7 +512,7 @@ jobs:
       - name: Clone
         uses: actions/checkout@v7
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name == 'pull_request' && 2 || 0 }}
 
       - name: Check frontend changes
         id: frontend-changes
@@ -520,7 +520,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_frontend=1
           elif [ "${{ github.event_name }}" = "pull_request" ]; then
-            changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
+            changed_files="$(bash .github/scripts/pr-changed-files.sh "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
             printf '%s\n' "$changed_files" | grep -Eq '^(.*\.(js|mjs|cjs|jsx|ts|mts|cts|tsx|vue)$|frontend/|scripts/|tools/oxlint/|suite/meet/type-policy/|\.pre-commit-config\.yaml$|baselines/|[^/]+\.(js|ts)$|tsconfig[^/]*\.json$|\.oxlintrc\.json|\.prettier|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.github/workflows/suite-ci\.yml)' && run_frontend=1 || run_frontend=0
           else
             if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
