@@ -13,7 +13,7 @@ Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Related contracts 
 - Default to video enabled and transcription disabled. At least one output must be selected to start.
 - When transcription is selected, automatically handle English, Hindi, and speech switching between them, including within a sentence. Do not require a spoken-language selector. Indian-accented English belongs to the quality-evaluation scope. Selecting transcription produces one Original Transcript in the languages spoken. Translation and a separate English Transcript are deferred; no extra language/output toggle is added. Unsupported or unintelligible passages must be identified rather than converted into plausible speech.
 - Selections stay fixed during active capture. To change outputs, stop and start a new capture.
-- If both outputs are selected, use one start flow and one stop action. Their later processing and delivery are independent.
+- If both outputs are selected, use one start flow and one stop action. A transcription startup failure leaves video startup available. Their later processing and delivery are independent.
 
 ## Control and lifetime
 
