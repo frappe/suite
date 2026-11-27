@@ -196,13 +196,36 @@ jobs:
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
             http://127.0.0.1:7000/api/v1/health
 
-      - name: Create Test Site
+      - name: Create Test Site and Compare Collab Compaction With Yjs
         id: create-site
-        if: steps.changes.outputs.bench == '1'
+        if: ${{ !cancelled() && ((success() && steps.changes.outputs.bench == '1') || (steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success')) }}
         working-directory: /home/runner/pilot/benches/frappe-bench
+        env:
+          CREATE_TEST_SITE: ${{ job.status == 'success' }}
+          CHECK_COMPACTION: ${{ steps.changes.outputs.backend == '1' }}
         run: |
-          pilot new-site test_site --admin-password admin --apps frappe suite --skip-assets
-          pilot frappe --site test_site set-config allow_tests true
+          # The differential check uses fixture files and does not need a test site.
+          if [[ "$CHECK_COMPACTION" == true ]]; then
+            (
+              ./env/bin/python apps/suite/suite/content/tests/differential/compact.py "$RUNNER_TEMP/compacted.json"
+              node apps/suite/suite/content/tests/differential/judge.cjs "$RUNNER_TEMP/compacted.json"
+            ) > "$RUNNER_TEMP/yjs-comparison.log" 2>&1 &
+            comparison_pid=$!
+          fi
+
+          site_status=0
+          if [[ "$CREATE_TEST_SITE" == true ]]; then
+            pilot new-site test_site --admin-password admin --apps frappe suite --skip-assets &&
+              pilot frappe --site test_site set-config allow_tests true || site_status=$?
+          fi
+
+          if [[ "$CHECK_COMPACTION" == true ]]; then
+            if wait "$comparison_pid"; then
+              echo "compaction=success" >> "$GITHUB_OUTPUT"
+            fi
+            cat "$RUNNER_TEMP/yjs-comparison.log"
+          fi
+          exit "$site_status"
 
       - name: Check HTTP contract
         if: steps.changes.outputs.backend == '1'
@@ -241,12 +264,15 @@ jobs:
           COVERAGE_RCFILE: ${{ github.workspace }}/.coveragerc
           TYPE: server
 
-      - name: Compare Collab Compaction With Yjs
-        if: always() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success'
-        working-directory: /home/runner/pilot/benches/frappe-bench
+      - name: Check Collab Compaction Result
+        if: ${{ !cancelled() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success' }}
+        env:
+          COMPACTION_RESULT: ${{ steps.create-site.outputs.compaction }}
         run: |
-          ./env/bin/python apps/suite/suite/content/tests/differential/compact.py "$RUNNER_TEMP/compacted.json"
-          node apps/suite/suite/content/tests/differential/judge.cjs "$RUNNER_TEMP/compacted.json"
+          if [[ "$COMPACTION_RESULT" != success ]]; then
+            echo "::error::Collab compaction comparison failed"
+            exit 1
+          fi
 
       - name: Check Background Worker
         if: always() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success'
