@@ -447,7 +447,7 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         )
         self.assertEqual(sheets_routes.spreadsheet_read(node), typed)
 
-    def test_a_values_read_over_50000_typed_cells_is_refused_for_the_typed_read(self):
+    def test_a_values_read_over_50000_cells_with_a_value_is_refused_for_the_typed_read(self):
         # Five full writes and one cell, each through the agent's own write
         block = [[1] * 100 for _ in range(100)]
         node = self.create([{"name": "Data", "rows": block}])

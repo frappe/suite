@@ -496,6 +496,31 @@ describe('agent values read', () => {
   )
 
   it(
+    'count the 50,000 cells over all sheets',
+    async () => {
+      const at = written(null, {
+        kind: 'sheets',
+        sheets: [
+          { name: 'One', rows: [['=SEQUENCE(25000)']] },
+          { name: 'Two', rows: [['=SEQUENCE(25000)']] },
+        ],
+      })
+      const full = await values(at)
+      expect('sheets' in full && full.sheets[1]!.rows[24999]).toEqual(['25000'])
+
+      const over = written(null, {
+        kind: 'sheets',
+        sheets: [
+          { name: 'One', rows: [['=SEQUENCE(25000)']] },
+          { name: 'Two', rows: [['=SEQUENCE(25001)']] },
+        ],
+      })
+      expect(await values(over)).toEqual({ refused: { reason: 'too_many_values' } })
+    },
+    TIMEOUT,
+  )
+
+  it(
     'refuse a small spill in a far column whose padding is over the read cap',
     async () => {
       const doc = written(written(null, { kind: 'sheets', sheets: [{ name: 'Far' }] }), {
@@ -512,7 +537,7 @@ describe('agent values read', () => {
   )
 
   it(
-    'refuse over 50,000 typed cells',
+    'refuse over 50,000 cells with a value',
     async () => {
       const doc = new Y.Doc()
       const id = addSheet(doc, 'Big')
