@@ -147,7 +147,6 @@ def reject_upload_metadata(recording_name: str, *, event_sequence: int, error: E
     recording.finalization_stage = "Terminal"
     recording.finalization_failure_type = "deterministic"
     recording.finalization_failure_code = "invalid_terminal_metadata"
-    recording.finalization_diagnostic = str(error)[:1000]
     recording.notification_pending = 1
     recording.notification_next_retry_at = now
     recording.flags.reconciliation_update = True
@@ -330,7 +329,6 @@ def _claim_finalization(recording_name: str):
     recording.finalization_next_retry_at = add_to_date(now, seconds=FINALIZATION_LEASE_SECONDS)
     recording.finalization_failure_type = None
     recording.finalization_failure_code = None
-    recording.finalization_diagnostic = None
     recording.save(ignore_permissions=True)
     frappe.db.commit()
     return frappe.get_doc("Meet Recording", recording_name)
@@ -401,7 +399,6 @@ def _record_finalization_failure(recording_name: str, error: Exception, *, deter
     code = getattr(error, "code", "publication_failed")
     recording.finalization_failure_type = "deterministic" if deterministic else "infrastructure"
     recording.finalization_failure_code = code
-    recording.finalization_diagnostic = str(error)[:1000]
     deadline_reached = (
         recording.finalization_deadline and get_datetime(recording.finalization_deadline) <= now
     )

@@ -370,9 +370,11 @@ def _client() -> RecorderClient:
 
 
 def _limits(recording) -> dict:
+    pending = recording.pending_deadline
+    reserved_end = add_to_date(pending, seconds=MAX_SECONDS) if pending else recording.max_ends_at
     return {
         "budget_bytes": recording.budget_bytes,
-        "max_ends_at": _system_datetime_as_utc(recording.max_ends_at)
+        "max_ends_at": _system_datetime_as_utc(reserved_end)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
         "output": {"width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac"},
@@ -746,7 +748,6 @@ def _finish_start(
     if not delivered:
         return _stop_after_grant_delivery_failure(room, current, client)
     current.grant_delivered = True
-    current.grant_delivered_at = _utc_now_naive()
     current.save(ignore_permissions=True)
     frappe.db.commit()
     if client is None:
@@ -1225,7 +1226,6 @@ def _apply_replacement_ready(
     recording.grant_issued_at = issued_at
     recording.grant_expires_at = expires_at
     recording.grant_delivered = False
-    recording.grant_delivered_at = None
     recording.flags.replacement_reconciliation = reconcile
     recording.save(ignore_permissions=True)
     _deliver_replacement_grant(recording, client)
@@ -1273,7 +1273,6 @@ def _deliver_replacement_grant(recording, client: RecorderClient) -> bool:
         and not current.grant_delivered
     ):
         current.grant_delivered = True
-        current.grant_delivered_at = _utc_now_naive()
         current.save(ignore_permissions=True)
         frappe.db.commit()
     return True
