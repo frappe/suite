@@ -246,3 +246,12 @@ class TestChecker(UnitTestCase):
                 self.assertRaises(checker.CheckerFailed),
             ):
                 checker.judge(bundle, None, [])
+
+    def test_an_ask_fails_past_its_own_time_limit_and_waits_out_the_default(self):
+        bundle = Path(self.enterContext(tempfile.TemporaryDirectory())) / "slow.cjs"
+        bundle.write_text("setTimeout(() => process.stdout.write('{\"done\": true}'), 1000)")
+        with self.assertRaises(checker.CheckerFailed) as failed:
+            checker.ask(bundle, {}, timeout_s=0.3)
+
+        self.assertIsInstance(failed.exception.__cause__, subprocess.TimeoutExpired)
+        self.assertEqual(checker.ask(bundle, {}), {"done": True})

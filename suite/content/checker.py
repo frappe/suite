@@ -98,6 +98,7 @@ def ask(
     rows: Sequence[bytes] = (),
     *,
     minimum: tuple[int, int] = (NODE_MAJOR, 0),
+    timeout_s: float | None = None,
 ) -> dict | None:
     """Run `bundle` on one request and answer its reply, or None without a Node at `minimum` or the bundle."""
     wait_s = WAIT_S if getattr(frappe.local, "job", None) else REQUEST_WAIT_S
@@ -108,7 +109,11 @@ def ask(
     try:
         answer = json.loads(
             run_child(
-                node_path, bundle, framed([json.dumps(header).encode(), checkpoint or b"", *rows]), wait_s
+                node_path,
+                bundle,
+                framed([json.dumps(header).encode(), checkpoint or b"", *rows]),
+                wait_s,
+                TIMEOUT_S if timeout_s is None else timeout_s,
             )
         )
         if not isinstance(answer, dict):
@@ -125,14 +130,14 @@ def ask(
         raise CheckerFailed(repr(error)) from error
 
 
-def run_child(node_path: str, bundle: Path, frames: bytes, wait_s: int) -> bytes:
+def run_child(node_path: str, bundle: Path, frames: bytes, wait_s: int, timeout_s: float) -> bytes:
     """Run `bundle` on `frames` once no other child runs on the site, and answer what it printed."""
     with filelock(LOCK, timeout=wait_s):
         completed = subprocess.run(
             node_command(node_path, bundle),
             input=frames,
             capture_output=True,
-            timeout=TIMEOUT_S,
+            timeout=timeout_s,
             env={},
             check=True,
         )
