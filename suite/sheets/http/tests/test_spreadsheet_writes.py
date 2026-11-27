@@ -17,6 +17,7 @@ from suite import content, drive
 from suite.content import checker, copies, jobs, log, logged, tables
 from suite.content.http import routes
 from suite.sheets import content as sheets_content
+from suite.sheets.content import agent
 from suite.sheets.content.agent import SheetsRefused, WriteBusy, WriteRefused
 from suite.sheets.content.tests.support import cells_of, require_converter
 from suite.sheets.content.tests.test_pushes import call_route, opened
@@ -216,6 +217,39 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         sheets_routes.spreadsheet_rows_append(node, "Data", [["one"]])
 
         self.assertEqual(self.cells(node)["Data"], {"A1": "Item", "B2": "x", "A3": "one", "A4": "one"})
+
+    def test_rows_added_while_other_rows_land_wait_for_them(self):
+        node = self.create([{"name": "Data", "rows": [["a"]]}])
+        writing = agent.writing
+        refused: list[WriteBusy] = []
+
+        def second_starts_first(write: dict) -> Callable[[pycrdt.Doc], None]:
+            change = writing(write)
+
+            def change_after_the_second(state: pycrdt.Doc) -> None:
+                # The first has read the spreadsheet and not pushed yet
+                with (
+                    patch.object(agent, "writing", writing),
+                    patch.object(agent, "APPEND_WAIT_S", 0.1),
+                ):
+                    try:
+                        agent.append_rows(node, "Data", [["c"]])
+                    except WriteBusy as busy:
+                        refused.append(busy)
+
+                change(state)
+
+            return change_after_the_second
+
+        with patch.object(agent, "writing", second_starts_first):
+            sheets_routes.spreadsheet_rows_append(node, "Data", [["b"]])
+
+        for _ in refused:
+            sheets_routes.spreadsheet_rows_append(node, "Data", [["c"]])
+
+        self.assertEqual(self.cells(node)["Data"], {"A1": "a", "A2": "b", "A3": "c"})
+        [busy] = refused
+        self.assertGreater(busy.retry_ms, 0)
 
     def test_a_sheet_added_lands_after_the_others_and_takes_writes(self):
         node = self.create([{"name": "Data", "rows": [["a"]]}])
