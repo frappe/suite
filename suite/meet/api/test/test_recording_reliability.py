@@ -643,8 +643,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 "room_owner": self.owner,
                 "initiated_by": self.owner,
                 "status": "Pending",
-                "estimated_seconds": 60,
-                "estimated_bytes": MINIMUM_BUDGET_BYTES,
                 "budget_bytes": MINIMUM_BUDGET_BYTES,
                 "max_ends_at": add_to_date(now_datetime(), days=-1),
                 "recorder_job_id": frappe.generate_hash(length=32),
@@ -676,7 +674,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
     def _publish_recording(self) -> tuple[str, str]:
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
-        content = b"real-recording-artifact"
+        content = f"real-recording-artifact-{started['name']}".encode()
         digest = hashlib.sha256(content).hexdigest()
         begin_upload(
             started["name"],
