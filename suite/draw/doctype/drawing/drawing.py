@@ -226,6 +226,11 @@ class Drawing(drive.DriveContent, Document):
 
     def before_save(self):
         if self.get("node") and not self.is_new():
+            if self.has_value_changed("content") and _operation.get() not in (
+                ("save", self.name),
+                ("restore", self.name),
+            ):
+                frappe.throw(_("Save drawing scenes through Draw."), frappe.PermissionError)
             self.drive_check(drive.EDIT)
 
     def on_update(self):

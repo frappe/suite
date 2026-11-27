@@ -7,6 +7,9 @@ export interface DrawingDraft {
   title?: string
   revision?: string
   updatedAt?: number
+  unfinished?: boolean
+  recoveryNode?: string
+  recoveryModified?: string
 }
 export interface DraftEntry {
   key: string

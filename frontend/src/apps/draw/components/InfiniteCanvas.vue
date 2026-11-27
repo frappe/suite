@@ -88,6 +88,7 @@ import {
   isFreeDraw,
   isLine,
   parseScene,
+  pointBounds,
   transformShape,
   type Shape,
 } from '../canvas/selection'
@@ -1741,7 +1742,7 @@ watch(
   textEditor,
   (editor) => {
     if (!editable.value) return
-    if (editor) persistence.retainScene(sceneWithTextDraft())
+    if (editor) persistence.retainScene(sceneWithTextDraft(), true)
     else if (persistence.dirty.value) queueSave(copyScene())
   },
   { deep: true },
@@ -2991,13 +2992,12 @@ function updateDraw(event: PointerEvent) {
   if (shape.points.length > 2 && distance(first, last) * viewport.scale <= 12) {
     shape.points[shape.points.length - 1] = { ...first }
   }
-  const xs = shape.points.map((point) => point.x),
-    ys = shape.points.map((point) => point.y)
+  const pointBox = pointBounds(shape.points)!
   Object.assign(shape, {
-    x: Math.min(...xs),
-    y: Math.min(...ys),
-    width: Math.max(...xs) - Math.min(...xs),
-    height: Math.max(...ys) - Math.min(...ys),
+    x: pointBox.x,
+    y: pointBox.y,
+    width: pointBox.width,
+    height: pointBox.height,
   })
 }
 
@@ -3885,7 +3885,7 @@ watch(
 watch(editable, (value) => {
   if (!value) {
     if (textEditor.value) {
-      persistence.retainScene(sceneWithTextDraft())
+      persistence.retainScene(sceneWithTextDraft(), true)
       textEditor.value = undefined
     }
     cancelGesture()

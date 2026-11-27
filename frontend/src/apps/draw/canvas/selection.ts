@@ -38,21 +38,40 @@ export function isLine(shape: Shape): shape is LineShape {
 }
 export function bounds(shapes: Shape[]): RectangleShape | undefined {
   if (!shapes.length) return
-  const points = shapes.flatMap((shape) =>
-    isLine(shape)
-      ? [shape.start, shape.end, lineControlPoint(shape)]
-      : isFreeDraw(shape)
-        ? shape.points
-        : Object.values(rectangleCorners(shape)),
+  return pointBounds(
+    (function* () {
+      for (const shape of shapes) {
+        if (isLine(shape)) {
+          yield shape.start
+          yield shape.end
+          yield lineControlPoint(shape)
+        } else if (isFreeDraw(shape) && shape.points.length) {
+          yield* shape.points
+        } else {
+          yield* Object.values(rectangleCorners(shape))
+        }
+      }
+    })(),
   )
-  const x = Math.min(...points.map((p) => p.x)),
-    y = Math.min(...points.map((p) => p.y))
+}
+export function pointBounds(points: Iterable<Point>): RectangleShape | undefined {
+  let left = Infinity,
+    top = Infinity,
+    right = -Infinity,
+    bottom = -Infinity
+  for (const point of points) {
+    left = Math.min(left, point.x)
+    top = Math.min(top, point.y)
+    right = Math.max(right, point.x)
+    bottom = Math.max(bottom, point.y)
+  }
+  if (left === Infinity) return
   return {
     id: 'selection',
-    x,
-    y,
-    width: Math.max(...points.map((p) => p.x)) - x,
-    height: Math.max(...points.map((p) => p.y)) - y,
+    x: left,
+    y: top,
+    width: right - left,
+    height: bottom - top,
     rotation: 0,
     cornerRadius: 0,
   }
@@ -80,15 +99,16 @@ export function transformShape(shape: Shape, from: RectangleShape, to: Rectangle
   }
   if (isFreeDraw(shape)) {
     const points = shape.points.map(map)
-    const xs = points.map((point) => point.x),
-      ys = points.map((point) => point.y)
+    const pointBox = pointBounds(
+      points.length ? points : Object.values(rectangleCorners(shape)).map(map),
+    )!
     return {
       ...shape,
       points,
-      x: Math.min(...xs),
-      y: Math.min(...ys),
-      width: Math.max(...xs) - Math.min(...xs),
-      height: Math.max(...ys) - Math.min(...ys),
+      x: pointBox.x,
+      y: pointBox.y,
+      width: pointBox.width,
+      height: pointBox.height,
     }
   }
   const center = map(rectangleCenter(shape))

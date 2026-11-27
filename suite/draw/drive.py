@@ -73,7 +73,11 @@ def restore_version(docname: str, stream: IO[bytes]) -> None:
         frappe.throw(_("The drawing version has an unsupported format."))
     document = frappe.get_doc(DOCTYPE, docname)
     document.content = envelope.get("content")
-    document.save(ignore_permissions=True)
+    token = _operation.set(("restore", docname))
+    try:
+        document.save(ignore_permissions=True)
+    finally:
+        _operation.reset(token)
 
 
 def on_purge(docname: str) -> None:

@@ -74,6 +74,23 @@ class TestDrawingDocuments(IntegrationTestCase):
         self.assertEqual(json.loads(current["content"]), json.loads(content))
         self.assertEqual(current["modified"], saved["modified"])
 
+    def test_generic_document_save_cannot_replace_a_linked_scene(self):
+        frappe.set_user(OWNER)
+        document = frappe.get_doc("Drawing", self.body["name"])
+        document.content = json.dumps(
+            {
+                "rectangles": [],
+                "lines": [
+                    {"id": "line", "kind": "line", "start": {"x": 0, "y": 0}, "end": {"x": 20, "y": 10}}
+                ],
+            }
+        )
+
+        with self.assertRaisesRegex(frappe.PermissionError, "Save drawing scenes through Draw"):
+            document.save()
+
+        self.assertEqual(draw.get_drawing(self.node)["content"], self.body["content"])
+
     def test_save_locks_the_drive_node_before_the_drawing_row(self):
         statements = []
         original_sql = frappe.db.sql

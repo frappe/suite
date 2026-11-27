@@ -63,8 +63,9 @@ Drive media references.
 
 Node assignment and body deletion require the adapter's internal lifecycle
 context. The mixin prevents reassignment of an existing node. Linked saves
-require Edit, and successful body changes touch the node. Drive callbacks join
-the caller's transaction and do not commit.
+require Edit and use Draw's revision-checked save or Drive's version restore.
+Successful body changes touch the node. Drive callbacks join the caller's
+transaction and do not commit.
 
 ## Document surface and saves
 

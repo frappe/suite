@@ -7,6 +7,7 @@ from frappe import _
 
 from suite import drive
 from suite.draw import DrawingBody, DrawingConflict, DrawingNotFound
+from suite.draw.drive import _operation
 
 
 def read(node: str) -> DrawingBody:
@@ -24,7 +25,11 @@ def save(node: str, content: str, base_modified: str) -> DrawingBody:
     if not isinstance(content, str):
         raise frappe.ValidationError(_("Drawing content must be a JSON string."))
     document.content = content
-    document.save()
+    token = _operation.set(("save", name))
+    try:
+        document.save()
+    finally:
+        _operation.reset(token)
     document.drive_take_version()
     return _body(document)
 
