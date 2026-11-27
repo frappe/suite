@@ -251,6 +251,33 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         [busy] = refused
         self.assertGreater(busy.retry_ms, 0)
 
+    def test_a_write_over_a_megabyte_is_refused_before_the_converter_is_asked(self):
+        node = self.create([{"name": "Data", "rows": [["a"]]}])
+        before = self.head(node)
+        # Each cell under a cell's own limit, the whole over 1 MB
+        rows = [["x" * 30_000] * 40]
+        bodies = {
+            "spreadsheets": {
+                "parent": self.folder,
+                "title": "Agent too big",
+                "sheets": [{"name": "Data", "rows": rows}],
+            },
+            f"spreadsheets/{node}/cells": {"sheet": "Data", "start": "A1", "rows": rows},
+            f"spreadsheets/{node}/rows": {"sheet": "Data", "rows": rows},
+            f"spreadsheets/{node}/sheets": {"name": "More", "rows": rows},
+        }
+
+        # A converter asked fails the request as a 500
+        self.enterContext(patch.object(checker, "ask", side_effect=AssertionError("the converter was asked")))
+        for path, body in bodies.items():
+            with self.subTest(path):
+                error = self.refusal_sent(path, body)
+                self.assertEqual(error["type"], "SheetsRefused")
+                self.assertIn("over 1 MB", error["message"])
+
+        self.assertEqual(self.head(node), before)
+        self.assert_created_nothing("Agent too big")
+
     def test_a_sheet_added_lands_after_the_others_and_takes_writes(self):
         node = self.create([{"name": "Data", "rows": [["a"]]}])
 

@@ -132,6 +132,8 @@ Given = str | int | float | bool | list | dict | None
 # Each write and read takes the site's one converter, so a loop gone wrong stops here
 WRITES_A_MINUTE = 30
 write_limit = rate_limit(limit=WRITES_A_MINUTE, seconds=60, ip_based=False, user_based=True)
+# A 10,000-cell write of short values is well under it; Frappe's own cap is the 25 MB of an upload
+BODY_MAX = 1024 * 1024
 READS_A_MINUTE = 60
 read_limit = rate_limit(limit=READS_A_MINUTE, seconds=60, ip_based=False, user_based=True)
 
@@ -151,6 +153,20 @@ def refusing(handler: Callable) -> Callable:
     return answered
 
 
+def bounded(handler: Callable) -> Callable:
+    """Refuse a write whose body is over `BODY_MAX`, before its cells are checked or the converter is asked."""
+
+    @functools.wraps(handler)
+    def checked(*args: object, **kwargs: object) -> object:
+        # Frappe has read and kept the body to parse it
+        if frappe.request and len(frappe.request.get_data()) > BODY_MAX:
+            raise agent.SheetsRefused(_("A write's JSON is over 1 MB. Send it in smaller writes."))
+
+        return handler(*args, **kwargs)
+
+    return checked
+
+
 def text(value: Given, name: str) -> str:
     """Answer the body field `name` when it is a string, and refuse it by name when it is not."""
     if not isinstance(value, str):
@@ -162,6 +178,7 @@ def text(value: Given, name: str) -> str:
 @frappe.whitelist(methods=["POST"])
 @write_limit
 @refusing
+@bounded
 def spreadsheet_create(parent: Given = None, title: Given = None, sheets: Given = None) -> WrittenSpreadsheet:
     """Create a spreadsheet holding sheets of typed cells, as an agent does."""
     node, rev = agent.create(text(parent, "parent"), text(title, "title"), sheets)
@@ -171,6 +188,7 @@ def spreadsheet_create(parent: Given = None, title: Given = None, sheets: Given 
 @frappe.whitelist(methods=["POST"])
 @write_limit
 @refusing
+@bounded
 def spreadsheet_cells_write(
     node: str, sheet: Given = None, start: Given = None, rows: Given = None
 ) -> WrittenSpreadsheet:
@@ -182,6 +200,7 @@ def spreadsheet_cells_write(
 @frappe.whitelist(methods=["POST"])
 @write_limit
 @refusing
+@bounded
 def spreadsheet_rows_append(node: str, sheet: Given = None, rows: Given = None) -> WrittenSpreadsheet:
     """Type rows into a sheet below its last used row."""
     rev = agent.append_rows(node, sheet, rows)
@@ -191,6 +210,7 @@ def spreadsheet_rows_append(node: str, sheet: Given = None, rows: Given = None) 
 @frappe.whitelist(methods=["POST"])
 @write_limit
 @refusing
+@bounded
 def spreadsheet_sheet_add(node: str, name: Given = None, rows: Given = None) -> WrittenSpreadsheet:
     """Add a sheet after the others, empty or holding rows from A1."""
     rev = agent.add_sheet(node, name, rows)
