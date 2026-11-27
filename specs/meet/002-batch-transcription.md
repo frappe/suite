@@ -57,7 +57,7 @@ Use the terms in [Meet context](../../suite/meet/CONTEXT.md). Architectural deci
 ## Failures and retries
 
 - Automatically retry transient processing failures up to three times, with increasing delays. Retries are bounded rather than an infinite processing loop.
-- When retries are exhausted or processing fails permanently, email the Room Owner. There is no user-facing retry button in v1.
+- When retries are exhausted or processing fails permanently, notify the Room Owner in Suite Notifications. There is no user-facing retry button in v1.
 - Operators may retry retained audio within its seven-day retention window while investigating failures.
 - Preserve successful original-language sections when part of recognition fails. After bounded retries, deliver one clearly marked partial Original Transcript if usable speech remains. If recognition produces no usable result, report failure without a transcript or placeholder file. Translation is not a prerequisite or a failure state for v1.
 - Known missing capture intervals must remain identifiable. Partial recovery must not imply that uncaptured speech was transcribed. If a restart loses per-speaker progress, conservatively mark the interval in which speech may be missing, preserve recovered text within it, and label the uncertainty rather than claiming the entire interval is absent.
@@ -86,7 +86,7 @@ Dashboards must let an operator distinguish growing demand from unhealthy or sta
 1. Two sites submit work while one has a large backlog. Both sites make progress under fair scheduling; neither can fetch the other's audio or publish into the other's Drive.
 2. A worker restarts while a job is pending or processing. Recoverable work resumes without producing duplicate Transcript artifacts.
 3. Video publishes while transcription is still queued. Its source audio remains available, and video delivery is not delayed by transcription.
-4. A transient failure receives at most three automatic retries with increasing delays. Exhaustion produces an owner email and no placeholder file for an unusable transcript.
+4. A transient failure receives at most three automatic retries with increasing delays. Exhaustion produces a Suite Notification for the Room Owner and no placeholder file for an unusable transcript.
 5. Some recognition sections fail while others succeed. One partial Original Transcript identifies omissions and preserves successful text; zero usable speech produces failure without a transcript file.
 6. A recorder is temporarily unreachable. Its jobs remain distinguishable from healthy processing; missing audio is not reported as a completed result.
 7. Source audio is removed after complete or partial transcript delivery, or at the failed-job retention deadline. Operators cannot retry audio after it has expired.

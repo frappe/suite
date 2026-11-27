@@ -40,7 +40,11 @@
           :image="notification.actor.user_image ?? undefined"
         />
         <span v-else class="flex size-8 items-center justify-center rounded-full bg-surface-gray-2">
-          <span class="lucide-download size-4 text-ink-gray-6" aria-hidden="true" />
+          <span
+            class="size-4 text-ink-gray-6"
+            :class="'message' in notification ? 'lucide-bell' : 'lucide-download'"
+            aria-hidden="true"
+          />
         </span>
         <span
           v-if="'activity' in notification"
@@ -130,6 +134,12 @@ const markRead = useMutation(api.drive.notifications.markRead)
 async function openNotification(notification: DriveNotification) {
   if (!notification.read) {
     await markRead.run({ notifications: [notification.name] })
+  }
+  if ('message' in notification) {
+    if (!notification.message.url) return
+    emit('navigate')
+    await router.push(notification.message.url)
+    return
   }
   if ('download' in notification) {
     // A failed or expired download has nothing to open; reading it is enough.

@@ -4430,6 +4430,27 @@ export const operationNotificationsList: Validators<
             title: 'DownloadShape',
             type: 'object',
           },
+          InboxMessage: {
+            properties: {
+              subject: { title: 'Subject', type: 'string' },
+              detail: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Detail' },
+              url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+            },
+            required: ['subject', 'detail', 'url'],
+            title: 'InboxMessage',
+            type: 'object',
+          },
+          MessageNotificationShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              read: { title: 'Read', type: 'integer' },
+              creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+              message: { $ref: '#/$defs/InboxMessage' },
+            },
+            required: ['name', 'read', 'creation', 'message'],
+            title: 'MessageNotificationShape',
+            type: 'object',
+          },
           NotificationShape: {
             properties: {
               name: { title: 'Name', type: 'string' },
@@ -4476,6 +4497,7 @@ export const operationNotificationsList: Validators<
               anyOf: [
                 { $ref: '#/$defs/NotificationShape' },
                 { $ref: '#/$defs/DownloadNotificationShape' },
+                { $ref: '#/$defs/MessageNotificationShape' },
               ],
             },
             title: 'Rows',

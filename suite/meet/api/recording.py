@@ -459,7 +459,7 @@ def _fail_startup(room, recording, failure_code: str):
     recording.state_revision += 1
     recording.failure_code = failure_code
     recording.flags.startup_failure = True
-    if audio_active and recording.video_enabled:
+    if recording.video_enabled:
         recording.notification_pending = 1
         recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
@@ -766,6 +766,8 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
     recording.status = "Failed"
     recording.state_revision += 1
     recording.failure_code = "grant_delivery_failed"
+    recording.notification_pending = 1
+    recording.notification_next_retry_at = now_datetime()
     recording.flags.startup_failure = True
     operation_id = _stop_operation_id(recording)
     recording.save(ignore_permissions=True)
@@ -1526,7 +1528,7 @@ def recorder_failed(
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     if startup_failure:
         recording.flags.startup_failure = True
-    else:
+    if recording.video_enabled:
         recording.notification_pending = 1
         recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
@@ -1625,6 +1627,8 @@ def _fail_stale_recording(name: str):
     recording.status = "Failed"
     recording.state_revision += 1
     recording.failure_code = "recorder_unavailable"
+    recording.notification_pending = 1
+    recording.notification_next_retry_at = now_datetime()
     if recording.started_at:
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     recording.flags.reconciliation_update = True

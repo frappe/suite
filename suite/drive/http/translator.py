@@ -556,7 +556,9 @@ _DECLARED = (
         "notifications",
         "notifications_list",
         query=shapes.NotificationsQuery,
-        output=shapes.Page[shapes.NotificationShape | shapes.DownloadNotificationShape],
+        output=shapes.Page[
+            shapes.NotificationShape | shapes.DownloadNotificationShape | shapes.MessageNotificationShape
+        ],
         kind="query",
         public_name="notifications.list",
         page={"cursor": "cursor", "rows": "rows", "next": "next_cursor"},

@@ -9,6 +9,7 @@ import secrets
 from datetime import timedelta
 
 import frappe
+from frappe import _
 from frappe.utils import cint, get_datetime, now_datetime
 
 from suite import drive
@@ -426,25 +427,15 @@ def maintenance():
 
 
 def _notify(doc):
-    from html import escape
-
-    ready = doc.status in ("Ready", "Partial")
-    subject = "Your Meet transcript is ready" if ready else "Your Meet transcript could not be processed"
-    link = frappe.utils.get_url(drive.node_url(doc.artifact)) if ready else None
-    message = (
-        (
-            f'<p>{"A partial transcript is ready; missing intervals are marked." if doc.status == "Partial" else "Your transcript is ready."}</p><p><a href="{escape(link, quote=True)}">Open transcript in Drive</a></p>'
-        )
-        if ready
-        else "<p>We could not produce a usable transcript for your capture. Contact your administrator for assistance.</p>"
-    )
-    frappe.sendmail(
-        recipients=[doc.room_owner],
-        subject=subject,
-        message=message,
-        reference_doctype="Meet Transcription Job",
-        reference_name=doc.name,
-    )
+    if doc.status == "Ready":
+        subject, detail = _("Your Meet transcript is ready"), None
+    elif doc.status == "Partial":
+        subject = _("Your partial Meet transcript is ready")
+        detail = _("Missing intervals are marked in the transcript.")
+    else:
+        subject = _("Your Meet transcript could not be processed")
+        detail = _("No usable transcript was produced.")
+    drive.notify_user(doc.room_owner, subject, detail=detail, node=doc.artifact or None)
     doc.notification_pending = 0
     doc.notification_sent_at = now_datetime()
     doc.save(ignore_permissions=True)

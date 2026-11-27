@@ -1389,7 +1389,9 @@ def node_delete_favourite(node: Given = None) -> shapes.Count:
 @_route
 def notifications_list(
     limit: Given = None, cursor: Given = None, unread: Given = None
-) -> shapes.Page[shapes.NotificationShape | shapes.DownloadNotificationShape]:
+) -> shapes.Page[
+    shapes.NotificationShape | shapes.DownloadNotificationShape | shapes.MessageNotificationShape
+]:
     """Page the caller's own inbox. A notification points at one activity row or at one of the caller's downloads."""
     result = activity_core.notifications(
         _principals(),

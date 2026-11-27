@@ -38,6 +38,7 @@ class IntegrationTestTranscription(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
+        frappe.db.delete("Drive Notification", {"to_user": self.owner, "inbox_message": ["is", "set"]})
         for name in self.jobs:
             frappe.db.delete("Meet Transcription Job", {"name": name})
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
@@ -408,21 +409,27 @@ class IntegrationTestTranscription(IntegrationTestCase):
                         frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready"
                     )
             # Ready delivery survives recorder failure; cleanup remains retryable.
-            with (
-                patch("frappe.sendmail") as notify,
-                patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")),
-            ):
+            with patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")):
                 transcription.maintenance()
-                owner_messages = [
-                    call for call in notify.call_args_list if call.kwargs.get("recipients") == [self.owner]
-                ]
-                self.assertEqual(len(owner_messages), 1)
             job.reload()
             self.assertTrue(job.notification_sent_at)
             self.assertFalse(job.source_deleted)
-            with patch("frappe.sendmail") as notify:
-                transcription.maintenance()
-                notify.assert_not_called()
+            transcription.maintenance()
+            messages = [
+                row["message"]
+                for row in self._drive_request("GET", "notifications")["rows"]
+                if row.get("message", {}).get("url") == drive.node_url(artifact.name)
+            ]
+            self.assertEqual(
+                messages,
+                [
+                    {
+                        "subject": "Your Meet transcript is ready",
+                        "detail": None,
+                        "url": drive.node_url(artifact.name),
+                    },
+                ],
+            )
             job.reload()
             self.assertTrue(job.source_deleted)
             self.assertTrue(job.notification_sent_at)

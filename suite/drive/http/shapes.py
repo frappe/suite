@@ -80,6 +80,19 @@ class DownloadNotificationShape(TypedDict):
     download: DownloadShape
 
 
+class InboxMessage(TypedDict):
+    subject: str
+    detail: str | None
+    url: str | None
+
+
+class MessageNotificationShape(TypedDict):
+    name: str
+    read: int
+    creation: str | None
+    message: InboxMessage
+
+
 class Page[T](TypedDict):
     rows: list[T]
     next_cursor: str | None
@@ -825,13 +838,28 @@ def _masked_detail(detail: Mapping) -> dict:
     return answer
 
 
-def notification_shapes(rows: list[Mapping]) -> list[NotificationShape | DownloadNotificationShape]:
+def notification_shapes(
+    rows: list[Mapping],
+) -> list[NotificationShape | DownloadNotificationShape | MessageNotificationShape]:
     """Shape a page of notifications with one lookup of the people who acted."""
     known = people({row["activity"].get("actor") for row in rows if row.get("activity")})
     return [
-        download_notification_shape(row) if row.get("download") else notification_shape(row, known)
+        message_notification_shape(row)
+        if row.get("message")
+        else download_notification_shape(row)
+        if row.get("download")
+        else notification_shape(row, known)
         for row in rows
     ]
+
+
+def message_notification_shape(row: Mapping) -> MessageNotificationShape:
+    return {
+        "name": row["name"],
+        "read": int(row.get("read") or 0),
+        "creation": stamp(row.get("creation")),
+        "message": row["message"],
+    }
 
 
 def download_notification_shape(row: Mapping) -> DownloadNotificationShape:

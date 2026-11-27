@@ -44,6 +44,7 @@ from suite.meet.recording.ingest import (
     begin_upload,
     complete_upload,
     delete_recordings_for_purged_artifacts,
+    deliver_recording_notification,
     finalization_status,
     process_upload,
     reconcile_due_finalizations,
@@ -172,7 +173,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.room_owner, self.owner)
         self.assertEqual(recording.drive_home_folder, drive.personal_root_for(self.owner))
         self.assertEqual(stop(self.room.name)["status"], "Processing")
-        content = b"cohost-recording"
+        content = f"cohost-recording-{recording.name}".encode()
         digest = hashlib.sha256(content).hexdigest()
         begin_upload(
             recording.name,
@@ -189,6 +190,14 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
                 result = process_upload(recording.name)
             self.assertEqual(frappe.db.get_value("Drive Node", result["artifact"], "owner"), self.owner)
+            deliver_recording_notification(recording.name)
+            rows = frappe.get_all(
+                "Drive Notification",
+                filters={"inbox_message": ["like", f"%{result['artifact']}%"]},
+                fields=["name", "to_user"],
+            )
+            self.assertEqual([row.to_user for row in rows], [self.cohost])
+            self.addCleanup(frappe.db.delete, "Drive Notification", {"name": rows[0].name})
         finally:
             path.unlink(missing_ok=True)
 
@@ -676,7 +685,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
     def _publish_recording(self) -> tuple[str, str]:
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
-        content = b"real-recording-artifact"
+        content = f"real-recording-artifact-{started['name']}".encode()
         digest = hashlib.sha256(content).hexdigest()
         begin_upload(
             started["name"],
