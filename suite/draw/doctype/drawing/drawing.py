@@ -39,7 +39,7 @@ def _finite_number(value: object) -> bool:
 
 
 def _valid_optional_fields(shape: dict, is_line: bool) -> bool:
-    string_fields = ("stroke", "fill", "link", "label", "labelFill")
+    string_fields: tuple[str, ...] = ("stroke", "fill", "link", "label", "labelFill")
     if is_line:
         string_fields = (*string_fields, "arrowHeadFill")
     if any(
