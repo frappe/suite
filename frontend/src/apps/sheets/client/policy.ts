@@ -5,6 +5,7 @@ const effects = {
   spreadsheet_create: { invalidates: ['drive.node_children', 'drive.view_list'] },
   spreadsheet_cells_write: { invalidates: ['spreadsheet_read', 'drive.view_list'] },
   spreadsheet_rows_append: { invalidates: ['spreadsheet_read', 'drive.view_list'] },
+  spreadsheet_sheet_add: { invalidates: ['spreadsheet_read', 'drive.view_list'] },
 } as const
 
 export const registration: OwnerRegistration = {

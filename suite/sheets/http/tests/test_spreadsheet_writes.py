@@ -217,6 +217,35 @@ class TestSpreadsheetWrites(IntegrationTestCase):
 
         self.assertEqual(self.cells(node)["Data"], {"A1": "Item", "B2": "x", "A3": "one", "A4": "one"})
 
+    def test_a_sheet_added_lands_after_the_others_and_takes_writes(self):
+        node = self.create([{"name": "Data", "rows": [["a"]]}])
+
+        sheets_routes.spreadsheet_sheet_add(node, "Notes")
+        sheets_routes.spreadsheet_sheet_add(node, "Totals", [["Sum", "=SUM(Data!A1:A1)"]])
+        sheets_routes.spreadsheet_rows_append(node, "notes", [["later"]])
+
+        self.assertEqual(
+            self.cells(node),
+            {
+                "Data": {"A1": "a"},
+                "Notes": {"A1": "later"},
+                "Totals": {"A1": "Sum", "B1": "=SUM(Data!A1:A1)"},
+            },
+        )
+
+    def test_a_sheet_whose_name_is_taken_or_bad_is_not_added(self):
+        node = self.create([{"name": "Data"}])
+        before = self.head(node)
+
+        with self.assertRaisesRegex(SheetsRefused, "already has a sheet named DATA"):
+            sheets_routes.spreadsheet_sheet_add(node, "DATA")
+
+        with self.assertRaisesRegex(SheetsRefused, "1 to 31 characters"):
+            sheets_routes.spreadsheet_sheet_add(node, "a" * 32)
+
+        self.assertEqual(self.head(node), before)
+        self.assertEqual(list(self.cells(node)), ["Data"])
+
     def test_a_write_to_a_sheet_not_there_writes_nothing(self):
         node = self.create([{"name": "Data"}])
         before = self.head(node)

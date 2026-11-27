@@ -95,6 +95,16 @@ def append_rows(node: str, sheet: object, rows: object) -> int:
     return push(node, {"kind": "rows", "sheet": sheet, "rows": rows})
 
 
+def add_sheet(node: str, name: object, rows: object) -> int:
+    """Add a sheet named `name` after the others, holding `rows` from A1, and answer the rev that makes."""
+    writable(node)
+    sheet = {"name": name}
+    if rows is not None:
+        sheet["rows"] = rows
+
+    return push(node, {"kind": "sheets", "sheets": [sheet]})
+
+
 def read(node: str) -> dict:
     """Answer each sheet's cells as typed, from A1 to its last used row, in the form a write takes."""
     if drive.check(node, drive.READ) != EDITOR.doctype:

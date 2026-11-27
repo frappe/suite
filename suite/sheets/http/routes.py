@@ -185,6 +185,15 @@ def spreadsheet_rows_append(node: str, sheet: Given = None, rows: Given = None) 
     return {**drive.get_node(node), "rev": rev}
 
 
+@frappe.whitelist(methods=["POST"])
+@write_limit
+@refusing
+def spreadsheet_sheet_add(node: str, name: Given = None, rows: Given = None) -> WrittenSpreadsheet:
+    """Add a sheet after the others, empty or holding rows from A1."""
+    rev = agent.add_sheet(node, name, rows)
+    return {**drive.get_node(node), "rev": rev}
+
+
 @frappe.whitelist(methods=["GET"])
 @read_limit
 @refusing
@@ -240,6 +249,16 @@ ROUTES = (
         errors=SHEETS_ERRORS,
         kind="mutation",
         public_name="spreadsheets.appendRows",
+    ),
+    Route(
+        "POST",
+        "spreadsheets/{node}/sheets",
+        "spreadsheet_sheet_add",
+        body=SheetCells,
+        output=WrittenSpreadsheet,
+        errors=SHEETS_ERRORS,
+        kind="mutation",
+        public_name="spreadsheets.addSheet",
     ),
     Route(
         "GET",

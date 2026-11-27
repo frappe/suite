@@ -315,6 +315,108 @@ const operationSpreadsheetRowsAppend: MutationRef<
   loadValidators: async () => (await import('./validators')).operationSpreadsheetRowsAppend,
 }
 
+export type SpreadsheetSheetAddOutputAccessShape = {
+  role?: number
+  via_link?: string | null
+  source_node?: string | null
+  source_principal?: string | null
+  can_manage?: boolean
+}
+
+export type SpreadsheetSheetAddOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type SpreadsheetSheetAddOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
+
+export type SpreadsheetSheetAddOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
+export type SpreadsheetSheetAddOutputPreviewShape = { url: string; expires: number }
+
+export type SpreadsheetSheetAddInput = {
+  name: string
+  rows?: Array<Array<string | number | number | boolean | null>>
+  node: string
+}
+
+export type SpreadsheetSheetAddOutput = {
+  name: string
+  title: string
+  kind: string
+  parent_node: string | null
+  root: string
+  state: string
+  trash_root: string | null
+  size: number
+  mime: string | null
+  url: string | null
+  content_doctype: string | null
+  content_docname: string | null
+  is_template: number
+  owner: SpreadsheetSheetAddOutputPerson
+  creation: string | null
+  modified: string | null
+  content_modified: string | null
+  access?: SpreadsheetSheetAddOutputAccessShape
+  audience?: SpreadsheetSheetAddOutputAudienceShape
+  breadcrumbs?: Array<SpreadsheetSheetAddOutputBreadcrumbShape>
+  contents_size?: number
+  preview?: SpreadsheetSheetAddOutputPreviewShape | null
+  opened_at?: string | null
+  favourite?: boolean
+  rev: number
+}
+
+export type SpreadsheetSheetAddError =
+  | 'DriveError'
+  | 'RateLimitExceededError'
+  | 'DriveNotFound'
+  | 'DriveForbidden'
+  | 'DriveLocked'
+  | 'DriveLinkExpired'
+  | 'SheetsRefused'
+  | 'WriteRefused'
+  | 'WriteBusy'
+
+const operationSpreadsheetSheetAdd: MutationRef<
+  SpreadsheetSheetAddInput,
+  SpreadsheetSheetAddOutput,
+  SpreadsheetSheetAddError
+> = {
+  id: 'spreadsheet_sheet_add',
+  owner: 'sheets',
+  kind: 'mutation',
+  publicName: 'spreadsheets.addSheet',
+  method: 'POST',
+  path: 'spreadsheets/{node}/sheets',
+  prefix: '/api/suite/sheets/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: [
+    'DriveError',
+    'RateLimitExceededError',
+    'DriveNotFound',
+    'DriveForbidden',
+    'DriveLocked',
+    'DriveLinkExpired',
+    'SheetsRefused',
+    'WriteRefused',
+    'WriteBusy',
+  ],
+  loadValidators: async () => (await import('./validators')).operationSpreadsheetSheetAdd,
+}
+
 export type SpreadsheetReadOutputTypedSheet = { name: string; rows: Array<Array<string>> }
 
 export type SpreadsheetReadInput = { node: string }
@@ -538,6 +640,7 @@ export const api = {
     create: operationSpreadsheetCreate,
     writeCells: operationSpreadsheetCellsWrite,
     appendRows: operationSpreadsheetRowsAppend,
+    addSheet: operationSpreadsheetSheetAdd,
     read: operationSpreadsheetRead,
   },
   documents: {
