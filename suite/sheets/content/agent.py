@@ -26,10 +26,12 @@ TITLE_MAX = 140
 # The layer's refusals that pass by themselves: another push holds the spreadsheet, a compaction makes
 # room, or a restore is landing or landed under the write
 PASSING = ("busy", "compacting", "restoring", "restored")
-# Rows land below the last used row as the write reads it, so two at once would land on the same row:
-# one waits this long for the other, then answers busy
-APPEND_WAIT_S = 10
-APPEND_RETRY_MS = 1000
+# Adding rows and adding a sheet pick their place from a read, so two at once would land rows on the same
+# row, or pass the sheet cap or both take one name. They take turns on one lock for the site, as every
+# write waits on its one converter anyway: one waits this long for the turn, then answers busy
+TURN_LOCK = "sheets_agent_turn"
+TURN_WAIT_S = 10
+TURN_RETRY_MS = 1000
 # What agent.ts refuses, by its reason; `sheet` and `cell` name where
 REASONS = {
     "no_sheets": "sheets must list at least one sheet",
@@ -98,14 +100,7 @@ def write_cells(node: str, sheet: object, start: object, rows: object) -> int:
 def append_rows(node: str, sheet: object, rows: object) -> int:
     """Type `rows` into the sheet named `sheet` below its last used row, and answer the rev that makes."""
     writable(node)
-    try:
-        # Around the whole write: its read starts a new snapshot, so it sees the rows the last append pushed
-        with filelock(f"sheets_append_{node}", timeout=APPEND_WAIT_S):
-            return push(node, {"kind": "rows", "sheet": sheet, "rows": rows})
-    except LockTimeoutError:
-        raise WriteBusy(
-            _("Other rows are landing in this spreadsheet. Try again."), retry_ms=APPEND_RETRY_MS
-        ) from None
+    return in_turn(node, {"kind": "rows", "sheet": sheet, "rows": rows})
 
 
 def add_sheet(node: str, name: object, rows: object) -> int:
@@ -115,7 +110,19 @@ def add_sheet(node: str, name: object, rows: object) -> int:
     if rows is not None:
         sheet["rows"] = rows
 
-    return push(node, {"kind": "sheets", "sheets": [sheet]})
+    return in_turn(node, {"kind": "sheets", "sheets": [sheet]})
+
+
+def in_turn(node: str, write: dict) -> int:
+    """Push `write` while no other write that picks its place from a read runs, and answer its rev."""
+    try:
+        # Around the whole write: its read starts a new snapshot, so it sees what the last one pushed
+        with filelock(TURN_LOCK, timeout=TURN_WAIT_S):
+            return push(node, write)
+    except LockTimeoutError:
+        raise WriteBusy(
+            _("Another write that adds rows or a sheet is landing. Try again."), retry_ms=TURN_RETRY_MS
+        ) from None
 
 
 def read(node: str) -> dict:

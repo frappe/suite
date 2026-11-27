@@ -239,7 +239,7 @@ class TestSpreadsheetWrites(IntegrationTestCase):
                 # The first has read the spreadsheet and not pushed yet
                 with (
                     patch.object(agent, "writing", writing),
-                    patch.object(agent, "APPEND_WAIT_S", 0.1),
+                    patch.object(agent, "TURN_WAIT_S", 0.1),
                 ):
                     try:
                         agent.append_rows(node, "Data", [["c"]])
@@ -302,6 +302,25 @@ class TestSpreadsheetWrites(IntegrationTestCase):
                 "Totals": {"A1": "Sum", "B1": "=SUM(Data!A1:A1)"},
             },
         )
+
+    def test_a_sheet_added_while_another_write_takes_its_turn_is_busy_and_lands_later(self):
+        node = self.create([{"name": "Data"}])
+        before = self.head(node)
+
+        with filelock(agent.TURN_LOCK), patch.object(agent, "TURN_WAIT_S", 0.1):
+            response = self.sent("POST", f"spreadsheets/{node}/sheets", {"name": "Notes"})
+
+        self.assertEqual(response.status_code, 429, response.get_data(as_text=True))
+        (error,) = response.json["errors"]
+        self.assertEqual(error["type"], "WriteBusy")
+        self.assertGreater(error["retry_ms"], 0)
+        self.assertEqual(self.head(node), before)
+        self.assertEqual(list(self.cells(node)), ["Data"])
+
+        response = self.sent("POST", f"spreadsheets/{node}/sheets", {"name": "Notes"})
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(list(self.cells(node)), ["Data", "Notes"])
 
     def test_a_sheet_whose_name_is_taken_or_bad_is_not_added(self):
         node = self.create([{"name": "Data"}])
