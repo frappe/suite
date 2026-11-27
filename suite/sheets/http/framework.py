@@ -1,13 +1,13 @@
-"""Contracts for existing Sheets endpoints."""
+"""Sheets' routes, and contracts for existing Sheets endpoints."""
 
 from suite.composition.http import HttpOwner
-from suite.sheets.http.routes import CONTRACT_ROUTES
+from suite.sheets.http.routes import CONTRACT_ROUTES, ROUTES
 
 HTTP = HttpOwner(
     owner="sheets",
     prefix="/api/suite/sheets/",
     target="suite.sheets.http.routes",
-    routes=(),
+    routes=ROUTES,
     contract_routes=CONTRACT_ROUTES,
     strip_owner=False,
 )

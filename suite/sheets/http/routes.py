@@ -1,9 +1,17 @@
-"""Wire contracts for Sheets bodies and editor assistance."""
+"""Wire contracts for Sheets bodies and editor assistance, and the routes an agent writes cells with."""
 
+import functools
+from collections.abc import Callable
 from typing import Literal, NotRequired, TypedDict
 
-from suite.composition.http import Route
+import frappe
+from frappe import _
+from frappe.rate_limiter import rate_limit
+
+from suite import drive
+from suite.composition.http import Route, refuse
 from suite.sheets.api import ai_assist, get_ai_settings, get_conversion, get_sheet, save_ai_settings
+from suite.sheets.content import agent
 from suite.sheets.link_preview import get_link_preview
 
 
@@ -71,6 +79,178 @@ class LinkPreview(TypedDict):
 class LinkFailure(TypedDict):
     error: Literal[True]
 
+
+# A cell's value as an agent sends it: null leaves the cell, and "" clears it
+Value = str | int | float | bool | None
+
+
+class SheetCells(TypedDict):
+    name: str
+    rows: NotRequired[list[list[Value]]]
+
+
+class CreateSpreadsheet(TypedDict):
+    parent: str
+    title: str
+    sheets: list[SheetCells]
+
+
+class WriteCells(TypedDict):
+    sheet: str
+    start: str
+    rows: list[list[Value]]
+
+
+class AppendRows(TypedDict):
+    sheet: str
+    rows: list[list[Value]]
+
+
+class WrittenSpreadsheet(drive.NodeShape):
+    """The spreadsheet's node as Drive answers it, and the revision the write made."""
+
+    rev: int
+
+
+class TypedSheet(TypedDict):
+    name: str
+    rows: list[list[str]]
+
+
+class SpreadsheetCells(TypedDict):
+    sheets: list[TypedSheet]
+
+
+WRITE_REFUSALS = (agent.SheetsRefused, agent.WriteRefused, agent.WriteBusy)
+
+# As in Drive's handlers, a body field is annotated to take anything and checked in the handler: a narrow
+# annotation refuses a wrong type before the handler runs, with no message
+Given = str | int | float | bool | list | dict | None
+# Each write and read takes the site's one converter, so a loop gone wrong stops here
+WRITES_A_MINUTE = 30
+write_limit = rate_limit(limit=WRITES_A_MINUTE, seconds=60, ip_based=False, user_based=True)
+READS_A_MINUTE = 60
+read_limit = rate_limit(limit=READS_A_MINUTE, seconds=60, ip_based=False, user_based=True)
+
+
+def refusing(handler: Callable) -> Callable:
+    """Throw a workflow's refusal again, as the answer carries the message of a thrown error only."""
+
+    @functools.wraps(handler)
+    def answered(*args: object, **kwargs: object) -> object:
+        try:
+            return handler(*args, **kwargs)
+        except WRITE_REFUSALS as refusal:
+            refuse(type(refusal), str(refusal), retry_ms=getattr(refusal, "retry_ms", None))
+        except frappe.ValidationError as refusal:
+            drive.throw_again(refusal)
+
+    return answered
+
+
+def text(value: Given, name: str) -> str:
+    """Answer the body field `name` when it is a string, and refuse it by name when it is not."""
+    if not isinstance(value, str):
+        raise frappe.ValidationError(_("{0} must be a string").format(name))
+
+    return value
+
+
+@frappe.whitelist(methods=["POST"])
+@write_limit
+@refusing
+def spreadsheet_create(parent: Given = None, title: Given = None, sheets: Given = None) -> WrittenSpreadsheet:
+    """Create a spreadsheet holding sheets of typed cells, as an agent does."""
+    node, rev = agent.create(text(parent, "parent"), text(title, "title"), sheets)
+    return {**drive.get_node(node), "rev": rev}
+
+
+@frappe.whitelist(methods=["POST"])
+@write_limit
+@refusing
+def spreadsheet_cells_write(
+    node: str, sheet: Given = None, start: Given = None, rows: Given = None
+) -> WrittenSpreadsheet:
+    """Type a block of cells into a sheet from one cell, leaving the cells around it."""
+    rev = agent.write_cells(node, sheet, start, rows)
+    return {**drive.get_node(node), "rev": rev}
+
+
+@frappe.whitelist(methods=["POST"])
+@write_limit
+@refusing
+def spreadsheet_rows_append(node: str, sheet: Given = None, rows: Given = None) -> WrittenSpreadsheet:
+    """Type rows into a sheet below its last used row."""
+    rev = agent.append_rows(node, sheet, rows)
+    return {**drive.get_node(node), "rev": rev}
+
+
+@frappe.whitelist(methods=["GET"])
+@read_limit
+@refusing
+def spreadsheet_read(node: str) -> SpreadsheetCells:
+    """Answer a spreadsheet's sheets as the cells typed in them, in the form a write takes."""
+    return agent.read(node)
+
+
+@frappe.whitelist(allow_guest=True, methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
+def unknown() -> None:
+    """Answer an address no route names as not found."""
+    raise frappe.DoesNotExistError(_("That Sheets address does not exist"))
+
+
+SHEETS_ERRORS = (
+    # A field that is missing or wrong, which `refusing` answers as Drive does
+    drive.DriveError,
+    frappe.RateLimitExceededError,
+    drive.DriveNotFound,
+    drive.DriveForbidden,
+    drive.DriveLocked,
+    drive.DriveLinkExpired,
+    *WRITE_REFUSALS,
+)
+
+ROUTES = (
+    Route(
+        "POST",
+        "spreadsheets",
+        "spreadsheet_create",
+        body=CreateSpreadsheet,
+        output=WrittenSpreadsheet,
+        errors=(*SHEETS_ERRORS, drive.DriveConflict),
+        kind="mutation",
+        public_name="spreadsheets.create",
+    ),
+    Route(
+        "POST",
+        "spreadsheets/{node}/cells",
+        "spreadsheet_cells_write",
+        body=WriteCells,
+        output=WrittenSpreadsheet,
+        errors=SHEETS_ERRORS,
+        kind="mutation",
+        public_name="spreadsheets.writeCells",
+    ),
+    Route(
+        "POST",
+        "spreadsheets/{node}/rows",
+        "spreadsheet_rows_append",
+        body=AppendRows,
+        output=WrittenSpreadsheet,
+        errors=SHEETS_ERRORS,
+        kind="mutation",
+        public_name="spreadsheets.appendRows",
+    ),
+    Route(
+        "GET",
+        "spreadsheets/{node}",
+        "spreadsheet_read",
+        output=SpreadsheetCells,
+        errors=SHEETS_ERRORS,
+        kind="query",
+        public_name="spreadsheets.read",
+    ),
+)
 
 CONTRACT_ROUTES = (
     Route(
