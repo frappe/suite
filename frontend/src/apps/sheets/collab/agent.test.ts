@@ -439,6 +439,79 @@ describe('agent values read', () => {
   )
 
   it(
+    'show each spilled cell at its place, and a spill with a typed cell in its way as #SPILL!',
+    async () => {
+      const doc = written(null, {
+        kind: 'sheets',
+        sheets: [
+          { name: 'Down', rows: [['=SEQUENCE(3)']] },
+          { name: 'Across', rows: [[], [null, '=SEQUENCE(1,3)']] },
+          { name: 'Blocked', rows: [['=SEQUENCE(3)'], ['x']] },
+        ],
+      })
+
+      expect(await values(doc)).toEqual({
+        sheets: [
+          { name: 'Down', rows: [['1'], ['2'], ['3']] },
+          { name: 'Across', rows: [[], ['', '1', '2', '3']] },
+          { name: 'Blocked', rows: [['#SPILL!'], ['x']] },
+        ],
+      })
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'show a toolbar number format on a spilled cell',
+    async () => {
+      const tab = await openTab('A')
+      await type(tab, 'Sheet1', 'A1', '=SEQUENCE(3)*1200')
+      tab.stores.formats.applyToRange(['A3'], { numberFormat: 'currency:USD:2' }, 'Sheet1')
+      await tab.glue.commit()
+
+      expect(await values(tab.doc)).toEqual({
+        sheets: [{ name: 'Sheet1', rows: [['1200'], ['2400'], ['$3,600.00']] }],
+      })
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'read a spill of 50,000 cells and refuse one more',
+    async () => {
+      const at = written(null, {
+        kind: 'sheets',
+        sheets: [{ name: 'S', rows: [['=SEQUENCE(50000)']] }],
+      })
+      const full = await values(at)
+      expect('sheets' in full && full.sheets[0]!.rows[49999]).toEqual(['50000'])
+
+      const over = written(null, {
+        kind: 'sheets',
+        sheets: [{ name: 'S', rows: [['=SEQUENCE(50001)']] }],
+      })
+      expect(await values(over)).toEqual({ refused: { reason: 'too_many_values' } })
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'refuse a small spill in a far column whose padding is over the read cap',
+    async () => {
+      const doc = written(written(null, { kind: 'sheets', sheets: [{ name: 'Far' }] }), {
+        kind: 'cells',
+        sheet: 'Far',
+        start: 'XFD1',
+        rows: [['=SEQUENCE(100)']],
+      })
+      expect(read(doc)[0]!.rows[0]![16383]).toBe('=SEQUENCE(100)')
+
+      expect(await values(doc)).toEqual({ refused: { reason: 'too_large' } })
+    },
+    TIMEOUT,
+  )
+
+  it(
     'refuse over 50,000 typed cells',
     async () => {
       const doc = new Y.Doc()
@@ -455,7 +528,7 @@ describe('agent values read', () => {
       expect('sheets' in full && full.sheets[0]!.rows[499]![99]).toBe('1')
 
       roots(doc).inputs.set(cellKey(id, rows.ensure(500), cols[0]!), '1')
-      expect(await values(doc)).toEqual({ refused: { reason: 'too_many_inputs' } })
+      expect(await values(doc)).toEqual({ refused: { reason: 'too_many_values' } })
     },
     TIMEOUT,
   )

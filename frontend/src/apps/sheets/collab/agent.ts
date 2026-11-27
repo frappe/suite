@@ -11,6 +11,7 @@
 
 import * as Y from 'yjs'
 
+import type { WorkbookClient } from '../core/client'
 import { createFormatsEngine } from '../engine/formats'
 import { parseSparkline } from '../engine/sparkline'
 import { cellId, colLabel, parseCellId } from '../utils/cells'
@@ -28,8 +29,10 @@ const INPUT_MAX = 32_767
 const SHEETS_MAX = 200
 // A read's grid entries, its padding included, so a far cell can't make a huge answer
 const READ_MAX = 1_000_000
-// A values read's typed cells: IronCalc builds the whole workbook to work each one out
+// A values read's cells with a value: IronCalc builds the whole workbook to work each one out
 const VALUES_MAX = 50_000
+// IronCalc's reads go in chunks, as load.ts reads a sheet
+const READ_CHUNK = 10_000
 
 type Value = string | number | boolean | null
 
@@ -58,7 +61,7 @@ type Reason =
   | 'merged'
   | 'protected'
   | 'too_large'
-  | 'too_many_inputs'
+  | 'too_many_values'
 
 interface Refused {
   reason: Reason
@@ -97,45 +100,59 @@ export function agentAnswer(header: AgentHeader, parts: Uint8Array[]) {
 export async function valuesAnswer(parts: Uint8Array[]) {
   const doc = docOf(parts)
   try {
-    const sheets = readSheets(doc)
+    const typed = readSheets(doc)
+    // Every typed cell holds a value, so this refuses before IronCalc starts
     let count = 0
-    const typed = sheets.map((sheet) =>
-      sheet.rows.flatMap((row, r) =>
-        row.flatMap((input, c) => {
-          if (!input) return []
-          count++
-          // A tab draws a sparkline's chart in its cell and shows no text
-          if (parseSparkline(input)) {
-            row[c] = ''
-            return []
-          }
-          return [{ row: r + 1, col: c + 1 }]
-        }),
-      ),
-    )
-    if (count > VALUES_MAX) refuse('too_many_inputs')
+    for (const sheet of typed)
+      for (const row of sheet.rows) for (const input of row) if (input) count++
+    if (count > VALUES_MAX) refuse('too_many_values')
     const client = await inProcessClient(null)
-    const formats = createFormatsEngine()
-    await buildWorkbookFromDoc(doc, client, { formats })
-    for (const [i, sheet] of sheets.entries()) {
-      const shown = await client.readCells({
-        sheet: sheet.name,
-        cells: typed[i]!,
-        what: ['display'],
-      })
-      for (const cell of shown.cells) {
-        const display = cell.display ?? ''
-        // As the grid shows it: a toolbar format is in the formats store only, never in IronCalc
-        const format = formats.get(cellId(cell.row - 1, cell.col - 1), sheet.name).numberFormat
-        sheet.rows[cell.row - 1]![cell.col - 1] = format ? applyNumberFmt(display, format) : display
-      }
+    try {
+      return { sheets: await shownSheets(doc, client, typed) }
+    } finally {
+      client.terminate()
     }
-    client.terminate()
-    return { sheets }
   } catch (error) {
     if (error instanceof Refusal) return { refused: error.refused }
     throw error
   }
+}
+
+async function shownSheets(
+  doc: Y.Doc,
+  client: WorkbookClient,
+  typed: ReturnType<typeof readSheets>,
+) {
+  const formats = createFormatsEngine()
+  await buildWorkbookFromDoc(doc, client, { formats })
+  // A spill fills cells nothing was typed in: the workbook lists every cell with a value
+  const used: number[][] = []
+  for (const sheet of typed) used.push((await client.usedCells({ sheet: sheet.name })).cells)
+  if (used.reduce((n, flat) => n + flat.length / 2, 0) > VALUES_MAX) refuse('too_many_values')
+  const place = placer()
+  const sheets = []
+  for (const [i, sheet] of typed.entries()) {
+    const flat = used[i]!
+    const rows: string[][] = []
+    for (let at = 0; at < flat.length; at += READ_CHUNK * 2) {
+      const cells = []
+      for (let j = at; j < Math.min(flat.length, at + READ_CHUNK * 2); j += 2)
+        cells.push({ row: flat[j]!, col: flat[j + 1]! })
+      const shown = await client.readCells({ sheet: sheet.name, cells, what: ['display'] })
+      for (const cell of shown.cells) {
+        const row = cell.row - 1
+        const col = cell.col - 1
+        const display = cell.display ?? ''
+        // As the grid shows it: a toolbar format is in the formats store only, never in IronCalc
+        const format = formats.get(cellId(row, col), sheet.name).numberFormat
+        // A tab draws a sparkline's chart in its cell and shows no text
+        if (parseSparkline(sheet.rows[row]?.[col])) place(rows, row, col, '')
+        else place(rows, row, col, format ? applyNumberFmt(display, format) : display)
+      }
+    }
+    sheets.push({ name: sheet.name, rows })
+  }
+  return sheets
 }
 
 function docOf(parts: Uint8Array[], client?: number): Y.Doc {
@@ -153,7 +170,7 @@ function readSheets(doc: Y.Doc): { name: string; rows: string[][] }[] {
   const place = new Map(
     sheets.map((s) => [s.id, { rows: axis(doc, s.id, 'rows'), cols: axis(doc, s.id, 'cols') }]),
   )
-  let entries = 0
+  const put = placer()
   roots(doc).inputs.forEach((input, key) => {
     const cell = parseCellKey(key)
     const at = cell && place.get(cell.sheetId)
@@ -161,7 +178,15 @@ function readSheets(doc: Y.Doc): { name: string; rows: string[][] }[] {
     const row = at.rows.posOf(cell.rowId)
     const col = at.cols.posOf(cell.colId)
     if (row < 0 || col < 0) return
-    const grid = grids.get(cell.sheetId)!
+    put(grids.get(cell.sheetId)!, row, col, String(input))
+  })
+  return sheets.map((s) => ({ name: s.name, rows: grids.get(s.id)! }))
+}
+
+/** Puts a value in a grid, padding to reach it, under one count of entries for the whole answer. */
+function placer() {
+  let entries = 0
+  return (grid: string[][], row: number, col: number, value: string) => {
     // Counted before the padding is built, so a far cell refuses without it
     entries += Math.max(0, row + 1 - grid.length)
     entries += Math.max(0, col + 1 - (grid[row]?.length ?? 0))
@@ -169,9 +194,8 @@ function readSheets(doc: Y.Doc): { name: string; rows: string[][] }[] {
     while (grid.length <= row) grid.push([])
     const cells = grid[row]!
     while (cells.length < col) cells.push('')
-    cells[col] = String(input)
-  })
-  return sheets.map((s) => ({ name: s.name, rows: grids.get(s.id)! }))
+    cells[col] = value
+  }
 }
 
 /** The write's update in base64, or null when it changes nothing. */

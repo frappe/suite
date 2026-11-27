@@ -456,7 +456,7 @@ class TestSpreadsheetWrites(IntegrationTestCase):
 
         sheets_routes.spreadsheet_rows_append(node, "Data", [[1]])
 
-        refused = "at most 50,000 typed cells: read the spreadsheet as typed"
+        refused = "at most 50,000 cells with a value: read the spreadsheet as typed"
         with self.assertRaisesRegex(SheetsRefused, refused):
             sheets_routes.spreadsheet_values(node)
 

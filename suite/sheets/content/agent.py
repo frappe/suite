@@ -48,7 +48,7 @@ REASONS = {
     "merged": "{cell} on {sheet} is under a merged cell: send null for it",
     "protected": "{cell} on {sheet} is protected",
     "too_large": "The spreadsheet is too large to read in one call",
-    "too_many_inputs": "A values read shows at most 50,000 typed cells: read the spreadsheet as typed",
+    "too_many_values": "A values read shows at most 50,000 cells with a value: read the spreadsheet as typed",
 }
 
 
