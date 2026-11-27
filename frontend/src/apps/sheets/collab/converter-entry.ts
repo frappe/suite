@@ -1,3 +1,4 @@
+import { setFlagsFromString } from 'node:v8'
 import { initSync } from '@ironcalc/wasm'
 
 import { agentAnswer, valuesAnswer, type AgentHeader } from './agent'
@@ -26,6 +27,9 @@ interface ConverterInput extends AgentHeader {
   maxState?: number
 }
 
+// A values read's IronCalc memory, in wasm pages of 64 KiB: 1 GiB
+const VALUES_WASM_PAGES = 16_384
+
 const stdinChunks: Buffer[] = []
 
 async function convertInput() {
@@ -39,6 +43,8 @@ async function convertInput() {
   const input = JSON.parse(headerFrame!.toString()) as ConverterInput
 
   let result: Awaited<ReturnType<typeof convertSheetsData>> | undefined
+  // Past it a values read exits non-zero and agent.py refuses it as too heavy; legacy conversion keeps its room
+  if (input.values) setFlagsFromString(`--wasm-max-mem-pages=${VALUES_WASM_PAGES}`)
   if (input.legacy || input.values) initSync({ module: Buffer.from(__IRONCALC_WASM__, 'base64') })
   if (input.legacy) {
     result = await convertSheetsData(input.legacy.sheets_data, input.maxState ?? 0)

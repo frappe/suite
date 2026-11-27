@@ -1,9 +1,11 @@
 import hashlib
 import json
 import struct
+import tempfile
 import uuid
 from collections.abc import Callable
 from datetime import timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import frappe
@@ -28,6 +30,7 @@ from suite.tests.utils import ensure_user, session_for
 OWNER = "sheets-agent-owner@example.com"
 READER = "sheets-agent-reader@example.com"
 OUTSIDER = "sheets-agent-outsider@example.com"
+TOO_HEAVY = "The formulas take too long or too much memory to work out here: read the spreadsheet as typed"
 
 
 def delete_log(node: str) -> None:
@@ -461,6 +464,59 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             sheets_routes.spreadsheet_values(node)
 
         self.assertEqual(len(sheets_routes.spreadsheet_read(node)["sheets"][0]["rows"]), 501)
+
+    def test_a_values_read_past_its_time_is_refused_at_that_rev_until_a_write(self):
+        node = self.create([{"name": "Data", "rows": [[2, "=A1*3"]]}])
+        with patch.object(agent, "VALUES_TIMEOUT_S", 0.001), self.assertRaisesRegex(SheetsRefused, TOO_HEAVY):
+            sheets_routes.spreadsheet_values(node)
+
+        with patch.object(checker, "ask", wraps=checker.ask) as asked:
+            with self.assertRaisesRegex(SheetsRefused, TOO_HEAVY):
+                sheets_routes.spreadsheet_values(node)
+
+            self.assertEqual(asked.call_count, 0)
+            self.assertEqual(sheets_routes.spreadsheet_read(node)["sheets"][0]["rows"], [["2", "=A1*3"]])
+
+        sheets_routes.spreadsheet_cells_write(node, "Data", "A1", [[4]])
+        shown = sheets_routes.spreadsheet_values(node)
+        self.assertEqual(shown["sheets"], [{"name": "Data", "rows": [["4", "12"]]}])
+
+    def test_a_values_read_whose_child_exits_is_refused_and_a_busy_or_unreadable_one_is_not(self):
+        folder = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        # As the child ends past its memory cap, and as one that answers what no read takes
+        exits = folder / "exits.cjs"
+        unreadable = folder / "unreadable.cjs"
+        exits.write_text("process.exit(1)")
+        unreadable.write_text("process.stdout.write('[]')")
+        node = self.create([{"name": "Data", "rows": [[2, "=A1*3"]]}])
+
+        with (
+            filelock(checker.LOCK),
+            patch.object(checker, "REQUEST_WAIT_S", 0.2),
+            self.assertRaises(WriteBusy),
+        ):
+            sheets_routes.spreadsheet_values(node)
+
+        with patch.object(agent, "CONVERTER_BUILD", unreadable), self.assertRaises(WriteBusy):
+            sheets_routes.spreadsheet_values(node)
+
+        shown = sheets_routes.spreadsheet_values(node)
+        self.assertEqual(shown["sheets"], [{"name": "Data", "rows": [["2", "6"]]}])
+
+        with patch.object(agent, "CONVERTER_BUILD", exits), self.assertRaisesRegex(SheetsRefused, TOO_HEAVY):
+            sheets_routes.spreadsheet_values(node)
+
+        with self.assertRaisesRegex(SheetsRefused, TOO_HEAVY):
+            sheets_routes.spreadsheet_values(node)
+
+    def test_an_outsider_finds_no_spreadsheet_a_values_read_was_refused_for(self):
+        node = self.create([{"name": "Data", "rows": [[2, "=A1*3"]]}])
+        with patch.object(agent, "VALUES_TIMEOUT_S", 0.001), self.assertRaises(SheetsRefused):
+            sheets_routes.spreadsheet_values(node)
+
+        frappe.set_user(OUTSIDER)
+        with self.assertRaises(drive.DriveNotFound):
+            sheets_routes.spreadsheet_values(node)
 
     def test_a_cell_under_a_merge_or_protected_is_named_and_left(self):
         node = self.create([{"name": "Data", "rows": [["a", "b"], ["c"]]}])

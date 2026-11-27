@@ -7,7 +7,9 @@ words nothing, so a refusal it names is worded here.
 
 import base64
 import json
+import subprocess
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import cast
 
 import frappe
@@ -32,6 +34,12 @@ PASSING = ("busy", "compacting", "restoring", "restored")
 TURN_LOCK = "sheets_agent_turn"
 TURN_WAIT_S = 10
 TURN_RETRY_MS = 1000
+# A values read holds the site's one converter this long at most; the typed read and writes keep the default
+VALUES_TIMEOUT_S = 10
+# A values read killed for time or ended by the child's memory cap fails the same way at the same rev, so
+# it is refused there without the converter for this long
+TOO_HEAVY_S = 3600
+TOO_HEAVY_KEY = "sheets_agent_too_heavy:{node}"
 # What agent.ts refuses, by its reason; `sheet` and `cell` name where
 REASONS = {
     "no_sheets": "sheets must list at least one sheet",
@@ -49,6 +57,7 @@ REASONS = {
     "protected": "{cell} on {sheet} is protected",
     "too_large": "The spreadsheet is too large to read in one call",
     "too_many_values": "A values read shows at most 50,000 cells with a value: read the spreadsheet as typed",
+    "too_heavy": "The formulas take too long or too much memory to work out here: read the spreadsheet as typed",
 }
 
 
@@ -76,6 +85,15 @@ class WriteBusy(frappe.ValidationError):
 
 class Unchanged(Exception):
     """The write holds only what the cells hold already."""
+
+
+@dataclass(frozen=True)
+class Logged:
+    """A spreadsheet's log as it stands: the rev at its head, its checkpoint and the rows after it."""
+
+    head: int
+    checkpoint: bytes | None
+    rows: list[bytes]
 
 
 def create(parent: str, title: str, sheets: object) -> tuple[str, int]:
@@ -128,21 +146,38 @@ def in_turn(node: str, write: dict) -> int:
 
 def read(node: str) -> dict:
     """Answer each sheet's cells as typed, from A1 to its last used row, in the form a write takes."""
-    return sheets_of(node, {"read": True})
+    logged = readable(node)
+    return {"sheets": answered({"read": True}, logged.checkpoint, logged.rows)["sheets"]}
 
 
 def values(node: str) -> dict:
     """Answer each sheet's cells as a tab shows them, in the typed read's shape: a formula as its result."""
-    return sheets_of(node, {"values": True})
+    logged = readable(node)
+    too_heavy = TOO_HEAVY_KEY.format(node=node)
+    if frappe.cache.get_value(too_heavy) == logged.head:
+        raise SheetsRefused(_(REASONS["too_heavy"]))
+
+    try:
+        answer = asked({"values": True}, logged.checkpoint, logged.rows, VALUES_TIMEOUT_S)
+    except checker.CheckerBusy:
+        raise no_answer() from None
+    except checker.CheckerFailed as failed:
+        if not isinstance(failed.__cause__, subprocess.TimeoutExpired | subprocess.CalledProcessError):
+            raise no_answer() from None
+
+        # Only the refusal is kept: a write moves the head, and the next read tries again
+        frappe.cache.set_value(too_heavy, logged.head, expires_in_sec=TOO_HEAVY_S)
+        raise SheetsRefused(_(REASONS["too_heavy"])) from None
+
+    return {"sheets": answer["sheets"]}
 
 
-def sheets_of(node: str, header: dict) -> dict:
-    """Answer the converter's sheets for `header` on the spreadsheet the user can read."""
+def readable(node: str) -> Logged:
+    """Answer the log of the spreadsheet the user can read, as it stands."""
     if drive.check(node, drive.READ) != EDITOR.doctype:
         raise drive.DriveNotFound(_("That spreadsheet was not found"))
 
-    checkpoint, rows = logged_parts(node)
-    return {"sheets": answered(header, checkpoint, rows)["sheets"]}
+    return logged_parts(node)
 
 
 def writable(node: str) -> None:
@@ -151,8 +186,8 @@ def writable(node: str) -> None:
         raise drive.DriveNotFound(_("That spreadsheet was not found"))
 
 
-def logged_parts(node: str) -> tuple[bytes | None, list[bytes]]:
-    """Answer the spreadsheet's log as it stands, as its checkpoint and the rows after it."""
+def logged_parts(node: str) -> Logged:
+    """Answer the spreadsheet's log as it stands."""
     log = content.find(APP, node)
     try:
         snapshot = log and content.read(APP, log.id)
@@ -164,23 +199,36 @@ def logged_parts(node: str) -> tuple[bytes | None, list[bytes]]:
         jobs.request_conversion(APP, node)
         raise WriteBusy(_("This spreadsheet is not converted yet. Try again in a minute."))
 
-    return snapshot.checkpoint, snapshot.payloads()
+    return Logged(snapshot.head_rev, snapshot.checkpoint, snapshot.payloads())
 
 
 def answered(header: dict, checkpoint: bytes | None = None, rows: Sequence[bytes] = ()) -> dict:
     """Ask the converter child for the agent's `header` on a doc's parts, and answer its reply."""
+    try:
+        return asked(header, checkpoint, rows)
+    except checker.CheckerFailed:
+        # Busy, out of time or crashed: the spreadsheet is not at fault, so the same call works later
+        raise no_answer() from None
+
+
+def no_answer() -> WriteBusy:
+    """Answer the refusal for a converter that gave no answer."""
+    return WriteBusy(_("The converter gave no answer. Try again in a moment."))
+
+
+def asked(
+    header: dict, checkpoint: bytes | None, rows: Sequence[bytes], timeout_s: float | None = None
+) -> dict:
+    """Answer the converter child's reply to `header` on a doc's parts; its failure stays CheckerFailed."""
     try:
         # The child's JSON.parse takes no NaN or Infinity, and a refusal names a bad value better than a crash
         json.dumps(header, allow_nan=False)
     except ValueError:
         raise SheetsRefused(_(REASONS["value"])) from None
 
-    try:
-        answer = checker.ask(CONVERTER_BUILD, header, checkpoint, rows, minimum=convert.NODE_MIN)
-    except checker.CheckerFailed:
-        # Busy, out of time or crashed: the spreadsheet is not at fault, so the same call works later
-        raise WriteBusy(_("The converter gave no answer. Try again in a moment.")) from None
-
+    answer = checker.ask(
+        CONVERTER_BUILD, header, checkpoint, rows, minimum=convert.NODE_MIN, timeout_s=timeout_s
+    )
     if answer is None:
         raise RuntimeError(NEEDS_BUILD)
 
