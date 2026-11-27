@@ -29,7 +29,7 @@ Use the definitions in [Meet context](../../suite/meet/CONTEXT.md). Processing f
 - Video publishes independently of the Original Transcript. Do not delay usable video for transcription, or discard usable transcripts because video fails. Video and transcription publish separate outcomes in Suite Notifications.
 - After bounded retries, deliver a clearly marked partial Original Transcript when some recognized speech remains usable. If no transcript is usable, create no transcript file and send the owner an explicit transcription-failure notice.
 - Publication and recovery must be idempotent. Interrupted publication must not duplicate the Original Transcript or falsely signal availability. Notify only after the final complete, partial or failed transcription outcome is established.
-- Send one Suite Notification per Ready, Partial, or Failed outcome. Notify the Recording Initiator for video and the Room Owner for transcription. Include a short reason for partial or failed outcomes and a Drive link when the recipient can read the artifact. Notifications grant no access.
+- Save one Suite Notification in the same transaction as each Ready, Partial, or Failed outcome. Notify the Recording Initiator for video and the Room Owner for transcription. Include a short reason for partial or failed outcomes and a Drive link when the recipient can read the artifact. Notifications grant no access.
 - Do not show a completion estimate until measurements support one. The internal one-hour target is not a promised delivery time.
 
 ## Ownership and access

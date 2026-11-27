@@ -44,7 +44,6 @@ from suite.meet.recording.ingest import (
     begin_upload,
     complete_upload,
     delete_recordings_for_purged_artifacts,
-    deliver_recording_notification,
     finalization_status,
     process_upload,
     reconcile_due_finalizations,
@@ -190,7 +189,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
                 result = process_upload(recording.name)
             self.assertEqual(frappe.db.get_value("Drive Node", result["artifact"], "owner"), self.owner)
-            deliver_recording_notification(recording.name)
             rows = frappe.get_all(
                 "Drive Notification",
                 filters={"inbox_message": ["like", f"%{result['artifact']}%"]},
@@ -407,7 +405,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.state_revision, 6)
         self.assertEqual(recording.recorder_event_sequence, 10)
         self.assertIsNotNone(recording.ended_at)
-        self.assertTrue(recording.notification_pending)
 
     def test_callback_timestamps_and_gaps_stay_within_recording(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -532,7 +529,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.finalization_stage, "Terminal")
         self.assertEqual(recording.finalization_failure_type, "deterministic")
         self.assertEqual(recording.finalization_failure_code, "invalid_terminal_metadata")
-        self.assertTrue(recording.notification_pending)
         self.assertEqual(
             finalization_status(recording.name),
             {"action": "delete_local", "terminal_result": "Failed"},

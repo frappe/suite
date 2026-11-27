@@ -589,7 +589,7 @@ def _visible_notifications(
     An entry contains an activity, a download, or a private message.
     """
     from suite.drive._core import downloads
-    from suite.drive._core.nodes import FOLDER_KINDS
+    from suite.drive._core.nodes import node_url
 
     _require_person(principals)
     # §14.6 drops the legacy inbox: those rows point at nothing, so the inbox
@@ -623,9 +623,7 @@ def _visible_notifications(
         if payload := row.pop("inbox_message"):
             message = _json_value(payload, {})
             node = _readable_node(principals, message["node"]) if message.get("node") else None
-            url = None
-            if node is not None:
-                url = f"/drive/f/{node.name}" if node.kind in FOLDER_KINDS else f"/d/{node.name}"
+            url = node_url(node.name, kind=node.kind) if node is not None else None
             row.message = {"subject": message["subject"], "detail": message.get("detail"), "url": url}
             visible.append(row)
             continue

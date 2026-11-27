@@ -24,7 +24,6 @@ UPLOAD_DIRECTORY = ".recording-uploads"
 FINALIZATION_TIMEOUT_HOURS = 24
 FINALIZATION_LEASE_SECONDS = 6 * 60 * 60 + 10 * 60
 FINALIZATION_RETRY_MAX_SECONDS = 60 * 60
-NOTIFICATION_RETRY_MAX_SECONDS = 60 * 60
 
 
 class DeterministicFinalizationError(frappe.ValidationError):
@@ -146,10 +145,9 @@ def reject_upload_metadata(recording_name: str, *, event_sequence: int, error: E
     recording.finalization_stage = "Terminal"
     recording.finalization_failure_type = "deterministic"
     recording.finalization_failure_code = "invalid_terminal_metadata"
-    recording.notification_pending = 1
-    recording.notification_next_retry_at = now
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
     return {"offset": 0, "complete": True}
 
@@ -380,10 +378,9 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
     recording.published_at = now_datetime()
     recording.finalization_stage = "Terminal"
     recording.finalization_next_retry_at = None
-    recording.notification_pending = 1
-    recording.notification_next_retry_at = now_datetime()
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     frappe.db.after_commit.add(lambda: path.unlink(missing_ok=True))
     return {"artifact": artifact, "status": recording.status}
 
@@ -407,10 +404,9 @@ def _record_finalization_failure(recording_name: str, error: Exception, *, deter
         recording.failure_code = "processing_failed"
         recording.finalization_stage = "Terminal"
         recording.finalization_next_retry_at = None
-        recording.notification_pending = 1
-        recording.notification_next_retry_at = now
         recording.flags.reconciliation_update = True
         recording.save(ignore_permissions=True)
+        notify_recording(recording)
         _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
         return {"status": "Failed"}
     delay = min(60 * (2 ** max(cint(recording.finalization_attempts) - 1, 0)), FINALIZATION_RETRY_MAX_SECONDS)
@@ -470,61 +466,12 @@ def reconcile_due_finalizations():
         pluck="name",
     ):
         _enqueue_finalization(name)
-    for name in frappe.get_all(
-        "Meet Recording",
-        filters={
-            "notification_pending": 1,
-            "notification_next_retry_at": ["<=", now],
-        },
-        pluck="name",
-    ):
-        frappe.enqueue(
-            deliver_recording_notification,
-            recording_name=name,
-            enqueue_after_commit=True,
-            job_id=f"meet-recording-notification::{name}",
-            deduplicate=True,
-        )
     delete_recordings_for_purged_artifacts()
 
 
-def deliver_recording_notification(recording_name: str):
-    recording = _locked_recording(recording_name)
-    if recording.status not in ("Ready", "Partial", "Failed") or not recording.notification_pending:
-        return
-    now = now_datetime()
-    if recording.notification_next_retry_at and get_datetime(recording.notification_next_retry_at) > now:
-        return
-    try:
-        subject, detail = _recording_notice(recording)
-        drive.notify_user(
-            recording.initiated_by,
-            subject,
-            detail=detail,
-            node=recording.artifact or None,
-        )
-        recording.notification_attempts = cint(recording.notification_attempts) + 1
-        recording.notification_pending = 0
-        recording.notification_next_retry_at = None
-        recording.notification_sent_at = now_datetime()
-        recording.flags.finalization_update = True
-        recording.save(ignore_permissions=True)
-    except Exception:
-        traceback = frappe.get_traceback()
-        frappe.db.rollback()
-        recording = _locked_recording(recording_name)
-        if not recording.notification_pending:
-            return
-        recording.notification_attempts = cint(recording.notification_attempts) + 1
-        delay = min(60 * 2 ** (recording.notification_attempts - 1), NOTIFICATION_RETRY_MAX_SECONDS)
-        recording.notification_next_retry_at = add_to_date(now_datetime(), seconds=delay)
-        recording.flags.finalization_update = True
-        recording.save(ignore_permissions=True)
-        frappe.db.commit()
-        frappe.log_error(
-            title=f"Meet recording notification failed for {recording_name}",
-            message=traceback,
-        )
+def notify_recording(recording):
+    subject, detail = _recording_notice(recording)
+    drive.notify_user(recording.initiated_by, subject, detail=detail, node=recording.artifact or None)
 
 
 def _recording_notice(recording) -> tuple[str, str | None]:

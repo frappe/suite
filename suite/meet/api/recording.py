@@ -39,6 +39,7 @@ from suite.meet.recording.ingest import (
     begin_upload,
     complete_upload,
     finalization_status,
+    notify_recording,
     reject_upload_metadata,
 )
 from suite.meet.recording.recorder_client import RecorderClient, RecorderOutcome
@@ -459,10 +460,9 @@ def _fail_startup(room, recording, failure_code: str):
     recording.state_revision += 1
     recording.failure_code = failure_code
     recording.flags.startup_failure = True
-    if recording.video_enabled:
-        recording.notification_pending = 1
-        recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
+    if recording.video_enabled:
+        notify_recording(recording)
     _publish_state(room, recording if audio_active else None, hosts_only=not audio_active)
 
 
@@ -766,11 +766,10 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
     recording.status = "Failed"
     recording.state_revision += 1
     recording.failure_code = "grant_delivery_failed"
-    recording.notification_pending = 1
-    recording.notification_next_retry_at = now_datetime()
     recording.flags.startup_failure = True
     operation_id = _stop_operation_id(recording)
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     audio_active = bool(recording.transcription_enabled and _active_audio_capture(room.name))
     _publish_state(room, recording if audio_active else None, hosts_only=not audio_active)
     frappe.db.commit()
@@ -1528,10 +1527,9 @@ def recorder_failed(
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     if startup_failure:
         recording.flags.startup_failure = True
-    if recording.video_enabled:
-        recording.notification_pending = 1
-        recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
+    if recording.video_enabled:
+        notify_recording(recording)
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),
         None if startup_failure and not _active_audio_capture(recording.meet_room) else recording,
@@ -1627,12 +1625,11 @@ def _fail_stale_recording(name: str):
     recording.status = "Failed"
     recording.state_revision += 1
     recording.failure_code = "recorder_unavailable"
-    recording.notification_pending = 1
-    recording.notification_next_retry_at = now_datetime()
     if recording.started_at:
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     startup_failure = previous_status in ("Pending", "Starting")
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),

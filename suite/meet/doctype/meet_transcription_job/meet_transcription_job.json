@@ -28,8 +28,6 @@
   "source_deleted",
   "artifact",
   "failure_code",
-  "notification_pending",
-  "notification_sent_at",
   "processing_started_at",
   "ready_at",
   "queued_at",
@@ -161,17 +159,6 @@
    "fieldname": "failure_code",
    "fieldtype": "Data",
    "label": "Failure Code"
-  },
-  {
-   "fieldname": "notification_pending",
-   "fieldtype": "Check",
-   "label": "Notification Pending",
-   "default": "0"
-  },
-  {
-   "fieldname": "notification_sent_at",
-   "fieldtype": "Datetime",
-   "label": "Notification Sent At"
   },
   {
    "fieldname": "processing_started_at",

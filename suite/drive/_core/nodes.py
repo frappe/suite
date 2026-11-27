@@ -375,7 +375,7 @@ def get(principals: Principals, node: str) -> frappe._dict:
 FOLDER_KINDS = frozenset({"root", "folder"})
 
 
-def node_url(node: str) -> str:
+def node_url(node: str, *, kind: str | None = None) -> str:
     """Answer the browser address of one node (unified frontend spec §14.5).
 
     A folder or a root opens at `/drive/f/<id>` and every other kind at
@@ -385,9 +385,10 @@ def node_url(node: str) -> str:
     opens asks for the node and is refused there. No slug is added: the router
     adds one.
     """
-    kind = frappe.db.get_value("Drive Node", node, "kind")
     if kind is None:
-        raise DriveNotFound(_("Drive node {0} was not found").format(node))
+        kind = frappe.db.get_value("Drive Node", node, "kind")
+        if kind is None:
+            raise DriveNotFound(_("Drive node {0} was not found").format(node))
     return f"/drive/f/{node}" if kind in FOLDER_KINDS else f"/d/{node}"
 
 

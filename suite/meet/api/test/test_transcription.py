@@ -134,8 +134,17 @@ class IntegrationTestTranscription(IntegrationTestCase):
             job.status = "Processing"
         result = transcription._failure(job, "source_unavailable", True)
         self.assertEqual(result["status"], "Failed")
-        self.assertTrue(job.notification_pending)
         self.assertFalse(job.artifact)
+        self.assertTrue(
+            any(
+                frappe.parse_json(message)["subject"] == "Your Meet transcript could not be processed"
+                for message in frappe.get_all(
+                    "Drive Notification",
+                    filters={"to_user": job.room_owner, "inbox_message": ["is", "set"]},
+                    pluck="inbox_message",
+                )
+            )
+        )
 
     def test_failed_remaining_sources_do_not_publish_an_empty_partial_transcript(self):
         job = self.job("Processing")
@@ -199,7 +208,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 self.assertEqual(result["status"], "Failed")
                 job.reload()
                 self.assertEqual(job.status, "Failed")
-                self.assertTrue(job.notification_pending)
                 self.assertEqual(job.failure_code, "publication_failed")
                 self.assertFalse(job.artifact)
                 self.assertFalse(job.capture_folder)
@@ -264,7 +272,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(outcome["status"], "Failed")
         job.reload()
         self.assertFalse(job.artifact)
-        self.assertTrue(job.notification_pending)
         self.assertEqual(job.failure_code, "no_usable_segments")
 
     def test_deleted_result_revokes_worker_lease(self):
@@ -408,13 +415,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     self.assertEqual(
                         frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready"
                     )
-            # Ready delivery survives recorder failure; cleanup remains retryable.
-            with patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")):
-                transcription.maintenance()
-            job.reload()
-            self.assertTrue(job.notification_sent_at)
-            self.assertFalse(job.source_deleted)
-            transcription.maintenance()
             messages = [
                 row["message"]
                 for row in self._drive_request("GET", "notifications")["rows"]
@@ -430,9 +430,14 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     },
                 ],
             )
+            # The notice is already in the inbox when cleanup begins.
+            with patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")):
+                transcription.maintenance()
+            job.reload()
+            self.assertFalse(job.source_deleted)
+            transcription.maintenance()
             job.reload()
             self.assertTrue(job.source_deleted)
-            self.assertTrue(job.notification_sent_at)
             self.assertEqual(recorder.call_args.args[2], "delete")
             self._drive_request("PATCH", f"nodes/{artifact.name}", state="Trashed")
             self._drive_request("DELETE", f"nodes/{artifact.name}")
@@ -606,7 +611,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(job.failure_code, "source_missing")
         self.assertTrue(job.source_deleted)
         self.assertFalse(job.artifact)
-        self.assertTrue(job.notification_pending)
 
     def test_deleted_transcript_does_not_remove_processing_video_metadata(self):
         recording = frappe.get_doc(

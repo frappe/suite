@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import hashlib
-import io
 import json
 import time
 import uuid
@@ -48,7 +47,6 @@ from suite.meet.recording.ingest import (
     append_chunk,
     begin_upload,
     complete_upload,
-    deliver_recording_notification,
     finalization_status,
     process_upload,
     reconcile_due_finalizations,
@@ -448,6 +446,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 frappe.local.request = original_request
 
     def test_completed_upload_creates_owner_drive_file_and_consumes_reservation(self):
+        self.room.db_set("title", "Weekly planning")
         usage_before = get_storage_usage(self.owner)
         started = start(self.room.name, str(uuid.uuid4()))
         reserved = get_storage_usage(self.owner)
@@ -511,14 +510,22 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(completed.finalization_stage, "Terminal")
             self.assertIsNotNone(completed.validated_at)
             self.assertIsNotNone(completed.published_at)
-            self.assertTrue(completed.notification_pending)
             self.assertEqual(
                 finalization_status(recording.name),
                 {"action": "delete_local", "terminal_result": "Ready"},
             )
             completed.reload()
             self.assertIsNotNone(completed.terminal_acknowledged_at)
-            self.assertTrue(completed.notification_pending)
+            self.assertEqual(
+                [row for row in self._recording_notices() if row["node"] == completed.artifact],
+                [
+                    {
+                        "subject": "Your recording of Weekly planning is ready",
+                        "detail": None,
+                        "node": completed.artifact,
+                    }
+                ],
+            )
 
             # The reservation became the file: it is gone, and the owner's root
             # is charged the artifact's bytes exactly once.
@@ -612,7 +619,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    def test_failed_notification_retries_without_gating_cleanup(self):
+    def test_finalization_deadline_notifies_and_allows_cleanup(self):
         frappe.db.delete("Drive Notification", {"to_user": self.owner, "inbox_message": ["is", "set"]})
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
@@ -654,29 +661,11 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 reconcile_due_finalizations()
             recording.reload()
             self.assertEqual(recording.status, "Failed")
-            self.assertTrue(recording.notification_pending)
             self.assertEqual(
                 finalization_status(recording.name),
                 {"action": "delete_local", "terminal_result": "Failed"},
             )
 
-            with patch(
-                "suite.meet.recording.ingest.drive.notify_user",
-                side_effect=RuntimeError("inbox unavailable"),
-            ):
-                deliver_recording_notification(recording.name)
-            recording.reload()
-            self.assertTrue(recording.notification_pending)
-            self.assertEqual(recording.notification_attempts, 1)
-            self.assertIsNotNone(recording.notification_next_retry_at)
-
-            recording.db_set("notification_next_retry_at", add_to_date(now_datetime(), seconds=-1))
-            deliver_recording_notification(recording.name)
-            deliver_recording_notification(recording.name)
-            recording.reload()
-            self.assertFalse(recording.notification_pending)
-            self.assertEqual(recording.notification_attempts, 2)
-            self.assertIsNotNone(recording.notification_sent_at)
             rows = self._recording_notices()
             self.assertEqual(len(rows), 1)
             self.assertIn("could not be processed", rows[0]["subject"])
@@ -684,38 +673,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertIsNone(rows[0]["node"])
         finally:
             path.unlink(missing_ok=True)
-
-    def test_ready_notification_names_room_and_links_to_drive_artifact(self):
-        self.room.db_set("title", "Weekly planning")
-        frappe.db.delete("Drive Notification", {"to_user": self.owner, "inbox_message": ["is", "set"]})
-        started = start(self.room.name, str(uuid.uuid4()))
-        stop(self.room.name)
-        recording = frappe.get_doc("Meet Recording", started["name"])
-        artifact = drive.store_file(
-            recording.drive_home_folder,
-            f"Weekly planning recording {frappe.generate_hash(length=8)}.mp4",
-            io.BytesIO(b"weekly-planning-recording"),
-        )
-        recording.db_set(
-            {
-                "status": "Ready",
-                "artifact": artifact,
-                "artifact_size": 1,
-                "artifact_duration": 1,
-                "artifact_sha256": "a" * 64,
-                "notification_pending": 1,
-                "notification_next_retry_at": now_datetime(),
-            },
-            update_modified=False,
-        )
-
-        deliver_recording_notification(recording.name)
-        self.assertEqual(
-            self._recording_notices(),
-            [
-                {"subject": "Your recording of Weekly planning is ready", "detail": None, "node": artifact},
-            ],
-        )
 
     def _recording_notices(self):
         return [
@@ -761,7 +718,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(result["status"], "Partial")
             self.assertEqual(frappe.parse_json(completed.capture_gaps), [gap])
             self.assertEqual(frappe.db.get_value("Drive Node", completed.artifact, "size"), len(content))
-            deliver_recording_notification(completed.name)
             notice = next(row for row in self._recording_notices() if row["node"] == completed.artifact)
             self.assertIn("partial recording", notice["subject"])
             self.assertIn("Some portions could not be captured", notice["detail"])
