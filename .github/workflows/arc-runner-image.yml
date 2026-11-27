@@ -35,7 +35,7 @@ on:
         default: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'publish' }}
+  group: ${{ github.workflow }}-${{ inputs.benchmark && github.sha || github.event_name == 'pull_request' && github.event.pull_request.number || 'publish' }}
   cancel-in-progress: true
 
 permissions:
