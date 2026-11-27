@@ -91,6 +91,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         recording = Mock(
             budget_bytes=1,
             max_ends_at=datetime(2026, 8, 1, 12, 30, 45, 123456),
+            pending_deadline=None,
         )
 
         with patch("frappe.utils.get_system_timezone", return_value="UTC"):
@@ -452,7 +453,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         budget = frappe.db.get_value("Meet Recording", started["name"], "budget_bytes")
         self.assertEqual(reserved["reserved_size"], usage_before.get("reserved_size", 0) + budget)
         stop(self.room.name)
-        content = b"validated-mp4"
+        content = f"validated-mp4-{started['name']}".encode()
         digest = hashlib.sha256(content).hexdigest()
         begin_upload(
             started["name"],
@@ -1310,6 +1311,13 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         )
         self.assertEqual(recording.capture_started_at, recording.started_at)
         self.assertEqual(recording.recorder_event_sequence, 5)
+
+        with patch("suite.meet.api.recording._client", return_value=client):
+            stop(self.room.name)
+        self.assertEqual(
+            client.stop.call_args.kwargs["limits"]["max_ends_at"],
+            client.reserve.call_args.kwargs["limits"]["max_ends_at"],
+        )
 
     def test_duplicate_interruption_callback_does_not_advance_state(self):
         started = start(self.room.name, str(uuid.uuid4()))
