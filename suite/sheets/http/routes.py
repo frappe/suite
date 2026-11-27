@@ -193,7 +193,7 @@ def spreadsheet_cells_write(
     node: str, sheet: Given = None, start: Given = None, rows: Given = None
 ) -> WrittenSpreadsheet:
     """Type a block of cells into a sheet from one cell, leaving the cells around it."""
-    rev = agent.write_cells(node, sheet, start, rows)
+    rev = agent.write_cells(node, text(sheet, "sheet"), start, rows)
     return {**drive.get_node(node), "rev": rev}
 
 
@@ -203,7 +203,7 @@ def spreadsheet_cells_write(
 @bounded
 def spreadsheet_rows_append(node: str, sheet: Given = None, rows: Given = None) -> WrittenSpreadsheet:
     """Type rows into a sheet below its last used row."""
-    rev = agent.append_rows(node, sheet, rows)
+    rev = agent.append_rows(node, text(sheet, "sheet"), rows)
     return {**drive.get_node(node), "rev": rev}
 
 

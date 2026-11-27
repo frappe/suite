@@ -169,7 +169,7 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | --- | --- | --- |
 | `AuthenticationError` | 401 | The API key or secret is wrong |
 | `PermissionError` | 403 | A call has no `Authorization` header |
-| `DriveError` | 400 | A field is missing or wrong, such as an empty title or one over 140 characters, or a `role` that is not one of the numbers. The message names it. Nothing was written |
+| `DriveError` | 400 | A field is missing or wrong, such as a `parent`, `title` or `sheet` that is not text, an empty title or one over 140 characters, or a `role` that is not one of the numbers. The message names it. Nothing was written |
 | `DriveNotFound` | 404 | The folder or spreadsheet does not exist for this user, the item is not a spreadsheet, or the spreadsheet was deleted during the write |
 | `DriveForbidden` | 403 | The user may not add to the folder or edit the spreadsheet, or the spreadsheet is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |

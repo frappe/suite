@@ -12,6 +12,7 @@ from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import make_request
 from frappe.utils import get_test_client, now_datetime
 from frappe.utils.synchronization import filelock
+from werkzeug.wrappers import Response
 
 from suite import content, drive
 from suite.content import checker, copies, jobs, log, logged, tables
@@ -135,13 +136,21 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         status, body = self.tab_push(node, keep)
         self.assertEqual(status, 200, body)
 
-    def refusal_sent(self, path: str, body: dict) -> dict:
+    def sent(self, method: str, path: str, body: dict | None, user: str | None = OWNER) -> Response:
         # A whole request on its own connection, so the answer is the one an agent reads after Frappe cleans it
         frappe.db.commit()
-        sid = session_for(OWNER)
-        kwargs = {"method": "POST", "headers": {"Cookie": f"sid={sid}"}, "json": body}
+        headers: dict[str, str] = {}
+        if user:
+            sid = session_for(user)
+            headers["Cookie"] = f"sid={sid}"
+
+        kwargs = {"method": method, "headers": headers, "json": body}
         response = make_request(target=self.CLIENT.open, args=(f"/api/suite/sheets/{path}",), kwargs=kwargs)
         frappe.db.rollback()
+        return response
+
+    def refusal_sent(self, path: str, body: dict) -> dict:
+        response = self.sent("POST", path, body)
         self.assertEqual(response.status_code, 422, response.get_data(as_text=True))
         (error,) = response.json["errors"]
         return error
@@ -387,8 +396,9 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         merged = self.refusal_sent(
             f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1", "rows": [["x", "y"]]}
         )
+        # A1 is the merge's own cell, so it would take "w", and the write keeps none of it
         locked = self.refusal_sent(
-            f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A2", "rows": [["z"]]}
+            f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1", "rows": [["w"], ["z"]]}
         )
 
         self.assertEqual(merged["type"], "SheetsRefused")
@@ -424,6 +434,60 @@ class TestSpreadsheetWrites(IntegrationTestCase):
 
         frappe.set_user(OWNER)
         self.assertEqual(self.cells(node)["Data"], {"A1": "a"})
+
+    def test_a_guest_is_refused_on_every_route(self):
+        node = self.create([{"name": "Data", "rows": [["a"]]}])
+        calls = (
+            (
+                "POST",
+                "spreadsheets",
+                {"parent": self.folder, "title": "Agent guest", "sheets": [{"name": "Data"}]},
+            ),
+            ("POST", f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1", "rows": [["x"]]}),
+            ("POST", f"spreadsheets/{node}/rows", {"sheet": "Data", "rows": [["x"]]}),
+            ("POST", f"spreadsheets/{node}/sheets", {"name": "More"}),
+            ("GET", f"spreadsheets/{node}", None),
+        )
+        for method, path, body in calls:
+            with self.subTest(method=method, path=path):
+                response = self.sent(method, path, body, user=None)
+                self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
+                self.assertEqual(response.json["errors"][0]["type"], "PermissionError")
+
+        self.assertEqual(self.cells(node), {"Data": {"A1": "a"}})
+        self.assert_created_nothing("Agent guest")
+
+    def test_a_wrong_body_is_refused_by_its_field(self):
+        node = self.create([{"name": "Data", "rows": [["a"]]}])
+        rev = self.head(node)
+        new = {"parent": self.folder, "title": "Agent wrong", "sheets": [{"name": "Data"}]}
+        cells = {"sheet": "Data", "start": "A1", "rows": [["x"]]}
+        bodies = (
+            ("spreadsheets", {}, "parent must be a string"),
+            ("spreadsheets", {**new, "parent": 5}, "parent must be a string"),
+            ("spreadsheets", {"parent": self.folder, "sheets": new["sheets"]}, "title must be a string"),
+            ("spreadsheets", {**new, "title": "x" * 141}, "title must be 140 characters or fewer"),
+            ("spreadsheets", {"parent": self.folder, "title": "Agent wrong"}, "sheets must list"),
+            ("spreadsheets", {**new, "sheets": "x"}, "sheets must list"),
+            (f"spreadsheets/{node}/cells", {"start": "A1", "rows": [["x"]]}, "sheet must be a string"),
+            (f"spreadsheets/{node}/cells", {**cells, "sheet": 5}, "sheet must be a string"),
+            (f"spreadsheets/{node}/cells", {"sheet": "Data", "rows": [["x"]]}, "start must be a cell"),
+            (f"spreadsheets/{node}/cells", {**cells, "start": 5}, "start must be a cell"),
+            (f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1"}, "rows must be a list"),
+            (f"spreadsheets/{node}/cells", {**cells, "rows": "x"}, "rows must be a list"),
+            (f"spreadsheets/{node}/rows", {"rows": [["x"]]}, "sheet must be a string"),
+            (f"spreadsheets/{node}/rows", {"sheet": "Data"}, "rows must be a list"),
+            (f"spreadsheets/{node}/sheets", {}, "sheet's name must be"),
+            (f"spreadsheets/{node}/sheets", {"name": "More", "rows": "x"}, "rows must be a list"),
+        )
+        for path, body, message in bodies:
+            with self.subTest(path=path, body=body):
+                response = self.sent("POST", path, body)
+                self.assertIn(response.status_code, (400, 422), response.get_data(as_text=True))
+                self.assertIn(message, response.json["errors"][0]["message"])
+
+        self.assertEqual(self.head(node), rev)
+        self.assert_created_nothing("Agent wrong")
 
     def test_a_node_that_is_not_a_spreadsheet_answers_not_found(self):
         with self.assertRaises(drive.DriveNotFound):
@@ -470,7 +534,7 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             # Refused for its node, so the count is all it costs
             sheets_routes.spreadsheet_cells_write("no node", "Data", "A1", [["x"]])
 
-        for _write in range(sheets_routes.WRITES_A_MINUTE):
+        for _write in range(30):
             with self.assertRaises(drive.DriveError):
                 call_route(lambda _node: write(), "")
 
