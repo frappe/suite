@@ -103,11 +103,12 @@ function readSheets(doc: Y.Doc): { name: string; rows: string[][] }[] {
     const col = at.cols.posOf(cell.colId)
     if (row < 0 || col < 0) return
     const grid = grids.get(cell.sheetId)!
+    // Counted before the padding is built, so a far cell refuses without it
     entries += Math.max(0, row + 1 - grid.length)
+    entries += Math.max(0, col + 1 - (grid[row]?.length ?? 0))
+    if (entries > READ_MAX) refuse('too_large')
     while (grid.length <= row) grid.push([])
     const cells = grid[row]!
-    entries += Math.max(0, col + 1 - cells.length)
-    if (entries > READ_MAX) refuse('too_large')
     while (cells.length < col) cells.push('')
     cells[col] = String(input)
   })

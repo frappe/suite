@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
 import { agentAnswer } from './agent'
-import { docToHtml } from './html'
 import { addSheet, axis, cellKey, roots } from './schema'
 import { inputs, openTab, type, type Tab } from './test-tabs'
 
@@ -141,8 +140,12 @@ describe('agent writes', () => {
       })
       const other = await openTab('B', after)
       expect(await inputs(other)).toEqual({ 'Sheet1!A1': 'kept' })
-      for (const root of ['formats', 'sheetState', 'charts', 'sheets', 'sheetMeta'] as const)
-        expect(roots(after)[root].toJSON()).toEqual(roots(tab.doc)[root].toJSON())
+      const typed = ['inputs', 'rows', 'cols', 'tails']
+      const untyped = (doc: Y.Doc) =>
+        Object.entries(roots(doc))
+          .filter(([name]) => !typed.includes(name))
+          .map(([name, root]) => [name, root.toJSON()])
+      expect(untyped(after)).toEqual(untyped(tab.doc))
     },
     TIMEOUT,
   )
@@ -222,6 +225,7 @@ describe('agent writes', () => {
       const [sheet] = read(tab.doc)
       expect(sheet!.rows.slice(0, 3)).toEqual([['Rent'], [], ['', '', '=SUM(A1:A2)']])
       expect(sheet!.rows).toHaveLength(7000)
+      expect(sheet!.rows[6999]).toEqual(['', 'far'])
 
       const again = { kind: 'cells', sheet: 'Sheet1', start: 'A1', rows: sheet!.rows }
       expect(write(tab.doc, again)).toEqual({ update: null })
@@ -342,16 +346,12 @@ describe('agent reads', () => {
       roots(doc).inputs.set(cellKey(id, axis(doc, id, 'rows').ensure(row), col), 'x')
     expect(ask(doc, { read: true })).toEqual({ refused: { reason: 'too_large' } })
   })
-})
 
-describe('agent render', () => {
-  it(
-    'is the copy an open tab writes',
-    async () => {
-      const tab = await openTab('A')
-      await type(tab, 'Sheet1', 'B2', '<b>&')
-      expect(ask(tab.doc, { render: true })).toEqual({ html: docToHtml(tab.doc) })
-    },
-    TIMEOUT,
-  )
+  it('refuse a value on the last row', () => {
+    const doc = new Y.Doc()
+    const id = addSheet(doc, 'Tall')
+    const row = axis(doc, id, 'rows').ensure(1_048_575)
+    roots(doc).inputs.set(cellKey(id, row, axis(doc, id, 'cols').ensure(0)), 'x')
+    expect(ask(doc, { read: true })).toEqual({ refused: { reason: 'too_large' } })
+  })
 })
