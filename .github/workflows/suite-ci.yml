@@ -3,13 +3,9 @@ name: Suite CI
 on: workflow_dispatch
 
 jobs:
-  unified-e2e:
-    name: Unified Frontend E2E
-    runs-on: suite-e2e-drive
-    timeout-minutes: 60
-    permissions:
-      contents: read
-
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       mariadb:
         image: mariadb:10.6
@@ -18,116 +14,19 @@ jobs:
         ports:
           - 3306:3306
         options: --health-cmd="mariadb-admin ping" --health-interval=5s --health-timeout=2s --health-retries=3
-
-    env:
-      SITE: unified.test
-
     steps:
-      - name: Clone
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-
-      - name: Setup Python
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: "3.14.7"
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        with:
-          node-version: "24.12.0"
-
-      - name: Setup Yarn
-        # Frappe and the e2e package use Yarn 1. Frappe builds Suite with pnpm.
-        run: corepack enable && corepack prepare yarn@1.22.22 --activate
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v6
-
-      - name: Add to hosts
-        run: echo "127.0.0.1 $SITE" | sudo tee -a /etc/hosts
-
-      - name: Set up Pilot
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh -s -- --ci
-          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
-          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
-          pilot new frappe-bench --frappe-branch develop
-          pilot -b frappe-bench set-bench-config admin_allow_site_to_pilot_communication false
-          pilot -b frappe-bench set-bench-config mariadb_existing true
-          pilot -b frappe-bench set-bench-config mariadb_host 127.0.0.1
-          pilot -b frappe-bench set-bench-config mariadb_port 3306
-          pilot -b frappe-bench set-bench-config mariadb_admin_user root
-          pilot -b frappe-bench set-bench-config mariadb_password root
-          pilot -b frappe-bench set-bench-config watch_apps_js false
-          pilot -b frappe-bench set-bench-config lite_mode_enabled false
-          pilot -b frappe-bench set-bench-config reload_python false
-          pilot -b frappe-bench init
-          printf '[client]\nskip-ssl\n' > ~/.my.cnf
-          mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'; SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
-
-      - name: Install and build Suite
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: |
-          pilot get-app "$GITHUB_WORKSPACE" --branch "$GITHUB_SHA" --skip-assets
-          pilot build --app suite
+      - name: Compare preinstalled tools in both orders
         env:
-          CI: "Yes"
-
-      - name: Start Pilot
+          IMAGE: ghcr.io/frappe/suite-actions-runner:benchmark-4bbfc24ccecf021e1b7e0c08a926e35d141ff60c
         run: |
-          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
-            http://127.0.0.1:7000/api/v1/health
-
-      - name: Configure site for E2E
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: |
-          pilot new-site "$SITE" --admin-password admin --apps frappe suite --skip-assets
-          pilot frappe --site "$SITE" set-config allow_tests true
-          pilot frappe --site "$SITE" set-config storage_v2 1
-          pilot frappe --site "$SITE" set-config ignore_csrf 1
-          pilot frappe --site "$SITE" set-config host_name "http://$SITE:8000"
-          pilot frappe --site "$SITE" disable-scheduler
-          pilot frappe --site "$SITE" execute suite.api.account.mark_onboarded
-
-      - name: Install E2E dependencies
-        working-directory: ${{ github.workspace }}/e2e
-        timeout-minutes: 20
-        run: |
-          yarn install --frozen-lockfile --non-interactive
-          yarn playwright install --with-deps --only-shell chromium
-
-      - name: Wait for the test site
-        run: |
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
-            "http://$SITE:8000/api/method/ping"
-
-      - name: Run E2E tests
-        working-directory: ${{ github.workspace }}/e2e
-        run: |
-          yarn typecheck
-          status=0
-          for suite in shell files home; do
-            yarn "test:unified-$suite" || status=1
+          docker pull "$IMAGE"
+          frappe_sha="$(git ls-remote https://github.com/frappe/frappe.git refs/heads/develop | cut -f1)"
+          test -n "$frappe_sha"
+          for mode in bench pilot pilot bench; do
+            docker run --rm --network host --cpus 2 --add-host unified.test:127.0.0.1 \
+              -v "$GITHUB_WORKSPACE:/source:ro" "$IMAGE" \
+              bash /source/.github/arc/runner/compare-preinstalled.sh "$mode" "$frappe_sha"
           done
-          exit $status
-        env:
-          BASE_URL: http://unified.test:8000
-          BENCH_WEB_URL: http://unified.test:8000
-          BENCH_PATH: /home/runner/pilot/benches/frappe-bench
-          BENCH_SITE: unified.test
-          CI: true
-
-      - name: Upload test results
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        if: failure()
-        with:
-          name: unified-e2e-playwright-report
-          path: |
-            e2e/unified-frontend/*/playwright-report/
-            e2e/unified-frontend/*/test-results/
-            ${{ runner.temp }}/pilot.log
-          compression-level: 1
-          retention-days: 14
