@@ -463,6 +463,28 @@ const operationSpreadsheetRead: QueryRef<
   loadValidators: async () => (await import('./validators')).operationSpreadsheetRead,
 }
 
+export type AgentGuideInput = Record<string, never>
+
+export type AgentGuideOutput = Blob
+
+export type AgentGuideError = never
+
+const operationAgentGuide: QueryRef<AgentGuideInput, AgentGuideOutput, AgentGuideError> = {
+  id: 'agent_guide',
+  owner: 'sheets',
+  kind: 'query',
+  publicName: 'agentGuide.read',
+  bytes: true,
+  method: 'GET',
+  path: 'agent-guide',
+  prefix: '/api/suite/sheets/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: [],
+  loadValidators: async () => (await import('./validators')).operationAgentGuide,
+}
+
 export type GetSheetInput = { name: string; compressed?: 0 | 1 }
 
 export type GetSheetOutput = {
@@ -642,6 +664,9 @@ export const api = {
     appendRows: operationSpreadsheetRowsAppend,
     addSheet: operationSpreadsheetSheetAdd,
     read: operationSpreadsheetRead,
+  },
+  agentGuide: {
+    read: operationAgentGuide,
   },
   documents: {
     get: operationGetSheet,

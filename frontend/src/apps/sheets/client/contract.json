@@ -1796,6 +1796,24 @@
       "bytes": false
     },
     {
+      "id": "agent_guide",
+      "kind": "query",
+      "publicName": "agentGuide.read",
+      "page": null,
+      "envelope": "data",
+      "method": "GET",
+      "path": "agent-guide",
+      "pathParams": [],
+      "query": null,
+      "body": null,
+      "output": null,
+      "errors": [],
+      "entity": null,
+      "nodeParams": [],
+      "stream": true,
+      "bytes": true
+    },
+    {
       "id": "get_sheet",
       "kind": "query",
       "publicName": "documents.get",

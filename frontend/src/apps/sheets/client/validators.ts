@@ -3,6 +3,8 @@ import type { Validators } from '@/platform/transport'
 import { assertSchema } from '@/platform/transport/schema'
 
 import type {
+  AgentGuideInput,
+  AgentGuideOutput,
   AiAssistInput,
   AiAssistOutput,
   GetAiSettingsInput,
@@ -756,6 +758,19 @@ export const operationSpreadsheetRead: Validators<SpreadsheetReadInput, Spreadsh
       },
       'spreadsheet_read output',
     )
+  },
+}
+
+export const operationAgentGuide: Validators<AgentGuideInput, AgentGuideOutput> = {
+  validateInput(value: unknown): asserts value is AgentGuideInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'agent_guide input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is AgentGuideOutput {
+    if (!(value instanceof Blob)) throw new TypeError('Expected Blob')
   },
 }
 
