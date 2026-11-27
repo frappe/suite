@@ -766,6 +766,7 @@ class TestArchitecture(unittest.TestCase):
                 "node_owner",
                 "node_title",
                 "node_url",
+                "notify_user",
                 "people_on",
                 "personal_root_for",
                 "preview_user_transfer",

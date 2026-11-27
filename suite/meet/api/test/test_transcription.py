@@ -179,10 +179,21 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertEqual(result["status"], "Queued")
             self.assertEqual(job.attempts, expected_attempt)
             job.status = "Processing"
+        filters = {"to_user": job.room_owner, "inbox_message": ["is", "set"]}
+        previous = set(frappe.get_all("Drive Notification", filters=filters, pluck="name"))
         result = transcription._failure(job, "source_unavailable", True)
         self.assertEqual(result["status"], "Failed")
-        self.assertTrue(job.notification_pending)
         self.assertFalse(job.artifact)
+        self.assertEqual(
+            [
+                frappe.parse_json(row.inbox_message)["subject"]
+                for row in frappe.get_all(
+                    "Drive Notification", filters=filters, fields=["name", "inbox_message"]
+                )
+                if row.name not in previous
+            ],
+            ["Your Meet transcript could not be processed"],
+        )
 
     def test_failed_remaining_sources_do_not_publish_an_empty_partial_transcript(self):
         job = self.job("Processing")
@@ -246,7 +257,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 self.assertEqual(result["status"], "Failed")
                 job.reload()
                 self.assertEqual(job.status, "Failed")
-                self.assertTrue(job.notification_pending)
                 self.assertEqual(job.failure_code, "publication_failed")
                 self.assertFalse(job.artifact)
                 self.assertFalse(job.capture_folder)
@@ -311,7 +321,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(outcome["status"], "Failed")
         job.reload()
         self.assertFalse(job.artifact)
-        self.assertTrue(job.notification_pending)
         self.assertEqual(job.failure_code, "no_usable_segments")
 
     def test_deleted_result_revokes_worker_lease(self):
@@ -455,25 +464,29 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     self.assertEqual(
                         frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready"
                     )
-            # Ready delivery survives recorder failure; cleanup remains retryable.
-            with (
-                patch("frappe.sendmail") as notify,
-                patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")),
-            ):
+            messages = [
+                row["message"]
+                for row in self._drive_request("GET", "notifications")["rows"]
+                if row.get("message", {}).get("url") == drive.node_url(artifact.name)
+            ]
+            self.assertEqual(
+                messages,
+                [
+                    {
+                        "subject": "Your Meet transcript is ready",
+                        "detail": None,
+                        "url": drive.node_url(artifact.name),
+                    },
+                ],
+            )
+            # The notice is already in the inbox when cleanup begins.
+            with patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")):
                 transcription.maintenance()
-                owner_messages = [
-                    call for call in notify.call_args_list if call.kwargs.get("recipients") == [self.owner]
-                ]
-                self.assertEqual(len(owner_messages), 1)
             job.reload()
-            self.assertTrue(job.notification_sent_at)
             self.assertFalse(job.source_deleted)
-            with patch("frappe.sendmail") as notify:
-                transcription.maintenance()
-                notify.assert_not_called()
+            transcription.maintenance()
             job.reload()
             self.assertTrue(job.source_deleted)
-            self.assertTrue(job.notification_sent_at)
             self.assertEqual(recorder.call_args.args[2], "delete")
             self._drive_request("PATCH", f"nodes/{artifact.name}", state="Trashed")
             self._drive_request("DELETE", f"nodes/{artifact.name}")
@@ -645,7 +658,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(job.failure_code, "source_missing")
         self.assertTrue(job.source_deleted)
         self.assertFalse(job.artifact)
-        self.assertTrue(job.notification_pending)
 
     def test_deleted_transcript_does_not_remove_processing_video_metadata(self):
         recording = frappe.get_doc(

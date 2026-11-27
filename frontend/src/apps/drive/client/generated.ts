@@ -2635,6 +2635,19 @@ export type NotificationsListOutputDownloadShape = {
   url: string | null
 }
 
+export type NotificationsListOutputInboxMessage = {
+  subject: string
+  detail: string | null
+  url: string | null
+}
+
+export type NotificationsListOutputMessageNotificationShape = {
+  name: string
+  read: number
+  creation: string | null
+  message: NotificationsListOutputInboxMessage
+}
+
 export type NotificationsListOutputNotificationShape = {
   name: string
   read: number
@@ -2657,7 +2670,9 @@ export type NotificationsListInput = { limit?: number; cursor?: string; unread?:
 
 export type NotificationsListOutput = {
   rows: Array<
-    NotificationsListOutputNotificationShape | NotificationsListOutputDownloadNotificationShape
+    | NotificationsListOutputNotificationShape
+    | NotificationsListOutputDownloadNotificationShape
+    | NotificationsListOutputMessageNotificationShape
   >
   next_cursor: string | null
 }
@@ -2666,7 +2681,9 @@ export type NotificationsListError = never
 
 const operationNotificationsList: PageRef<
   NotificationsListInput,
-  NotificationsListOutputNotificationShape | NotificationsListOutputDownloadNotificationShape,
+  | NotificationsListOutputNotificationShape
+  | NotificationsListOutputDownloadNotificationShape
+  | NotificationsListOutputMessageNotificationShape,
   NotificationsListError,
   NotificationsListOutput
 > = {

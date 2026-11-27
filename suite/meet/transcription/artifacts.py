@@ -73,7 +73,6 @@ def reconcile_purged_artifact(job):
             "manifest": "{}",
             "gaps": "[]",
             "lease_token_hash": None,
-            "notification_pending": 0,
         }
     )
     job.save(ignore_permissions=True)

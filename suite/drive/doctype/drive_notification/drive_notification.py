@@ -4,11 +4,11 @@ from frappe.model.document import Document
 
 
 class DriveNotification(Document):
-    """One person's inbox pointer: to an activity on a node, or to their own download."""
+    """One person's inbox entry."""
 
     def validate(self):
-        if bool(self.activity) == bool(self.download):
-            frappe.throw(_("A Drive notification points at one activity or one download"))
+        if sum(map(bool, (self.activity, self.download, self.inbox_message))) != 1:
+            frappe.throw(_("A Drive notification contains one activity, download, or message"))
 
 
 def on_doctype_update() -> None:

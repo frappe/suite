@@ -26,10 +26,10 @@ Use the definitions in [Meet context](../../suite/meet/CONTEXT.md). Processing f
 ## Availability and notifications
 
 - Publish one usable complete or explicitly partial Original Transcript after recognition and artifact publication complete, with one transcription completion notification. Inference checkpoints alone do not mark the job ready. There is no translation dependency, paired English file or rendering-failure notice.
-- Video publishes independently of the Original Transcript. Do not delay usable video for transcription, or discard usable transcripts because video fails. Video and transcription may produce separate emails when their outcomes finish separately.
+- Video publishes independently of the Original Transcript. Do not delay usable video for transcription, or discard usable transcripts because video fails. Video and transcription publish separate outcomes in Suite Notifications.
 - After bounded retries, deliver a clearly marked partial Original Transcript when some recognized speech remains usable. If no transcript is usable, create no transcript file and send the owner an explicit transcription-failure notice.
 - Publication and recovery must be idempotent. Interrupted publication must not duplicate the Original Transcript or falsely signal availability. Notify only after the final complete, partial or failed transcription outcome is established.
-- Email only the Room Owner with direct Drive links to the available artifacts and explicit partial/failure information. Do not add attendee grants, in-app post-processing notifications or a dedicated job-status/cancellation/retry view.
+- Save one Suite Notification in the same transaction as each Ready, Partial, or Failed outcome. Notify the Recording Initiator for video and the Room Owner for transcription. Include a short reason for partial or failed outcomes and a Drive link when the recipient can read the artifact. Notifications grant no access.
 - Do not show a completion estimate until measurements support one. The internal one-hour target is not a promised delivery time.
 
 ## Ownership and access
@@ -49,9 +49,9 @@ Use the definitions in [Meet context](../../suite/meet/CONTEXT.md). Processing f
 
 1. A transcript-only capture completes. The owner receives a link to Original Transcript.txt in one Meet capture folder; no Recording.mp4 or English Transcript.txt is created.
 2. Video completes first and remains usable. The Original Transcript publishes later in the same folder with one transcription notification and no translation wait.
-3. Video succeeds but no transcript is usable. Video remains, an explicit transcription-failure email goes to the owner and no transcript placeholder appears.
+3. Video succeeds but no transcript is usable. Video remains, the owner sees a transcription failure in Suite Notifications and no transcript placeholder appears.
 4. All outputs fail. No empty capture folder or placeholders are created.
-5. A co-host starts capture. Outputs and emails belong to the Room Owner; starting capture creates no automatic co-host artifact grant.
+5. A co-host starts capture. The Room Owner owns the outputs and receives the transcript outcome. The co-host receives the video outcome. Starting capture creates no automatic co-host artifact grant.
 6. An attendee cannot read a private Original Transcript until the owner shares it. A signed-in recipient with a Drive share link can then read it.
 7. A capture published under an already shared Meet folder inherits its Drive permissions.
 8. Audio or recognition has missing sections. A usable partial Original Transcript identifies omissions and preserves attribution/timing for successful sections.

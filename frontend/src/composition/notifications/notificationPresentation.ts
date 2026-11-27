@@ -69,6 +69,7 @@ export function notificationParts(
   notification: DriveNotification,
   reader?: string,
 ): SentencePart[] {
+  if ('message' in notification) return [{ text: notification.message.subject, strong: false }]
   if ('download' in notification) {
     const { title, status } = notification.download
     if (status === 'Failed') return parts(__('Could not prepare {0}'), [title])
@@ -92,6 +93,7 @@ export function notificationExcerpt(
   notification: DriveNotification,
   now = new Date(),
 ): string | null {
+  if ('message' in notification) return notification.message.detail
   if ('download' in notification) return downloadDetails(notification.download, now)
   if (notification.activity.action !== 'comment') return null
   const excerpt = notification.activity.detail.excerpt

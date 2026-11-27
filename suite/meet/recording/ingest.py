@@ -14,18 +14,16 @@ from zoneinfo import ZoneInfo
 
 import frappe
 from frappe import _
-from frappe.utils import add_to_date, cint, format_datetime, get_datetime, get_system_timezone, now_datetime
+from frappe.utils import add_to_date, cint, get_datetime, get_system_timezone, now_datetime
 
 from suite import drive
 from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
-from suite.suite_core import suite_email
 
 CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_DIRECTORY = ".recording-uploads"
 FINALIZATION_TIMEOUT_HOURS = 24
 FINALIZATION_LEASE_SECONDS = 6 * 60 * 60 + 10 * 60
 FINALIZATION_RETRY_MAX_SECONDS = 60 * 60
-NOTIFICATION_RETRY_MAX_SECONDS = 60 * 60
 
 
 class DeterministicFinalizationError(frappe.ValidationError):
@@ -147,10 +145,9 @@ def reject_upload_metadata(recording_name: str, *, event_sequence: int, error: E
     recording.finalization_stage = "Terminal"
     recording.finalization_failure_type = "deterministic"
     recording.finalization_failure_code = "invalid_terminal_metadata"
-    recording.notification_pending = 1
-    recording.notification_next_retry_at = now
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
     return {"offset": 0, "complete": True}
 
@@ -381,10 +378,9 @@ def _publish_artifact(recording_name: str, path: Path) -> dict:
     recording.published_at = now_datetime()
     recording.finalization_stage = "Terminal"
     recording.finalization_next_retry_at = None
-    recording.notification_pending = 1
-    recording.notification_next_retry_at = now_datetime()
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     frappe.db.after_commit.add(lambda: path.unlink(missing_ok=True))
     return {"artifact": artifact, "status": recording.status}
 
@@ -408,10 +404,9 @@ def _record_finalization_failure(recording_name: str, error: Exception, *, deter
         recording.failure_code = "processing_failed"
         recording.finalization_stage = "Terminal"
         recording.finalization_next_retry_at = None
-        recording.notification_pending = 1
-        recording.notification_next_retry_at = now
         recording.flags.reconciliation_update = True
         recording.save(ignore_permissions=True)
+        notify_recording(recording)
         _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
         return {"status": "Failed"}
     delay = min(60 * (2 ** max(cint(recording.finalization_attempts) - 1, 0)), FINALIZATION_RETRY_MAX_SECONDS)
@@ -471,117 +466,27 @@ def reconcile_due_finalizations():
         pluck="name",
     ):
         _enqueue_finalization(name)
-    for name in frappe.get_all(
-        "Meet Recording",
-        filters={
-            "notification_pending": 1,
-            "notification_next_retry_at": ["<=", now],
-        },
-        pluck="name",
-    ):
-        frappe.enqueue(
-            deliver_recording_notification,
-            recording_name=name,
-            enqueue_after_commit=True,
-            job_id=f"meet-recording-notification::{name}",
-            deduplicate=True,
-        )
     delete_recordings_for_purged_artifacts()
 
 
-def deliver_recording_notification(recording_name: str):
-    recording = _locked_recording(recording_name)
-    if recording.status not in ("Ready", "Partial", "Failed") or not recording.notification_pending:
-        return
-    now = now_datetime()
-    if recording.notification_next_retry_at and get_datetime(recording.notification_next_retry_at) > now:
-        return
-    recording.notification_attempts = cint(recording.notification_attempts) + 1
-    recording.notification_next_retry_at = add_to_date(now, minutes=10)
-    recording.flags.finalization_update = True
-    recording.save(ignore_permissions=True)
-    frappe.db.commit()
-    try:
-        recording = frappe.get_doc("Meet Recording", recording_name)
-        subject, args = _recording_email_content(recording)
-        message_id = f"meet-recording-finalization-{recording.name}@{frappe.local.site}"
-        if not frappe.db.exists("Email Queue", {"message_id": message_id}):
-            suite_email.send(
-                "meet-recording",
-                recording.room_owner,
-                _recording_email_params(recording, args["link"]),
-                local={
-                    "subject": subject,
-                    "template": "meet_recording",
-                    "args": args,
-                    "inline_images": _meet_logo_inline_images(),
-                    "reference_doctype": "Meet Recording",
-                    "reference_name": recording.name,
-                    "message_id": message_id,
-                    "now": False,
-                },
-                request_key=message_id,  # each try sends it once
-            )
-        recording = _locked_recording(recording_name)
-        recording.notification_pending = 0
-        recording.notification_next_retry_at = None
-        recording.notification_sent_at = now_datetime()
-        recording.flags.finalization_update = True
-        recording.save(ignore_permissions=True)
-    except Exception:
-        traceback = frappe.get_traceback()
-        frappe.db.rollback()
-        recording = _locked_recording(recording_name)
-        delay = min(
-            60 * (2 ** max(cint(recording.notification_attempts) - 1, 0)),
-            NOTIFICATION_RETRY_MAX_SECONDS,
-        )
-        recording.notification_next_retry_at = add_to_date(now_datetime(), seconds=delay)
-        recording.flags.finalization_update = True
-        recording.save(ignore_permissions=True)
-        frappe.db.commit()
-        frappe.log_error(
-            title=f"Meet recording notification failed for {recording_name}",
-            message=traceback,
-        )
+def notify_recording(recording):
+    subject, detail = _recording_notice(recording)
+    drive.notify_user(recording.initiated_by, subject, detail=detail, node=recording.artifact or None)
 
 
-def _recording_email_content(recording) -> tuple[str, dict]:
-    room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or recording.meet_room
-    recorded_at = format_datetime(recording.started_at or recording.creation, "medium")
-
+def _recording_notice(recording) -> tuple[str, str | None]:
+    title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or recording.meet_room
     if recording.status == "Ready":
-        subject = _("Your recording of {0} is ready").format(room_title)
-        description = _("The recording of {0} from {1} is ready in Drive.").format(room_title, recorded_at)
-    elif recording.status == "Partial":
-        subject = _("Your partial recording of {0} is ready").format(room_title)
-        description = _(
-            "A partial recording of {0} from {1} is ready in Drive. Some portions could not be captured."
-        ).format(room_title, recorded_at)
-    else:
-        subject = _("Your recording of {0} could not be processed").format(room_title)
-        description = _(
-            "The recording of {0} from {1} could not be processed. No recording was added to Drive."
-        ).format(room_title, recorded_at)
-
-    args = {"description": description, "link": None}
-    if recording.artifact:
-        args["link"] = frappe.utils.get_url(drive.node_url(recording.artifact))
-    return subject, args
-
-
-def _recording_email_params(recording, link: str | None) -> dict:
-    room_title = frappe.db.get_value("Meet Room", recording.meet_room, "title") or recording.meet_room
-    recorded_at = format_datetime(recording.started_at or recording.creation, "medium")
-    return {"room": room_title, "recorded_at": recorded_at, "status": recording.status, "link": link}
-
-
-def _meet_logo_inline_images():
-    try:
-        logo = Path(frappe.get_app_path("suite", "public", "meet", "images", "meet.png"))
-        return [{"filename": "meet-logo.png", "filecontent": logo.read_bytes()}]
-    except OSError:
-        return []
+        return _("Your recording of {0} is ready").format(title), None
+    if recording.status == "Partial":
+        return (
+            _("Your partial recording of {0} is ready").format(title),
+            _("Some portions could not be captured."),
+        )
+    return (
+        _("Your recording of {0} could not be processed").format(title),
+        _("No recording was added to Drive."),
+    )
 
 
 def _locked_recording(name: str):

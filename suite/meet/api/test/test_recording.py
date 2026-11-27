@@ -2,7 +2,6 @@
 # For license information, please see license.txt
 
 import hashlib
-import io
 import json
 import time
 import uuid
@@ -48,7 +47,6 @@ from suite.meet.recording.ingest import (
     append_chunk,
     begin_upload,
     complete_upload,
-    deliver_recording_notification,
     finalization_status,
     process_upload,
     reconcile_due_finalizations,
@@ -447,6 +445,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 frappe.local.request = original_request
 
     def test_completed_upload_creates_owner_drive_file_and_consumes_reservation(self):
+        self.room.db_set("title", "Weekly planning")
         usage_before = get_storage_usage(self.owner)
         started = start(self.room.name, str(uuid.uuid4()))
         reserved = get_storage_usage(self.owner)
@@ -510,14 +509,22 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(completed.finalization_stage, "Terminal")
             self.assertIsNotNone(completed.validated_at)
             self.assertIsNotNone(completed.published_at)
-            self.assertTrue(completed.notification_pending)
             self.assertEqual(
                 finalization_status(recording.name),
                 {"action": "delete_local", "terminal_result": "Ready"},
             )
             completed.reload()
             self.assertIsNotNone(completed.terminal_acknowledged_at)
-            self.assertTrue(completed.notification_pending)
+            self.assertEqual(
+                [row for row in self._recording_notices() if row["node"] == completed.artifact],
+                [
+                    {
+                        "subject": "Your recording of Weekly planning is ready",
+                        "detail": None,
+                        "node": completed.artifact,
+                    }
+                ],
+            )
 
             # The reservation became the file: it is gone, and the owner's root
             # is charged the artifact's bytes exactly once.
@@ -611,7 +618,8 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
         finally:
             path.unlink(missing_ok=True)
 
-    def test_terminal_email_is_owner_only_and_does_not_gate_cleanup(self):
+    def test_finalization_deadline_notifies_and_allows_cleanup(self):
+        self.room.db_set("title", self.room.name)
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
         content = b"invalid-artifact"
@@ -652,87 +660,33 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 reconcile_due_finalizations()
             recording.reload()
             self.assertEqual(recording.status, "Failed")
-            self.assertTrue(recording.notification_pending)
             self.assertEqual(
                 finalization_status(recording.name),
                 {"action": "delete_local", "terminal_result": "Failed"},
             )
 
-            with patch(
-                "suite.meet.recording.ingest.frappe.sendmail",
-                side_effect=RuntimeError("mail queue unavailable"),
-            ):
-                deliver_recording_notification(recording.name)
-            recording.reload()
-            self.assertTrue(recording.notification_pending)
-            self.assertEqual(recording.notification_attempts, 1)
-            self.assertIsNotNone(recording.notification_next_retry_at)
-
-            recording.db_set("notification_next_retry_at", add_to_date(now_datetime(), seconds=-1))
-            with patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail:
-                deliver_recording_notification(recording.name)
-            recording.reload()
-            self.assertFalse(recording.notification_pending)
-            self.assertEqual(recording.notification_attempts, 2)
-            self.assertIsNotNone(recording.notification_sent_at)
-            self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
+            subject = f"Your recording of {self.room.name} could not be processed"
             self.assertEqual(
-                sendmail.call_args.kwargs["message_id"],
-                f"meet-recording-finalization-{recording.name}@{frappe.local.site}",
+                [row for row in self._recording_notices() if row["subject"] == subject],
+                [{"subject": subject, "detail": "No recording was added to Drive.", "node": None}],
             )
-            self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
-            self.assertIn("could not be processed", sendmail.call_args.kwargs["args"]["description"])
-            self.assertIn("No recording was added to Drive", sendmail.call_args.kwargs["args"]["description"])
-            self.assertIsNone(sendmail.call_args.kwargs["args"]["link"])
-            self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
         finally:
             path.unlink(missing_ok=True)
 
-    def test_ready_email_names_room_and_links_to_drive_artifact(self):
-        self.room.db_set("title", "Weekly planning")
-        started = start(self.room.name, str(uuid.uuid4()))
-        stop(self.room.name)
-        recording = frappe.get_doc("Meet Recording", started["name"])
-        artifact = drive.store_file(
-            recording.drive_home_folder,
-            f"Weekly planning recording {frappe.generate_hash(length=8)}.mp4",
-            io.BytesIO(b"weekly-planning-recording"),
-        )
-        recording.db_set(
-            {
-                "status": "Ready",
-                "artifact": artifact,
-                "artifact_size": 1,
-                "artifact_duration": 1,
-                "artifact_sha256": "a" * 64,
-                "notification_pending": 1,
-                "notification_next_retry_at": now_datetime(),
-            },
-            update_modified=False,
-        )
-
-        artifact_url = f"https://suite.test/d/{artifact}"
-        with (
-            patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
-            patch("suite.meet.recording.ingest.frappe.utils.get_url", return_value=artifact_url) as get_url,
-        ):
-            deliver_recording_notification(recording.name)
-
-        self.assertIn(artifact, get_url.call_args.args[0])
-        self.assertEqual(sendmail.call_args.kwargs["recipients"], [self.owner])
-        self.assertEqual(
-            sendmail.call_args.kwargs["subject"],
-            "Your recording of Weekly planning is ready",
-        )
-        self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
-        self.assertIn("Weekly planning", sendmail.call_args.kwargs["args"]["description"])
-        self.assertEqual(sendmail.call_args.kwargs["args"]["link"], artifact_url)
-        self.assertFalse(frappe.db.exists("Notification Log", {"document_name": recording.name}))
+    def _recording_notices(self):
+        return [
+            frappe.parse_json(value)
+            for value in frappe.get_all(
+                "Drive Notification",
+                filters={"to_user": self.owner, "inbox_message": ["is", "set"]},
+                pluck="inbox_message",
+            )
+        ]
 
     def test_completed_upload_with_capture_gap_creates_partial_artifact(self):
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
-        content = b"partial-mp4"
+        content = f"partial-mp4-{started['name']}".encode()
         digest = hashlib.sha256(content).hexdigest()
         recording = frappe.get_doc("Meet Recording", started["name"])
         gap_started = recording.started_at.replace(tzinfo=UTC)
@@ -763,22 +717,9 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             self.assertEqual(result["status"], "Partial")
             self.assertEqual(frappe.parse_json(completed.capture_gaps), [gap])
             self.assertEqual(frappe.db.get_value("Drive Node", completed.artifact, "size"), len(content))
-            with (
-                patch("suite.meet.recording.ingest.frappe.sendmail") as sendmail,
-                patch(
-                    "suite.meet.recording.ingest.frappe.utils.get_url",
-                    return_value=f"https://suite.test/d/{completed.artifact}",
-                ) as get_url,
-            ):
-                deliver_recording_notification(completed.name)
-            self.assertIn("partial recording", sendmail.call_args.kwargs["subject"])
-            self.assertEqual(sendmail.call_args.kwargs["template"], "meet_recording")
-            self.assertIn(
-                "Some portions could not be captured",
-                sendmail.call_args.kwargs["args"]["description"],
-            )
-            self.assertIn(completed.artifact, get_url.call_args.args[0])
-            self.assertIn(completed.artifact, sendmail.call_args.kwargs["args"]["link"])
+            notice = next(row for row in self._recording_notices() if row["node"] == completed.artifact)
+            self.assertIn("partial recording", notice["subject"])
+            self.assertIn("Some portions could not be captured", notice["detail"])
         finally:
             path.unlink(missing_ok=True)
 

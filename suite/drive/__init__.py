@@ -408,6 +408,13 @@ def resolve_share_link(token: str) -> dict:
     return resolve_link(token)
 
 
+def notify_user(user: str, subject: str, *, detail: str | None = None, node: str | None = None) -> None:
+    """Add a private inbox message in the caller's transaction. Linking a node grants no access."""
+    from suite.drive._core.activity import notify_user as _notify_user
+
+    _notify_user(user, subject, detail=detail, node=node)
+
+
 def node_url(node: str) -> str:
     """Answer the browser address of one node, for a link the server sends.
 
@@ -729,6 +736,7 @@ __all__ = (
     "node_owner",
     "node_title",
     "node_url",
+    "notify_user",
     "people_on",
     "personal_root_for",
     "preview_user_transfer",

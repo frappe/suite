@@ -4,6 +4,7 @@ import frappe
 from frappe.tests import IntegrationTestCase
 from frappe.utils import add_days, now_datetime
 
+from suite import drive
 from suite.drive._core.access import grant, revoke
 from suite.drive._core.activity import (
     clear_recents,
@@ -154,6 +155,32 @@ class TestActivityAndPersonalRecords(IntegrationTestCase):
         self.assertEqual(len(notifications(self.owner)["rows"]), 1)
         self.assertEqual(notifications(self.outsider)["rows"], [])
         self.assertEqual(unread_count(self.outsider), 0)
+
+    def test_private_inbox_message_only_links_a_currently_readable_node(self):
+        drive.notify_user(OUTSIDER, "Recording ready", detail="Partial recording", node=self.node)
+        (row,) = notifications(self.outsider)["rows"]
+        self.addCleanup(frappe.db.delete, "Drive Notification", {"name": row.name})
+        self.assertEqual(
+            row.message, {"subject": "Recording ready", "detail": "Partial recording", "url": None}
+        )
+        self.assertEqual(notifications(self.owner)["rows"], [])
+        self.assertEqual(unread_count(self.outsider), 1)
+        self.assertEqual(mark_read(self.owner, [row.name]), 0)
+
+        grant(self.node, OUTSIDER, READ, self.admin)
+        self.assertEqual(
+            next(entry for entry in notifications(self.outsider)["rows"] if entry.name == row.name).message[
+                "url"
+            ],
+            f"/drive/f/{self.node}",
+        )
+        revoke(self.node, OUTSIDER, self.admin)
+        self.assertIsNone(
+            next(entry for entry in notifications(self.outsider)["rows"] if entry.name == row.name).message[
+                "url"
+            ]
+        )
+        self.assertEqual(mark_read(self.outsider, [row.name]), 1)
 
     def test_only_a_manager_sees_sharing_rows_in_history(self):
         grant(self.node, OUTSIDER, NONE, self.owner)
