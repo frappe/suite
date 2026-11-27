@@ -49,9 +49,6 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     name: Backend
-    # One bench and test site serve the backend, mail and calendar tests. Setting
-    # them up takes most of the job, so splitting the tests across jobs would
-    # repeat that work on more runners.
     timeout-minutes: 30
 
     # Pilot runs with --ci, so it provisions no database server of its own;
@@ -79,6 +76,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
             run_backend=1
             run_stalwart=1
+            run_rehearsal=1
           else
             if [ "${{ github.event_name }}" = "pull_request" ]; then
               changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
@@ -93,12 +91,14 @@ jobs:
               | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
               | grep -E '^(suite/|pyproject\.toml|\.coveragerc$|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
             [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
+            printf '%s\n' "$backend_paths" | grep -qvxF -e '' -e .coveragerc && run_rehearsal=1 || run_rehearsal=0
             printf '%s\n' "$changed_files" | grep -Eq '^(suite/mail/|suite/calendar/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' && run_stalwart=1 || run_stalwart=0
           fi
 
-          if [ "$run_backend" = 1 ] || [ "$run_stalwart" = 1 ]; then run_bench=1; else run_bench=0; fi
+          if [ "$run_backend" = 1 ] || [ "$run_stalwart" = 1 ] || [ "$run_rehearsal" = 1 ]; then run_bench=1; else run_bench=0; fi
           echo "backend=$run_backend" >> $GITHUB_OUTPUT
           echo "stalwart=$run_stalwart" >> $GITHUB_OUTPUT
+          echo "rehearsal=$run_rehearsal" >> $GITHUB_OUTPUT
           echo "bench=$run_bench" >> $GITHUB_OUTPUT
           echo "Run backend tests: $run_backend"
           echo "Validate Sieve on Stalwart: $run_stalwart"
@@ -258,6 +258,41 @@ jobs:
           pilot frappe --site test_site execute suite.tests.ci_smoke.enqueue_worker_smoke
           timeout 60 bash -c 'until [ -f /home/runner/pilot/benches/frappe-bench/sites/test_site/private/suite-ci-worker-ready ]; do sleep 1; done'
 
+      - name: Create Rehearsal Site
+        id: create-rehearsal-site
+        if: ${{ !cancelled() && steps.changes.outputs.rehearsal == '1' && steps.start-pilot.outcome == 'success' }}
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: pilot new-site rehearsal_site --admin-password admin --apps frappe suite --skip-assets
+
+      - name: Run Drive Migration Rehearsal
+        if: ${{ !cancelled() && steps.create-rehearsal-site.outcome == 'success' }}
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/test-results/drive-migration"
+          pilot frappe --site rehearsal_site set-config allow_tests true
+          pilot frappe --site rehearsal_site set-config storage_v2 1
+          # The whole-migration rehearsal test opts in through this key; it seeds a
+          # legacy Drive dataset, runs Build and Cleanup, and checks the result.
+          pilot frappe --site rehearsal_site set-config drive_migration_rehearsal 1
+          status=0
+          pilot frappe --site rehearsal_site run-tests --module suite.drive.tests.test_migration --junit-xml-output "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" || status=$?
+          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
+            "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" \
+            "$GITHUB_WORKSPACE/test-results/drive-migration/junit.xml"
+          rm "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml"
+          exit "$status"
+        env:
+          TYPE: server
+
+      - name: Upload Drive Migration Evidence
+        if: always() && steps.changes.outputs.rehearsal == '1'
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-drive-migration-evidence
+          path: test-results/drive-migration/
+          if-no-files-found: warn
+          retention-days: 30
+
       # Last, since it swaps Node for the oldest one the converter supports (suite/content/convert.py NODE_MIN)
       - name: Setup Node 22.13
         if: always() && steps.changes.outputs.backend == '1' && steps.install-suite.outcome == 'success'
@@ -322,6 +357,7 @@ jobs:
           name: suite-backend-evidence
           path: |
             test-results/
+            !test-results/drive-migration/
           if-no-files-found: warn
           retention-days: 30
 
@@ -438,126 +474,6 @@ jobs:
             suite/meet/sfu-server/test-results/
             suite/meet/recorder-server/test-results/
             suite/meet/recorder-server/integration/output/
-          if-no-files-found: warn
-          retention-days: 30
-
-  drive-migration-rehearsal:
-    runs-on: ubuntu-latest
-    name: Drive Migration Rehearsal
-
-    steps:
-      - name: Clone
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - name: Check backend changes
-        id: drive-migration-changes
-        run: |
-          # The rehearsal runs against a fresh site whenever the backend changes,
-          # using the same gate as the backend job
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "schedule" ]; then
-            run_backend=1
-          else
-            if [ "${{ github.event_name }}" = "pull_request" ]; then
-              changed_files="$(git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.sha }}")"
-            else
-              if [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
-                changed_files="$(git diff --name-only HEAD~1 HEAD)"
-              else
-                changed_files="$(git diff --name-only "${{ github.event.before }}" "${{ github.sha }}")"
-              fi
-            fi
-            backend_paths="$(printf '%s\n' "$changed_files" \
-              | grep -Ev '^(suite/meet/sfu-server/|suite/meet/recorder-server/|suite/meet/types/)' \
-              | grep -E '^(suite/|pyproject\.toml|\.github/scripts/|\.github/workflows/suite-ci\.yml)' || true)"
-            [ -n "$backend_paths" ] && run_backend=1 || run_backend=0
-          fi
-
-          echo "run=$run_backend" >> $GITHUB_OUTPUT
-          echo "Run drive migration rehearsal: $run_backend"
-
-      - name: Setup Python
-        if: steps.drive-migration-changes.outputs.run == '1'
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.14"
-
-      - name: Setup Node
-        if: steps.drive-migration-changes.outputs.run == '1'
-        uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          check-latest: true
-
-      - name: Cache pip
-        if: steps.drive-migration-changes.outputs.run == '1'
-        uses: actions/cache@v6
-        with:
-          path: |
-            ~/.cache/pip
-            ~/.cache/uv
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/*requirements.txt', '**/pyproject.toml', '**/setup.py', '**/setup.cfg') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-            ${{ runner.os }}-
-
-      - name: Setup Pilot
-        if: steps.drive-migration-changes.outputs.run == '1'
-        run: |
-          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/v0.0.94-pre-alpha/install.sh | sh
-          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
-          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
-          pilot new frappe-bench --frappe-branch develop
-          pilot -b frappe-bench init --skip-frontend
-
-      - name: Install Suite
-        if: steps.drive-migration-changes.outputs.run == '1'
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: |
-          uv pip install --python env/bin/python -e "apps/frappe[test]"
-          pilot get-app "$GITHUB_WORKSPACE" --branch "$GITHUB_SHA" --skip-assets
-        env:
-          CI: "Yes"
-
-      - name: Start Pilot
-        if: steps.drive-migration-changes.outputs.run == '1'
-        run: |
-          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
-            http://127.0.0.1:7000/api/v1/health
-
-      - name: Create Rehearsal Site
-        if: steps.drive-migration-changes.outputs.run == '1'
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: pilot new-site rehearsal_site --admin-password admin --apps frappe suite --skip-assets
-
-      - name: Run Drive Migration Rehearsal
-        if: steps.drive-migration-changes.outputs.run == '1'
-        working-directory: /home/runner/pilot/benches/frappe-bench
-        run: |
-          mkdir -p "$GITHUB_WORKSPACE/test-results/drive-migration"
-          pilot frappe --site rehearsal_site set-config allow_tests true
-          pilot frappe --site rehearsal_site set-config storage_v2 1
-          # The whole-migration rehearsal test opts in through this key; it seeds a
-          # legacy Drive dataset, runs Build and Cleanup, and checks the result.
-          pilot frappe --site rehearsal_site set-config drive_migration_rehearsal 1
-          status=0
-          pilot frappe --site rehearsal_site run-tests --module suite.drive.tests.test_migration --junit-xml-output "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" || status=$?
-          python "$GITHUB_WORKSPACE/.github/scripts/merge_junit.py" \
-            "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml" \
-            "$GITHUB_WORKSPACE/test-results/drive-migration/junit.xml"
-          rm "$GITHUB_WORKSPACE/test-results/drive-migration/junit-fragments.xml"
-          exit "$status"
-        env:
-          TYPE: server
-
-      - name: Upload Drive Migration Evidence
-        if: always() && steps.drive-migration-changes.outputs.run == '1'
-        uses: actions/upload-artifact@v7
-        with:
-          name: suite-drive-migration-evidence
-          path: test-results/drive-migration/
           if-no-files-found: warn
           retention-days: 30
 
