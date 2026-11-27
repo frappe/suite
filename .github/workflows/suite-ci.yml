@@ -65,6 +65,12 @@ jobs:
           printf '[client]\nskip-ssl\n' > ~/.my.cnf
           mariadb --host 127.0.0.1 --port 3306 -u root -proot -e "SET GLOBAL character_set_server = 'utf8mb4'; SET GLOBAL collation_server = 'utf8mb4_unicode_ci'"
 
+      - name: Start Pilot
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
+            http://127.0.0.1:7000/api/v1/health
+
       - name: Install and build Suite
         working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
@@ -91,9 +97,8 @@ jobs:
           yarn install --frozen-lockfile --non-interactive
           yarn playwright install --with-deps --only-shell chromium
 
-      - name: Start Pilot
+      - name: Wait for the test site
         run: |
-          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot.log" 2>&1 &
           curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 2 \
             "http://$SITE:8000/api/method/ping"
 
