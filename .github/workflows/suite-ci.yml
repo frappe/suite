@@ -509,7 +509,7 @@ jobs:
           export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
           printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
           pilot new frappe-bench --frappe-branch develop
-          pilot -b frappe-bench init
+          pilot -b frappe-bench init --skip-frontend
 
       - name: Install Suite
         if: steps.drive-migration-changes.outputs.run == '1'
@@ -530,7 +530,7 @@ jobs:
       - name: Create Rehearsal Site
         if: steps.drive-migration-changes.outputs.run == '1'
         working-directory: /home/runner/pilot/benches/frappe-bench
-        run: pilot new-site rehearsal_site --admin-password admin --apps frappe suite
+        run: pilot new-site rehearsal_site --admin-password admin --apps frappe suite --skip-assets
 
       - name: Run Drive Migration Rehearsal
         if: steps.drive-migration-changes.outputs.run == '1'
