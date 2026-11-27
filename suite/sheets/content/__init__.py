@@ -20,7 +20,7 @@ from suite.sheets.content.conversion import (
     read_fingerprint,
     read_old,
 )
-from suite.sheets.content.readable_copy import is_html_complete
+from suite.sheets.content.readable_copy import is_html_complete, render
 
 APP = "sheets"
 # Every root schema.ts `ROOT` names: `sheets` is the tab order, every other root a map
@@ -104,7 +104,7 @@ EDITOR = content.EditorSpec(
     part_map=PART_MAP,
     schema=SCHEMA,
     checker_build=CHECKER_BUILD,
-    readable_copy=content.HtmlCopy(field="html", is_html_complete=is_html_complete),
+    readable_copy=content.HtmlCopy(field="html", is_html_complete=is_html_complete, render=render),
     media=None,
     always_on=True,
     conversion=CONVERSION,

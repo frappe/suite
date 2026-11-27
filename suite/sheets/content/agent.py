@@ -17,8 +17,8 @@ from frappe import _
 from suite import content, drive
 from suite.content import ChainBroken, checker, convert, jobs
 from suite.sheets.content import APP, CONVERTER_BUILD, EDITOR
+from suite.sheets.content.readable_copy import NEEDS_BUILD
 
-NEEDS_BUILD = "the Sheets converter needs Node and its built bundle"
 # A Drive title is a Data field, which holds this many characters
 TITLE_MAX = 140
 # The layer's refusals that pass by themselves: another push holds the spreadsheet, a compaction makes

@@ -3,17 +3,18 @@ import json
 import struct
 import uuid
 from collections.abc import Callable
+from datetime import timedelta
 from unittest.mock import patch
 
 import frappe
 import pycrdt
 from frappe.tests import IntegrationTestCase
 from frappe.tests.test_api import make_request
-from frappe.utils import get_test_client
+from frappe.utils import get_test_client, now_datetime
 from frappe.utils.synchronization import filelock
 
 from suite import content, drive
-from suite.content import checker, jobs, log, logged, tables
+from suite.content import checker, copies, jobs, log, logged, tables
 from suite.content.http import routes
 from suite.sheets import content as sheets_content
 from suite.sheets.content.agent import SheetsRefused, WriteBusy, WriteRefused
@@ -80,6 +81,20 @@ class TestSpreadsheetWrites(IntegrationTestCase):
 
     def head(self, node: str) -> int:
         return int(content.find(sheets_content.APP, node).head_rev)
+
+    def copy_of(self, node: str) -> str:
+        docname = frappe.db.get_value("Drive Node", node, "content_docname")
+        return frappe.db.get_value("Sheet", docname, "html") or ""
+
+    def age_copy(self, node: str) -> None:
+        # As a minute after the copy was written
+        table = tables.table("sheets", "projection")
+        doc_id = content.find(sheets_content.APP, node).id
+        frappe.db.sql(
+            f"UPDATE `{table}` SET `updated` = %s WHERE `doc_id` = %s",
+            (now_datetime() - timedelta(seconds=61), doc_id),
+        )
+        frappe.db.commit()
 
     def assert_created_nothing(self, title: str) -> None:
         self.assertFalse(frappe.db.exists("Drive Node", {"parent_node": self.folder, "title": title}))
@@ -228,6 +243,31 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         sheets_routes.spreadsheet_rows_append(node, "Data", [["agent again"]])
 
         self.assertEqual(self.cells(node)["Data"], {"A1": "agent", "A2": "tab", "A3": "agent again"})
+
+    def test_the_readable_copy_follows_an_agent_write(self):
+        node = self.create([{"name": "Budget", "rows": [["Rent", 1200]]}])
+        doc_id = content.find(sheets_content.APP, node).id
+        # A new spreadsheet has no copy, so its first write renders one
+        self.assertIn("Rent", self.copy_of(node))
+        self.age_copy(node)
+
+        sheets_routes.spreadsheet_rows_append(node, "Budget", [["Food", 300]])
+
+        self.assertIn("Budget", self.copy_of(node))
+        self.assertIn("Food", self.copy_of(node))
+        self.assertFalse(copies.is_owed(sheets_content.APP, doc_id))
+
+    def test_writes_inside_a_minute_of_the_copy_leave_it_owed_to_the_sweep(self):
+        node = self.create([{"name": "Budget", "rows": [["Rent"]]}])
+        doc_id = content.find(sheets_content.APP, node).id
+
+        sheets_routes.spreadsheet_rows_append(node, "Budget", [["Food"]])
+
+        self.assertNotIn("Food", self.copy_of(node))
+        self.assertTrue(copies.is_owed(sheets_content.APP, doc_id))
+        jobs.render_owed(sheets_content.APP, doc_id)
+        self.assertIn("Food", self.copy_of(node))
+        self.assertIn("Rent", self.copy_of(node))
 
     def test_a_read_gives_what_was_typed_and_writes_back_as_the_same_cells(self):
         rows = [["Item", "Amount"], [], ["Rent", "=B5*2"]]
