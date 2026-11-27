@@ -136,7 +136,6 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
     def tearDown(self):
         frappe.set_user("Administrator")
         release_test_reservations(self.drive_root)
-        frappe.db.delete("Drive Notification", {"to_user": self.owner, "inbox_message": ["is", "set"]})
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
         frappe.delete_doc("Meet Room", self.room.name, force=True, ignore_permissions=True)
         frappe.db.set_single_value("Meet Settings", "enable_recording", 0)
@@ -620,7 +619,7 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
             path.unlink(missing_ok=True)
 
     def test_finalization_deadline_notifies_and_allows_cleanup(self):
-        frappe.db.delete("Drive Notification", {"to_user": self.owner, "inbox_message": ["is", "set"]})
+        self.room.db_set("title", self.room.name)
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
         content = b"invalid-artifact"
@@ -666,11 +665,11 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 {"action": "delete_local", "terminal_result": "Failed"},
             )
 
-            rows = self._recording_notices()
-            self.assertEqual(len(rows), 1)
-            self.assertIn("could not be processed", rows[0]["subject"])
-            self.assertIn("No recording was added to Drive", rows[0]["detail"])
-            self.assertIsNone(rows[0]["node"])
+            subject = f"Your recording of {self.room.name} could not be processed"
+            self.assertEqual(
+                [row for row in self._recording_notices() if row["subject"] == subject],
+                [{"subject": subject, "detail": "No recording was added to Drive.", "node": None}],
+            )
         finally:
             path.unlink(missing_ok=True)
 

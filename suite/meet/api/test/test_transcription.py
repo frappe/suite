@@ -49,7 +49,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
 
     def tearDown(self):
         frappe.set_user("Administrator")
-        frappe.db.delete("Drive Notification", {"to_user": self.owner, "inbox_message": ["is", "set"]})
         for name in self.jobs:
             frappe.db.delete("Meet Transcription Job", {"name": name})
         frappe.db.delete("Meet Recording", {"meet_room": self.room.name})
@@ -180,18 +179,20 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertEqual(result["status"], "Queued")
             self.assertEqual(job.attempts, expected_attempt)
             job.status = "Processing"
+        filters = {"to_user": job.room_owner, "inbox_message": ["is", "set"]}
+        previous = set(frappe.get_all("Drive Notification", filters=filters, pluck="name"))
         result = transcription._failure(job, "source_unavailable", True)
         self.assertEqual(result["status"], "Failed")
         self.assertFalse(job.artifact)
-        self.assertTrue(
-            any(
-                frappe.parse_json(message)["subject"] == "Your Meet transcript could not be processed"
-                for message in frappe.get_all(
-                    "Drive Notification",
-                    filters={"to_user": job.room_owner, "inbox_message": ["is", "set"]},
-                    pluck="inbox_message",
+        self.assertEqual(
+            [
+                frappe.parse_json(row.inbox_message)["subject"]
+                for row in frappe.get_all(
+                    "Drive Notification", filters=filters, fields=["name", "inbox_message"]
                 )
-            )
+                if row.name not in previous
+            ],
+            ["Your Meet transcript could not be processed"],
         )
 
     def test_failed_remaining_sources_do_not_publish_an_empty_partial_transcript(self):
