@@ -160,7 +160,7 @@ def bounded(handler: Callable) -> Callable:
     def checked(*args: object, **kwargs: object) -> object:
         # Frappe has read and kept the body to parse it
         if frappe.request and len(frappe.request.get_data()) > BODY_MAX:
-            raise agent.SheetsRefused(_("A write's JSON is over 1 MB. Send it in smaller writes."))
+            raise agent.SheetsRefused(_("A write's body is over 1 MB. Send it in smaller writes."))
 
         return handler(*args, **kwargs)
 

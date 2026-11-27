@@ -60,7 +60,7 @@ curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>
 ] } }
 ```
 
-A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. The answer can be sent back as it is, and writes nothing.
+A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. Each sheet's `rows` sent back as a cell write from `A1` writes nothing.
 
 **5. Write a block of cells.** The user needs edit access to the spreadsheet. `sheet` names the sheet, whatever its case. `start` is the cell the block's top left lands on, such as `B2`. Each row of `rows` lands in the next row down. The cells around the block stay as they are.
 
@@ -143,11 +143,12 @@ To change a few cells, write just those cells, with `null` for any between them.
 - A create that answers `WriteBusy` may still leave a blank spreadsheet with that title in the folder. Look for it before creating again.
 - A write that changes nothing, such as one sent again after a lost answer, writes nothing and answers the `rev` the spreadsheet is at.
 - Adding rows sent again, as after a lost answer, adds the rows again. Read the spreadsheet first to see whether the first one landed.
+- Adding a sheet sent again, as after a lost answer, is refused because the name is taken, which can mean the first one landed. Read the spreadsheet first to see.
 - A merged cell shows only its top left cell's value. Send `null` for the cells it covers. A value for one of them is refused.
 - A cell a tab can't edit, because the sheet is protected, is refused. The message names the cell.
 - A write that names a sheet the spreadsheet doesn't have is refused. Add the sheet first, as in step 7.
 - One call writes up to 10,000 cells. It counts every cell sent, `null` ones too, and an empty row as one. In a create, it counts every sheet's cells together. Build a larger sheet with several writes.
-- One call takes up to 1 MB of JSON.
+- A call's body is at most 1 MB.
 
 ## Limits
 
@@ -175,9 +176,9 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or over 1 MB of JSON, the rows run past the sheet's last row or column, a value lands on a merged or protected cell, or a read is over 1,000,000 cells. The message names which, with the sheet and the cell when one is at fault. Nothing was written. The same call gets the same answer, so change it |
+| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value lands on a merged or protected cell, or a read is over 1,000,000 cells. The message names which, with the sheet and the cell when one is at fault. Nothing was written. The same call gets the same answer, so change it |
 | `WriteRefused` | 409 | The spreadsheet refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`. The same call gets the same answer until that changes. A write to a spreadsheet not converted yet asks for its conversion, so write again in a minute |
-| `WriteBusy` | 429 | The spreadsheet is busy, a version is being restored into it or was just restored, the spreadsheet changed during a read, other rows were being added to it, a read found it not converted yet, or the converter gave no answer: it was busy, ran out of time or was being updated. The cells are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
+| `WriteBusy` | 429 | The spreadsheet is busy, a version is being restored into it or was just restored, the spreadsheet changed during a read, another call adding rows or a sheet was landing on the site, a read found it not converted yet, or the converter gave no answer: it was busy, ran out of time or was being updated. The cells are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
 | `RuntimeError` | 500 | The site can't run the converter: Node or the converter's built bundle is missing. Nothing was written. The call is not at fault and gets the same answer until the site is fixed, so tell whoever runs the site |
 
