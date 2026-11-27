@@ -1,10 +1,12 @@
 import { initializeApp } from 'firebase/app'
-import { getMessaging, onBackgroundMessage } from 'firebase/messaging/sw'
+import { getMessaging } from 'firebase/messaging/sw'
 
 import {
   isSuitePushNotification,
   openNotificationTarget,
   pushNotification,
+  suitePush,
+  type PushPayload,
 } from '@/platform/pwa/notification'
 
 // Firebase Cloud Messaging service worker. Bundled to `sw.js` by vite-plugin-pwa
@@ -30,14 +32,28 @@ self.addEventListener('notificationclick', (event: NotificationEvent) => {
   )
 })
 
-// Firebase config initialization
-try {
-  const firebaseApp = initializeApp(JSON.parse(jsonConfig ?? 'null'))
-  const messaging = getMessaging(firebaseApp)
+// A Suite push is shown here, always, and the push event waits for it. Safari ends a device's
+// push subscription after a few pushes that show nothing, so neither Firebase's habit of handing
+// a push to a visible page instead, nor a notification shown after the event ends, may happen.
+// Registered before Firebase starts, so Firebase never sees these pushes.
+self.addEventListener('push', (event: PushEvent) => {
+  const payload = suitePushIn(event)
+  if (!payload) return
+  event.stopImmediatePropagation()
+  event.waitUntil(self.registration.showNotification(...pushNotification(payload)))
+})
 
-  onBackgroundMessage(messaging, (payload: import('firebase/messaging').MessagePayload) => {
-    self.registration.showNotification(...pushNotification(payload))
-  })
+function suitePushIn(event: PushEvent): PushPayload | null {
+  try {
+    return suitePush(event.data?.json())
+  } catch {
+    return null
+  }
+}
+
+// Firebase still keeps this device's push subscription and token current.
+try {
+  getMessaging(initializeApp(JSON.parse(jsonConfig ?? 'null')))
 } catch (error) {
   console.log('Failed to initialize Firebase:', error)
 }

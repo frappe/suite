@@ -1,4 +1,4 @@
-import { getMessaging, isSupported } from 'firebase/messaging'
+import { getMessaging, getToken, isSupported } from 'firebase/messaging'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import FrappePushNotification from './frappe-push-notification'
@@ -81,4 +81,53 @@ it('starts no messaging in a browser Firebase does not support, such as iPhone S
 
   expect(getMessaging).not.toHaveBeenCalled()
   expect(push.messaging).toBeNull()
+})
+
+describe('a device already notified, as the app starts', () => {
+  async function startedDevice(token: string) {
+    localStorage.setItem('firebase_token_mail', token)
+    localStorage.setItem('firebase_token_apps_mail', '["mail"]')
+    relay.subscribed = new Set(['mail'])
+    vi.stubGlobal('Notification', { permission: 'granted' })
+    vi.stubGlobal('fetch', async () => ({ json: async () => ({ vapid_public_key: 'vapid' }) }))
+    const push = new FrappePushNotification('mail', 'https://relay.test')
+    await push.initialize(fromPartial<ServiceWorkerRegistration>({}))
+    push.messaging = fromPartial({})
+    return push
+  }
+
+  it('moves the relay to the new token Firebase gives when the browser dropped the old subscription', async () => {
+    const push = await startedDevice('token-dropped')
+    vi.mocked(getToken).mockResolvedValueOnce('token-renewed')
+
+    await push.refreshToken()
+
+    expect(relay.calls).toEqual(['unsubscribe mail', 'subscribe mail'])
+    expect(localStorage.getItem('firebase_token_mail')).toBe('token-renewed')
+  })
+
+  it('tells the relay nothing while the token still holds', async () => {
+    const push = await startedDevice('token-live')
+    vi.mocked(getToken).mockResolvedValueOnce('token-live')
+
+    await push.refreshToken()
+
+    expect(relay.calls).toEqual([])
+  })
+})
+
+it('does not ask again once the user has said yes: Safari refuses a second ask from one tap', async () => {
+  // The tap already asked (useDevicePush). A second ask has no tap left and is answered no.
+  const requestPermission = vi.fn(async () => 'denied')
+  vi.stubGlobal('Notification', { permission: 'granted', requestPermission })
+  vi.stubGlobal('fetch', async () => ({ json: async () => ({ vapid_public_key: 'vapid' }) }))
+  vi.mocked(getToken).mockResolvedValueOnce('token-new')
+  const push = new FrappePushNotification('mail', 'https://relay.test')
+  await push.initialize(fromPartial<ServiceWorkerRegistration>({}))
+  push.messaging = fromPartial({})
+
+  const result = await push.enableNotification()
+
+  expect(requestPermission).not.toHaveBeenCalled()
+  expect(result).toEqual({ permission_granted: true, token: 'token-new' })
 })

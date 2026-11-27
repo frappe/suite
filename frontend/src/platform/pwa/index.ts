@@ -3,7 +3,6 @@ import { computed, readonly, ref, shallowRef, watch } from 'vue'
 import type { Session } from '@/platform/session'
 import { translate } from '@/platform/translation'
 
-import { pushNotification } from './notification'
 import SPLASH_DEVICES from './splash-devices.json'
 
 declare global {
@@ -233,13 +232,17 @@ async function registerPushServiceWorker(
 
     const registration = await navigator.serviceWorker.register(url, { type: 'module' })
     if (!config) return client
-    // A push that arrives while a Suite page is in front comes here, not to the worker.
-    client.onMessage((payload) => void registration.showNotification(...pushNotification(payload)))
     await client.initialize(registration)
     await claimPushToken(client, user)
-    // A device already notified is subscribed for this page's apps too: one installed since, or a
-    // token from before subscriptions were per app.
-    if (client.isNotificationEnabled()) await client.syncApps()
+    // A device already notified gets a working token again if the browser dropped its push
+    // subscription, and is subscribed for this page's apps too: one installed since, or a token
+    // from before subscriptions were per app.
+    if (client.isNotificationEnabled()) {
+      await client
+        .refreshToken()
+        .catch((error) => console.error('Failed to refresh push token', error))
+      await client.syncApps()
+    }
     pushEnabled.value = client.isNotificationEnabled()
     return client
   } catch (error) {
