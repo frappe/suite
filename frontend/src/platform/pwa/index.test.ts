@@ -3,11 +3,7 @@ import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 
-import {
-  openNotificationTarget,
-  pushNotification,
-  type PushPayload,
-} from '@/platform/pwa/notification'
+import { openNotificationTarget, pushNotification } from '@/platform/pwa/notification'
 import type { SessionStatus } from '@/platform/session'
 
 // The FCM client talks to the relay, to Firebase and to Frappe. The fake keeps
@@ -19,8 +15,8 @@ const { fromPartial } = await vi.hoisted(() => import('@total-typescript/shoehor
 const fcm = vi.hoisted(() => ({
   config: fromPartial<object | Error>({ projectId: 'suite-push', appId: '1:2:web:3' }),
   initialized: fromPartial<unknown[]>([]),
-  handlers: fromPartial<Array<(payload: PushPayload) => void>>([]),
   calls: fromPartial<string[]>([]),
+  refreshed: fromPartial<string[]>([]),
   relayRequests: fromPartial<string[]>([]),
   // The apps each client was made for, and the subscriptions it made for them.
   apps: fromPartial<string[][]>([]),
@@ -34,6 +30,10 @@ vi.mock('@/platform/pwa/frappe-push-notification', () => ({
     ) {
       fcm.apps.push(apps)
     }
+    // Firebase is asked for this device's token again.
+    async refreshToken() {
+      fcm.refreshed.push(localStorage.getItem('firebase_token_mail')!)
+    }
     // The relay hears of the apps the token is not subscribed for yet.
     async syncApps() {
       fcm.calls.push(`subscribe ${localStorage.getItem('firebase_token_mail')} for ${this.apps}`)
@@ -42,9 +42,6 @@ vi.mock('@/platform/pwa/frappe-push-notification', () => ({
       fcm.relayRequests.push(`${this.relayURL}/api/method/notification_relay.api.get_config`)
       if (fcm.config instanceof Error) throw fcm.config
       return fcm.config
-    }
-    onMessage(handler: (payload: PushPayload) => void) {
-      fcm.handlers.push(handler)
     }
     async initialize(registration: unknown) {
       fcm.initialized.push(registration)
@@ -86,8 +83,8 @@ beforeEach(() => {
   sessionStorage.clear()
   fcm.config = { projectId: 'suite-push', appId: '1:2:web:3' }
   fcm.initialized = []
-  fcm.handlers = []
   fcm.calls = []
+  fcm.refreshed = []
   fcm.relayRequests = []
   fcm.apps = []
   window.push_relay_server_url = 'https://relay.test'
@@ -246,29 +243,17 @@ describe('Suite PWA', () => {
     expect(console.error).not.toHaveBeenCalled()
   })
 
-  it('shows one notification for a push that every open tab receives', async () => {
-    // Two tabs: two pages, each with its own FCM client on the same worker.
+  it('renews the token of a device already notified each time the app starts', async () => {
+    localStorage.setItem(TOKEN_KEY, 'token-a')
     await install('authenticated')
-    vi.resetModules()
+
+    expect(fcm.refreshed).toEqual(['token-a'])
+  })
+
+  it('starts no token refresh on a device never notified', async () => {
     await install('authenticated')
-    expect(fcm.handlers).toHaveLength(2)
 
-    const push = {
-      messageId: 'msg-1',
-      data: { title: 'New mail', body: 'Hello', click_action: '/mail' },
-    }
-    for (const handler of fcm.handlers) handler(push)
-
-    expect(showNotification).toHaveBeenCalledTimes(2)
-    const tags = showNotification.mock.calls.map(
-      ([, options]) => fromPartial<NotificationOptions>(options).tag,
-    )
-    // The same tag: the second notification replaces the first.
-    expect(tags).toEqual(['msg-1', 'msg-1'])
-    expect(showNotification).toHaveBeenCalledWith(
-      'New mail',
-      expect.objectContaining({ body: 'Hello' }),
-    )
+    expect(fcm.refreshed).toEqual([])
   })
 
   it('drops the push token on logout, so the next user in this browser gets none of the mail', async () => {

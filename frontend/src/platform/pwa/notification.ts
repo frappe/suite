@@ -1,7 +1,6 @@
 /**
- * How a push becomes a notification. The page (a push while a Suite tab is in
- * front) and Mail's service worker (a push in the background) both use it, so
- * a push looks and behaves the same either way.
+ * How a push becomes a notification. Mail's service worker shows every Suite
+ * push itself, whether or not a Suite page is in front.
  */
 
 export interface PushPayload {
@@ -15,9 +14,29 @@ export interface PushPayload {
 }
 
 /**
- * The title and options for one push. The tag is the FCM message id: every
- * open Suite tab receives a foreground push, and a notification with the same
- * tag replaces the one before it, so the user sees one.
+ * The Suite push in a push message's JSON, as FCM delivers it to a browser,
+ * or null for anything else. The relay sends data-only messages: what to show
+ * is under `data`, and FCM adds the message id as `fcmMessageId`.
+ */
+export function suitePush(message: unknown): PushPayload | null {
+  if (typeof message !== 'object' || message === null || !('data' in message)) return null
+  const { data } = message
+  if (typeof data !== 'object' || data === null || !('title' in data)) return null
+  const text = (value: unknown) => (typeof value === 'string' ? value : undefined)
+  return {
+    messageId: 'fcmMessageId' in message ? text(message.fcmMessageId) : undefined,
+    data: {
+      title: text(data.title),
+      body: 'body' in data ? text(data.body) : undefined,
+      notification_icon: 'notification_icon' in data ? text(data.notification_icon) : undefined,
+      click_action: 'click_action' in data ? text(data.click_action) : undefined,
+    },
+  }
+}
+
+/**
+ * The title and options for one push. The tag is the FCM message id, so a
+ * push delivered twice replaces its own notification.
  */
 export function pushNotification(
   payload: PushPayload,
