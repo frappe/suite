@@ -246,7 +246,11 @@ def push(node: str, write: dict) -> int:
         return content.write(APP, node, writing(write))
     except Unchanged:
         # A write sent again after a lost answer lands as nothing, and answers where the spreadsheet is
-        return int(content.find(APP, node).head_rev)
+        log = content.find(APP, node)
+        if not log:
+            raise drive.DriveNotFound(_("That spreadsheet was not found")) from None
+
+        return int(log.head_rev)
     except content.Refusal as refusal:
         reason = refusal.body["collab"]
         if reason == "not_found":
