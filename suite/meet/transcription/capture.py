@@ -221,16 +221,15 @@ def reconcile_capture(job):
         _publish_state(frappe.get_doc("Meet Room", recording.meet_room), recording)
 
 
-def participant_state(capture):
+def participant_state(job):
     """Only the live capture outcome; queued inference is never exposed as UI."""
-    job = frappe.db.get_value(
-        "Meet Transcription Job", {"capture": capture}, ["status", "manifest"], as_dict=True
-    )
     if not job:
-        return None
+        return "failed"
     manifest = frappe.parse_json(job.manifest) or {}
     if manifest.get("state") in ("complete", "partial", "failed"):
         return manifest["state"]
+    if job.failure_code == "capture_start_unconfirmed":
+        return "failed"
     if job.status == "Capturing":
         return "capturing"
     return "failed" if job.status == "Failed" else "complete"
