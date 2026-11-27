@@ -20,8 +20,8 @@ import { colLabel, parseCellId } from './cells'
 import { unpackSheet } from './sheet-codec'
 
 // IronCalc's grid: 1,048,576 rows × 16,384 columns (XFD), as in Excel.
-const MAX_ROW = 1048576
-const MAX_COL = 16384
+export const MAX_ROW = 1048576
+export const MAX_COL = 16384
 // IronCalc's own sheet-name rules, as in Excel.
 const MAX_NAME = 31
 const BAD_NAME_CHAR = /[[\]:*?/\\]/
@@ -97,6 +97,11 @@ export function ironcalcSheetName(name: string): string {
   return name.replace(BAD_NAME_CHARS, '_').slice(0, MAX_NAME) || 'Sheet'
 }
 
+/** Whether IronCalc takes a sheet name, leaving aside other sheets' names. */
+export function validSheetName(name: string): boolean {
+  return name !== '' && name.length <= MAX_NAME && !BAD_NAME_CHAR.test(name)
+}
+
 /**
  * New names for the sheet names IronCalc refuses (characters `[ ] : * ? / \`,
  * more than 31 characters, empty, or the same as an earlier name but for
@@ -107,7 +112,7 @@ export function ironcalcSheetNames(names: string[]) {
   const refused: string[] = []
   for (const name of names) {
     const key = name.toLowerCase()
-    const valid = name !== '' && name.length <= MAX_NAME && !BAD_NAME_CHAR.test(name)
+    const valid = validSheetName(name)
     if (valid && !taken.has(key)) taken.add(key)
     else refused.push(name)
   }
