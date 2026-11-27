@@ -2992,13 +2992,7 @@ function updateDraw(event: PointerEvent) {
   if (shape.points.length > 2 && distance(first, last) * viewport.scale <= 12) {
     shape.points[shape.points.length - 1] = { ...first }
   }
-  const pointBox = pointBounds(shape.points)!
-  Object.assign(shape, {
-    x: pointBox.x,
-    y: pointBox.y,
-    width: pointBox.width,
-    height: pointBox.height,
-  })
+  Object.assign(shape, pointBounds(shape.points))
 }
 
 function finishDraw(event: PointerEvent) {
@@ -4590,9 +4584,6 @@ onBeforeUnmount(() => {
           size="sm"
           variant="ghost"
           theme="gray"
-          :class="{
-            'is-active': textPropertyControlsEnabled && propertyTextStyle.fontWeight >= 600,
-          }"
           :label="__('Bold')"
           :data-state="
             textPropertyControlsEnabled && propertyTextStyle.fontWeight >= 600
@@ -4612,9 +4603,6 @@ onBeforeUnmount(() => {
           size="sm"
           variant="ghost"
           theme="gray"
-          :class="{
-            'is-active': textPropertyControlsEnabled && propertyTextStyle.fontStyle === 'italic',
-          }"
           :label="__('Italic')"
           :data-state="
             textPropertyControlsEnabled && propertyTextStyle.fontStyle === 'italic'
@@ -4636,10 +4624,6 @@ onBeforeUnmount(() => {
           size="sm"
           variant="ghost"
           theme="gray"
-          :class="{
-            'is-active':
-              textPropertyControlsEnabled && propertyTextStyle.textDecoration === 'underline',
-          }"
           :label="__('Underline')"
           :data-state="
             textPropertyControlsEnabled && propertyTextStyle.textDecoration === 'underline'
@@ -4882,9 +4866,7 @@ onBeforeUnmount(() => {
   height: 16px;
   flex: 0 0 auto;
 }
-.property-toolbar :deep(.property-tool.is-active) {
-  color: var(--ink-gray-8);
-  background: var(--surface-gray-4);
+.property-toolbar :deep(.property-tool[data-state='active']) {
   box-shadow: inset 0 0 0 1px var(--outline-gray-3);
 }
 .property-toolbar :deep(.property-text-control) {

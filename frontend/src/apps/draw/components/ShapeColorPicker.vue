@@ -290,7 +290,6 @@ async function pickScreenColor() {
               v-for="color in recent"
               :key="color"
               :style="{ background: displayColor(color) }"
-              :class="{ selected: isSelectedColor(color) }"
               :aria-pressed="isSelectedColor(color)"
               :aria-label="color"
               @click="selectColor(color)"
@@ -314,7 +313,6 @@ async function pickScreenColor() {
               <button
                 v-for="(option, index) in primaryPalette"
                 :key="option.family.name"
-                :class="{ selected: isSelectedColor(option.color, primaryTarget) }"
                 :aria-pressed="isSelectedColor(option.color, primaryTarget)"
                 :style="shortcutStyle(option.color, primaryTarget)"
                 :aria-label="`${option.family.name} ${primaryLabel.toLowerCase()} (${colorKeys[index + 1]})`"
@@ -343,7 +341,6 @@ async function pickScreenColor() {
               <button
                 v-for="(option, index) in propertyBorderPalette"
                 :key="option.family.name"
-                :class="{ selected: isSelectedColor(option.color, secondaryTarget) }"
                 :aria-pressed="isSelectedColor(option.color, secondaryTarget)"
                 :style="shortcutStyle(option.color, secondaryTarget)"
                 :aria-label="`${option.family.name} ${secondaryLabel.toLowerCase()} (Shift+${colorKeys[index + 1]})`"
@@ -362,7 +359,7 @@ async function pickScreenColor() {
           <h3>{{ __('Colors') }}</h3>
           <div class="color-grid">
             <button
-              :class="['none-color', { selected: isSelectedColor(undefined) }]"
+              class="none-color"
               :aria-pressed="isSelectedColor(undefined)"
               :aria-label="`No ${selectionTarget} color`"
               @click="selectColor(undefined)"
@@ -372,7 +369,6 @@ async function pickScreenColor() {
             <button
               v-for="option in isProperty ? propertyPalette : palette"
               :key="option.family.name"
-              :class="{ selected: isSelectedColor(option.color) }"
               :aria-pressed="isSelectedColor(option.color)"
               :style="{ background: displayColor(option.color) }"
               :aria-label="option.family.name"
@@ -386,7 +382,6 @@ async function pickScreenColor() {
             <button
               v-for="(color, index) in shades"
               :key="color"
-              :class="{ selected: isSelectedColor(color) }"
               :aria-pressed="isSelectedColor(color)"
               :style="shortcutStyle(color)"
               :aria-label="`${color} (Shift+${index + 1})`"
@@ -431,7 +426,7 @@ async function pickScreenColor() {
             <button
               v-for="option in borderWidths"
               :key="option.label"
-              :class="['stroke-option', { selected: props.strokeWidth === option.value }]"
+              class="stroke-option"
               :aria-pressed="props.strokeWidth === option.value"
               :aria-label="option.label"
               @click="emit('style', { strokeWidth: option.value })"
@@ -448,7 +443,7 @@ async function pickScreenColor() {
             <button
               v-for="option in borderStyles"
               :key="option.value"
-              :class="['stroke-option', { selected: props.strokeStyle === option.value }]"
+              class="stroke-option"
               :aria-pressed="props.strokeStyle === option.value"
               :aria-label="option.label"
               @click="emit('style', { strokeStyle: option.value })"
@@ -606,8 +601,8 @@ h3 {
   outline: 1px solid var(--ink-gray-7);
   outline-offset: 1px;
 }
-.color-row button.selected,
-.color-grid button.selected {
+.color-row button[aria-pressed='true'],
+.color-grid button[aria-pressed='true'] {
   outline: 2px solid var(--ink-gray-9);
   outline-offset: 2px;
 }
@@ -646,7 +641,7 @@ h3 {
   background: var(--surface-gray-3);
   border-color: var(--outline-gray-3);
 }
-.stroke-option.selected {
+.stroke-option[aria-pressed='true'] {
   color: var(--ink-gray-9);
   border-color: var(--ink-gray-8);
   background: var(--surface-gray-3);

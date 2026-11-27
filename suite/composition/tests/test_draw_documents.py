@@ -18,6 +18,8 @@ OWNER = "draw-save-owner@example.com"
 READER = "draw-save-reader@example.com"
 STRANGER = "draw-save-stranger@example.com"
 SCENE = '{"rectangles":[],"lines":[]}'
+BOX = {"id": "box", "x": 1, "y": 2, "width": 30, "height": 40, "rotation": 0, "cornerRadius": 0}
+EDITED_SCENE = json.dumps({"rectangles": [BOX], "lines": []})
 
 
 class TestDrawingDocuments(IntegrationTestCase):
@@ -58,33 +60,18 @@ class TestDrawingDocuments(IntegrationTestCase):
         self.assertEqual(draw.get_drawing(self.node), self.body)
 
     def test_stale_save_keeps_the_last_acknowledged_scene(self):
-        content = json.dumps(
-            {
-                "rectangles": [
-                    {"id": "box", "x": 1, "y": 2, "width": 30, "height": 40, "rotation": 0, "cornerRadius": 0}
-                ],
-                "lines": [],
-            }
-        )
         with storage_v2():
-            saved = draw.save_drawing(self.node, content, self.body["modified"])
+            saved = draw.save_drawing(self.node, EDITED_SCENE, self.body["modified"])
         with self.assertRaises(draw.DrawingConflict):
             draw.save_drawing(self.node, SCENE, self.body["modified"])
         current = draw.get_drawing(self.node)
-        self.assertEqual(json.loads(current["content"]), json.loads(content))
+        self.assertEqual(json.loads(current["content"]), json.loads(EDITED_SCENE))
         self.assertEqual(current["modified"], saved["modified"])
 
     def test_generic_document_save_cannot_replace_a_linked_scene(self):
         frappe.set_user(OWNER)
         document = frappe.get_doc("Drawing", self.body["name"])
-        document.content = json.dumps(
-            {
-                "rectangles": [],
-                "lines": [
-                    {"id": "line", "kind": "line", "start": {"x": 0, "y": 0}, "end": {"x": 20, "y": 10}}
-                ],
-            }
-        )
+        document.content = EDITED_SCENE
 
         with self.assertRaisesRegex(frappe.PermissionError, "Save drawing scenes through Draw"):
             document.save()
@@ -113,23 +100,9 @@ class TestDrawingDocuments(IntegrationTestCase):
         self.assertLess(drive_lock, drawing_lock)
 
     def test_valid_version_repairs_a_legacy_scene(self):
-        legacy_scene = {
-            "rectangles": [
-                {
-                    "id": "legacy",
-                    "x": 1,
-                    "y": 2,
-                    "width": 30,
-                    "height": 40,
-                    "rotation": 0,
-                    "cornerRadius": 0,
-                    "labelFontSize": 0,
-                }
-            ],
-            "lines": [],
-        }
+        legacy_scene = {"rectangles": [{**BOX, "labelFontSize": 0}], "lines": []}
         with storage_v2():
-            draw.save_drawing(self.node, SCENE, self.body["modified"])
+            draw.save_drawing(self.node, EDITED_SCENE, self.body["modified"])
             valid_version = drive.list_versions(self.node)["rows"][0]["seq"]
             # Represent a scene stored before Draw validated editor metadata.
             frappe.db.set_value("Drawing", self.body["name"], "content", json.dumps(legacy_scene))
@@ -137,7 +110,7 @@ class TestDrawingDocuments(IntegrationTestCase):
             self.assertIsNotNone(legacy_version)
 
             restored = draw.get_drawing(self.node)
-            self.assertEqual(json.loads(restored["content"]), json.loads(SCENE))
+            self.assertEqual(json.loads(restored["content"]), json.loads(EDITED_SCENE))
             with self.assertRaisesRegex(frappe.ValidationError, "invalid style or metadata"):
                 node_version_restore(self.node, legacy_version["seq"])
             self.assertEqual(draw.get_drawing(self.node), restored)

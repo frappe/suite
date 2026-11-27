@@ -84,8 +84,8 @@ version in the same transaction.
 Each editor keeps its unsynced draft in a separate IndexedDB record. A successful
 save removes only the acknowledged draft revision. Conflicting drafts remain
 available for download or a recovered copy. Recovery actions require the same
-signed-in account. Unfinished text remains in recovery storage until the user
-finishes editing it.
+signed-in account. When Draw reopens unfinished text, the draft stays local.
+The user can download it or save a recovered copy.
 
 Read-only sessions hide the property bar and disable editing and history
 actions. Navigation attempts to save first. If changes remain unsynced, it keeps

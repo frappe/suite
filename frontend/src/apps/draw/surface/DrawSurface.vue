@@ -36,6 +36,7 @@ const {
   drawingLoading,
   readable,
 } = persistence
+const recoveryPending = computed(() => conflict.value || unfinished.value)
 useHideRail(() => readable.value && !loadError.value)
 const saveState = computed(() => {
   if (error.value && dirty.value) return 'failed'
@@ -51,15 +52,9 @@ async function saveRecoveredCopy() {
   recovering.value = true
   try {
     if (!recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
-    if (!recoveredCopy.value) {
-      let node = persistence.recoveryNode
-      if (!node) {
-        node = (await creation.run({ content_doctype: 'Drawing' })).name
-        await persistence.rememberRecoveryNode(node)
-      }
-      await persistence.saveRecoveryTo(node)
-      recoveredCopy.value = node
-    }
+    recoveredCopy.value ??= await persistence.saveRecoveryCopy(
+      async () => (await creation.run({ content_doctype: 'Drawing' })).name,
+    )
     const navigation = await router.push(driveNodeRoute(recoveredCopy.value))
     if (isNavigationFailure(navigation)) {
       error.value = __('The recovered drawing was saved. Open it to continue.')
@@ -117,10 +112,10 @@ onBeforeUnmount(() => {
         title-label="Drawing title"
         :save-state="saveState"
         :view-only="!editable && !drawingLoading && !loadError"
-        :state-badge="conflict || unfinished ? 'Editing paused' : ''"
+        :state-badge="recoveryPending ? 'Editing paused' : ''"
       />
       <div
-        v-if="error || conflict || !recoveryAvailable || unfinished"
+        v-if="error || recoveryPending || !recoveryAvailable"
         class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-3 py-2 text-sm"
         role="alert"
       >
@@ -138,13 +133,13 @@ onBeforeUnmount(() => {
           @click="persistence.downloadRecovery"
         />
         <Button
-          v-if="recoveredCopy || (dirty && (conflict || unfinished))"
+          v-if="recoveredCopy || (dirty && recoveryPending)"
           :label="recoveredCopy ? __('Open recovered drawing') : __('Save recovered copy')"
           :loading="recovering"
           @click="saveRecoveredCopy"
         />
         <Button
-          v-if="!conflict && !unfinished && !loadError"
+          v-if="!recoveryPending && !loadError"
           :label="__('Retry save')"
           :loading="saving"
           :disabled="!editable"

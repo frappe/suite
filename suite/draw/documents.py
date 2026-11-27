@@ -25,11 +25,8 @@ def save(node: str, content: str, base_modified: str) -> DrawingBody:
     if not isinstance(content, str):
         raise frappe.ValidationError(_("Drawing content must be a JSON string."))
     document.content = content
-    token = _operation.set(("save", name))
-    try:
+    with _operation.set(("save", name)):
         document.save()
-    finally:
-        _operation.reset(token)
     document.drive_take_version()
     return _body(document)
 

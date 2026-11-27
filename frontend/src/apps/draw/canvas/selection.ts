@@ -37,8 +37,7 @@ export function isLine(shape: Shape): shape is LineShape {
   return 'kind' in shape && (shape.kind === 'line' || shape.kind === 'arrow')
 }
 export function bounds(shapes: Shape[]): RectangleShape | undefined {
-  if (!shapes.length) return
-  return pointBounds(
+  const box = pointBounds(
     (function* () {
       for (const shape of shapes) {
         if (isLine(shape)) {
@@ -53,8 +52,11 @@ export function bounds(shapes: Shape[]): RectangleShape | undefined {
       }
     })(),
   )
+  return box && { id: 'selection', ...box, rotation: 0, cornerRadius: 0 }
 }
-export function pointBounds(points: Iterable<Point>): RectangleShape | undefined {
+export function pointBounds(
+  points: Iterable<Point>,
+): Pick<RectangleShape, 'x' | 'y' | 'width' | 'height'> | undefined {
   let left = Infinity,
     top = Infinity,
     right = -Infinity,
@@ -66,15 +68,7 @@ export function pointBounds(points: Iterable<Point>): RectangleShape | undefined
     bottom = Math.max(bottom, point.y)
   }
   if (left === Infinity) return
-  return {
-    id: 'selection',
-    x: left,
-    y: top,
-    width: right - left,
-    height: bottom - top,
-    rotation: 0,
-    cornerRadius: 0,
-  }
+  return { x: left, y: top, width: right - left, height: bottom - top }
 }
 export function transformShape(shape: Shape, from: RectangleShape, to: RectangleShape): Shape {
   const a = rectangleCenter(from),
@@ -99,17 +93,10 @@ export function transformShape(shape: Shape, from: RectangleShape, to: Rectangle
   }
   if (isFreeDraw(shape)) {
     const points = shape.points.map(map)
-    const pointBox = pointBounds(
+    const box = pointBounds(
       points.length ? points : Object.values(rectangleCorners(shape)).map(map),
-    )!
-    return {
-      ...shape,
-      points,
-      x: pointBox.x,
-      y: pointBox.y,
-      width: pointBox.width,
-      height: pointBox.height,
-    }
+    )
+    return { ...shape, points, ...box }
   }
   const center = map(rectangleCenter(shape))
   const radians = (shape.rotation * Math.PI) / 180

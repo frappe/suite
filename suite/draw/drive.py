@@ -37,15 +37,12 @@ def duplicate(source_docname: str, node: str) -> str:
 
 def version_bytes(docname: str) -> tuple[io.BytesIO, str]:
     """Return a bounded scene envelope for Drive's immutable version store."""
-    document = frappe.get_doc(DOCTYPE, docname)
-    # Preserve the current body as the recovery version even when it predates
-    # today's scene rules; restore validates the requested target on save.
-    if isinstance(document.content, str):
-        if len(document.content.encode("utf-8")) > MAX_CONTENT_BYTES:
+    # Capture legacy scenes as-is so users can restore a valid version.
+    content = frappe.get_doc(DOCTYPE, docname).content
+    if isinstance(content, str):
+        if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
             frappe.throw(_("Drawing content cannot exceed 64 MB."))
-        content = json.loads(document.content)
-    else:
-        content = document.content
+        content = json.loads(content)
     scene_size = len(json.dumps(content, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode())
     if scene_size > MAX_CONTENT_BYTES:
         frappe.throw(_("Drawing content cannot exceed 64 MB."))
@@ -73,11 +70,8 @@ def restore_version(docname: str, stream: IO[bytes]) -> None:
         frappe.throw(_("The drawing version has an unsupported format."))
     document = frappe.get_doc(DOCTYPE, docname)
     document.content = envelope.get("content")
-    token = _operation.set(("restore", docname))
-    try:
+    with _operation.set(("restore", docname)):
         document.save(ignore_permissions=True)
-    finally:
-        _operation.reset(token)
 
 
 def on_purge(docname: str) -> None:

@@ -128,10 +128,6 @@ export class DrawingPersistence {
     clearTimeout(this.timer)
   }
 
-  get recoveryNode(): string | undefined {
-    return this.pending?.recoveryNode
-  }
-
   saveDrawing = async (): Promise<void> => {
     clearTimeout(this.timer)
     if (this.inFlight) return this.inFlight
@@ -176,13 +172,16 @@ export class DrawingPersistence {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
-  saveRecoveryTo = async (node: string): Promise<void> => {
+  saveRecoveryCopy = async (create: () => Promise<string>): Promise<string> => {
     if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
     const pending = this.pending
     if (!pending) throw new Error(__('No recovery draft is available.'))
-    if (pending.recoveryNode && pending.recoveryNode !== node) {
-      throw new Error(__('This recovery draft is already linked to another destination.'))
+    if (!pending.recoveryNode) {
+      pending.recoveryNode = await create()
+      await this.retainRecovery()
+      if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
     }
+    const node = pending.recoveryNode
     const created = await client.query(api.draw.documents.get, { node })
     const savedScene: unknown = JSON.parse(created.content)
     if (!sameJson(savedScene, pending.content)) {
@@ -192,7 +191,6 @@ export class DrawingPersistence {
       if (destinationChanged) {
         throw new Error(__('The recovered drawing changed. Your recovery draft is preserved.'))
       }
-      pending.recoveryNode = node
       pending.recoveryModified = created.modified
       await this.retainRecovery()
       if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
@@ -206,15 +204,12 @@ export class DrawingPersistence {
         { silent: true },
       )
     }
-    this.acknowledgeRecovery(pending)
+    this.pending = undefined
+    this.dirty.value = false
+    this.unfinished.value = false
+    this.removeAcknowledged(pending)
     await this.recoveryWrite
-  }
-
-  rememberRecoveryNode = async (node: string): Promise<void> => {
-    if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
-    if (!this.pending) throw new Error(__('No recovery draft is available.'))
-    this.pending.recoveryNode = node
-    await this.retainRecovery()
+    return node
   }
 
   dispose = (): void => {
@@ -292,13 +287,6 @@ export class DrawingPersistence {
       .catch(() => {
         this.recoveryAvailable.value = false
       })
-  }
-
-  private acknowledgeRecovery(pending: DrawingDraft): void {
-    this.pending = undefined
-    this.dirty.value = false
-    this.unfinished.value = false
-    this.removeAcknowledged(pending)
   }
 }
 

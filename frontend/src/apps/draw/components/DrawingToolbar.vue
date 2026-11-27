@@ -40,41 +40,27 @@ const tools: ReadonlyArray<{
 const props = defineProps<{ activeTool: DrawingTool | null }>()
 
 const emit = defineEmits<{ select: [tool: DrawingTool] }>()
-const overflowActive = computed(() => ['image', 'laser', 'lasso'].includes(props.activeTool ?? ''))
 
 const LaserPointerIcon = defineComponent(
   () => () =>
-    h(
-      'svg',
-      {
-        viewBox: '0 0 20 20',
-        'aria-hidden': 'true',
-        style: { color: 'var(--ink-gray-8)' },
-      },
-      [h('use', { href: `${laserPointerIcon}#laser-pointer` })],
-    ),
+    h('svg', { viewBox: '0 0 20 20', 'aria-hidden': 'true', class: 'text-ink-gray-8' }, [
+      h('use', { href: `${laserPointerIcon}#laser-pointer` }),
+    ]),
 )
 
-const overflowTools = computed(() => [
-  {
-    label: __('Insert Image'),
-    icon: ImagePlus,
-    selected: props.activeTool === 'image',
-    onClick: () => emit('select', 'image'),
-  },
-  {
-    label: __('Laser Pointer'),
-    icon: LaserPointerIcon,
-    selected: props.activeTool === 'laser',
-    onClick: () => emit('select', 'laser'),
-  },
-  {
-    label: __('Lasso Select'),
-    icon: LassoSelect,
-    selected: props.activeTool === 'lasso',
-    onClick: () => emit('select', 'lasso'),
-  },
-])
+const overflowTools = computed(() =>
+  (
+    [
+      { value: 'image', label: __('Insert Image'), icon: ImagePlus },
+      { value: 'laser', label: __('Laser Pointer'), icon: LaserPointerIcon },
+      { value: 'lasso', label: __('Lasso Select'), icon: LassoSelect },
+    ] as const
+  ).map(({ value, ...tool }) => ({
+    ...tool,
+    selected: props.activeTool === value,
+    onClick: () => emit('select', value),
+  })),
+)
 </script>
 
 <template>
@@ -109,9 +95,7 @@ const overflowTools = computed(() => [
         </Tooltip>
         <Dropdown
           class="drawing-tool"
-          :class="{ 'is-active': overflowActive }"
-          :aria-label="__('More tools')"
-          :aria-pressed="overflowActive"
+          :aria-pressed="overflowTools.some((tool) => tool.selected)"
           align="end"
           :offset="12"
           :options="overflowTools"
@@ -175,13 +159,9 @@ const overflowTools = computed(() => [
   stroke-width: 1.5;
 }
 
-.drawing-toolbar__surface :deep(button.is-active) {
+.drawing-toolbar__surface :deep(button[aria-pressed='true']) {
   color: var(--ink-gray-8);
   background: var(--surface-gray-4);
-}
-
-.drawing-toolbar__surface :deep(button[data-state='active']),
-.drawing-toolbar__surface :deep(button.is-active) {
   box-shadow: inset 0 0 0 1px var(--outline-gray-3);
 }
 

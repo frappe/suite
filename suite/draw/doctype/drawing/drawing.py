@@ -16,9 +16,13 @@ MAX_POINTS = 100_000
 MAX_COORDINATE = 100_000_000
 SHAPE_KINDS = {"diamond", "ellipse", "text", "image", "freedraw"}
 LINE_KINDS = {"line", "arrow"}
-FONT_FAMILIES = {"shantell", "inter", "georgia", "mono"}
-FONT_WEIGHTS = (400, 500, 600, 700)
-TEXT_ALIGNMENTS = ("left", "center", "right", "justify")
+TEXT_STYLES = {
+    "fontFamily": ("shantell", "inter", "georgia", "mono"),
+    "fontWeight": (400, 500, 600, 700),
+    "fontStyle": ("normal", "italic"),
+    "textDecoration": ("none", "underline", "line-through"),
+    "textAlign": ("left", "center", "right", "justify"),
+}
 
 
 def _valid_number(value):
@@ -38,52 +42,40 @@ def _finite_number(value: object) -> bool:
         return False
 
 
-def _valid_optional_fields(shape: dict, is_line: bool) -> bool:
-    string_fields: tuple[str, ...] = ("stroke", "fill", "link", "label", "labelFill")
-    if is_line:
-        string_fields = (*string_fields, "arrowHeadFill")
-    if any(
-        field in shape
-        and not isinstance(shape[field], str)
-        and not (field == "stroke" and shape[field] is None)
-        for field in string_fields
-    ):
-        return False
-    # The editor counts link length in UTF-16 code units.
-    if "link" in shape and len(shape["link"].encode("utf-16-le")) // 2 > 2048:
-        return False
-    if "strokeWidth" in shape and (not _finite_number(shape["strokeWidth"]) or shape["strokeWidth"] <= 0):
-        return False
-    if "strokeStyle" in shape and shape["strokeStyle"] not in ("solid", "dashed", "dotted"):
-        return False
-    if "opacity" in shape and (not _finite_number(shape["opacity"]) or not 0 <= shape["opacity"] <= 1):
-        return False
-    if "groupId" in shape and not isinstance(shape["groupId"], str):
-        return False
-    if "order" in shape and not _finite_number(shape["order"]):
-        return False
+def _positive_number(value: object) -> bool:
+    return _finite_number(value) and isinstance(value, int | float) and value > 0
 
-    if "labelFontSize" in shape and (
-        not _finite_number(shape["labelFontSize"]) or shape["labelFontSize"] <= 0
-    ):
-        return False
-    if "labelFontFamily" in shape and (
-        not isinstance(shape["labelFontFamily"], str) or shape["labelFontFamily"] not in FONT_FAMILIES
-    ):
-        return False
-    if "labelFontWeight" in shape and shape["labelFontWeight"] not in FONT_WEIGHTS:
-        return False
-    if "labelFontStyle" in shape and shape["labelFontStyle"] not in ("normal", "italic"):
-        return False
-    if "labelTextDecoration" in shape and shape["labelTextDecoration"] not in (
-        "none",
-        "underline",
-        "line-through",
-    ):
-        return False
-    if "labelTextAlign" in shape and shape["labelTextAlign"] not in TEXT_ALIGNMENTS:
-        return False
+
+def _valid_text_style(shape: dict, *, label: bool = False) -> bool:
+    for name, choices in TEXT_STYLES.items():
+        key = f"label{name[0].upper()}{name[1:]}" if label else name
+        if key not in shape or (key == "fontFamily" and shape[key] == "monday"):
+            continue
+        if shape[key] not in choices:
+            return False
     return True
+
+
+def _valid_optional_fields(shape: dict, is_line: bool) -> bool:
+    strings = ("fill", "link", "label", "labelFill", "groupId")
+    if is_line:
+        strings = (*strings, "arrowHeadFill")
+    if any(not isinstance(shape.get(field, ""), str) for field in strings):
+        return False
+    stroke = shape.get("stroke")
+    opacity = shape.get("opacity", 1)
+    return (
+        (stroke is None or isinstance(stroke, str))
+        # The editor counts link length in UTF-16 code units.
+        and len(shape.get("link", "").encode("utf-16-le")) <= 4096
+        and _positive_number(shape.get("strokeWidth", 1))
+        and shape.get("strokeStyle", "solid") in ("solid", "dashed", "dotted")
+        and _finite_number(opacity)
+        and 0 <= opacity <= 1
+        and _finite_number(shape.get("order", 0))
+        and _positive_number(shape.get("labelFontSize", 1))
+        and _valid_text_style(shape, label=True)
+    )
 
 
 def _valid_pressures(value, point_count):
@@ -169,26 +161,12 @@ class Drawing(drive.DriveContent, Document):
                     if "pressures" in shape and not _valid_pressures(shape["pressures"], len(points)):
                         frappe.throw(_("A free draw object has invalid pressure data."))
                 elif kind == "text":
-                    font_family = shape.get("fontFamily")
                     if (
                         not isinstance(shape.get("text"), str)
                         or not _valid_number(shape.get("fontSize"))
                         or shape["fontSize"] <= 0
-                        or (
-                            "fontFamily" in shape
-                            and (
-                                not isinstance(font_family, str)
-                                or (font_family != "monday" and font_family not in FONT_FAMILIES)
-                            )
-                        )
-                        or ("backgroundColor" in shape and not isinstance(shape["backgroundColor"], str))
-                        or ("fontWeight" in shape and shape["fontWeight"] not in FONT_WEIGHTS)
-                        or ("fontStyle" in shape and shape["fontStyle"] not in ("normal", "italic"))
-                        or (
-                            "textDecoration" in shape
-                            and shape["textDecoration"] not in ("none", "underline", "line-through")
-                        )
-                        or ("textAlign" in shape and shape["textAlign"] not in TEXT_ALIGNMENTS)
+                        or not isinstance(shape.get("backgroundColor", ""), str)
+                        or not _valid_text_style(shape)
                     ):
                         frappe.throw(_("A text object has invalid content."))
                 elif kind == "image":
@@ -197,32 +175,23 @@ class Drawing(drive.DriveContent, Document):
                         r"^data:image/(png|jpe?g|gif|webp);base64,", source, re.I
                     ):
                         frappe.throw(_("An image object has an invalid source."))
-                    has_width = "naturalWidth" in shape
-                    has_height = "naturalHeight" in shape
-                    if (has_width or has_height) and (
-                        not _finite_number(shape.get("naturalWidth"))
-                        or not _finite_number(shape.get("naturalHeight"))
-                        or shape["naturalWidth"] <= 0
-                        or shape["naturalHeight"] <= 0
-                    ):
+                    width, height = shape.get("naturalWidth"), shape.get("naturalHeight")
+                    sized = "naturalWidth" in shape or "naturalHeight" in shape
+                    if sized and not (_positive_number(width) and _positive_number(height)):
                         frappe.throw(_("An image object has invalid dimensions."))
                     crop = shape.get("crop")
-                    if crop is not None:
-                        if (
-                            not isinstance(crop, dict)
-                            or not has_width
-                            or not has_height
-                            or not all(
-                                _finite_number(crop.get(field)) for field in ("x", "y", "width", "height")
-                            )
-                            or crop["x"] < 0
-                            or crop["y"] < 0
-                            or crop["width"] <= 0
-                            or crop["height"] <= 0
-                            or crop["x"] + crop["width"] > shape["naturalWidth"]
-                            or crop["y"] + crop["height"] > shape["naturalHeight"]
-                        ):
-                            frappe.throw(_("An image object has an invalid crop."))
+                    if crop is not None and (
+                        not sized
+                        or not isinstance(crop, dict)
+                        or not all(_finite_number(crop.get(key)) for key in ("x", "y", "width", "height"))
+                        or crop["x"] < 0
+                        or crop["y"] < 0
+                        or crop["width"] <= 0
+                        or crop["height"] <= 0
+                        or crop["x"] + crop["width"] > width
+                        or crop["y"] + crop["height"] > height
+                    ):
+                        frappe.throw(_("An image object has an invalid crop."))
 
     def before_save(self):
         if self.get("node") and not self.is_new():
