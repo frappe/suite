@@ -212,7 +212,10 @@ export interface Grid {
   setActiveDiffSheet(sheet: string | null): void
 
   autoFitCol(c: number): void
-  /** Fit a row to its contents and make it fit them from now on ("fit to data"). */
+  /**
+   * Fit a row to its contents and make it fit them from now on ("fit to data"),
+   * with the rows a drag of its edge would size.
+   */
   autoFitRow(r: number): void
   /** Refit rows r0..r1 to their wrapped text, skipping rows sized by hand. */
   refitRows(r0: number, r1: number): void

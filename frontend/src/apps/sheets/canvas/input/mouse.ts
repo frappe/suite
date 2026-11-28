@@ -259,6 +259,13 @@ export function createMouse(o: MouseOptions): Mouse {
       }
       case 'rowHeader': {
         const row = hit.row
+        // A right-click inside the selected rows or the whole sheet keeps
+        // them, so the context menu acts on them all
+        const inRows = S.mode === 'row' && row >= range.r0 && row <= range.r1
+        if (e.button === 2 && (inRows || S.mode === 'all')) {
+          canvas.focus()
+          return
+        }
         selectWhole(
           'row',
           { r: row, c: 0 },
@@ -352,6 +359,8 @@ export function createMouse(o: MouseOptions): Mouse {
       case 'rowResize':
       case 'rowHeader':
         o.autoFitRow(hit.row)
+        // One undo step for every row it fits, as a drag records
+        host.onResizeEnd?.()
         return
       case 'cell':
         // On a pivot output sheet the host drills down instead of editing.

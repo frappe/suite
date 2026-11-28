@@ -551,6 +551,7 @@ ALLOWED_WILDCARD_PATHS = [
     "/api/method/writer.api.",
     "/api/suite/slides/",
     "/api/method/suite.slides.api.",
+    "/api/suite/sheets/",
     "/api/method/suite.sheets.api.",
     # drive — WebDAV namespace
     "/dav/",

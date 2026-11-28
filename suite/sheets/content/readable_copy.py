@@ -1,4 +1,4 @@
-"""Whether a readable copy a browser rendered holds what a Sheets state does.
+"""A Sheets state's readable copy: rendered where no tab is, and whether a copy holds what the state does.
 
 The copy is frontend/src/apps/sheets/collab/html.ts `docToHtml`: one table per sheet with every typed
 input. A cell counts when its sheet, row and column are still listed, as the copy leaves the others out.
@@ -9,6 +9,10 @@ from decimal import Decimal
 
 import pycrdt
 
+from suite.content import checker, convert
+from suite.sheets import content as sheets_content
+
+NEEDS_BUILD = "the Sheets converter needs Node and its built bundle"
 # Characters the copy's sanitizer (copies.cleaned, html5ever) drops from text
 DROPPED = {chr(0)}
 
@@ -103,3 +107,12 @@ def is_html_complete(state: bytes, html: str, text: str) -> bool:
     )
     copied = Counter(char for char in text if not char.isspace())
     return not characters - copied
+
+
+def render(state: bytes) -> str:
+    """Render `state` as its readable copy with the converter, as no tab is there to."""
+    answer = checker.ask(sheets_content.CONVERTER_BUILD, {"render": True}, state, minimum=convert.NODE_MIN)
+    if answer is None or "html" not in answer:
+        raise RuntimeError(NEEDS_BUILD)
+
+    return answer["html"]

@@ -1,0 +1,408 @@
+// The agent API's work on a spreadsheet (suite/sheets/content/agent.py), done in the
+// converter child on the doc the server sends: a read of what was typed, the
+// readable copy, and a write answered as one Yjs update the server applies on
+// the write's session
+//
+// The server passes the agent's JSON through, so every check on it is here and
+// a refusal names a reason the server words. A write changes the doc as a tab
+// would: inputs under row and column ids grown with the tab's tail ids, a cleared
+// cell's key deleted, a new sheet made by addSheet. Anything it would leave
+// unchanged makes no update. Row heights land in the sheet's view as a tab's drag leaves them
+
+import * as Y from 'yjs'
+
+import type { WorkbookClient } from '../core/client'
+import { MIN_ROW_H, type ViewSnapshot } from '../core/view-model'
+import { createFormatsEngine } from '../engine/formats'
+import type { MergeSlice } from '../engine/merge'
+import type { ProtectionSheet } from '../engine/protection'
+import { parseSparkline } from '../engine/sparkline'
+import { cellId, colLabel, parseCellId } from '../utils/cells'
+import { applyNumberFmt } from '../utils/format-number'
+import { MAX_COL, MAX_ROW, validSheetName } from '../utils/legacy-sheet'
+import { inProcessClient } from './conversion'
+import { docToHtml } from './html'
+import { buildWorkbookFromDoc } from './load'
+import { addSheet, axis, cellKey, initDoc, parseCellKey, roots, stateKey } from './schema'
+import { docSheets } from './stores'
+
+// One write's values and a doc's sheets, as Excel bounds them
+const CELLS_MAX = 10_000
+const INPUT_MAX = 32_767
+const SHEETS_MAX = 200
+// One write's row heights, and the tallest a tab's fit makes a row (canvas/autofit.ts)
+const HEIGHTS_MAX = 10_000
+const ROW_H_MAX = 400
+// A read's grid entries, its padding included, so a far cell can't make a huge answer
+const READ_MAX = 1_000_000
+// A values read's cells with a value: IronCalc builds the whole workbook to work each one out
+const VALUES_MAX = 50_000
+// IronCalc's reads go in chunks, as load.ts reads a sheet
+const READ_CHUNK = 10_000
+
+type Value = string | number | boolean | null
+
+/** What the server asks for, beside the doc's parts. */
+export interface AgentHeader {
+  read?: true
+  render?: true
+  values?: true
+  write?: unknown
+  /** The write session's client id: the update's structs are its. */
+  client?: number
+}
+
+type Reason =
+  | 'no_sheets'
+  | 'too_many_sheets'
+  | 'name'
+  | 'taken'
+  | 'no_sheet'
+  | 'start'
+  | 'rows'
+  | 'value'
+  | 'too_long'
+  | 'too_many_cells'
+  | 'past_grid'
+  | 'merged'
+  | 'protected'
+  | 'too_large'
+  | 'too_many_values'
+  | 'row'
+  | 'heights'
+  | 'height'
+
+interface Refused {
+  reason: Reason
+  sheet?: string
+  cell?: string
+}
+
+class Refusal extends Error {
+  constructor(readonly refused: Refused) {
+    super(refused.reason)
+  }
+}
+
+function refuse(reason: Reason, sheet?: string, cell?: string): never {
+  const refused: Refused = { reason }
+  if (sheet !== undefined) refused.sheet = sheet
+  if (cell) refused.cell = cell
+  throw new Refusal(refused)
+}
+
+/** The answer for an agent header, or undefined when the header asks for none. */
+export function agentAnswer(header: AgentHeader, parts: Uint8Array[]) {
+  if (!header.read && !header.render && header.write === undefined) return undefined
+  const doc = docOf(parts, header.client)
+  try {
+    if (header.read) return { sheets: readSheets(doc) }
+    if (header.render) return { html: docToHtml(doc) }
+    return { update: writeUpdate(doc, header.write) }
+  } catch (error) {
+    if (error instanceof Refusal) return { refused: error.refused }
+    throw error
+  }
+}
+
+/** Each sheet as a tab shows it, in the typed read's shape: a formula as its result. */
+export async function valuesAnswer(parts: Uint8Array[]) {
+  const doc = docOf(parts)
+  try {
+    const typed = readSheets(doc)
+    // Every typed cell holds a value, so this refuses before IronCalc starts
+    let count = 0
+    for (const sheet of typed)
+      for (const row of sheet.rows) for (const input of row) if (input) count++
+    if (count > VALUES_MAX) refuse('too_many_values')
+    const client = await inProcessClient(null)
+    try {
+      return { sheets: await shownSheets(doc, client, typed) }
+    } finally {
+      client.terminate()
+    }
+  } catch (error) {
+    if (error instanceof Refusal) return { refused: error.refused }
+    throw error
+  }
+}
+
+async function shownSheets(
+  doc: Y.Doc,
+  client: WorkbookClient,
+  typed: ReturnType<typeof readSheets>,
+) {
+  const formats = createFormatsEngine()
+  await buildWorkbookFromDoc(doc, client, { formats })
+  // A spill fills cells nothing was typed in: the workbook lists every cell with a value
+  const used: number[][] = []
+  for (const sheet of typed) used.push((await client.usedCells({ sheet: sheet.name })).cells)
+  if (used.reduce((n, flat) => n + flat.length / 2, 0) > VALUES_MAX) refuse('too_many_values')
+  const place = placer()
+  const sheets = []
+  for (const [i, sheet] of typed.entries()) {
+    const flat = used[i]!
+    const rows: string[][] = []
+    for (let at = 0; at < flat.length; at += READ_CHUNK * 2) {
+      const cells = []
+      for (let j = at; j < Math.min(flat.length, at + READ_CHUNK * 2); j += 2)
+        cells.push({ row: flat[j]!, col: flat[j + 1]! })
+      const shown = await client.readCells({ sheet: sheet.name, cells, what: ['display'] })
+      for (const cell of shown.cells) {
+        const row = cell.row - 1
+        const col = cell.col - 1
+        const display = cell.display ?? ''
+        // As the grid shows it: a toolbar format is in the formats store only, never in IronCalc
+        const format = formats.get(cellId(row, col), sheet.name).numberFormat
+        // A tab draws a sparkline's chart in its cell and shows no text
+        if (parseSparkline(sheet.rows[row]?.[col])) place(rows, row, col, '')
+        else place(rows, row, col, format ? applyNumberFmt(display, format) : display)
+      }
+    }
+    sheets.push({ name: sheet.name, rows })
+  }
+  return sheets
+}
+
+function docOf(parts: Uint8Array[], client?: number): Y.Doc {
+  const doc = new Y.Doc()
+  if (client !== undefined) doc.clientID = client
+  // A log with no checkpoint sends an empty frame in its place
+  for (const part of parts) if (part.length) Y.applyUpdate(doc, part)
+  return doc
+}
+
+/** Each sheet's typed inputs from A1 to its last used row, each row to its last used cell. */
+function readSheets(doc: Y.Doc): { name: string; rows: string[][] }[] {
+  const sheets = docSheets(doc)
+  const grids = new Map<string, string[][]>(sheets.map((s) => [s.id, []]))
+  const place = new Map(
+    sheets.map((s) => [s.id, { rows: axis(doc, s.id, 'rows'), cols: axis(doc, s.id, 'cols') }]),
+  )
+  const put = placer()
+  roots(doc).inputs.forEach((input, key) => {
+    const cell = parseCellKey(key)
+    const at = cell && place.get(cell.sheetId)
+    if (!cell || !at) return
+    const row = at.rows.posOf(cell.rowId)
+    const col = at.cols.posOf(cell.colId)
+    if (row < 0 || col < 0) return
+    put(grids.get(cell.sheetId)!, row, col, String(input))
+  })
+  return sheets.map((s) => ({ name: s.name, rows: grids.get(s.id)! }))
+}
+
+/** Puts a value in a grid, padding to reach it, under one count of entries for the whole answer. */
+function placer() {
+  let entries = 0
+  return (grid: string[][], row: number, col: number, value: string) => {
+    // Counted before the padding is built, so a far cell refuses without it
+    entries += Math.max(0, row + 1 - grid.length)
+    entries += Math.max(0, col + 1 - (grid[row]?.length ?? 0))
+    if (entries > READ_MAX) refuse('too_large')
+    while (grid.length <= row) grid.push([])
+    const cells = grid[row]!
+    while (cells.length < col) cells.push('')
+    cells[col] = value
+  }
+}
+
+/** The write's update in base64, or null when it changes nothing. */
+function writeUpdate(doc: Y.Doc, op: unknown): string | null {
+  let update: Uint8Array | null = null
+  doc.on('update', (u: Uint8Array) => (update = u))
+  const write = checked(op)
+  doc.transact(() => {
+    initDoc(doc)
+    if (write.kind === 'sheets') addSheets(doc, write.sheets)
+    else {
+      const { id, name } = sheetNamed(doc, write.sheet)
+      if (write.kind === 'heights') putHeights(doc, id, write.start - 1, write.heights)
+      else {
+        const at =
+          write.kind === 'cells'
+            ? startCell(write.start, name)
+            : { row: lastRow(doc, id) + 1, col: 0 }
+        putBlock(doc, id, name, at, write.rows)
+      }
+    }
+  })
+  return update && Buffer.from(update).toString('base64')
+}
+
+type Write =
+  | { kind: 'sheets'; sheets: { name: string; rows: Value[][] }[] }
+  | { kind: 'cells'; sheet: string; start: string; rows: Value[][] }
+  | { kind: 'rows'; sheet: string; rows: Value[][] }
+  | { kind: 'heights'; sheet: string; start: number; heights: (number | null)[] }
+
+// The agent's write in its shape, every value one a cell can take, or a refusal
+function checked(op: unknown): Write {
+  const o: Record<string, unknown> = isRecord(op) ? op : {}
+  if (o.kind === 'sheets') {
+    if (!Array.isArray(o.sheets) || !o.sheets.length) refuse('no_sheets')
+    const sheets = o.sheets.map((s: Record<string, unknown> | null) => {
+      if (typeof s?.name !== 'string') refuse('name')
+      return { name: s.name, rows: s.rows === undefined ? [] : checkedRows(s.rows, s.name) }
+    })
+    countCells(sheets.flatMap((s) => s.rows))
+    return { kind: 'sheets', sheets }
+  }
+  if (typeof o.sheet !== 'string') refuse('no_sheet')
+  if (o.kind === 'heights') return checkedHeights(o.sheet, o.start, o.heights)
+  const rows = checkedRows(o.rows, o.sheet)
+  countCells(rows)
+  if (o.kind === 'rows') return { kind: 'rows', sheet: o.sheet, rows }
+  if (o.kind !== 'cells') throw new Error('the server asked for no known write')
+  if (typeof o.start !== 'string') refuse('start', o.sheet)
+  return { kind: 'cells', sheet: o.sheet, start: o.start, rows }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function isValue(v: unknown): v is Value {
+  return (
+    v === null ||
+    typeof v === 'string' ||
+    typeof v === 'boolean' ||
+    (typeof v === 'number' && Number.isFinite(v))
+  )
+}
+
+function checkedRows(rows: unknown, sheet: string): Value[][] {
+  if (!Array.isArray(rows) || !rows.every(Array.isArray)) refuse('rows', sheet)
+  if (!rows.every((row: unknown[]) => row.every(isValue))) refuse('value', sheet)
+  return rows
+}
+
+// `start` is 1-based, as a tab shows it, and a null height leaves its row
+function checkedHeights(sheet: string, start: unknown, heights: unknown): Write {
+  if (typeof start !== 'number' || !Number.isInteger(start) || start < 1 || start > MAX_ROW)
+    refuse('row', sheet)
+  if (!Array.isArray(heights) || !heights.length || heights.length > HEIGHTS_MAX)
+    refuse('heights', sheet)
+  const isHeight = (h: unknown) => typeof h === 'number' && h >= MIN_ROW_H && h <= ROW_H_MAX
+  if (!heights.every((h) => h === null || isHeight(h))) refuse('height', sheet)
+  if (start - 1 + heights.length > MAX_ROW) refuse('past_grid', sheet)
+  return { kind: 'heights', sheet, start, heights }
+}
+
+// An empty row counts as one, so a list of them can't run past the cap
+function countCells(rows: Value[][]) {
+  if (rows.reduce((n, row) => n + Math.max(1, row.length), 0) > CELLS_MAX) refuse('too_many_cells')
+}
+
+// A sheet as a tab names it, matched as IronCalc matches names: whatever the case
+function sheetNamed(doc: Y.Doc, name: string) {
+  const sheet = docSheets(doc).find((s) => s.name.toLowerCase() === name.toLowerCase())
+  return sheet ?? refuse('no_sheet', name)
+}
+
+function startCell(start: string, sheet: string) {
+  const at = parseCellId(start.toUpperCase())
+  if (!at || at.row < 0 || at.row >= MAX_ROW || at.col >= MAX_COL) refuse('start', sheet)
+  return at
+}
+
+// The last row with a listed input, -1 on an empty sheet
+function lastRow(doc: Y.Doc, sheetId: string): number {
+  const rows = axis(doc, sheetId, 'rows')
+  const cols = axis(doc, sheetId, 'cols')
+  let last = -1
+  roots(doc).inputs.forEach((_, key) => {
+    const cell = parseCellKey(key)
+    if (cell?.sheetId !== sheetId || cols.posOf(cell.colId) < 0) return
+    last = Math.max(last, rows.posOf(cell.rowId))
+  })
+  return last
+}
+
+function addSheets(doc: Y.Doc, sheets: { name: string; rows: Value[][] }[]) {
+  const taken = new Set(docSheets(doc).map((s) => s.name.toLowerCase()))
+  if (taken.size + sheets.length > SHEETS_MAX) refuse('too_many_sheets')
+  for (const { name } of sheets) {
+    if (!validSheetName(name)) refuse('name', name)
+    if (taken.has(name.toLowerCase())) refuse('taken', name)
+    taken.add(name.toLowerCase())
+  }
+  for (const { name, rows } of sheets) {
+    putBlock(doc, addSheet(doc, name), name, { row: 0, col: 0 }, rows)
+  }
+}
+
+// The block's values from `at` (0-based): null leaves a cell, "" clears it, the rest are typed
+function putBlock(
+  doc: Y.Doc,
+  sheetId: string,
+  sheet: string,
+  at: { row: number; col: number },
+  rows: Value[][],
+) {
+  const { inputs, sheetState } = roots(doc)
+  const rowIds = axis(doc, sheetId, 'rows')
+  const colIds = axis(doc, sheetId, 'cols')
+  const widest = rows.reduce((n, row) => Math.max(n, row.length), 0)
+  if (at.row + rows.length > MAX_ROW || at.col + widest > MAX_COL) refuse('past_grid', sheet)
+
+  // SAFETY: only the glue writes these keys (stores.ts STATE_KEY), each as its engine's slice
+  const covered = (sheetState.get(stateKey(sheetId, 'merge')) as MergeSlice | undefined)?.slaveMap
+  // SAFETY: as for merges, engine/protection.ts's slice
+  const locks = sheetState.get(stateKey(sheetId, 'protection')) as ProtectionSheet | undefined
+  const writes: { row: number; col: number; input: string }[] = []
+  rows.forEach((values, r) =>
+    values.forEach((value, c) => {
+      if (value === null) return
+      const row = at.row + r
+      const col = at.col + c
+      const input = typeof value === 'boolean' ? (value ? 'TRUE' : 'FALSE') : String(value)
+      const rowId = rowIds.idAt(row)
+      const colId = colIds.idAt(col)
+      const now = rowId && colId ? (inputs.get(cellKey(sheetId, rowId, colId)) ?? '') : ''
+      if (input === now) return
+      const cell = colLabel(col) + (row + 1)
+      if (input.length > INPUT_MAX) refuse('too_long', sheet, cell)
+      // A covered cell shows nothing, and a tab refuses edits to a protected one
+      if (covered?.[cell]) refuse('merged', sheet, cell)
+      if (locks && isLocked(locks, row, col)) refuse('protected', sheet, cell)
+      writes.push({ row, col, input })
+    }),
+  )
+  for (const { row, col, input } of writes) {
+    if (input === '') {
+      inputs.delete(cellKey(sheetId, rowIds.idAt(row)!, colIds.idAt(col)!))
+    } else {
+      inputs.set(cellKey(sheetId, rowIds.ensure(row), colIds.ensure(col)), input)
+    }
+  }
+}
+
+// Each row from `start` (0-based) sized by hand to its height, as a tab's drag leaves it; the
+// rest of the view as it was. A protected sheet takes it, as a tab's drag
+function putHeights(doc: Y.Doc, sheetId: string, start: number, heights: (number | null)[]) {
+  const { sheetState } = roots(doc)
+  const key = stateKey(sheetId, 'view')
+  // SAFETY: only the glue writes this key (stores.ts STATE_KEY), as a tab's ViewSnapshot without zoom
+  const view = (sheetState.get(key) as Partial<ViewSnapshot> | undefined) ?? {}
+  const rowH = { ...view.rowH }
+  // A view saved before manual rows were tracked: every stored height is one, as a tab loads it
+  const manual = Array.isArray(view.manualRows)
+    ? [...view.manualRows]
+    : Object.keys(rowH).map(Number)
+  const sized = new Set(manual)
+  let changed = false
+  heights.forEach((height, i) => {
+    const row = start + i
+    if (height === null || (rowH[row] === height && sized.has(row))) return
+    rowH[row] = height
+    if (!sized.has(row)) manual.push(row)
+    sized.add(row)
+    changed = true
+  })
+  if (changed) sheetState.set(key, { ...view, rowH, manualRows: manual })
+}
+
+function isLocked(p: ProtectionSheet, row: number, col: number): boolean {
+  return p.locked || p.ranges.some((r) => row >= r.r0 && row <= r.r1 && col >= r.c0 && col <= r.c1)
+}

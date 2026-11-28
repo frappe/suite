@@ -170,6 +170,43 @@ describe('press', () => {
     expect(h.sel.range()).toMatchObject({ r1: 3, c1: 3 })
     expect(h.mouse.preMousedownSel()).toMatchObject({ r1: 3, c1: 3 })
   })
+
+  describe('on a row number, with rows 10 to 12 selected', () => {
+    function rowsSelected() {
+      const h = setup()
+      h.sel.set({ r0: 9, c0: 0, r1: 11, c1: 25, mode: 'row' })
+      return h
+    }
+
+    it('a right-click inside keeps the three rows', () => {
+      const h = rowsSelected()
+      h.hit({ kind: 'rowHeader', row: 10 })
+      h.down({ button: 2 })
+      expect(h.sel.range()).toEqual({ r0: 9, c0: 0, r1: 11, c1: 25, mode: 'row' })
+    })
+
+    it('a right-click outside selects only that row', () => {
+      const h = rowsSelected()
+      h.hit({ kind: 'rowHeader', row: 20 })
+      h.down({ button: 2 })
+      expect(h.sel.range()).toEqual({ r0: 20, c0: 0, r1: 20, c1: 25, mode: 'row' })
+    })
+
+    it('a left-click inside selects only that row', () => {
+      const h = rowsSelected()
+      h.hit({ kind: 'rowHeader', row: 10 })
+      h.down()
+      expect(h.sel.range()).toEqual({ r0: 10, c0: 0, r1: 10, c1: 25, mode: 'row' })
+    })
+  })
+
+  it('a right-click on a row number keeps the whole sheet selected', () => {
+    const h = setup()
+    h.sel.set({ r0: 0, c0: 0, r1: 99, c1: 25, mode: 'all' })
+    h.hit({ kind: 'rowHeader', row: 10 })
+    h.down({ button: 2 })
+    expect(h.sel.range()).toEqual({ r0: 0, c0: 0, r1: 99, c1: 25, mode: 'all' })
+  })
 })
 
 describe('resize', () => {
@@ -252,6 +289,19 @@ describe('double-click', () => {
     h.dbl()
     expect(h.opts.autoFitCol).toHaveBeenCalledWith(3)
     expect(h.opts.autoFitRow).toHaveBeenCalledWith(5)
+  })
+
+  it('records a row fit from a double-click as one undo step, after the fit', () => {
+    const onResizeEnd = vi.fn()
+    const h = setup({}, { onResizeEnd })
+    h.hit({ kind: 'rowResize', row: 5 })
+    h.dbl()
+    const fitted = vi.mocked(h.opts.autoFitRow)
+    expect(fitted).toHaveBeenCalledTimes(1)
+    expect(onResizeEnd).toHaveBeenCalledTimes(1)
+    expect(onResizeEnd.mock.invocationCallOrder[0]).toBeGreaterThan(
+      fitted.mock.invocationCallOrder[0] ?? Infinity,
+    )
   })
 
   it('lets the host drill into a pivot instead of editing', () => {

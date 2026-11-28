@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createDrags, resizeTargets, type DragOptions, type Drags } from './drag.js'
+import { createDrags, resizeSpan, resizeTargets, type DragOptions, type Drags } from './drag.js'
 
 let live: Drags[] = []
 afterEach(() => {
@@ -27,6 +27,14 @@ function setup(over: Partial<DragOptions> = {}) {
   const up = () => document.dispatchEvent(new MouseEvent('mouseup'))
   return { drags, opts, move, up }
 }
+
+describe('resizeSpan', () => {
+  it('the whole sheet, the selected block, or just the one', () => {
+    expect(resizeSpan(2, false, true, 0, 0, 3)).toEqual([0, 2])
+    expect(resizeSpan(2, true, false, 1, 3, 26)).toEqual([1, 3])
+    expect(resizeSpan(2, false, false, 1, 3, 26)).toEqual([2, 2])
+  })
+})
 
 describe('resizeTargets', () => {
   it('the whole sheet, the selected block, or just the one', () => {

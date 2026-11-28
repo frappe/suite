@@ -45,20 +45,26 @@ export interface Drags {
 }
 
 /**
- * Every column (or row) a resize applies to: the whole sheet, the selected
- * block when the dragged edge is inside it, or just the one.
+ * The first and last column (or row) a resize applies to: the whole sheet,
+ * the selected block when the dragged edge is inside it, or just the one.
  */
-export function resizeTargets(
+export function resizeSpan(
   i: number,
   inBlock: boolean,
   all: boolean,
   lo: number,
   hi: number,
   total: number,
-): number[] {
-  if (all) return Array.from({ length: total }, (_, k) => k)
-  if (inBlock) return Array.from({ length: hi - lo + 1 }, (_, k) => lo + k)
-  return [i]
+): [number, number] {
+  if (all) return [0, total - 1]
+  if (inBlock) return [lo, hi]
+  return [i, i]
+}
+
+/** Every column (or row) a resize applies to, from first to last. */
+export function resizeTargets(...args: Parameters<typeof resizeSpan>): number[] {
+  const [first, last] = resizeSpan(...args)
+  return Array.from({ length: last - first + 1 }, (_, k) => first + k)
 }
 
 const COL_MOVE_THRESHOLD = 5

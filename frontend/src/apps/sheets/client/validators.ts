@@ -3,6 +3,8 @@ import type { Validators } from '@/platform/transport'
 import { assertSchema } from '@/platform/transport/schema'
 
 import type {
+  AgentGuideInput,
+  AgentGuideOutput,
   AiAssistInput,
   AiAssistOutput,
   GetAiSettingsInput,
@@ -15,7 +17,973 @@ import type {
   GetSheetOutput,
   SaveAiSettingsInput,
   SaveAiSettingsOutput,
+  SpreadsheetCellsWriteInput,
+  SpreadsheetCellsWriteOutput,
+  SpreadsheetCreateInput,
+  SpreadsheetCreateOutput,
+  SpreadsheetReadInput,
+  SpreadsheetReadOutput,
+  SpreadsheetRowHeightsSetInput,
+  SpreadsheetRowHeightsSetOutput,
+  SpreadsheetRowsAppendInput,
+  SpreadsheetRowsAppendOutput,
+  SpreadsheetSheetAddInput,
+  SpreadsheetSheetAddOutput,
+  SpreadsheetValuesInput,
+  SpreadsheetValuesOutput,
 } from './generated'
+
+export const operationSpreadsheetCreate: Validators<
+  SpreadsheetCreateInput,
+  SpreadsheetCreateOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetCreateInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          parent: { title: 'Parent', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          sheets: { items: { $ref: '#/$defs/SheetCells' }, title: 'Sheets', type: 'array' },
+        },
+        required: ['parent', 'title', 'sheets'],
+        additionalProperties: false,
+        $defs: {
+          SheetCells: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              rows: {
+                items: {
+                  items: {
+                    anyOf: [
+                      { type: 'string' },
+                      { type: 'integer' },
+                      { type: 'number' },
+                      { type: 'boolean' },
+                      { type: 'null' },
+                    ],
+                  },
+                  type: 'array',
+                },
+                title: 'Rows',
+                type: 'array',
+              },
+            },
+            required: ['name'],
+            title: 'SheetCells',
+            type: 'object',
+          },
+        },
+      },
+      'spreadsheet_create input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetCreateOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccessShape: {
+            properties: {
+              role: { title: 'Role', type: 'integer' },
+              via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
+              source_principal: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Source Principal',
+              },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
+            },
+            title: 'AccessShape',
+            type: 'object',
+          },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
+          BreadcrumbShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+            },
+            required: ['name', 'title', 'kind', 'role'],
+            title: 'BreadcrumbShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          PreviewShape: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              expires: { title: 'Expires', type: 'integer' },
+            },
+            required: ['url', 'expires'],
+            title: 'PreviewShape',
+            type: 'object',
+          },
+        },
+        description: "The spreadsheet's node as Drive answers it, and the revision the write made.",
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          kind: { title: 'Kind', type: 'string' },
+          parent_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Parent Node' },
+          root: { title: 'Root', type: 'string' },
+          state: { title: 'State', type: 'string' },
+          trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          size: { title: 'Size', type: 'integer' },
+          mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+          content_doctype: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Doctype',
+          },
+          content_docname: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Docname',
+          },
+          is_template: { title: 'Is Template', type: 'integer' },
+          owner: { $ref: '#/$defs/Person' },
+          creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+          modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+          content_modified: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Modified',
+          },
+          access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
+          breadcrumbs: {
+            items: { $ref: '#/$defs/BreadcrumbShape' },
+            title: 'Breadcrumbs',
+            type: 'array',
+          },
+          contents_size: { title: 'Contents Size', type: 'integer' },
+          preview: { anyOf: [{ $ref: '#/$defs/PreviewShape' }, { type: 'null' }] },
+          opened_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Opened At' },
+          favourite: { title: 'Favourite', type: 'boolean' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: [
+          'name',
+          'title',
+          'kind',
+          'parent_node',
+          'root',
+          'state',
+          'trash_root',
+          'size',
+          'mime',
+          'url',
+          'content_doctype',
+          'content_docname',
+          'is_template',
+          'owner',
+          'creation',
+          'modified',
+          'content_modified',
+          'rev',
+        ],
+        title: 'WrittenSpreadsheet',
+        type: 'object',
+      },
+      'spreadsheet_create output',
+    )
+  },
+}
+
+export const operationSpreadsheetCellsWrite: Validators<
+  SpreadsheetCellsWriteInput,
+  SpreadsheetCellsWriteOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetCellsWriteInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          sheet: { title: 'Sheet', type: 'string' },
+          start: { title: 'Start', type: 'string' },
+          rows: {
+            items: {
+              items: {
+                anyOf: [
+                  { type: 'string' },
+                  { type: 'integer' },
+                  { type: 'number' },
+                  { type: 'boolean' },
+                  { type: 'null' },
+                ],
+              },
+              type: 'array',
+            },
+            title: 'Rows',
+            type: 'array',
+          },
+          node: { type: 'string' },
+        },
+        required: ['sheet', 'start', 'rows', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_cells_write input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetCellsWriteOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccessShape: {
+            properties: {
+              role: { title: 'Role', type: 'integer' },
+              via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
+              source_principal: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Source Principal',
+              },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
+            },
+            title: 'AccessShape',
+            type: 'object',
+          },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
+          BreadcrumbShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+            },
+            required: ['name', 'title', 'kind', 'role'],
+            title: 'BreadcrumbShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          PreviewShape: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              expires: { title: 'Expires', type: 'integer' },
+            },
+            required: ['url', 'expires'],
+            title: 'PreviewShape',
+            type: 'object',
+          },
+        },
+        description: "The spreadsheet's node as Drive answers it, and the revision the write made.",
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          kind: { title: 'Kind', type: 'string' },
+          parent_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Parent Node' },
+          root: { title: 'Root', type: 'string' },
+          state: { title: 'State', type: 'string' },
+          trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          size: { title: 'Size', type: 'integer' },
+          mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+          content_doctype: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Doctype',
+          },
+          content_docname: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Docname',
+          },
+          is_template: { title: 'Is Template', type: 'integer' },
+          owner: { $ref: '#/$defs/Person' },
+          creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+          modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+          content_modified: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Modified',
+          },
+          access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
+          breadcrumbs: {
+            items: { $ref: '#/$defs/BreadcrumbShape' },
+            title: 'Breadcrumbs',
+            type: 'array',
+          },
+          contents_size: { title: 'Contents Size', type: 'integer' },
+          preview: { anyOf: [{ $ref: '#/$defs/PreviewShape' }, { type: 'null' }] },
+          opened_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Opened At' },
+          favourite: { title: 'Favourite', type: 'boolean' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: [
+          'name',
+          'title',
+          'kind',
+          'parent_node',
+          'root',
+          'state',
+          'trash_root',
+          'size',
+          'mime',
+          'url',
+          'content_doctype',
+          'content_docname',
+          'is_template',
+          'owner',
+          'creation',
+          'modified',
+          'content_modified',
+          'rev',
+        ],
+        title: 'WrittenSpreadsheet',
+        type: 'object',
+      },
+      'spreadsheet_cells_write output',
+    )
+  },
+}
+
+export const operationSpreadsheetRowsAppend: Validators<
+  SpreadsheetRowsAppendInput,
+  SpreadsheetRowsAppendOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetRowsAppendInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          sheet: { title: 'Sheet', type: 'string' },
+          rows: {
+            items: {
+              items: {
+                anyOf: [
+                  { type: 'string' },
+                  { type: 'integer' },
+                  { type: 'number' },
+                  { type: 'boolean' },
+                  { type: 'null' },
+                ],
+              },
+              type: 'array',
+            },
+            title: 'Rows',
+            type: 'array',
+          },
+          node: { type: 'string' },
+        },
+        required: ['sheet', 'rows', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_rows_append input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetRowsAppendOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccessShape: {
+            properties: {
+              role: { title: 'Role', type: 'integer' },
+              via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
+              source_principal: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Source Principal',
+              },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
+            },
+            title: 'AccessShape',
+            type: 'object',
+          },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
+          BreadcrumbShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+            },
+            required: ['name', 'title', 'kind', 'role'],
+            title: 'BreadcrumbShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          PreviewShape: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              expires: { title: 'Expires', type: 'integer' },
+            },
+            required: ['url', 'expires'],
+            title: 'PreviewShape',
+            type: 'object',
+          },
+        },
+        description: "The spreadsheet's node as Drive answers it, and the revision the write made.",
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          kind: { title: 'Kind', type: 'string' },
+          parent_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Parent Node' },
+          root: { title: 'Root', type: 'string' },
+          state: { title: 'State', type: 'string' },
+          trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          size: { title: 'Size', type: 'integer' },
+          mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+          content_doctype: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Doctype',
+          },
+          content_docname: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Docname',
+          },
+          is_template: { title: 'Is Template', type: 'integer' },
+          owner: { $ref: '#/$defs/Person' },
+          creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+          modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+          content_modified: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Modified',
+          },
+          access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
+          breadcrumbs: {
+            items: { $ref: '#/$defs/BreadcrumbShape' },
+            title: 'Breadcrumbs',
+            type: 'array',
+          },
+          contents_size: { title: 'Contents Size', type: 'integer' },
+          preview: { anyOf: [{ $ref: '#/$defs/PreviewShape' }, { type: 'null' }] },
+          opened_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Opened At' },
+          favourite: { title: 'Favourite', type: 'boolean' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: [
+          'name',
+          'title',
+          'kind',
+          'parent_node',
+          'root',
+          'state',
+          'trash_root',
+          'size',
+          'mime',
+          'url',
+          'content_doctype',
+          'content_docname',
+          'is_template',
+          'owner',
+          'creation',
+          'modified',
+          'content_modified',
+          'rev',
+        ],
+        title: 'WrittenSpreadsheet',
+        type: 'object',
+      },
+      'spreadsheet_rows_append output',
+    )
+  },
+}
+
+export const operationSpreadsheetSheetAdd: Validators<
+  SpreadsheetSheetAddInput,
+  SpreadsheetSheetAddOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetSheetAddInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          rows: {
+            items: {
+              items: {
+                anyOf: [
+                  { type: 'string' },
+                  { type: 'integer' },
+                  { type: 'number' },
+                  { type: 'boolean' },
+                  { type: 'null' },
+                ],
+              },
+              type: 'array',
+            },
+            title: 'Rows',
+            type: 'array',
+          },
+          node: { type: 'string' },
+        },
+        required: ['name', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_sheet_add input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetSheetAddOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccessShape: {
+            properties: {
+              role: { title: 'Role', type: 'integer' },
+              via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
+              source_principal: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Source Principal',
+              },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
+            },
+            title: 'AccessShape',
+            type: 'object',
+          },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
+          BreadcrumbShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+            },
+            required: ['name', 'title', 'kind', 'role'],
+            title: 'BreadcrumbShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          PreviewShape: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              expires: { title: 'Expires', type: 'integer' },
+            },
+            required: ['url', 'expires'],
+            title: 'PreviewShape',
+            type: 'object',
+          },
+        },
+        description: "The spreadsheet's node as Drive answers it, and the revision the write made.",
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          kind: { title: 'Kind', type: 'string' },
+          parent_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Parent Node' },
+          root: { title: 'Root', type: 'string' },
+          state: { title: 'State', type: 'string' },
+          trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          size: { title: 'Size', type: 'integer' },
+          mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+          content_doctype: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Doctype',
+          },
+          content_docname: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Docname',
+          },
+          is_template: { title: 'Is Template', type: 'integer' },
+          owner: { $ref: '#/$defs/Person' },
+          creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+          modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+          content_modified: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Modified',
+          },
+          access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
+          breadcrumbs: {
+            items: { $ref: '#/$defs/BreadcrumbShape' },
+            title: 'Breadcrumbs',
+            type: 'array',
+          },
+          contents_size: { title: 'Contents Size', type: 'integer' },
+          preview: { anyOf: [{ $ref: '#/$defs/PreviewShape' }, { type: 'null' }] },
+          opened_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Opened At' },
+          favourite: { title: 'Favourite', type: 'boolean' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: [
+          'name',
+          'title',
+          'kind',
+          'parent_node',
+          'root',
+          'state',
+          'trash_root',
+          'size',
+          'mime',
+          'url',
+          'content_doctype',
+          'content_docname',
+          'is_template',
+          'owner',
+          'creation',
+          'modified',
+          'content_modified',
+          'rev',
+        ],
+        title: 'WrittenSpreadsheet',
+        type: 'object',
+      },
+      'spreadsheet_sheet_add output',
+    )
+  },
+}
+
+export const operationSpreadsheetRowHeightsSet: Validators<
+  SpreadsheetRowHeightsSetInput,
+  SpreadsheetRowHeightsSetOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetRowHeightsSetInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: {
+          sheet: { title: 'Sheet', type: 'string' },
+          start: { title: 'Start', type: 'integer' },
+          heights: {
+            items: { anyOf: [{ type: 'number' }, { type: 'null' }] },
+            title: 'Heights',
+            type: 'array',
+          },
+          node: { type: 'string' },
+        },
+        required: ['sheet', 'start', 'heights', 'node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_row_heights_set input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetRowHeightsSetOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          AccessShape: {
+            properties: {
+              role: { title: 'Role', type: 'integer' },
+              via_link: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Via Link' },
+              source_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Source Node' },
+              source_principal: {
+                anyOf: [{ type: 'string' }, { type: 'null' }],
+                title: 'Source Principal',
+              },
+              can_manage: { title: 'Can Manage', type: 'boolean' },
+            },
+            title: 'AccessShape',
+            type: 'object',
+          },
+          AudienceShape: {
+            description: 'How widely a node is shared. It names nobody, so any reader may see it.',
+            properties: {
+              kind: {
+                enum: ['public', 'organization', 'link', 'people'],
+                title: 'Kind',
+                type: 'string',
+              },
+              people: { title: 'People', type: 'integer' },
+            },
+            required: ['kind', 'people'],
+            title: 'AudienceShape',
+            type: 'object',
+          },
+          BreadcrumbShape: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              title: { title: 'Title', type: 'string' },
+              kind: { title: 'Kind', type: 'string' },
+              role: { title: 'Role', type: 'integer' },
+            },
+            required: ['name', 'title', 'kind', 'role'],
+            title: 'BreadcrumbShape',
+            type: 'object',
+          },
+          Person: {
+            properties: {
+              id: { title: 'Id', type: 'string' },
+              full_name: { title: 'Full Name', type: 'string' },
+              user_image: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'User Image' },
+            },
+            required: ['id', 'full_name', 'user_image'],
+            title: 'Person',
+            type: 'object',
+          },
+          PreviewShape: {
+            properties: {
+              url: { title: 'Url', type: 'string' },
+              expires: { title: 'Expires', type: 'integer' },
+            },
+            required: ['url', 'expires'],
+            title: 'PreviewShape',
+            type: 'object',
+          },
+        },
+        description: "The spreadsheet's node as Drive answers it, and the revision the write made.",
+        properties: {
+          name: { title: 'Name', type: 'string' },
+          title: { title: 'Title', type: 'string' },
+          kind: { title: 'Kind', type: 'string' },
+          parent_node: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Parent Node' },
+          root: { title: 'Root', type: 'string' },
+          state: { title: 'State', type: 'string' },
+          trash_root: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Trash Root' },
+          size: { title: 'Size', type: 'integer' },
+          mime: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Mime' },
+          url: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Url' },
+          content_doctype: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Doctype',
+          },
+          content_docname: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Docname',
+          },
+          is_template: { title: 'Is Template', type: 'integer' },
+          owner: { $ref: '#/$defs/Person' },
+          creation: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Creation' },
+          modified: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Modified' },
+          content_modified: {
+            anyOf: [{ type: 'string' }, { type: 'null' }],
+            title: 'Content Modified',
+          },
+          access: { $ref: '#/$defs/AccessShape' },
+          audience: { $ref: '#/$defs/AudienceShape' },
+          breadcrumbs: {
+            items: { $ref: '#/$defs/BreadcrumbShape' },
+            title: 'Breadcrumbs',
+            type: 'array',
+          },
+          contents_size: { title: 'Contents Size', type: 'integer' },
+          preview: { anyOf: [{ $ref: '#/$defs/PreviewShape' }, { type: 'null' }] },
+          opened_at: { anyOf: [{ type: 'string' }, { type: 'null' }], title: 'Opened At' },
+          favourite: { title: 'Favourite', type: 'boolean' },
+          rev: { title: 'Rev', type: 'integer' },
+        },
+        required: [
+          'name',
+          'title',
+          'kind',
+          'parent_node',
+          'root',
+          'state',
+          'trash_root',
+          'size',
+          'mime',
+          'url',
+          'content_doctype',
+          'content_docname',
+          'is_template',
+          'owner',
+          'creation',
+          'modified',
+          'content_modified',
+          'rev',
+        ],
+        title: 'WrittenSpreadsheet',
+        type: 'object',
+      },
+      'spreadsheet_row_heights_set output',
+    )
+  },
+}
+
+export const operationSpreadsheetRead: Validators<SpreadsheetReadInput, SpreadsheetReadOutput> = {
+  validateInput(value: unknown): asserts value is SpreadsheetReadInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { node: { type: 'string' } },
+        required: ['node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_read input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetReadOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          TypedSheet: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              rows: {
+                items: { items: { type: 'string' }, type: 'array' },
+                title: 'Rows',
+                type: 'array',
+              },
+            },
+            required: ['name', 'rows'],
+            title: 'TypedSheet',
+            type: 'object',
+          },
+        },
+        properties: {
+          sheets: { items: { $ref: '#/$defs/TypedSheet' }, title: 'Sheets', type: 'array' },
+        },
+        required: ['sheets'],
+        title: 'SpreadsheetCells',
+        type: 'object',
+      },
+      'spreadsheet_read output',
+    )
+  },
+}
+
+export const operationSpreadsheetValues: Validators<
+  SpreadsheetValuesInput,
+  SpreadsheetValuesOutput
+> = {
+  validateInput(value: unknown): asserts value is SpreadsheetValuesInput {
+    assertSchema(
+      value,
+      {
+        type: 'object',
+        properties: { node: { type: 'string' } },
+        required: ['node'],
+        additionalProperties: false,
+        $defs: {},
+      },
+      'spreadsheet_values input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is SpreadsheetValuesOutput {
+    assertSchema(
+      value,
+      {
+        $defs: {
+          TypedSheet: {
+            properties: {
+              name: { title: 'Name', type: 'string' },
+              rows: {
+                items: { items: { type: 'string' }, type: 'array' },
+                title: 'Rows',
+                type: 'array',
+              },
+            },
+            required: ['name', 'rows'],
+            title: 'TypedSheet',
+            type: 'object',
+          },
+        },
+        properties: {
+          sheets: { items: { $ref: '#/$defs/TypedSheet' }, title: 'Sheets', type: 'array' },
+        },
+        required: ['sheets'],
+        title: 'SpreadsheetCells',
+        type: 'object',
+      },
+      'spreadsheet_values output',
+    )
+  },
+}
+
+export const operationAgentGuide: Validators<AgentGuideInput, AgentGuideOutput> = {
+  validateInput(value: unknown): asserts value is AgentGuideInput {
+    assertSchema(
+      value,
+      { type: 'object', properties: {}, required: [], additionalProperties: false, $defs: {} },
+      'agent_guide input',
+    )
+  },
+  validateOutput(value: unknown): asserts value is AgentGuideOutput {
+    if (!(value instanceof Blob)) throw new TypeError('Expected Blob')
+  },
+}
 
 export const operationGetSheet: Validators<GetSheetInput, GetSheetOutput> = {
   validateInput(value: unknown): asserts value is GetSheetInput {

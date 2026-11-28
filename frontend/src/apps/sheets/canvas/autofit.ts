@@ -32,8 +32,6 @@ export type PendingWrites = Readonly<{ [id: string]: CellValue }>
 export interface Autofit {
   /** Width that fits the column's header and every unwrapped value. */
   fitColWidth(c: number): number
-  /** Height that fits every value in the row. */
-  fitRowHeight(r: number): number
   /**
    * Every non-empty matching row's fitted height and whether it holds tall
    * text, in one pass over the cells (a whole-column wrap refits many rows),
@@ -122,8 +120,6 @@ export function createAutofit(o: AutofitOptions, minRowH: number): Autofit {
     )
   }
 
-  const fitRowHeight = (r: number) => heightOf([...cellsWhere((row) => row === r)])
-
   // A formula's result isn't known yet, so a formula write keeps the shown
   // value; any other write replaces it, and an empty one clears the cell.
   const isFormula = (v: CellValue) => typeof v === 'string' && v.startsWith('=')
@@ -159,5 +155,5 @@ export function createAutofit(o: AutofitOptions, minRowH: number): Autofit {
     return [...rows]
   }
 
-  return { fitColWidth, fitRowHeight, measureRows, wrappedRows }
+  return { fitColWidth, measureRows, wrappedRows }
 }
