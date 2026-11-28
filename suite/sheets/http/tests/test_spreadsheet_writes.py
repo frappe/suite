@@ -600,28 +600,29 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         rev = self.head(node)
         new = {"parent": self.folder, "title": "Agent wrong", "sheets": [{"name": "Data"}]}
         cells = {"sheet": "Data", "start": "A1", "rows": [["x"]]}
+        # Each status from the guide's refusal table: a field that is not text is a DriveError
         bodies = (
-            ("spreadsheets", {}, "parent must be a string"),
-            ("spreadsheets", {**new, "parent": 5}, "parent must be a string"),
-            ("spreadsheets", {"parent": self.folder, "sheets": new["sheets"]}, "title must be a string"),
-            ("spreadsheets", {**new, "title": "x" * 141}, "title must be 140 characters or fewer"),
-            ("spreadsheets", {"parent": self.folder, "title": "Agent wrong"}, "sheets must list"),
-            ("spreadsheets", {**new, "sheets": "x"}, "sheets must list"),
-            (f"spreadsheets/{node}/cells", {"start": "A1", "rows": [["x"]]}, "sheet must be a string"),
-            (f"spreadsheets/{node}/cells", {**cells, "sheet": 5}, "sheet must be a string"),
-            (f"spreadsheets/{node}/cells", {"sheet": "Data", "rows": [["x"]]}, "start must be a cell"),
-            (f"spreadsheets/{node}/cells", {**cells, "start": 5}, "start must be a cell"),
-            (f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1"}, "rows must be a list"),
-            (f"spreadsheets/{node}/cells", {**cells, "rows": "x"}, "rows must be a list"),
-            (f"spreadsheets/{node}/rows", {"rows": [["x"]]}, "sheet must be a string"),
-            (f"spreadsheets/{node}/rows", {"sheet": "Data"}, "rows must be a list"),
-            (f"spreadsheets/{node}/sheets", {}, "sheet's name must be"),
-            (f"spreadsheets/{node}/sheets", {"name": "More", "rows": "x"}, "rows must be a list"),
+            ("spreadsheets", {}, 400, "parent must be a string"),
+            ("spreadsheets", {**new, "parent": 5}, 400, "parent must be a string"),
+            ("spreadsheets", {"parent": self.folder, "sheets": new["sheets"]}, 400, "title must be a string"),
+            ("spreadsheets", {**new, "title": "x" * 141}, 400, "title must be 140 characters or fewer"),
+            ("spreadsheets", {"parent": self.folder, "title": "Agent wrong"}, 422, "sheets must list"),
+            ("spreadsheets", {**new, "sheets": "x"}, 422, "sheets must list"),
+            (f"spreadsheets/{node}/cells", {"start": "A1", "rows": [["x"]]}, 400, "sheet must be a string"),
+            (f"spreadsheets/{node}/cells", {**cells, "sheet": 5}, 400, "sheet must be a string"),
+            (f"spreadsheets/{node}/cells", {"sheet": "Data", "rows": [["x"]]}, 422, "start must be a cell"),
+            (f"spreadsheets/{node}/cells", {**cells, "start": 5}, 422, "start must be a cell"),
+            (f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1"}, 422, "rows must be a list"),
+            (f"spreadsheets/{node}/cells", {**cells, "rows": "x"}, 422, "rows must be a list"),
+            (f"spreadsheets/{node}/rows", {"rows": [["x"]]}, 400, "sheet must be a string"),
+            (f"spreadsheets/{node}/rows", {"sheet": "Data"}, 422, "rows must be a list"),
+            (f"spreadsheets/{node}/sheets", {}, 422, "sheet's name must be"),
+            (f"spreadsheets/{node}/sheets", {"name": "More", "rows": "x"}, 422, "rows must be a list"),
         )
-        for path, body, message in bodies:
+        for path, body, status, message in bodies:
             with self.subTest(path=path, body=body):
                 response = self.sent("POST", path, body)
-                self.assertIn(response.status_code, (400, 422), response.get_data(as_text=True))
+                self.assertEqual(response.status_code, status, response.get_data(as_text=True))
                 self.assertIn(message, response.json["errors"][0]["message"])
 
         self.assertEqual(self.head(node), rev)
