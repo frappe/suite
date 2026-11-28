@@ -115,7 +115,7 @@ curl -X POST $SITE/api/suite/sheets/spreadsheets/<node>/row-heights -H "$AUTH" -
 }'
 ```
 
-A height is pixels from 16 to 400, and `null` leaves a row as it is. One call sizes up to 10,000 rows, `null` ones counted. Pick each height yourself, from the text in the row. A line of text is 1.25 times its font size, rounded, and a row needs 6 more pixels than its lines. At the default 13-pixel size a line is 16 pixels, so N lines need 16 × N + 6: 38 for 2 lines and 54 for 3, and never less than 28.
+A height is pixels from 16 to 400, and `null` leaves a row as it is. One call sizes up to 10,000 rows, `null` ones counted. Pick each height yourself, from the text in the row. A line of text is 1.25 times its font size, rounded, and a row needs 6 more pixels than its lines. At the default 13-pixel size a line is 16 pixels, so N lines need 16 × N + 6: 38 for 2 lines and 54 for 3, and never less than 28. A row is never more than 400, so more lines than fit in 400 still take 400.
 
 A row sized here keeps its height, as one a user drags does. A tab doesn't fit it to its text again until a user picks "Auto-fit height" for it. A hidden row stays hidden, and a protected sheet takes heights, as a tab's drag does. There is no call to read row heights or to size columns.
 
