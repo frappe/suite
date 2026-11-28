@@ -52,6 +52,7 @@ class TestCompactionFailures(CompactionCase):
                 self.type_into(node, ["one ", "two"])
                 doc_id = self.doc_row(node).id
 
+                attempt_started_at = frappe.utils.now_datetime()
                 status = self.in_forked_horse(
                     doc_id, lambda *args, kill_signal=kill_signal: os.kill(os.getpid(), kill_signal)
                 )
@@ -62,7 +63,8 @@ class TestCompactionFailures(CompactionCase):
                 self.assertEqual((self.checkpoints_of(node), self.body_of(node)), ([], b"\x00\x00"))
                 self.assertEqual((doc.body_rev, self.row_count(node)), (0, 2))
                 self.assertEqual(doc.compaction_failures, 1)
-                self.assertGreater(doc.next_compaction_at, frappe.utils.now_datetime())
+                # Reaping the crashed child can take longer than the retry delay.
+                self.assertGreater(doc.next_compaction_at, attempt_started_at)
                 self.release_places()
 
     def in_forked_horse(self, doc_id: str, compact_stub) -> int:
