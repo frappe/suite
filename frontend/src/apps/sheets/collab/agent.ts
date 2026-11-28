@@ -13,6 +13,8 @@ import * as Y from 'yjs'
 
 import type { WorkbookClient } from '../core/client'
 import { createFormatsEngine } from '../engine/formats'
+import type { MergeSlice } from '../engine/merge'
+import type { ProtectionSheet } from '../engine/protection'
 import { parseSparkline } from '../engine/sparkline'
 import { cellId, colLabel, parseCellId } from '../utils/cells'
 import { applyNumberFmt } from '../utils/format-number'
@@ -323,7 +325,7 @@ function putBlock(
   // SAFETY: only the glue writes these keys (stores.ts STATE_KEY), each as its engine's slice
   const covered = (sheetState.get(stateKey(sheetId, 'merge')) as MergeSlice | undefined)?.slaveMap
   // SAFETY: as for merges, engine/protection.ts's slice
-  const locks = sheetState.get(stateKey(sheetId, 'protection')) as Protection | undefined
+  const locks = sheetState.get(stateKey(sheetId, 'protection')) as ProtectionSheet | undefined
   const writes: { row: number; col: number; input: string }[] = []
   rows.forEach((values, r) =>
     values.forEach((value, c) => {
@@ -352,16 +354,6 @@ function putBlock(
   }
 }
 
-// engine/merge.ts and engine/protection.ts keep these in sheetState
-interface MergeSlice {
-  slaveMap: Record<string, string>
-}
-
-interface Protection {
-  locked: boolean
-  ranges: { r0: number; c0: number; r1: number; c1: number }[]
-}
-
-function isLocked(p: Protection, row: number, col: number): boolean {
+function isLocked(p: ProtectionSheet, row: number, col: number): boolean {
   return p.locked || p.ranges.some((r) => row >= r.r0 && row <= r.r1 && col >= r.c0 && col <= r.c1)
 }
