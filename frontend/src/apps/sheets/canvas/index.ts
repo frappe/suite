@@ -22,7 +22,7 @@ import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createGeometry } from './geometry.js'
 import { createGridActions } from './grid-actions.js'
 import { createAutocomplete } from './input/autocomplete.js'
-import { resizeTargets } from './input/drag.js'
+import { resizeSpan } from './input/drag.js'
 import { createEditor } from './input/editor.js'
 import { createHitTester } from './input/hit-test.js'
 import { createKeyboard, type Keyboard } from './input/keyboard.js'
@@ -385,9 +385,7 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
   function autoFitRow(r: number): void {
     const range = S.range()
     const inBlock = S.mode === 'row' && r >= range.r0 && r <= range.r1
-    const rows = resizeTargets(r, inBlock, S.mode === 'all', range.r0, range.r1, vm.totalRows)
-    const lo = rows[0] ?? r
-    const hi = rows.at(-1) ?? r
+    const [lo, hi] = resizeSpan(r, inBlock, S.mode === 'all', range.r0, range.r1, vm.totalRows)
     const fits = (row: number) => row >= lo && row <= hi
     const measured = fit.measureRows(fits)
     // An empty row at the default height and fitting already is left alone
