@@ -7,11 +7,12 @@
 // a refusal names a reason the server words. A write changes the doc as a tab
 // would: inputs under row and column ids grown with the tab's tail ids, a cleared
 // cell's key deleted, a new sheet made by addSheet. Anything it would leave
-// unchanged makes no update
+// unchanged makes no update. Row heights land in the sheet's view as a tab's drag leaves them
 
 import * as Y from 'yjs'
 
 import type { WorkbookClient } from '../core/client'
+import { MIN_ROW_H, type ViewSnapshot } from '../core/view-model'
 import { createFormatsEngine } from '../engine/formats'
 import type { MergeSlice } from '../engine/merge'
 import type { ProtectionSheet } from '../engine/protection'
@@ -29,6 +30,9 @@ import { docSheets } from './stores'
 const CELLS_MAX = 10_000
 const INPUT_MAX = 32_767
 const SHEETS_MAX = 200
+// One write's row heights, and the tallest a tab's fit makes a row (canvas/autofit.ts)
+const HEIGHTS_MAX = 10_000
+const ROW_H_MAX = 400
 // A read's grid entries, its padding included, so a far cell can't make a huge answer
 const READ_MAX = 1_000_000
 // A values read's cells with a value: IronCalc builds the whole workbook to work each one out
@@ -64,6 +68,9 @@ type Reason =
   | 'protected'
   | 'too_large'
   | 'too_many_values'
+  | 'row'
+  | 'heights'
+  | 'height'
 
 interface Refused {
   reason: Reason
@@ -210,11 +217,14 @@ function writeUpdate(doc: Y.Doc, op: unknown): string | null {
     if (write.kind === 'sheets') addSheets(doc, write.sheets)
     else {
       const { id, name } = sheetNamed(doc, write.sheet)
-      const at =
-        write.kind === 'cells'
-          ? startCell(write.start, name)
-          : { row: lastRow(doc, id) + 1, col: 0 }
-      putBlock(doc, id, name, at, write.rows)
+      if (write.kind === 'heights') putHeights(doc, id, write.start - 1, write.heights)
+      else {
+        const at =
+          write.kind === 'cells'
+            ? startCell(write.start, name)
+            : { row: lastRow(doc, id) + 1, col: 0 }
+        putBlock(doc, id, name, at, write.rows)
+      }
     }
   })
   return update && Buffer.from(update).toString('base64')
@@ -224,6 +234,7 @@ type Write =
   | { kind: 'sheets'; sheets: { name: string; rows: Value[][] }[] }
   | { kind: 'cells'; sheet: string; start: string; rows: Value[][] }
   | { kind: 'rows'; sheet: string; rows: Value[][] }
+  | { kind: 'heights'; sheet: string; start: number; heights: (number | null)[] }
 
 // The agent's write in its shape, every value one a cell can take, or a refusal
 function checked(op: unknown): Write {
@@ -238,6 +249,7 @@ function checked(op: unknown): Write {
     return { kind: 'sheets', sheets }
   }
   if (typeof o.sheet !== 'string') refuse('no_sheet')
+  if (o.kind === 'heights') return checkedHeights(o.sheet, o.start, o.heights)
   const rows = checkedRows(o.rows, o.sheet)
   countCells(rows)
   if (o.kind === 'rows') return { kind: 'rows', sheet: o.sheet, rows }
@@ -263,6 +275,18 @@ function checkedRows(rows: unknown, sheet: string): Value[][] {
   if (!Array.isArray(rows) || !rows.every(Array.isArray)) refuse('rows', sheet)
   if (!rows.every((row: unknown[]) => row.every(isValue))) refuse('value', sheet)
   return rows
+}
+
+// `start` is 1-based, as a tab shows it, and a null height leaves its row
+function checkedHeights(sheet: string, start: unknown, heights: unknown): Write {
+  if (typeof start !== 'number' || !Number.isInteger(start) || start < 1 || start > MAX_ROW)
+    refuse('row', sheet)
+  if (!Array.isArray(heights) || !heights.length || heights.length > HEIGHTS_MAX)
+    refuse('heights', sheet)
+  const isHeight = (h: unknown) => typeof h === 'number' && h >= MIN_ROW_H && h <= ROW_H_MAX
+  if (!heights.every((h) => h === null || isHeight(h))) refuse('height', sheet)
+  if (start - 1 + heights.length > MAX_ROW) refuse('past_grid', sheet)
+  return { kind: 'heights', sheet, start, heights }
 }
 
 // An empty row counts as one, so a list of them can't run past the cap
@@ -352,6 +376,31 @@ function putBlock(
       inputs.set(cellKey(sheetId, rowIds.ensure(row), colIds.ensure(col)), input)
     }
   }
+}
+
+// Each row from `start` (0-based) sized by hand to its height, as a tab's drag leaves it; the
+// rest of the view as it was. A protected sheet takes it, as a tab's drag
+function putHeights(doc: Y.Doc, sheetId: string, start: number, heights: (number | null)[]) {
+  const { sheetState } = roots(doc)
+  const key = stateKey(sheetId, 'view')
+  // SAFETY: only the glue writes this key (stores.ts STATE_KEY), as a tab's ViewSnapshot without zoom
+  const view = (sheetState.get(key) as Partial<ViewSnapshot> | undefined) ?? {}
+  const rowH = { ...view.rowH }
+  // A view saved before manual rows were tracked: every stored height is one, as a tab loads it
+  const manual = Array.isArray(view.manualRows)
+    ? [...view.manualRows]
+    : Object.keys(rowH).map(Number)
+  const sized = new Set(manual)
+  let changed = false
+  heights.forEach((height, i) => {
+    const row = start + i
+    if (height === null || (rowH[row] === height && sized.has(row))) return
+    rowH[row] = height
+    if (!sized.has(row)) manual.push(row)
+    sized.add(row)
+    changed = true
+  })
+  if (changed) sheetState.set(key, { ...view, rowH, manualRows: manual })
 }
 
 function isLocked(p: ProtectionSheet, row: number, col: number): boolean {

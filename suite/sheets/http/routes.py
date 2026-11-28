@@ -109,6 +109,14 @@ class AppendRows(TypedDict):
     rows: list[list[Value]]
 
 
+class RowHeights(TypedDict):
+    sheet: str
+    # The first row's number, from 1
+    start: int
+    # Each row's height in pixels; null leaves its row
+    heights: list[float | None]
+
+
 class WrittenSpreadsheet(drive.NodeShape):
     """The spreadsheet's node as Drive answers it, and the revision the write made."""
 
@@ -220,6 +228,18 @@ def spreadsheet_sheet_add(node: str, name: Given = None, rows: Given = None) -> 
     return {**drive.get_node(node), "rev": rev}
 
 
+@frappe.whitelist(methods=["POST"])
+@write_limit
+@refusing
+@bounded
+def spreadsheet_row_heights_set(
+    node: str, sheet: Given = None, start: Given = None, heights: Given = None
+) -> WrittenSpreadsheet:
+    """Size a sheet's rows from one row, each to its height in pixels, as a tab's drag does."""
+    rev = agent.set_row_heights(node, text(sheet, "sheet"), start, heights)
+    return {**drive.get_node(node), "rev": rev}
+
+
 @frappe.whitelist(methods=["GET"])
 @read_limit
 @refusing
@@ -305,6 +325,16 @@ ROUTES = (
         errors=SHEETS_ERRORS,
         kind="mutation",
         public_name="spreadsheets.addSheet",
+    ),
+    Route(
+        "POST",
+        "spreadsheets/{node}/row-heights",
+        "spreadsheet_row_heights_set",
+        body=RowHeights,
+        output=WrittenSpreadsheet,
+        errors=SHEETS_ERRORS,
+        kind="mutation",
+        public_name="spreadsheets.setRowHeights",
     ),
     Route(
         "GET",

@@ -105,6 +105,20 @@ curl -X POST $SITE/api/suite/sheets/spreadsheets/<node>/sheets -H "$AUTH" -H 'Co
 }'
 ```
 
+**8. Set row heights.** A row is 28 pixels tall until it is sized. `start` is the first row's number, from 1, and each height in `heights` sizes the next row down. This one sizes rows 2, 3 and 5 and leaves row 4:
+
+```sh
+curl -X POST $SITE/api/suite/sheets/spreadsheets/<node>/row-heights -H "$AUTH" -H 'Content-Type: application/json' -d '{
+  "sheet": "Costs",
+  "start": 2,
+  "heights": [60, 60, null, 120]
+}'
+```
+
+A height is pixels from 16 to 400, and `null` leaves a row as it is. One call sizes up to 10,000 rows, `null` ones counted. Pick each height yourself, from the text in the row. A line of text is 1.25 times its font size, rounded, and a row needs 6 more pixels than its lines. At the default 13-pixel size a line is 16 pixels, so N lines need 16 × N + 6: 38 for 2 lines and 54 for 3, and never less than 28.
+
+A row sized here keeps its height, as one a user drags does. A tab doesn't fit it to its text again until a user picks "Auto-fit height" for it. A hidden row stays hidden, and a protected sheet takes heights, as a tab's drag does. There is no call to read row heights or to size columns.
+
 Create and each write answer the spreadsheet as its row in step 2, shown here with the fields an agent needs, and `rev`, the revision the write made:
 
 ```json
@@ -112,16 +126,16 @@ Create and each write answer the spreadsheet as its row in step 2, shown here wi
   "content_docname": "q7k3m9d2vt", "rev": 2 } }
 ```
 
-**8. Open it in a browser** at `$SITE/d/<node>`.
+**9. Open it in a browser** at `$SITE/d/<node>`.
 
-**9. Share it with a user.** The user needs manage access, which the one who made the spreadsheet has. `role` is a number: `10` read, `20` comment, `40` edit, `50` manage, and `0` shuts the user out. On a folder, `30` lets the user add to it.
+**10. Share it with a user.** The user needs manage access, which the one who made the spreadsheet has. `role` is a number: `10` read, `20` comment, `40` edit, `50` manage, and `0` shuts the user out. On a folder, `30` lets the user add to it.
 
 ```sh
 curl -X PUT $SITE/api/suite/drive/nodes/<node>/grants/<user's email> -H "$AUTH" -H 'Content-Type: application/json' \
   -d '{"role": 40}'
 ```
 
-**10. Rename it, trash it, or list its versions.** These are Drive's calls, as for any item. Rename and trash need edit access. `{"state": "Active"}` takes it out of the trash.
+**11. Rename it, trash it, or list its versions.** These are Drive's calls, as for any item. Rename and trash need edit access. `{"state": "Active"}` takes it out of the trash.
 
 ```sh
 curl -X PATCH $SITE/api/suite/drive/nodes/<node> -H "$AUTH" -H 'Content-Type: application/json' -d '{"title": "Budget 2027"}'
@@ -170,7 +184,7 @@ To change a few cells, write just those cells, with `null` for any between them.
 
 ## Limits
 
-One user makes up to 30 creates, 30 cell writes, 30 row adds and 30 sheet adds a minute, each counted on its own, 60 reads and 10 values reads. A call past that answers `RateLimitExceededError` until the minute ends.
+One user makes up to 30 creates, 30 cell writes, 30 row adds, 30 sheet adds and 30 row height sets a minute, each counted on its own, 60 reads and 10 values reads. A call past that answers `RateLimitExceededError` until the minute ends.
 
 A read gives up to 1,000,000 cells, the empty ones before each sheet's last used cell included. A larger spreadsheet is refused with `SheetsRefused`.
 
@@ -196,9 +210,9 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
-| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value would change a merged or protected cell, a read is over 1,000,000 cells, or a values read is over 50,000 cells with a value or its formulas take over 10 seconds or about 1 GB of memory to work out. The message names which. It names the sheet when its name is taken or missing or the rows run past it, and the cell and its sheet when a cell's text is too long or the cell is merged or protected. Nothing was written. The same call gets the same answer, so change it |
+| `SheetsRefused` | 422 | `sheets` or `rows` is not a list as above, a value is not text, a number, `true`, `false` or `null`, a sheet's name breaks a rule under [Sheets](#sheets) or is taken, the spreadsheet would hold over 200 sheets, `sheet` names no sheet the spreadsheet has, `start` is not a cell, a row height's `start` is not a row from 1 to 1,048,576, `heights` is not a list of 1 to 10,000, a height is not a number from 16 to 400 or `null`, a cell's text is over 32,767 characters, a call holds over 10,000 cells or a body over 1 MB, the rows run past the sheet's last row or column, a value would change a merged or protected cell, a read is over 1,000,000 cells, or a values read is over 50,000 cells with a value or its formulas take over 10 seconds or about 1 GB of memory to work out. The message names which. It names the sheet when its name is taken or missing, the rows run past it or a row height's field is wrong, and the cell and its sheet when a cell's text is too long or the cell is merged or protected. Nothing was written. The same call gets the same answer, so change it |
 | `WriteRefused` | 409 | The spreadsheet refuses the write, with the reason a tab's edit gets, such as `unconverted`, `doc_full` or `paused`. The same call gets the same answer until that changes. A write to a spreadsheet not converted yet asks for its conversion, so write again in a minute |
-| `WriteBusy` | 429 | The spreadsheet is busy, a version is being restored into it or was just restored, the spreadsheet changed during a read, another call adding rows or a sheet was landing on the site, a read found it not converted yet, or the converter gave no answer: it was busy, ran out of time on a write or a typed read, or was being updated. The cells are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
+| `WriteBusy` | 429 | The spreadsheet is busy, a version is being restored into it or was just restored, the spreadsheet changed during a read, another call adding rows or a sheet or setting row heights was landing on the site, a read found it not converted yet, or the converter gave no answer: it was busy, ran out of time on a write or a typed read, or was being updated. The cells are not at fault. Send the same call again, after `retry_ms` milliseconds when the answer has it |
 | `RateLimitExceededError` | 429 | The user is past a limit above: wait for the minute to end |
 | `RuntimeError` | 500 | The site can't run the converter: Node or the converter's built bundle is missing. Nothing was written. The call is not at fault and gets the same answer until the site is fixed, so tell whoever runs the site |
 

@@ -139,6 +139,14 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         status, body = self.tab_push(node, keep)
         self.assertEqual(status, 200, body)
 
+    def view(self, node: str) -> dict | None:
+        # What a tab loads its first sheet's row heights from (collab/stores.ts)
+        _header, state = opened(node)
+        doc = pycrdt.Doc()
+        doc.apply_update(state)
+        [sheet] = doc.get("sheets", type=pycrdt.Array).to_py()
+        return doc.get("sheetState", type=pycrdt.Map).to_py().get(f"{sheet}:view")
+
     def sent(self, method: str, path: str, body: dict | None, user: str | None = OWNER) -> Response:
         # A whole request on its own connection, so the answer is the one an agent reads after Frappe cleans it
         frappe.db.commit()
@@ -289,6 +297,21 @@ class TestSpreadsheetWrites(IntegrationTestCase):
 
         self.assertEqual(self.head(node), before)
         self.assert_created_nothing("Agent too big")
+
+    def test_row_heights_size_their_rows_and_sent_again_answer_the_same_rev(self):
+        node = self.create([{"name": "Data", "rows": [["a"], ["b"]]}])
+        rev = self.head(node)
+
+        written = sheets_routes.spreadsheet_row_heights_set(node, "Data", 2, [60, None, 120.5])
+        self.assertGreater(written["rev"], rev)
+        self.assertEqual(written["name"], node)
+        # Rows from 0, each sized by hand as a tab's drag leaves it
+        self.assertEqual(self.view(node), {"rowH": {"1": 60, "3": 120.5}, "manualRows": [1, 3]})
+        self.assertEqual(self.cells(node), {"Data": {"A1": "a", "A2": "b"}})
+
+        again = sheets_routes.spreadsheet_row_heights_set(node, "Data", 2, [60, None, 120.5])
+        self.assertEqual(again["rev"], written["rev"])
+        self.assertEqual(self.head(node), written["rev"])
 
     def test_a_sheet_added_lands_after_the_others_and_takes_writes(self):
         node = self.create([{"name": "Data", "rows": [["a"]]}])
@@ -559,6 +582,9 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         with self.assertRaises(drive.DriveForbidden):
             sheets_routes.spreadsheet_rows_append(node, "Data", [["b"]])
 
+        with self.assertRaises(drive.DriveForbidden):
+            sheets_routes.spreadsheet_row_heights_set(node, "Data", 1, [60])
+
         frappe.set_user(OUTSIDER)
         with self.assertRaises(drive.DriveNotFound):
             sheets_routes.spreadsheet_read(node)
@@ -583,6 +609,7 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             ("POST", f"spreadsheets/{node}/cells", {"sheet": "Data", "start": "A1", "rows": [["x"]]}),
             ("POST", f"spreadsheets/{node}/rows", {"sheet": "Data", "rows": [["x"]]}),
             ("POST", f"spreadsheets/{node}/sheets", {"name": "More"}),
+            ("POST", f"spreadsheets/{node}/row-heights", {"sheet": "Data", "start": 1, "heights": [60]}),
             ("GET", f"spreadsheets/{node}", None),
             ("GET", f"spreadsheets/{node}/values", None),
         )
@@ -600,6 +627,11 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         rev = self.head(node)
         new = {"parent": self.folder, "title": "Agent wrong", "sheets": [{"name": "Data"}]}
         cells = {"sheet": "Data", "start": "A1", "rows": [["x"]]}
+        sized = {"sheet": "Data", "start": 1, "heights": [60]}
+        row = "start on Data must be a whole row number from 1 to 1,048,576"
+        listed = "heights on Data must be a list of 1 to 10,000 heights"
+        height = "A height on Data must be a number of pixels from 16 to 400, or null"
+        heights = f"spreadsheets/{node}/row-heights"
         # Each status from the guide's refusal table: a field that is not text is a DriveError
         bodies = (
             ("spreadsheets", {}, 400, "parent must be a string"),
@@ -618,6 +650,23 @@ class TestSpreadsheetWrites(IntegrationTestCase):
             (f"spreadsheets/{node}/rows", {"sheet": "Data"}, 422, "rows must be a list"),
             (f"spreadsheets/{node}/sheets", {}, 422, "sheet's name must be"),
             (f"spreadsheets/{node}/sheets", {"name": "More", "rows": "x"}, 422, "rows must be a list"),
+            (heights, {"start": 1, "heights": [60]}, 400, "sheet must be a string"),
+            (heights, {**sized, "sheet": 5}, 400, "sheet must be a string"),
+            (heights, {"sheet": "Data", "heights": [60]}, 422, row),
+            (heights, {**sized, "start": 0}, 422, row),
+            (heights, {**sized, "start": 1.5}, 422, row),
+            (heights, {**sized, "start": "2"}, 422, row),
+            (heights, {**sized, "start": 1_048_577}, 422, row),
+            (heights, {"sheet": "Data", "start": 1}, 422, listed),
+            (heights, {**sized, "heights": []}, 422, listed),
+            (heights, {**sized, "heights": 60}, 422, listed),
+            (heights, {**sized, "heights": [None] * 10_001}, 422, listed),
+            (heights, {**sized, "heights": [15]}, 422, height),
+            (heights, {**sized, "heights": [401]}, 422, height),
+            (heights, {**sized, "heights": ["60"]}, 422, height),
+            (heights, {**sized, "heights": [True]}, 422, height),
+            (heights, {**sized, "start": 1_048_576, "heights": [60, 60]}, 422, "run past the last row"),
+            (heights, {**sized, "sheet": "Nope"}, 422, "no sheet named Nope"),
         )
         for path, body, status, message in bodies:
             with self.subTest(path=path, body=body):
@@ -682,6 +731,10 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         with self.assertRaisesRegex(SheetsRefused, "text, a number"):
             sheets_routes.spreadsheet_cells_write(node, "Data", "A1", [[float("nan")]])
 
+        for height in (float("nan"), float("inf")):
+            with self.assertRaisesRegex(SheetsRefused, "on Data must be a number of pixels from 16 to 400"):
+                sheets_routes.spreadsheet_row_heights_set(node, "Data", 1, [height])
+
     def test_a_user_past_the_write_limit_waits_and_another_user_does_not(self):
         frappe.cache.delete_keys("rl:suite.sheets")
         self.addCleanup(frappe.cache.delete_keys, "rl:suite.sheets")
@@ -700,6 +753,26 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         frappe.set_user(OUTSIDER)
         with self.assertRaises(drive.DriveError):
             call_route(lambda _node: write(), "")
+
+    def test_row_heights_have_their_own_write_limit(self):
+        frappe.cache.delete_keys("rl:suite.sheets")
+        self.addCleanup(frappe.cache.delete_keys, "rl:suite.sheets")
+
+        def sized():
+            sheets_routes.spreadsheet_row_heights_set("no node", "Data", 1, [60])
+
+        for _write in range(sheets_routes.WRITES_A_MINUTE):
+            with self.assertRaises(drive.DriveError):
+                call_route(lambda _node: sized(), "")
+
+        with self.assertRaises(frappe.RateLimitExceededError):
+            call_route(lambda _node: sized(), "")
+
+        # A cell write counts on its own
+        with self.assertRaises(drive.DriveError):
+            call_route(
+                lambda _node: sheets_routes.spreadsheet_cells_write("no node", "Data", "A1", [["x"]]), ""
+            )
 
     def test_a_user_past_the_values_limit_waits_and_still_reads_as_typed(self):
         frappe.cache.delete_keys("rl:suite.sheets")

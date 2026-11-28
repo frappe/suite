@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import * as Y from 'yjs'
 
+import { createViewModel, type ViewSnapshot } from '../core/view-model'
 import { agentAnswer, valuesAnswer } from './agent'
 import { addSheet, axis, cellKey, roots } from './schema'
 import { inputs, openTab, type, type Tab } from './test-tabs'
@@ -66,6 +67,7 @@ describe('agent writes', () => {
         { kind: 'cells', sheet: 'Sheet1', start: 'A1', rows: [['']] },
         { kind: 'rows', sheet: 'Sheet1', rows: [['a'], ['b']] },
         { kind: 'sheets', sheets: [{ name: 'Notes', rows: [['n']] }] },
+        { kind: 'heights', sheet: 'Sheet1', start: 2, heights: [60, null, 120] },
       ]
       for (const op of ops) {
         const { structs } = Y.decodeUpdate(updateOf(write(tab.doc, op)))
@@ -229,6 +231,167 @@ describe('agent writes', () => {
 
       const again = { kind: 'cells', sheet: 'Sheet1', start: 'A1', rows: sheet!.rows }
       expect(write(tab.doc, again)).toEqual({ update: null })
+    },
+    TIMEOUT,
+  )
+})
+
+describe('agent row heights', () => {
+  const heights = (start: unknown, list: unknown) => ({
+    kind: 'heights',
+    sheet: 'Sheet1',
+    start,
+    heights: list,
+  })
+  // What the tab's view store holds for the sheet, as its view model saves it
+  const view = (tab: Tab) => {
+    // SAFETY: the glue restores each sheet's view slice into the store as a ViewSnapshot
+    const snaps = tab.stores.view.snapshot() as Record<string, ViewSnapshot | undefined>
+    return snaps.Sheet1
+  }
+  // What a tab's drag on each row to its height leaves (canvas/index.ts setRowHeights)
+  function dragged(slice: Partial<ViewSnapshot>, sizes: [row: number, height: number][]) {
+    const vm = createViewModel()
+    vm.restore(slice)
+    for (const [row, height] of sizes) {
+      vm.setRowHeight(row, height)
+      vm.setRowManual(row, true)
+    }
+    const { zoom: _, ...shared } = vm.serialize()
+    return shared
+  }
+  // A tab's view, its rows sized every way and a hidden row among those set
+  function saved() {
+    const vm = createViewModel()
+    vm.setColWidth(2, 200)
+    vm.setFreeze(1, 1)
+    vm.setHiddenRows([4])
+    vm.setHiddenCols([6])
+    vm.setTotalRows(1500)
+    vm.setRowHeight(7, 90)
+    vm.setRowManual(7, true)
+    // Fitted to its text, so a tab may refit it
+    vm.setRowHeight(1, 44)
+    const { zoom: _, ...shared } = vm.serialize()
+    return shared
+  }
+
+  it(
+    "size each row as a tab's drag does, in an open tab, the rest of its view kept",
+    async () => {
+      const tab = await openTab('A')
+      await type(tab, 'Sheet1', 'A1', 'kept')
+      tab.stores.formats.applyToRange(['A1'], { bold: true }, 'Sheet1')
+      tab.stores.merge.merge(9, 0, 9, 1, 'Sheet1')
+      tab.stores.view.restore({ Sheet1: saved() })
+      await tab.glue.commit()
+      const before = Y.encodeStateAsUpdate(tab.doc)
+      const op = heights(2, [60, 60, null, 120])
+
+      const after = written(tab.doc, op)
+      await received(tab, updateOf(write(tab.doc, op)))
+      const slice = view(tab)!
+      expect(slice).toEqual(
+        dragged(saved(), [
+          [1, 60],
+          [2, 60],
+          [4, 120],
+        ]),
+      )
+      const vm = createViewModel()
+      vm.restore(slice)
+      expect([0, 1, 2, 3, 4, 7].map((r) => vm.rowHeight(r))).toEqual([28, 60, 60, 28, 120, 90])
+      expect(vm.manualRows).toEqual(new Set([7, 1, 2, 4]))
+      expect(vm.hiddenRows).toEqual(new Set([4]))
+      const { rowH: _r, manualRows: _m, ...rest } = slice
+      const { rowH: _sr, manualRows: _sm, ...savedRest } = saved()
+      expect(rest).toEqual(savedRest)
+      // Cells, formats, merges and every other root as they were
+      const was = new Y.Doc()
+      Y.applyUpdate(was, before)
+      const others = (doc: Y.Doc) =>
+        Object.entries(roots(doc))
+          .filter(([name]) => name !== 'sheetState')
+          .map(([name, root]) => [name, root.toJSON()])
+      expect(others(after)).toEqual(others(was))
+    },
+    TIMEOUT,
+  )
+
+  it(
+    "size a row on a sheet with no view saved as a tab's first drag there leaves it",
+    async () => {
+      const tab = await openTab('A')
+      expect(view(tab)).toBeUndefined()
+      await received(tab, updateOf(write(tab.doc, heights(3, [40]))))
+      const loaded = createViewModel()
+      loaded.restore(view(tab))
+      const { zoom: _, ...shared } = loaded.serialize()
+      expect(shared).toEqual(dragged({}, [[2, 40]]))
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'keep every height of a view saved before manual rows, as a tab loads it',
+    async () => {
+      const tab = await openTab('A')
+      tab.stores.view.restore({ Sheet1: { rowH: { 0: 50 } } })
+      await tab.glue.commit()
+      await received(tab, updateOf(write(tab.doc, heights(3, [40]))))
+      expect(view(tab)).toEqual({ rowH: { 0: 50, 2: 40 }, manualRows: [0, 2] })
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'answer no update for heights a tab already has, or all null',
+    async () => {
+      const tab = await openTab('A')
+      tab.stores.view.restore({ Sheet1: saved() })
+      await tab.glue.commit()
+      expect(write(tab.doc, heights(8, [90]))).toEqual({ update: null })
+      expect(write(tab.doc, heights(1, [null, null]))).toEqual({ update: null })
+      // Row 2 holds 44 fitted to its text: the same height still sizes it by hand
+      await received(tab, updateOf(write(tab.doc, heights(2, [44]))))
+      expect(view(tab)!.manualRows).toEqual([7, 1])
+    },
+    TIMEOUT,
+  )
+
+  it(
+    'take fractional heights from 16 to 400, to the last row, on a protected sheet',
+    async () => {
+      const tab = await openTab('A')
+      tab.stores.protection.setSheetLocked(true, 'Sheet1')
+      await tab.glue.commit()
+      await received(tab, updateOf(write(tab.doc, heights(1_048_575, [16, 400]))))
+      await received(tab, updateOf(write(tab.doc, heights(1, [27.5]))))
+      expect(view(tab)!.rowH).toEqual({ 0: 27.5, 1_048_574: 16, 1_048_575: 400 })
+    },
+    TIMEOUT,
+  )
+
+  it.each([
+    ['no start', heights(undefined, [60]), 'row'],
+    ['start 0', heights(0, [60]), 'row'],
+    ['a fractional start', heights(1.5, [60]), 'row'],
+    ['a start as text', heights('2', [60]), 'row'],
+    ['a start past the last row', heights(1_048_577, [60]), 'row'],
+    ['no heights', heights(1, undefined), 'heights'],
+    ['heights that are no list', heights(1, 60), 'heights'],
+    ['no height in the list', heights(1, []), 'heights'],
+    ['more than 10,000 heights, nulls counted', heights(1, Array(10_001).fill(null)), 'heights'],
+    ['a height under 16', heights(1, [15.9]), 'height'],
+    ['a height over 400', heights(1, [400.5]), 'height'],
+    ['a height as text', heights(1, ['60']), 'height'],
+    ['a height as a boolean', heights(1, [true]), 'height'],
+    ['heights past the last row', heights(1_048_576, [60, 60]), 'past_grid'],
+  ])(
+    'refused for %s, naming the sheet',
+    async (_, op, reason) => {
+      const tab = await openTab('A')
+      expect(write(tab.doc, op)).toEqual({ refused: { reason, sheet: 'Sheet1' } })
     },
     TIMEOUT,
   )

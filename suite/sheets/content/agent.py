@@ -29,8 +29,9 @@ TITLE_MAX = 140
 # room, or a restore is landing or landed under the write
 PASSING = ("busy", "compacting", "restoring", "restored")
 # Adding rows and adding a sheet pick their place from a read, so two at once would land rows on the same
-# row, or pass the sheet cap or both take one name. They take turns on one lock for the site, as every
-# write waits on its one converter anyway: one waits this long for the turn, then answers busy
+# row, or pass the sheet cap or both take one name, and setting row heights rewrites a sheet's view from a
+# read. They take turns on one lock for the site, as every write waits on its one converter anyway: one
+# waits this long for the turn, then answers busy
 TURN_LOCK = "sheets_agent_turn"
 TURN_WAIT_S = 10
 TURN_RETRY_MS = 1000
@@ -57,6 +58,9 @@ REASONS = {
     "protected": "{cell} on {sheet} is protected",
     "too_large": "The spreadsheet is too large to read in one call",
     "too_many_values": "A values read shows at most 50,000 cells with a value: read the spreadsheet as typed",
+    "row": "start on {sheet} must be a whole row number from 1 to 1,048,576",
+    "heights": "heights on {sheet} must be a list of 1 to 10,000 heights",
+    "height": "A height on {sheet} must be a number of pixels from 16 to 400, or null",
     "too_heavy": "The formulas take too long or too much memory to work out here: read the spreadsheet as typed",
 }
 
@@ -136,6 +140,18 @@ def add_sheet(node: str, name: object, rows: object) -> int:
     return in_turn(node, {"kind": "sheets", "sheets": [sheet]})
 
 
+def set_row_heights(node: str, sheet: str, start: object, heights: object) -> int:
+    """Size the rows of `sheet` from row `start` to `heights`, as a tab's drag does, and answer the rev."""
+    writable(node)
+    try:
+        # NaN or Infinity is a wrong height, which the converter can't be sent
+        json.dumps(heights, allow_nan=False)
+    except ValueError:
+        raise SheetsRefused(_(REASONS["height"]).format(sheet=sheet)) from None
+
+    return in_turn(node, {"kind": "heights", "sheet": sheet, "start": start, "heights": heights})
+
+
 def in_turn(node: str, write: dict) -> int:
     """Push `write` while no other write that picks its place from a read runs, and answer its rev."""
     try:
@@ -144,7 +160,8 @@ def in_turn(node: str, write: dict) -> int:
             return push(node, write)
     except LockTimeoutError:
         raise WriteBusy(
-            _("Another write that adds rows or a sheet is landing. Try again."), retry_ms=TURN_RETRY_MS
+            _("Another write that adds rows, adds a sheet or sets row heights is landing. Try again."),
+            retry_ms=TURN_RETRY_MS,
         ) from None
 
 
