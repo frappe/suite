@@ -173,4 +173,5 @@ class TestWriterCollabAccess(CollabCase):
             with patch.object(frappe.db, "sql", wraps=frappe.db.sql) as sql:
                 pushed = call_route(routes.updates_post, node, body=body)
 
-        self.assertEqual((pushed.status_code, sql.call_count), (200, 16))
+        expected_statements = 20 if frappe.db.db_type == "sqlite" else 16
+        self.assertEqual((pushed.status_code, sql.call_count), (200, expected_statements))

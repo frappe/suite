@@ -206,7 +206,7 @@ MAX_RECENT_WINDOWS = 5
 # visits stamped the same second, so offset pages never repeat or skip a row;
 # the secondary index carries the primary key, so it adds no sort.
 RECENTS_SQL = """
-SELECT STRAIGHT_JOIN r.name, r.node, r.opened_at
+SELECT {join_hint}r.name, r.node, r.opened_at
 FROM `tabDrive Recent` r
 JOIN `tabDrive Node` n ON n.name = r.node
 WHERE r.user = %(user)s
@@ -220,7 +220,7 @@ LIMIT %(limit)s OFFSET %(offset)s
 # and STRAIGHT_JOIN reads the caller's own rows first, as in `RECENTS_SQL`.
 # `f.name` breaks ties between marks made the same second.
 FAVOURITES_SQL = """
-SELECT STRAIGHT_JOIN f.name, f.node, f.creation
+SELECT {join_hint}f.name, f.node, f.creation
 FROM `tabDrive Favourite` f
 JOIN `tabDrive Node` n ON n.name = f.node
 WHERE f.user = %(user)s
@@ -252,7 +252,10 @@ def recents(
     _require_person(principals)
     window = page_limit(limit)
     offset = decode_cursor(cursor)
-    query = RECENTS_SQL.format(type_filter=type_filter(listing_types, "n."))
+    query = RECENTS_SQL.format(
+        join_hint="STRAIGHT_JOIN " if frappe.db.db_type == "mariadb" else "",
+        type_filter=type_filter(listing_types, "n."),
+    )
     values = {"user": principals.user, "limit": window}
     page: list = []
     read = 0
@@ -341,7 +344,10 @@ def favourites(
     window = page_limit(limit)
     offset = decode_cursor(cursor)
     rows = frappe.db.sql(
-        FAVOURITES_SQL.format(type_filter=type_filter(listing_types, "n.")),
+        FAVOURITES_SQL.format(
+            join_hint="STRAIGHT_JOIN " if frappe.db.db_type == "mariadb" else "",
+            type_filter=type_filter(listing_types, "n."),
+        ),
         {"user": principals.user, "limit": window, "offset": offset},
         as_dict=True,
     )

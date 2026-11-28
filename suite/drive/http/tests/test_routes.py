@@ -362,10 +362,10 @@ class TestViewProjection(BoundaryCase):
                     self.assertIn(f"n.`{field}`", statement)
 
     def test_no_view_statement_carries_an_unformatted_placeholder(self):
-        # `{type_filter}` is the one placeholder left for the call to fill.
         for name in self.VIEWS:
             with self.subTest(view=name):
-                self.assertNotIn("{", getattr(node_core, name).replace("{type_filter}", ""))
+                statement = getattr(node_core, name).format(type_filter="1 = 1", document_ancestor="SELECT 1")
+                self.assertNotIn("{", statement)
 
 
 class TestSubjectPrincipals(BoundaryCase):

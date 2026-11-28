@@ -111,7 +111,7 @@ def take_out_rows(app: str, doc_id: str, picked: set[int], cut_clocks: dict[int,
     (
         frappe.qb.update(update)
         .set(update.state, "quarantined")
-        .set(update.payload, "")
+        .set(update.payload, Unhex(""))
         .set(update.bound, 0)
         .where(update.doc_id == doc_id)
         .where(update.rev.isin(list(picked)))

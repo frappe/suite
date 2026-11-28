@@ -3,6 +3,7 @@ import os
 import threading
 import time
 from collections.abc import Callable
+from unittest import skipIf
 from unittest.mock import patch
 
 import frappe
@@ -30,6 +31,7 @@ def takes_row_lock(query) -> bool:
     return on_locked_tables and ("FOR UPDATE" in statement or writes)
 
 
+@skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
 class TestLockOrder(CompactionCase, DriveCallbackCase):
     old_document = test_conversion.TestConversion.old_document
 

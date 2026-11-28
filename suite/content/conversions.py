@@ -130,7 +130,12 @@ def converter_runs(app: str, conversion: Conversion) -> bool:
 def convert_page(app: str, page: list[frappe._dict], deadline: float) -> bool:
     """Convert each document on `page`; False once time runs out, the app pauses or the converter changes."""
     for row in page:
-        if time.monotonic() > deadline or not convert_node(app, row.node):
+        if time.monotonic() > deadline:
+            return False
+        if frappe.db.db_type == "sqlite":
+            # The background job owns this transaction. Refresh the pause flag's snapshot before each document.
+            frappe.db.commit()  # nosemgrep: frappe-manual-commit
+        if not convert_node(app, row.node):
             return False
 
     return True
@@ -483,20 +488,31 @@ def record(
     if dropped is not None:
         dropped_json = json.dumps(dropped)
 
-    query = insert_into(
-        table(app, "conversion"),
-        {
-            "node": node,
-            "fingerprint": fingerprint,
-            "converter_version": conversion_of(app).version,
-            "started": started,
-            "finished": now_datetime(),
-            "outcome": outcome,
-            "reason": reason,
-            "dropped": dropped_json,
-        },
-    )
-    for column in ("started", "finished", "outcome", "reason", "dropped"):
+    conversion_table = table(app, "conversion")
+    row = {
+        "node": node,
+        "fingerprint": fingerprint,
+        "converter_version": conversion_of(app).version,
+        "started": started,
+        "finished": now_datetime(),
+        "outcome": outcome,
+        "reason": reason,
+        "dropped": dropped_json,
+    }
+    updated_columns = ("started", "finished", "outcome", "reason", "dropped")
+    if frappe.db.db_type == "sqlite":
+        columns = ", ".join(row)
+        placeholders = ", ".join(f"%({column})s" for column in row)
+        updates = ", ".join(f"{column} = excluded.{column}" for column in updated_columns)
+        frappe.db.sql(
+            f"""INSERT INTO `{conversion_table}` ({columns}) VALUES ({placeholders})
+            ON CONFLICT (node, fingerprint, converter_version) DO UPDATE SET {updates}""",
+            row,
+        )
+        return
+
+    query = insert_into(conversion_table, row)
+    for column in updated_columns:
         query = query.on_duplicate_key_update(column, Values(column))
 
     query.run()  # type: ignore[operator]  # frappe adds run() at runtime

@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import frappe
 from frappe.tests import IntegrationTestCase
+from frappe.utils import set_request
 
 from suite import drive
 from suite.suite_core.administration import list_users, update_user
@@ -62,22 +63,28 @@ class TestAdminRaces(IntegrationTestCase):
             frappe.connect()
             frappe.set_user(self.users[index])
             try:
-                connections.append((frappe.session.user, frappe.db.sql("SELECT CONNECTION_ID()")[0][0]))
+                connections.append((frappe.session.user, id(frappe.local.db)))
                 if prime_users:
                     list_users()
                 barrier.wait(timeout=10)
                 for retry in range(3):
                     try:
+                        if frappe.db.db_type == "sqlite":
+                            set_request(method="POST")
+                            frappe.db.commit()
                         operation(index)
+                        frappe.local.request = None
                         frappe.db.commit()
                         return "completed"
                     except frappe.QueryDeadlockError:
+                        frappe.local.request = None
                         # Drive documents whole-transaction retry when different
                         # roots acquire their own locks before the site lock.
                         frappe.db.rollback()
                         if retry == 2:
                             raise
                     except frappe.ValidationError:
+                        frappe.local.request = None
                         frappe.db.rollback()
                         return "refused"
             finally:

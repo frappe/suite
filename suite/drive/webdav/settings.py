@@ -55,8 +55,10 @@ def set_user_webdav_enabled(user: str, enabled: bool) -> None:
                 {"doctype": "Drive Settings", "user": user, "webdav_enabled": int(enabled)}
             ).insert()
             return
-        except frappe.DuplicateEntryError as error:
+        except (frappe.DuplicateEntryError, frappe.UniqueValidationError) as error:
             rollback_savepoint("drive_settings_first_write", error)
+            if not frappe.db.get_value("Drive Settings", user, "name"):
+                raise
     settings = frappe.get_doc("Drive Settings", user)
     settings.webdav_enabled = int(enabled)
     settings.save()

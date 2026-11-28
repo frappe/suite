@@ -89,7 +89,7 @@ class TestWriterCollab(CollabCase):
         sql = frappe.db.sql
 
         def failing_sql(query, *args, **kwargs):
-            if "`last_push_at`" in query:
+            if query.lstrip().upper().startswith("UPDATE") and "last_push_at" in query:
                 raise RuntimeError("database gone")
 
             return sql(query, *args, **kwargs)

@@ -112,6 +112,8 @@ class TestDocumentWrites(DriveCallbackCase):
         thread = threading.Thread(target=run)
         thread.start()
         thread.join()
+        if frappe.db.db_type == "sqlite":
+            frappe.db.rollback()
         return errors
 
     def kept_versions(self, node: str) -> list[dict]:
@@ -573,7 +575,13 @@ class TestDocumentWrites(DriveCallbackCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                frappe.db.sql("SELECT `id` FROM `__writer_content_doc` WHERE `id` = %s FOR UPDATE", doc.id)
+                frappe.db.multisql(
+                    {
+                        "mariadb": "SELECT `id` FROM `__writer_content_doc` WHERE `id` = %s FOR UPDATE",
+                        "sqlite": "UPDATE `__writer_content_doc` SET `id` = `id` WHERE `id` = %s",
+                    },
+                    doc.id,
+                )
                 locked.set()
                 written.wait(30)
             finally:
@@ -588,8 +596,12 @@ class TestDocumentWrites(DriveCallbackCase):
             locked.wait(30)
             return answer
 
-        frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")
-        self.addCleanup(frappe.db.sql, "SET SESSION innodb_lock_wait_timeout = DEFAULT")
+        if frappe.db.db_type == "sqlite":
+            self.addCleanup(frappe.db.set_execution_timeout, frappe.db.get_execution_timeout())
+            frappe.db.set_execution_timeout(1)
+        else:
+            frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")
+            self.addCleanup(frappe.db.sql, "SET SESSION innodb_lock_wait_timeout = DEFAULT")
         unmarked = {"method": "Collab readable copy: not marked as owed"}
         logged = connection_for("Error Log").count("Error Log", unmarked)
 

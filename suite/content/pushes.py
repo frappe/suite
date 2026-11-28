@@ -171,10 +171,16 @@ def admissible_row(spec: EditorSpec, header: PushHeader, payload: bytes) -> inge
 def locked_doc(app: str, doc_id: str, is_final: bool) -> frappe._dict:
     """Load the control row under its lock, or refuse as `busy` when another push holds it."""
     doc_table = table(app, "doc")
-    # The lock must be the first statement of a fresh transaction
-    frappe.db.commit()  # nosemgrep: frappe-manual-commit
+    sqlite = frappe.db.db_type == "sqlite"
+    if not sqlite:
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
     with lock_clause(app, doc_id, is_final) as lock:
+        previous_timeout = frappe.db.get_execution_timeout() if sqlite else None
         try:
+            if sqlite:
+                # A write request takes SQLite's writer lock when commit opens its next transaction.
+                frappe.db.set_execution_timeout(FINAL_PUSH_WAIT_S if lock.startswith("WAIT") else 0)
+                frappe.db.commit()  # nosemgrep: frappe-manual-commit
             # Raw SQL: qb has no FOR UPDATE WAIT
             locked_rows = frappe.db.sql(
                 f"""SELECT `lineage`, `head_rev`, `head_chain`, `mode`, `start_clocks`, `schema_steps`, `suspect_held`,
@@ -185,8 +191,10 @@ def locked_doc(app: str, doc_id: str, is_final: bool) -> frappe._dict:
                 as_dict=True,
             )
         except frappe.QueryTimeoutError:
-            # Frappe also writes an Error Log row per timeout, which one waiter per document keeps rare
             raise busy_refusal() from None
+        finally:
+            if previous_timeout is not None:
+                frappe.db.set_execution_timeout(previous_timeout)
 
     if not locked_rows:
         raise busy_refusal()

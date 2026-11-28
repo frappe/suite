@@ -120,7 +120,7 @@ def admit(root: str, delta: int, *, source_root: str | None = None, site_limit_o
         limit = effective_quota(root_row)
 
     frappe.db.sql(ADMIT_SQL, {"root": root, "delta": delta, "effective_quota": limit})
-    if not frappe.db.sql("SELECT ROW_COUNT()")[0][0]:
+    if not frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]:
         raise DriveOverQuota(_("This write exceeds the Drive root quota"))
 
 

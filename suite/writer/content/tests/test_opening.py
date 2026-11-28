@@ -1,6 +1,7 @@
 import gzip
 
 import frappe
+from frappe.utils import now_datetime
 
 from suite.content import compaction
 from suite.content.http import routes
@@ -76,13 +77,14 @@ class TestWriterOpening(CompactionCase):
         frappe.db.sql(
             """INSERT INTO `__writer_content_checkpoint`
             (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `crdt_version`, `report`, `created`)
-            VALUES (%s, 2, UNHEX(%s), UNHEX(%s), 2, UNHEX(%s), 1, %s, '{}', NOW(6))""",
+            VALUES (%s, 2, UNHEX(%s), UNHEX(%s), 2, UNHEX(%s), 1, %s, '{}', %s)""",
             (
                 doc.id,
                 bytes(doc.head_chain).hex(),
                 (b"\x01" * 32).hex(),
                 gzip.compress(b"\x00\x00").hex(),
                 compaction.CRDT_VERSION,
+                now_datetime(),
             ),
         )
         frappe.db.commit()

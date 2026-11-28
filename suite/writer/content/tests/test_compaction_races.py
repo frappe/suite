@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import frappe
 import pycrdt
+from frappe.utils import set_request
 
 from suite.content import compaction, jobs, log
 from suite.content.http import routes
@@ -55,12 +56,18 @@ class TestCompactionRaces(CompactionCase):
         real_sql = frappe.db.sql
 
         def push_while_writing(query, *args, **kwargs):
-            if "UPDATE `tabWriter Document`" in str(query) and not answered:
-                thread = threading.Thread(target=push_elsewhere)
-                thread.start()
-                thread.join()
+            writing_body = 'UPDATE "tabWriter Document"' in str(
+                query
+            ) or "UPDATE `tabWriter Document`" in str(query)
+            if not writing_body or answered:
+                return real_sql(query, *args, **kwargs)
 
-            return real_sql(query, *args, **kwargs)
+            sqlite = frappe.db.db_type == "sqlite"
+            result = real_sql(query, *args, **kwargs) if sqlite else None
+            thread = threading.Thread(target=push_elsewhere)
+            thread.start()
+            thread.join()
+            return result if sqlite else real_sql(query, *args, **kwargs)
 
         with patch.object(frappe.db, "sql", push_while_writing):
             self.compaction_job(doc_id).install(snapshot, compacted)
@@ -102,15 +109,19 @@ class TestCompactionRaces(CompactionCase):
             real_sql = frappe.db.sql
 
             def signalled(query, *args, **kwargs):
-                if "SET `mode`=" in str(query) and "purged" in str(args):
+                if "BEGIN IMMEDIATE" in str(query) or ("SET `mode`=" in str(query) and "purged" in str(args)):
                     marking.set()
 
                 return real_sql(query, *args, **kwargs)
 
             try:
                 with patch.object(frappe.db, "sql", signalled):
+                    if frappe.db.db_type == "sqlite":
+                        set_request(method="POST")
+                        frappe.db.commit()
                     writer_drive.SPEC.on_purge(name)
 
+                frappe.local.request = None
                 frappe.db.commit()
             except Exception as error:
                 errors.append(error)
@@ -121,14 +132,17 @@ class TestCompactionRaces(CompactionCase):
         purge = threading.Thread(target=purge_elsewhere)
 
         def purge_while_writing(query, *args, **kwargs):
-            locks_control_row = "FROM `__writer_content_doc`" in str(query) and "FOR UPDATE" in str(query)
+            if frappe.db.db_type == "sqlite":
+                holds_writer_lock = 'UPDATE "tabWriter Document"' in str(query)
+            else:
+                holds_writer_lock = "FROM `__writer_content_doc`" in str(query) and "FOR UPDATE" in str(query)
             try:
                 return real_sql(query, *args, **kwargs)
             except Exception as error:
                 errors.append(error)
                 raise
             finally:
-                if locks_control_row and not purge.ident:
+                if holds_writer_lock and not purge.ident:
                     purge.start()
                     marking.wait(10)
                     time.sleep(0.5)
@@ -166,7 +180,10 @@ class TestCompactionRaces(CompactionCase):
 
         def install_first(query, *args, **kwargs):
             # The install lands after the open read the control row and before it reads the body
-            if "FROM `tabWriter Document`" in str(query) and not installed:
+            reading_body = 'FROM "tabWriter Document"' in str(query) or "FROM `tabWriter Document`" in str(
+                query
+            )
+            if reading_body and not installed:
                 installed.append(True)
                 thread = threading.Thread(target=compact_elsewhere)
                 thread.start()
@@ -175,13 +192,15 @@ class TestCompactionRaces(CompactionCase):
             return real_sql(query, *args, **kwargs)
 
         # The database default may already be REPEATABLE READ; the open must not rely on it
-        frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
-        self.addCleanup(frappe.db.sql, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+        sqlite = frappe.db.db_type == "sqlite"
+        if not sqlite:
+            frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED")
+            self.addCleanup(frappe.db.sql, "SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
         frappe.db.commit()
         with patch.object(frappe.db, "sql", install_first):
             opened = self.opened(node)
 
-        self.assertEqual(isolation_level(), "READ-COMMITTED")
+        self.assertEqual(isolation_level(), None if sqlite else "READ-COMMITTED")
 
         self.assertEqual(installed, [True])
         self.assertEqual((opened.header["base"], opened.revs, opened.text), (2, [3], typed_text))

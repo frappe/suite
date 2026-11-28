@@ -32,7 +32,7 @@ def compact_killed_after_writing(site: str, doc_id: str) -> NoReturn:
 
         def killed_after_writing(query, *args, **kwargs):
             found = real_sql(query, *args, **kwargs)
-            if "UPDATE `tabWriter Document`" in str(query):
+            if "UPDATE `tabWriter Document`" in str(query) or 'UPDATE "tabWriter Document"' in str(query):
                 os.kill(os.getpid(), signal.SIGKILL)
 
             return found

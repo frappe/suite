@@ -9,6 +9,7 @@ import threading
 import time
 from datetime import datetime, timedelta
 from html import escape
+from unittest import skipIf
 from unittest.mock import MagicMock, call, patch
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
@@ -520,7 +521,11 @@ class TestConversion(DriveCallbackCase):
         def converting(*args, **kwargs):
             nonlocal converted
             converted = True
-            return REAL_CONVERT(*args, **kwargs)
+            result = REAL_CONVERT(*args, **kwargs)
+            if frappe.db.db_type == "sqlite" and commenter.ident is None:
+                commenter.start()
+                commenter.join(10)
+            return result
 
         # Comment from another connection just before the write first locks a Drive Node
         def sql(query, *args, **kwargs):
@@ -557,6 +562,8 @@ class TestConversion(DriveCallbackCase):
                 frappe.db.get_value("Drive Node", node, "state")
                 read.set()
                 converted.wait(60)
+                if frappe.db.db_type == "sqlite":
+                    frappe.db.rollback()
                 _trash(owner, node)
                 purge(owner, node)
                 frappe.db.commit()
@@ -600,6 +607,8 @@ class TestConversion(DriveCallbackCase):
                 frappe.db.get_value("Drive Node", node, "state")
                 read.set()
                 converted.wait(60)
+                if frappe.db.db_type == "sqlite":
+                    frappe.db.rollback()
                 restore_version(owner, node, seq)
                 frappe.db.commit()
             except Exception as error:
@@ -683,6 +692,8 @@ class TestConversion(DriveCallbackCase):
             doc.content = "<p>Edited</p>"
             read.set()
             converted.wait(60)
+            if frappe.db.db_type == "sqlite":
+                frappe.db.rollback()
             doc.save()
             frappe.db.commit()
         except Exception as error:
@@ -766,6 +777,7 @@ class TestConversion(DriveCallbackCase):
         self.assertFalse(purger.is_alive())
         return errors
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_a_conversion_rolled_back_by_a_purge_deadlock_loses_nothing_and_the_run_goes_on(self):
         node = self.old_document("<p>Hello world</p>")
         self.addCleanup(self.delete_document, node)
@@ -813,6 +825,7 @@ class TestConversion(DriveCallbackCase):
         self.assertFalse(frappe.db.exists("Drive Node", node))
         self.assertFalse(frappe.db.exists("Writer Document", {"node": node}))
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_a_purge_rolled_back_by_a_conversion_deadlock_writes_nothing_and_goes_through_again(self):
         node = self.old_document("<p>Hello world</p>")
         release = threading.Event()
@@ -890,6 +903,7 @@ class TestConversion(DriveCallbackCase):
         self.assertFalse(restorer.is_alive())
         return errors
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_a_conversion_rolled_back_by_a_restore_deadlock_loses_nothing_and_the_run_goes_on(self):
         node = self.old_document("<p>Kept</p>")
         seq = drive.take_version(node)
@@ -982,6 +996,7 @@ class TestConversion(DriveCallbackCase):
         self.assertFalse(purger.is_alive())
         return errors, nowaits
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_a_purge_meeting_a_conversion_is_refused_and_loses_nothing(self):
         node = self.old_document("<p>Hello world</p>")
         self.addCleanup(self.delete_document, node)
@@ -2286,8 +2301,8 @@ class TestConversion(DriveCallbackCase):
         self.assertEqual(self.records(node), ())
         self.assertEqual(self.reasons_logged(reason), logged + 1)
 
-    def test_converts_nothing_on_a_database_other_than_mariadb(self):
-        self.refused_for("the database isn't MariaDB", (frappe.db, "db_type", "postgres"))
+    def test_converts_nothing_on_an_unsupported_database(self):
+        self.refused_for("the database is unsupported", (frappe.db, "db_type", "postgres"))
 
     def test_converts_nothing_and_raises_nothing_while_a_content_table_is_missing(self):
         tables = [name for name in frappe.db.get_tables(cached=False) if name != "__writer_content_copy"]

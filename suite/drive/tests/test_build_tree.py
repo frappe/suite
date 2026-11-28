@@ -335,7 +335,9 @@ class TestTreeWiring(BuildTreeCase):
             "Drive Node", source, ["name", "creation", "owner", "parent_node", "path"], as_dict=True
         )
         self.assertEqual(stored.name, source)
-        self.assertEqual(stored.creation, before.creation)
+        self.assertEqual(
+            frappe.utils.get_datetime(stored.creation), frappe.utils.get_datetime(before.creation)
+        )
         self.assertEqual(stored.owner, before.owner)
         self.assertEqual(stored.parent_node, self.root)
         self.assertEqual(stored.path, "")

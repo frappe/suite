@@ -289,6 +289,8 @@ class TestAdminLifecycle(IntegrationTestCase):
         _doc, _policy, snapshot = state()
         self.assertNotIn("from_worker", snapshot)  # a plain read here cannot see the worker's update
 
+        if frappe.db.db_type == "sqlite":
+            frappe.db.rollback()
         doc, _policy, latest = state(lock=True)
         doc.measurements = json.dumps({**latest, "from_this_save": 1})
         doc.save(ignore_permissions=True)
@@ -397,7 +399,11 @@ class TestAdminLifecycle(IntegrationTestCase):
         state()
         frappe.db.commit()
         with self.secondary_connection():  # the helper's first use leaves its new connection current
-            frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")  # a blocked write fails fast
+            if frappe.db.db_type == "sqlite":
+                self.addCleanup(frappe.db.set_execution_timeout, frappe.db.get_execution_timeout())
+                frappe.db.set_execution_timeout(1)
+            else:
+                frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 1")  # a blocked write fails fast
         frappe.local.db = self._primary_connection
         self.errors_from_another_connection = []
         self.ran_from_another_connection = False

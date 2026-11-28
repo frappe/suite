@@ -1620,6 +1620,13 @@ def _index_prefixes(doctype: str, width: int) -> set[tuple[str, ...]]:
     An index that starts with a keyset serves it whatever its name, such as
     one an operator added by hand before Build ran.
     """
+    if frappe.db.db_type == "sqlite":
+        from frappe.database.sqlite.database import get_table_indexes
+
+        return {
+            index["columns"][:width] for index in get_table_indexes(f"tab{doctype}") if not index["partial"]
+        }
+
     columns: dict[str, list[tuple[int, str]]] = defaultdict(list)
     for row in frappe.db.sql(f"SHOW INDEX FROM `tab{doctype}`", as_dict=True):
         columns[row.Key_name].append((int(row.Seq_in_index), row.Column_name))
@@ -1652,6 +1659,9 @@ class SiteContentSource:
             ):
                 continue
             if columns in _index_prefixes(doctype, len(columns)):
+                continue
+            if frappe.db.db_type == "sqlite":
+                frappe.db.add_index(doctype, list(columns))
                 continue
             listed = ", ".join(f"`{column}`" for column in columns)
             add = f"ALTER TABLE `tab{doctype}` ADD INDEX `{'_'.join(columns)}_index` ({listed})"
@@ -1700,11 +1710,17 @@ class SiteContentSource:
         # index on `(doc, creation, name)`, but `doc` alone narrows the scan to
         # one document's history, which is what the page walks.
         creation, name = after
+        cursor = "%(creation)s"
+        if name and frappe.db.db_type == "sqlite":
+            # SQLite compares timestamp spellings as text, including any trailing fractional zeroes.
+            cursor = (
+                "COALESCE((SELECT creation FROM `tabWriter Version` WHERE name = %(name)s), %(creation)s)"
+            )
         rows = frappe.db.sql(
-            """SELECT `name`, `doc`, `snapshot`, `title`, `manual`,
+            f"""SELECT `name`, `doc`, `snapshot`, `title`, `manual`,
                       `owner`, `creation`, `modified`, `modified_by`
                FROM `tabWriter Version`
-               WHERE `doc` = %(doc)s AND (`creation`, `name`) > (%(creation)s, %(name)s)
+               WHERE `doc` = %(doc)s AND (`creation`, `name`) > ({cursor}, %(name)s)
                ORDER BY `creation`, `name` LIMIT %(limit)s""",
             {"doc": document, "creation": creation or "1000-01-01", "name": name, "limit": limit},
             as_dict=True,
@@ -1898,7 +1914,14 @@ class SiteContentSource:
 
     def user_name(self, user: str) -> str | None:
         """Answer the User's stored name for `user`, matched as the database matches it; None when there's no row."""
-        return frappe.db.get_value("User", user, "name")
+        exact = frappe.db.get_value("User", user, "name")
+        if exact or frappe.db.db_type != "sqlite":
+            return exact
+
+        matches = frappe.db.sql(
+            "SELECT `name` FROM `tabUser` WHERE `name` COLLATE NOCASE = %s LIMIT 2", user, pluck=True
+        )
+        return matches[0] if len(matches) == 1 else None
 
     def site_timezone(self) -> str:
         from frappe.utils import get_system_timezone

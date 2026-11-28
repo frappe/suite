@@ -9,7 +9,7 @@ import frappe
 from frappe.query_builder import Table
 
 from suite import drive
-from suite.content.db import Greatest
+from suite.content.db import greatest
 from suite.content.editors import EditorSpec, ReadableCopy, spec_of
 from suite.content.log import node_of
 from suite.content.tables import table
@@ -60,7 +60,7 @@ def write_body(app: str, docname: str, state: bytes, *, edited_at: datetime | No
         update.run()
         return
 
-    update.set(app_table.modified, Greatest(app_table.modified, edited_at)).run()
+    update.set(app_table.modified, greatest(app_table.modified, edited_at)).run()
 
 
 def locked_app_row(app: str, doc_id: str, html_copy: ReadableCopy) -> frappe._dict | None:

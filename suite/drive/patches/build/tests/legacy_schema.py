@@ -271,14 +271,16 @@ class LegacySchema:
             name = frappe.db.get_value("Custom Field", {"dt": "File", "fieldname": fieldname})
             if name:
                 frappe.delete_doc("Custom Field", name, force=True, ignore_permissions=True)
-            frappe.db.sql_ddl(f"ALTER TABLE `tabFile` DROP COLUMN IF EXISTS `{fieldname}`")
+            if frappe.db.has_column("File", fieldname):
+                frappe.db.drop_columns("File", [fieldname])
         if self.singles:
             frappe.db.sql(
                 "DELETE FROM `tabSingles` WHERE `doctype` = 'Drive Disk Settings' AND `field` IN %(fields)s",
                 {"fields": tuple(self.singles)},
             )
         for doctype, column in self.columns:
-            frappe.db.sql_ddl(f"ALTER TABLE `tab{doctype}` DROP COLUMN IF EXISTS `{column}`")
+            if frappe.db.table_exists(doctype, cached=False) and frappe.db.has_column(doctype, column):
+                frappe.db.drop_columns(doctype, [column])
         # Children of a link go before the doctype they link to.
         for doctype in reversed(self.doctypes):
             if frappe.db.exists("DocType", doctype):

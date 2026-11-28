@@ -157,7 +157,8 @@ class TestWriterDocumentCopies(DriveCallbackCase):
         node = self.new_document()
         self.type_into(node, ["one"])
         frappe.db.sql(
-            "UPDATE `__writer_content_update` SET `payload` = 'x' WHERE `doc_id` = %s", self.doc_row(node).id
+            "UPDATE `__writer_content_update` SET `payload` = UNHEX('78') WHERE `doc_id` = %s",
+            self.doc_row(node).id,
         )
         frappe.db.commit()
         parent = frappe.db.get_value("Drive Node", node, "parent_node")

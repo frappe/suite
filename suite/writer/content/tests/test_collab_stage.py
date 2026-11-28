@@ -11,6 +11,7 @@ from suite.content.http import routes
 from suite.content.stage import PIECE_MAX
 from suite.drive._core.access import grant
 from suite.drive._core.principals import Principals
+from suite.tests.utils import begin_test_write
 from suite.writer.content.tests.support import (
     OUTSIDER,
     READER,
@@ -294,6 +295,7 @@ class TestWriterCollabStage(CollabCase):
             frappe.set_user(WRITER)
 
             try:
+                begin_test_write()
                 first_piece = piece_body(lineage, sid, 1, change, change[:PIECE_MAX])
                 answers.append(self.put_piece(node, uuid.uuid4().hex, 0, first_piece))
             finally:

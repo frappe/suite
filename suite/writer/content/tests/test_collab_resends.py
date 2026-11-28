@@ -65,7 +65,13 @@ class TestWriterCollabResends(CollabCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                frappe.db.sql(f"SELECT `id` FROM `{doc_table}` WHERE `id` = %s FOR UPDATE", doc_id)
+                frappe.db.multisql(
+                    {
+                        "mariadb": f"SELECT `id` FROM `{doc_table}` WHERE `id` = %s FOR UPDATE",
+                        "sqlite": f"UPDATE `{doc_table}` SET `id` = `id` WHERE `id` = %s",
+                    },
+                    doc_id,
+                )
                 locked.set()
                 release.wait(30)
                 frappe.db.rollback()
@@ -74,9 +80,13 @@ class TestWriterCollabResends(CollabCase):
             finally:
                 frappe.destroy()
 
-        [[wait]] = frappe.db.sql("SELECT @@SESSION.innodb_lock_wait_timeout")
-        frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 2")
-        self.addCleanup(frappe.db.sql, "SET SESSION innodb_lock_wait_timeout = %s", int(wait))
+        if frappe.db.db_type == "sqlite":
+            self.addCleanup(frappe.db.set_execution_timeout, frappe.db.get_execution_timeout())
+            frappe.db.set_execution_timeout(2)
+        else:
+            [[wait]] = frappe.db.sql("SELECT @@SESSION.innodb_lock_wait_timeout")
+            frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 2")
+            self.addCleanup(frappe.db.sql, "SET SESSION innodb_lock_wait_timeout = %s", int(wait))
         holder = threading.Thread(target=hold_doc_elsewhere)
         holder.start()
         self.assertTrue(locked.wait(30))

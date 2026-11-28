@@ -388,7 +388,12 @@ class TestContentContract(UnitTestCase):
         # the node itself, its root, and every ancestor in the path decide
         self.assertIn("`drive_own`.`node` = `drive_node`.`name`", predicate)
         self.assertIn("`drive_own`.`node` = `drive_node`.`root`", predicate)
-        self.assertIn("LOCATE(CONCAT('/', `drive_own`.`node`, '/'), `drive_node`.`path`)", predicate)
+        expected_position = (
+            "INSTR(`drive_node`.`path`, printf('/%s/', `drive_own`.`node`))"
+            if frappe.db.db_type == "sqlite"
+            else "LOCATE(CONCAT('/', `drive_own`.`node`, '/'), `drive_node`.`path`)"
+        )
+        self.assertIn(expected_position, predicate)
         # nearest wins, and a deny at that depth beats an allow beside it
         self.assertIn("MAX((CASE WHEN `drive_own_deep`.`node`", predicate)
         self.assertIn("CASE WHEN MIN(`drive_own`.`role`) = 0 THEN 0", predicate)

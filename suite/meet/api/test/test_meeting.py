@@ -234,9 +234,10 @@ class IntegrationTestMeetingApi(IntegrationTestCase):
         ip = frappe.generate_hash(length=12)
         request = Request(EnvironBuilder(path="/api/suite/meet/rooms/preview", method="GET").get_environ())
         frappe.set_user("Guest")
+        self.addCleanup(setattr, frappe.local, "request_ip", getattr(frappe.local, "request_ip", None))
+        frappe.local.request_ip = ip
         with (
             patch.object(frappe.local, "request", request, create=True),
-            patch.object(frappe.local, "request_ip", ip, create=True),
             patch.object(frappe.local, "form_dict", frappe._dict()),
         ):
             room_preview(self.meeting.name)

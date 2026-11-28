@@ -149,7 +149,10 @@ class TestEditMax(UnitTestCase):
     def edit_max(self, packet: int) -> int:
         self.addCleanup(capacity.max_packet.clear_cache)
         capacity.max_packet.clear_cache()
-        with patch.object(frappe.db, "sql", return_value=[[packet]]):
+        with (
+            patch.object(frappe.db, "db_type", "mariadb"),
+            patch.object(frappe.db, "sql", return_value=[[packet]]),
+        ):
             return capacity.edit_max()
 
     def test_a_database_that_takes_big_packets_allows_four_mebibyte_changes(self):

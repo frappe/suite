@@ -1107,12 +1107,13 @@ def revoke_below(node_id: str, principal: str, principals: Principals) -> int:
         _lock_node_tree(node_id)
         frappe.db.sql(
             """
-            DELETE g FROM `tabDrive Grant` g
-            JOIN `tabDrive Node` n ON n.name = g.node
-            WHERE g.principal = %(principal)s
-              AND (
-                n.name = %(node)s
-                OR (n.root = %(root)s AND (%(is_root)s OR n.path LIKE %(prefix)s))
+            DELETE FROM `tabDrive Grant`
+            WHERE principal = %(principal)s
+              AND node IN (
+                SELECT n.name
+                FROM `tabDrive Node` n
+                WHERE n.name = %(node)s
+                   OR (n.root = %(root)s AND (%(is_root)s OR n.path LIKE %(prefix)s))
               )
             """,
             {"principal": principal, **subtree_values(node)},

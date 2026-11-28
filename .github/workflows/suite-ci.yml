@@ -36,6 +36,10 @@ on:
       - ".github/workflows/suite-ci.yml"
   workflow_dispatch:
     inputs:
+      sqlite_backend_only:
+        description: Run only the Pilot SQLite backend tests
+        type: boolean
+        default: false
       run_recorder_integration:
         description: Run the recorder integration scenarios
         type: boolean
@@ -47,6 +51,7 @@ concurrency:
 
 jobs:
   backend:
+    if: ${{ !inputs.sqlite_backend_only }}
     runs-on: ubuntu-latest
     name: Backend
     timeout-minutes: 30
@@ -396,7 +401,84 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  backend-sqlite:
+    if: ${{ inputs.sqlite_backend_only }}
+    name: Backend (SQLite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      CI: "Yes"
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: pnpm/action-setup@v6
+
+      - name: Set up Pilot
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh | sh -s -- --ci
+          export PATH="$HOME/pilot/bin:$HOME/.local/bin:$PATH"
+          printf '%s\n' "$HOME/pilot/bin" "$HOME/.local/bin" >> "$GITHUB_PATH"
+          pilot new frappe-bench --frappe-branch develop --database sqlite
+          pilot -b frappe-bench set-bench-config admin_allow_site_to_pilot_communication false
+          pilot -b frappe-bench init --skip-frontend
+
+      - name: Install Suite and Framework test dependencies
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          # Remove this patch once Framework holds the SQLite writer lock during blob GC.
+          patch="$GITHUB_WORKSPACE/.github/scripts/frappe-sqlite-gc.patch"
+          if ! git -C apps/frappe apply --reverse --check "$patch" 2>/dev/null; then
+            git -C apps/frappe apply "$patch"
+          fi
+          uv pip install --python env/bin/python -e "apps/frappe[test]"
+          pilot get-app "$GITHUB_WORKSPACE" --branch "$GITHUB_SHA" --skip-assets
+
+      - name: Build backend content bundles
+        working-directory: /home/runner/pilot/benches/frappe-bench/apps/suite
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec vite build --config vite.checker.config.ts
+          pnpm exec vite build --config vite.checker.config.ts --mode converter
+          pnpm exec vite build --config vite.sheets-checker.config.ts
+          pnpm exec vite build --config vite.sheets-checker.config.ts --mode converter
+          pnpm exec vite build --config vite.slides-checker.config.ts
+          pnpm exec vite build --config vite.slides-checker.config.ts --mode converter
+
+      - name: Start Pilot and create SQLite test site
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot-sqlite.log" 2>&1 &
+          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
+            http://127.0.0.1:7000/api/v1/health
+          pilot new-site test_site --admin-password admin --apps frappe suite --skip-assets
+          ./env/bin/python -c 'import json; assert json.load(open("sites/test_site/site_config.json"))["db_type"] == "sqlite"'
+          pilot frappe --site test_site set-config allow_tests true
+          pilot frappe --site test_site set-config throttle_user_limit 1000 --parse
+
+      - name: Run Suite backend tests
+        working-directory: /home/runner/pilot/benches/frappe-bench
+        run: |
+          pilot frappe --site test_site run-tests --app suite --junit-xml-output "$RUNNER_TEMP/suite-sqlite-tests.xml"
+
+      - name: Upload SQLite test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-sqlite-backend
+          path: |
+            ${{ runner.temp }}/suite-sqlite-tests.xml
+            ${{ runner.temp }}/pilot-sqlite.log
+
   node-servers:
+    if: ${{ !inputs.sqlite_backend_only }}
     runs-on: ubuntu-latest
     name: Node Servers
     timeout-minutes: 30
@@ -504,6 +586,7 @@ jobs:
           retention-days: 30
 
   frontend:
+    if: ${{ !inputs.sqlite_backend_only }}
     runs-on: ubuntu-latest
     name: Frontend
     timeout-minutes: 15
@@ -634,6 +717,7 @@ jobs:
           retention-days: 7
 
   unified-e2e:
+    if: ${{ !inputs.sqlite_backend_only }}
     name: Unified Frontend E2E
     runs-on: suite-e2e-drive
     timeout-minutes: 60

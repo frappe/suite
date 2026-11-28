@@ -3,12 +3,13 @@ import io
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier, Event, local
+from unittest import skipIf
 from unittest.mock import Mock, call, patch
 
 import frappe
 from frappe.storage.blob import put_blob
 from frappe.tests import IntegrationTestCase, UnitTestCase
-from frappe.utils import now_datetime
+from frappe.utils import now_datetime, set_request
 
 from suite import drive
 from suite.drive._core import nodes as node_workflows
@@ -410,7 +411,11 @@ class TestNodeLifecycle(IntegrationTestCase):
             frappe.set_user("Administrator")
             try:
                 barrier.wait(timeout=10)
+                if frappe.db.db_type == "sqlite":
+                    set_request(method="POST")
+                    frappe.db.commit()
                 update(self.admin, source, parent_node=destination)
+                frappe.local.request = None
                 frappe.db.commit()
             finally:
                 frappe.destroy()
@@ -421,7 +426,11 @@ class TestNodeLifecycle(IntegrationTestCase):
             frappe.set_user("Administrator")
             try:
                 barrier.wait(timeout=10)
+                if frappe.db.db_type == "sqlite":
+                    set_request(method="POST")
+                    frappe.db.commit()
                 child = create_folder(self.admin, descendant, "Concurrent child")
+                frappe.local.request = None
                 frappe.db.commit()
                 return child
             finally:
@@ -438,6 +447,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(child_row.root, self.other_root.name)
         self.assertIn(f"/{destination}/{source}/{descendant}/", child_row.path)
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_move_and_descendant_create_do_not_reverse_node_lock_order(self):
         source = create_folder(self.admin, self.root.name, "Source")
         descendant = create_folder(self.admin, source, "Descendant")
@@ -504,6 +514,7 @@ class TestNodeLifecycle(IntegrationTestCase):
         self.assertEqual(child_row.root, self.other_root.name)
         self.assertIn(f"/{destination}/{source}/{descendant}/", child_row.path)
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_move_and_destination_create_do_not_reverse_node_lock_order(self):
         source = create_folder(self.admin, self.root.name, "Source")
         destination_ancestor = create_folder(self.admin, self.other_root.name, "Destination ancestor")

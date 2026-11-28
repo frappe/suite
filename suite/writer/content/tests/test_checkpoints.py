@@ -15,6 +15,8 @@ from suite.writer.content.tests.support import call_route, read_open
 
 class TestWriterCheckpoints(CompactionCase):
     def packet_limit_or_skip(self) -> int:
+        if frappe.db.db_type == "sqlite":
+            self.skipTest("Requires MariaDB's packet size limit")
         [[raw_packet_limit]] = frappe.db.sql("SELECT @@max_allowed_packet")
         packet_limit = int(raw_packet_limit)
         if packet_limit > 64 * 2**20:

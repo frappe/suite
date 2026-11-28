@@ -14,10 +14,12 @@ is cleared as unjudged, so a report alone never pauses saving.
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 
 import frappe
 from frappe.query_builder import Interval, Table
+from frappe.utils import now_datetime
 from frappe.utils.background_jobs import get_redis_conn
 from redis import Redis
 
@@ -60,14 +62,17 @@ def mark_suspect(app: str, doc_id: str, reason: str, method: str) -> None:
 def hear_report(app: str, doc_id: str) -> bool:
     """Claim the report slot and commit, unless a report came in the last `REPORT_EVERY_S` seconds."""
     doc = Table(table(app, "doc"))
+    if frappe.db.db_type == "sqlite":
+        now = now_datetime()
+        cutoff = now - timedelta(seconds=REPORT_EVERY_S)
+    else:
+        now = PreciseNow(6)
+        cutoff = now - Interval(seconds=REPORT_EVERY_S)
     return db.claim(
         frappe.qb.update(doc)
-        .set(doc.suspect_reported_at, PreciseNow(6))
+        .set(doc.suspect_reported_at, now)
         .where(doc.id == doc_id)
-        .where(
-            doc.suspect_reported_at.isnull()
-            | (doc.suspect_reported_at <= PreciseNow(6) - Interval(seconds=REPORT_EVERY_S))
-        )
+        .where(doc.suspect_reported_at.isnull() | (doc.suspect_reported_at <= cutoff))
     )
 
 
@@ -305,11 +310,16 @@ def judged_clean(app: str, doc_id: str) -> bool:
 def fallback_judged_lately(app: str, doc_id: str) -> bool:
     """Whether a judge found a fallback clean in the last day, so another fallback needs no judge."""
     doc = Table(table(app, "doc"))
+    cutoff = (
+        now_datetime() - timedelta(days=1)
+        if frappe.db.db_type == "sqlite"
+        else PreciseNow(6) - Interval(days=1)
+    )
     found = (
         frappe.qb.from_(doc)
         .select(1)
         .where(doc.id == doc_id)
-        .where(doc.fallback_judged_clean_at > PreciseNow(6) - Interval(days=1))
+        .where(doc.fallback_judged_clean_at > cutoff)
         .run()
     )
     return bool(found)
@@ -379,7 +389,9 @@ def clear_suspect(app: str, doc_id: str, verdict: str, *, clean_mark: str | None
         query = query.set(doc.suspect_judged_clean, 1)
 
     if clean_mark == "fallback":
-        query = query.set(doc.fallback_judged_clean_at, PreciseNow(6))
+        query = query.set(
+            doc.fallback_judged_clean_at, now_datetime() if frappe.db.db_type == "sqlite" else PreciseNow(6)
+        )
 
     if verdict in {"clean", "quarantined"}:
         query = query.set(doc.next_compaction_at, None)

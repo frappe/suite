@@ -152,8 +152,14 @@ def mark_purged(app: str, node: str) -> str | None:
 def delete_in_batches(app: str, kind: str, doc_id: str) -> None:
     """Delete the log's rows from its `kind` table in batches, committing each."""
     kind_table = Table(table(app, kind))
+    batch = frappe.qb.from_(kind_table).delete()
+    if frappe.db.db_type == "sqlite":
+        row_ids = frappe.qb.from_(kind_table).select(kind_table.rowid).where(kind_table.doc_id == doc_id)
+        batch = batch.where(kind_table.rowid.isin(row_ids.limit(PURGE_BATCH)))
+    else:
+        batch = batch.where(kind_table.doc_id == doc_id).limit(PURGE_BATCH)
+
     while True:
-        batch = frappe.qb.from_(kind_table).delete().where(kind_table.doc_id == doc_id).limit(PURGE_BATCH)
         deleted = changed_rows(batch)
         frappe.db.commit()  # nosemgrep: frappe-manual-commit
         if deleted < PURGE_BATCH:

@@ -2,10 +2,11 @@ import base64
 import gzip
 import hashlib
 import json
+from datetime import timedelta
 from unittest.mock import patch
 
 import frappe
-from frappe.utils import CallbackManager
+from frappe.utils import CallbackManager, now_datetime
 from frappe.utils.logging import connection_for
 
 from suite import drive
@@ -52,9 +53,8 @@ class TestWriterTrimming(CheckpointCase):
 
     def age_rows(self, node: str, hours: int = 25):
         frappe.db.sql(
-            """UPDATE `__writer_content_update` SET `created` = `created` - INTERVAL %s HOUR
-            WHERE `doc_id` = %s""",
-            (hours, self.doc_row(node).id),
+            "UPDATE `__writer_content_update` SET `created` = %s WHERE `doc_id` = %s",
+            (now_datetime() - timedelta(hours=hours), self.doc_row(node).id),
         )
         frappe.db.commit()
 
@@ -127,7 +127,7 @@ class TestWriterTrimming(CheckpointCase):
     def test_quarantined_rows_stay(self):
         node = self.compacted_document(["one ", "two ", "three"])
         frappe.db.sql(
-            """UPDATE `__writer_content_update` SET `state` = 'quarantined', `payload` = ''
+            """UPDATE `__writer_content_update` SET `state` = 'quarantined', `payload` = UNHEX('')
             WHERE `doc_id` = %s AND `rev` = 2""",
             self.doc_row(node).id,
         )
@@ -207,7 +207,7 @@ class TestWriterTrimming(CheckpointCase):
         frappe.db.sql(
             """INSERT INTO `__writer_content_checkpoint`
             (`doc_id`, `through_rev`, `chain`, `sha256`, `nbytes`, `gz`, `integrated`, `crdt_version`, `report`, `created`)
-            VALUES (%s, 4, UNHEX(%s), UNHEX(%s), %s, UNHEX(%s), 0, %s, '{}', NOW(6))""",
+            VALUES (%s, 4, UNHEX(%s), UNHEX(%s), %s, UNHEX(%s), 0, %s, '{}', %s)""",
             (
                 doc.id,
                 bytes(doc.head_chain).hex(),
@@ -215,6 +215,7 @@ class TestWriterTrimming(CheckpointCase):
                 len(full),
                 gzip.compress(full).hex(),
                 compaction.CRDT_VERSION,
+                now_datetime(),
             ),
         )
         self.age_rows(node)

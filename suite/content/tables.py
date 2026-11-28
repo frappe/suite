@@ -1,4 +1,4 @@
-"""Raw InnoDB tables for one product's collaboration log.
+"""Raw database tables for one product's collaboration log.
 
 They are not DocTypes because Frappe has no binary field type. Every table is
 keyed on the control row's id, never on the Drive node.
@@ -96,11 +96,41 @@ STAGE_COLUMNS = (
 )
 
 
+def _create_table(name: str, columns: str) -> None:
+    if frappe.db.db_type == "sqlite":
+        columns = columns.replace("datetime(6)", "timestamp")
+        options = ""
+    else:
+        options = TABLE_OPTIONS
+    frappe.db.sql_ddl(f"CREATE TABLE IF NOT EXISTS `{name}` ({columns}) {options}")
+
+
+def _add_columns(name: str, columns: tuple[str, ...]) -> None:
+    if frappe.db.db_type == "sqlite":
+        existing = frappe.db.get_db_table_columns(name)
+        for column in columns:
+            field, definition = column.split(" ", 1)
+            if field.strip("`") not in existing:
+                definition = definition.partition(" AFTER ")[0].replace("datetime(6)", "timestamp")
+                frappe.db.sql_ddl(f"ALTER TABLE `{name}` ADD COLUMN {field} {definition}")
+    else:
+        for column in columns:
+            frappe.db.sql_ddl(f"ALTER TABLE `{name}` ADD COLUMN IF NOT EXISTS {column}")
+
+
+def _add_index(table_name: str, index: str, columns: str) -> None:
+    if frappe.db.db_type == "sqlite":
+        frappe.db.sql_ddl(f"CREATE INDEX IF NOT EXISTS `{table_name}_{index}` ON `{table_name}` ({columns})")
+    else:
+        frappe.db.sql_ddl(f"ALTER TABLE `{table_name}` ADD INDEX IF NOT EXISTS `{index}` ({columns})")
+
+
 def ensure_doc_table(app: str) -> None:
     """Create the control table and add the columns tables made before them lack."""
     doc_table = table(app, "doc")
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{doc_table}` (
+    _create_table(
+        doc_table,
+        """
             `id` varchar(20) NOT NULL,
             `node` varchar(140) NOT NULL,
             `lineage` char(32) NOT NULL,
@@ -108,16 +138,13 @@ def ensure_doc_table(app: str) -> None:
             `head_chain` binary(32) NOT NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`id`),
-            UNIQUE KEY `node` (`node`)
-        ) {TABLE_OPTIONS}"""
+            CONSTRAINT `node` UNIQUE (`node`)
+        """,
     )
-    for column in DOC_COLUMNS:
-        frappe.db.sql_ddl(f"ALTER TABLE `{doc_table}` ADD COLUMN IF NOT EXISTS {column}")
+    _add_columns(doc_table, DOC_COLUMNS)
 
-    frappe.db.sql_ddl(
-        f"ALTER TABLE `{doc_table}` ADD INDEX IF NOT EXISTS `next_compaction_at` (`next_compaction_at`)"
-    )
-    frappe.db.sql_ddl(f"ALTER TABLE `{doc_table}` ADD INDEX IF NOT EXISTS `copy_owed` (`copy_owed`)")
+    _add_index(doc_table, "next_compaction_at", "`next_compaction_at`")
+    _add_index(doc_table, "copy_owed", "`copy_owed`")
     # A bound is never below its row's bytes, so this only meets tails stored before bounds were kept
     doc = Table(doc_table)
     frappe.qb.update(doc).set(doc.tail_bound, doc.tail_bytes).where(doc.tail_bound < doc.tail_bytes).run()
@@ -126,8 +153,9 @@ def ensure_doc_table(app: str) -> None:
 def ensure_update_table(app: str) -> None:
     """Create the log's rows table and add the columns tables made before them lack."""
     update_table = table(app, "update")
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{update_table}` (
+    _create_table(
+        update_table,
+        """
             `doc_id` varchar(20) NOT NULL,
             `rev` bigint unsigned NOT NULL,
             `sid` char(32) NOT NULL,
@@ -140,18 +168,18 @@ def ensure_update_table(app: str) -> None:
             `chain` binary(32) NOT NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`doc_id`, `rev`),
-            UNIQUE KEY `session_seq` (`doc_id`, `sid`, `seq_to`)
-        ) {TABLE_OPTIONS}"""
+            CONSTRAINT `session_seq` UNIQUE (`doc_id`, `sid`, `seq_to`)
+        """,
     )
-    for column in UPDATE_COLUMNS:
-        frappe.db.sql_ddl(f"ALTER TABLE `{update_table}` ADD COLUMN IF NOT EXISTS {column}")
+    _add_columns(update_table, UPDATE_COLUMNS)
 
 
 def ensure_session_table(app: str) -> None:
     """Create the sessions table and add the columns tables made before them lack."""
     session_table = table(app, "session")
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{session_table}` (
+    _create_table(
+        session_table,
+        """
             `doc_id` varchar(20) NOT NULL,
             `sid` char(32) NOT NULL,
             `client_id` int unsigned NOT NULL,
@@ -160,18 +188,18 @@ def ensure_session_table(app: str) -> None:
             `created` datetime(6) NOT NULL,
             `last_push_at` datetime(6) NULL,
             PRIMARY KEY (`doc_id`, `sid`),
-            UNIQUE KEY `client` (`doc_id`, `client_id`)
-        ) {TABLE_OPTIONS}"""
+            CONSTRAINT `client` UNIQUE (`doc_id`, `client_id`)
+        """,
     )
-    for column in SESSION_COLUMNS:
-        frappe.db.sql_ddl(f"ALTER TABLE `{session_table}` ADD COLUMN IF NOT EXISTS {column}")
+    _add_columns(session_table, SESSION_COLUMNS)
 
 
 def ensure_checkpoint_table(app: str) -> None:
     """Create the checkpoints table."""
     checkpoint_table = table(app, "checkpoint")
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{checkpoint_table}` (
+    _create_table(
+        checkpoint_table,
+        """
             `doc_id` varchar(20) NOT NULL,
             `through_rev` bigint unsigned NOT NULL,
             `chain` binary(32) NOT NULL,
@@ -183,15 +211,16 @@ def ensure_checkpoint_table(app: str) -> None:
             `report` json NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`doc_id`, `through_rev`)
-        ) {TABLE_OPTIONS}"""
+        """,
     )
 
 
 def ensure_stage_table(app: str) -> None:
     """Create the staged pieces table and add the columns tables made before them lack."""
     stage_table = table(app, "stage")
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{stage_table}` (
+    _create_table(
+        stage_table,
+        """
             `doc_id` varchar(20) NOT NULL,
             `stage_id` char(32) NOT NULL,
             `idx` tinyint unsigned NOT NULL,
@@ -203,19 +232,19 @@ def ensure_stage_table(app: str) -> None:
             `sha_total` binary(32) NOT NULL,
             `bytes` mediumblob NOT NULL,
             `created` datetime(6) NOT NULL,
-            PRIMARY KEY (`doc_id`, `stage_id`, `idx`),
-            KEY `created` (`created`)
-        ) {TABLE_OPTIONS}"""
+            PRIMARY KEY (`doc_id`, `stage_id`, `idx`)
+        """,
     )
-    for column in STAGE_COLUMNS:
-        frappe.db.sql_ddl(f"ALTER TABLE `{stage_table}` ADD COLUMN IF NOT EXISTS {column}")
+    _add_columns(stage_table, STAGE_COLUMNS)
+    _add_index(stage_table, "created", "`created`")
 
 
 def ensure_recovery_table(app: str) -> None:
     """Create the recovery copies table."""
     recovery_table = table(app, "recovery")
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{recovery_table}` (
+    _create_table(
+        recovery_table,
+        """
             `id` varchar(20) NOT NULL,
             `doc_id` varchar(20) NOT NULL,
             `node` varchar(140) NOT NULL,
@@ -233,24 +262,25 @@ def ensure_recovery_table(app: str) -> None:
             `resolved_at` datetime(6) NULL,
             `resolution` varchar(40) NULL,
             PRIMARY KEY (`id`),
-            UNIQUE KEY `owner_sha` (`doc_id`, `owner`, `sha256`),
-            KEY `open` (`doc_id`, `owner`, `resolved_at`)
-        ) {TABLE_OPTIONS}"""
+            CONSTRAINT `owner_sha` UNIQUE (`doc_id`, `owner`, `sha256`)
+        """,
     )
+    _add_index(recovery_table, "open", "`doc_id`, `owner`, `resolved_at`")
 
 
 def ensure_projection_table(app: str) -> None:
     """Create the table that records the readable copy in the app's row."""
     projection_table = table(app, "projection")
     # The rev of the checked readable copy in the app's row, and the sha of the fields it wrote
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{projection_table}` (
+    _create_table(
+        projection_table,
+        """
             `doc_id` varchar(20) NOT NULL,
             `projected_rev` bigint unsigned NOT NULL DEFAULT 0,
             `projection_hash` binary(32) NULL,
             `updated` datetime(6) NULL,
             PRIMARY KEY (`doc_id`)
-        ) {TABLE_OPTIONS}"""
+        """,
     )
 
 
@@ -258,15 +288,16 @@ def ensure_copy_table(app: str) -> None:
     """Create the readable copies table."""
     copy_table = table(app, "copy")
     # The checked readable copy at the latest rev
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{copy_table}` (
+    _create_table(
+        copy_table,
+        """
             `doc_id` varchar(20) NOT NULL,
             `rev` bigint unsigned NOT NULL,
             `html` longtext NULL,
             `text` longtext NULL,
             `created` datetime(6) NOT NULL,
             PRIMARY KEY (`doc_id`, `rev`)
-        ) {TABLE_OPTIONS}"""
+        """,
     )
 
 
@@ -274,8 +305,9 @@ def ensure_conversion_table(app: str) -> None:
     """Create the conversion records table and add the columns tables made before them lack."""
     conversion_table = table(app, "conversion")
     # `dropped` holds document text, so it is read only by this record's own checks
-    frappe.db.sql_ddl(
-        f"""CREATE TABLE IF NOT EXISTS `{conversion_table}` (
+    _create_table(
+        conversion_table,
+        """
             `node` varchar(140) NOT NULL,
             `fingerprint` char(64) NOT NULL,
             `converter_version` varchar(20) NOT NULL,
@@ -285,12 +317,12 @@ def ensure_conversion_table(app: str) -> None:
             `reason` varchar(40) NULL,
             `dropped` json NULL,
             PRIMARY KEY (`node`, `fingerprint`, `converter_version`)
-        ) {TABLE_OPTIONS}"""
+        """,
     )
-    frappe.db.sql_ddl(
-        f"ALTER TABLE `{conversion_table}` ADD COLUMN IF NOT EXISTS `failures` int unsigned NOT NULL DEFAULT 0"
+    _add_columns(
+        conversion_table,
+        ("`failures` int unsigned NOT NULL DEFAULT 0", "`checked` datetime(6) NULL"),
     )
-    frappe.db.sql_ddl(f"ALTER TABLE `{conversion_table}` ADD COLUMN IF NOT EXISTS `checked` datetime(6) NULL")
 
 
 def ensure_tables(app: str) -> None:

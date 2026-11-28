@@ -7,8 +7,14 @@ from pypika.dialects import MySQLQueryBuilder
 from pypika.queries import QueryBuilder
 
 Unhex = CustomFunction("UNHEX", ["hex"])
-Greatest = CustomFunction("GREATEST", ["first", "second"])
+_Greatest = CustomFunction("GREATEST", ["first", "second"])
+_SQLiteGreatest = CustomFunction("MAX", ["first", "second"])
 PreciseNow = CustomFunction("NOW", ["precision"])
+
+
+def greatest(first, second):
+    function = _SQLiteGreatest if frappe.db.db_type == "sqlite" else _Greatest
+    return function(first, second)
 
 
 def insert_into(table_name: str, row: dict) -> MySQLQueryBuilder:
@@ -21,7 +27,7 @@ def changed_rows(query: QueryBuilder) -> int:
     """Run an UPDATE or DELETE and answer how many rows it changed."""
     query.run()  # type: ignore[operator]  # frappe adds run() at runtime
     # Raw SQL: qb has no ROW_COUNT()
-    [[count]] = frappe.db.sql("SELECT ROW_COUNT()")
+    [[count]] = frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})
     return count
 
 
@@ -40,6 +46,9 @@ def alert(title: str, message: str) -> None:
 
 def load_system_variable(name: str) -> str | int | None:
     """Load a MariaDB system variable, None when this server has no variable by that name."""
+    if frappe.db.db_type == "sqlite":
+        return frappe.db.sql("SELECT sqlite_version()")[0][0] if name == "version" else None
+
     try:
         # Raw SQL: qb can't read a system variable
         [[value]] = frappe.db.sql(f"SELECT @@{name}")

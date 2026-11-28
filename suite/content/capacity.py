@@ -28,6 +28,8 @@ FULL_RETRY_MS = 300_000
 
 def edit_max() -> int:
     """Return the most one push may commit: `CHANGE_MAX` at most, halved as escaping can double it."""
+    if frappe.db.db_type == "sqlite":
+        return CHANGE_MAX
     return min(CHANGE_MAX, (max_packet() - 2**20) // 2)
 
 

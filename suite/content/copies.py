@@ -503,14 +503,23 @@ def keep_unprojected(
 
 def keep_copy(app: str, doc_id: str, rev: int, html: str) -> None:
     """Keep the copy at `rev` and drop older ones."""
-    copy = Table(table(app, "copy"))
-    (
-        frappe.qb.into(copy)
-        .columns(copy.doc_id, copy.rev, copy.html, copy.created)
-        .insert(doc_id, rev, html, now_datetime())
-        .on_duplicate_key_update(copy.html, Values(copy.html))
-        .run()
-    )
+    copy_table = table(app, "copy")
+    copy = Table(copy_table)
+    created = now_datetime()
+    if frappe.db.db_type == "sqlite":
+        frappe.db.sql(
+            f"""INSERT INTO `{copy_table}` (`doc_id`, `rev`, `html`, `created`) VALUES (%s, %s, %s, %s)
+            ON CONFLICT (`doc_id`, `rev`) DO UPDATE SET `html` = excluded.html""",
+            (doc_id, rev, html, created),
+        )
+    else:
+        (
+            frappe.qb.into(copy)
+            .columns(copy.doc_id, copy.rev, copy.html, copy.created)
+            .insert(doc_id, rev, html, created)
+            .on_duplicate_key_update(copy.html, Values(copy.html))
+            .run()
+        )
     frappe.qb.from_(copy).delete().where(copy.doc_id == doc_id).where(copy.rev < rev).run()
 
 

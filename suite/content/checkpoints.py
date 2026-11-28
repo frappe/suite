@@ -410,20 +410,26 @@ class Compaction:
 
 def write_compressed(checkpoint_table: str, doc_id: str, through: int, sha: bytes, state: bytes) -> None:
     """Write `state` gzipped into the checkpoint row's blob, refused as too large when the server drops it."""
-    # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
     compressed = gzip.compress(state)
     checkpoint = Table(checkpoint_table)
-    chunk_size = int(cast("str | int", db.load_system_variable("max_allowed_packet"))) // 4
-    for start in range(0, len(compressed), chunk_size):
-        chunk = compressed[start : start + chunk_size]
-        (
-            frappe.qb.update(checkpoint)
-            .set(checkpoint.gz, Concat(checkpoint.gz, Unhex(chunk.hex())))
-            .where(checkpoint.doc_id == doc_id)
-            .where(checkpoint.through_rev == through)
-            .where(checkpoint.sha256 == Unhex(sha.hex()))
-            .run()
+    if frappe.db.db_type == "sqlite":
+        frappe.db.sql(
+            f"UPDATE `{checkpoint_table}` SET `gz` = %s WHERE `doc_id` = %s AND `through_rev` = %s AND `sha256` = %s",
+            (compressed, doc_id, through, sha),
         )
+    else:
+        # In parts of a quarter packet, since hex doubles each one; every part rewrites the whole blob
+        chunk_size = int(cast("str | int", db.load_system_variable("max_allowed_packet"))) // 4
+        for start in range(0, len(compressed), chunk_size):
+            chunk = compressed[start : start + chunk_size]
+            (
+                frappe.qb.update(checkpoint)
+                .set(checkpoint.gz, Concat(checkpoint.gz, Unhex(chunk.hex())))
+                .where(checkpoint.doc_id == doc_id)
+                .where(checkpoint.through_rev == through)
+                .where(checkpoint.sha256 == Unhex(sha.hex()))
+                .run()
+            )
 
     # A server not in strict mode empties a CONCAT past max_allowed_packet with only a warning
     [[stored_length]] = (

@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 from unittest.mock import patch
 
 import frappe
@@ -39,8 +40,12 @@ class TestCollabSelfTest(IntegrationTestCase):
         self.assertEqual((report["pycrdt"], report["compaction"]), ("0.14.8", "pass"))
         database = report["database"]
         self.assertEqual(set(database), set(selftest.DATABASE_VARIABLES))
-        self.assertNotIn("absent", (database["innodb_flush_log_at_trx_commit"], database["version"]))
-        self.assertTrue({database["tx_isolation"], database["transaction_isolation"]} - {"absent"})
+        if frappe.db.db_type == "sqlite":
+            self.assertEqual(database["version"], sqlite3.sqlite_version)
+            self.assertEqual(database["innodb_flush_log_at_trx_commit"], "absent")
+        else:
+            self.assertNotIn("absent", (database["innodb_flush_log_at_trx_commit"], database["version"]))
+            self.assertTrue({database["tx_isolation"], database["transaction_isolation"]} - {"absent"})
         self.assertIn("node", report)
 
     def test_a_host_without_a_usable_node_is_recorded(self):

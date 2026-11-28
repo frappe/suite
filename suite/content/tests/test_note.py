@@ -61,17 +61,15 @@ class NoteAppCase(IntegrationTestCase):
     @classmethod
     def create_note_tables(cls) -> None:
         # Cleanup drops these, so a site that already has any of them is refused before anything is made
-        taken = frappe.db.sql(
-            "SELECT `table_name` FROM information_schema.tables WHERE `table_schema` = DATABASE() AND `table_name` IN %s",
-            [OWNED],
-        )
+        taken = set(OWNED).intersection(frappe.db.get_tables(cached=False))
         if taken:
             raise RuntimeError(f"The note app's tables already exist: {taken}")
 
         cls.addClassCleanup(drop_owned_tables)
+        modified_type = "timestamp" if frappe.db.db_type == "sqlite" else "datetime(6)"
         frappe.db.sql_ddl(
             f"""CREATE TABLE `{APP_TABLE}` (`name` varchar(140) NOT NULL, `node` varchar(140),
-            `body` longtext, `html` longtext, `modified` datetime(6), PRIMARY KEY (`name`))"""
+            `body` longtext, `html` longtext, `modified` {modified_type}, PRIMARY KEY (`name`))"""
         )
         ensure_tables(note.EDITOR.app)
 
@@ -99,6 +97,8 @@ class NoteAppCase(IntegrationTestCase):
         super().tearDownClass()
 
     def setUp(self):
+        if frappe.db.db_type == "sqlite":
+            frappe.db.rollback()
         log.set_mode(note.EDITOR.app, "on")
         self.node = frappe.generate_hash(length=10)
         frappe.db.sql(

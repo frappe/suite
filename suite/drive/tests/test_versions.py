@@ -44,6 +44,7 @@ from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.drive.tests.test_content import registered as registered_content
 from suite.drive.tests.test_content import spec as content_spec
 from suite.hooks import scheduler_events
+from suite.tests.utils import begin_test_write
 
 USER = "drive-version-user@example.com"
 OTHER = "drive-version-other@example.com"
@@ -494,6 +495,7 @@ class TestVersionWorkflows(IntegrationTestCase):
             frappe.set_user("Administrator")
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 seq = take_version(self.admin, node)
                 frappe.db.commit()
                 return seq

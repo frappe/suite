@@ -18,6 +18,7 @@ from suite.drive._core.roots import (
     validate_root_pair,
 )
 from suite.drive.tests.fixtures import ensure_rootless_user, skip_if_shared_root_exists
+from suite.tests.utils import begin_test_write
 
 
 class TestRootCreationContract(UnitTestCase):
@@ -510,6 +511,7 @@ class TestRootLifecycle(IntegrationTestCase):
             frappe.set_user("Administrator")
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 try:
                     created = create_root(kind=kind, title=marker, user=user)
                     frappe.db.commit()

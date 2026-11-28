@@ -72,7 +72,13 @@ class TestWriterCompactionTriggers(CheckpointCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                frappe.db.sql("SELECT `id` FROM `__writer_content_doc` WHERE `id` = %s FOR UPDATE", doc_id)
+                frappe.db.multisql(
+                    {
+                        "mariadb": "SELECT `id` FROM `__writer_content_doc` WHERE `id` = %s FOR UPDATE",
+                        "sqlite": "UPDATE `__writer_content_doc` SET `id` = `id` WHERE `id` = %s",
+                    },
+                    doc_id,
+                )
                 held.set()
                 time.sleep(seconds)
                 frappe.db.commit()
@@ -183,7 +189,11 @@ class TestWriterCompactionTriggers(CheckpointCase):
             real_sql = frappe.db.sql
 
             def signal_lock_wait(query, *args, **kwargs):
-                if "FOR UPDATE WAIT" in str(query):
+                if (
+                    "BEGIN IMMEDIATE" in str(query)
+                    if frappe.db.db_type == "sqlite"
+                    else "FOR UPDATE WAIT" in str(query)
+                ):
                     waiting.set()
 
                 return real_sql(query, *args, **kwargs)

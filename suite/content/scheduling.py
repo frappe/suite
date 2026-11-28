@@ -24,7 +24,7 @@ from pypika.terms import Criterion, Term
 
 from suite.content import capacity, stage
 from suite.content.admission import TIMEOUT
-from suite.content.db import Greatest
+from suite.content.db import greatest
 from suite.content.tables import table
 
 TAIL_MIN = 256 * 2**10
@@ -68,7 +68,7 @@ def docs_with_base(app: str, where: Callable[[Table], Criterion]) -> DocsWithBas
     fallback = (
         frappe.qb.from_(checkpoint).select(Max(checkpoint.through_rev)).where(checkpoint.doc_id == doc.id)
     )
-    base = Greatest(doc.body_rev, Coalesce(SubQuery(fallback), 0)).as_("base")
+    base = greatest(doc.body_rev, Coalesce(SubQuery(fallback), 0)).as_("base")
     docs = frappe.qb.from_(doc).select(doc.star, base).where(where(doc)).as_("d")
     update = Table(table(app, "update")).as_("u")
     query = (

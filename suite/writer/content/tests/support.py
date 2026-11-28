@@ -45,7 +45,8 @@ def call_route(
     headers = {routes.EXPECTED_USER_HEADER: expected_user or frappe.session.user}
     if links:
         headers["X-Drive-Links"] = links
-    environ = EnvironBuilder(method="POST", data=body, headers=headers).get_environ()
+    method = "GET" if handler.__name__.endswith("_get") else "POST"
+    environ = EnvironBuilder(method=method, data=body, headers=headers).get_environ()
     frappe.local.request = Request(environ)
     frappe.local.form_dict = frappe._dict()
 
@@ -53,6 +54,9 @@ def call_route(
         return handler(node)
     finally:
         frappe.local.request = None
+        if frappe.db.db_type == "sqlite" and not frappe.db.transaction_writes:
+            # Frappe closes the request's connection, releasing its idle writer transaction.
+            frappe.db.rollback()
 
 
 def answer(response) -> dict:
@@ -241,6 +245,8 @@ class CollabCase(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        if frappe.db.db_type == "sqlite":
+            frappe.db.rollback()
         self.saved_mode = log.mode(writer_content.APP)
         self.addCleanup(self.restore_mode)
         frappe.set_user(WRITER)
@@ -403,6 +409,8 @@ class CheckpointCase(IntegrationTestCase):
 
     def setUp(self):
         super().setUp()
+        if frappe.db.db_type == "sqlite":
+            frappe.db.rollback()
         self.saved_mode = log.mode(writer_content.APP)
         log.set_mode(writer_content.APP, "on")
         frappe.db.commit()

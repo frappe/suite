@@ -119,9 +119,9 @@ def converter_ready(app: str, conversion: Conversion) -> bool:
 
 
 def missing_prerequisite(app: str) -> str | None:
-    """Name the first thing the site lacks to convert the app's documents: MariaDB or a content table, or None."""
-    if frappe.db.db_type != "mariadb":
-        return "the database isn't MariaDB"
+    """Name the first thing the site lacks to convert the app's documents, or None."""
+    if frappe.db.db_type not in {"mariadb", "sqlite"}:
+        return "the database is unsupported"
 
     present = set(frappe.db.get_tables(cached=False))
     for kind in KINDS:

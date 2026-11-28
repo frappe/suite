@@ -86,8 +86,9 @@ def isolation_level() -> str | None:
 def repeatable_read() -> Iterator[None]:
     """Run the reads in one REPEATABLE READ snapshot. The level applies from the next transaction."""
     previous_level = isolation_level()
-    # Raw SQL: qb can't set a session variable
-    frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
+    if frappe.db.db_type != "sqlite":
+        # SQLite already keeps a snapshot for the duration of a read transaction.
+        frappe.db.sql("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     frappe.db.commit()  # nosemgrep: frappe-manual-commit
     try:
         yield

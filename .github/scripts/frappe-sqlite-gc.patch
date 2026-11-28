@@ -1,0 +1,17 @@
+diff --git a/frappe/storage/gc.py b/frappe/storage/gc.py
+index d1ab8e5325..29c98e01bc 100644
+--- a/frappe/storage/gc.py
++++ b/frappe/storage/gc.py
+@@ -195,7 +195,11 @@ def delete_blob(blob, cutoff, logger, stats: dict, *, columns: list[dict] | None
+ 
+ 
+ def is_still_orphan(blob_name: str, cutoff, *, columns: list[dict] | None = None):
+-	"""Lock the blob row; return its current location if still unreferenced and stale, else None."""
++	"""Lock the blob for collection; return its location if still unreferenced and stale."""
++	if frappe.db.db_type == "sqlite":
++		# Protect the external byte deletion with SQLite's writer lock.
++		frappe.db.sql("UPDATE `tabFile Blob` SET `modified` = `modified` WHERE `name` = %s", blob_name)
++
+ 	row = frappe.db.get_value(
+ 		"File Blob", blob_name, ["modified", "key", "driver", "is_private"], for_update=True, as_dict=True
+ 	)

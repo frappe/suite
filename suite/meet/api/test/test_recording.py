@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 import frappe
 import jwt
 from frappe.tests import IntegrationTestCase
-from frappe.utils import add_to_date, cint, now_datetime
+from frappe.utils import add_to_date, cint, now_datetime, set_request
 
 from suite import drive
 from suite.meet.api.recording import (
@@ -1326,10 +1326,15 @@ class IntegrationTestRecordingApi(IntegrationTestCase):
                 frappe.set_user(self.owner)
                 barrier.wait(timeout=10)
                 try:
+                    if frappe.db.db_type == "sqlite":
+                        set_request(method="POST")
+                        frappe.db.commit()
                     start(room_name, str(uuid.uuid4()))
+                    frappe.local.request = None
                     frappe.db.commit()
                     return "admitted"
                 except frappe.ValidationError as error:
+                    frappe.local.request = None
                     frappe.db.rollback()
                     if "maximum number of active recordings" in str(error):
                         return "refused"

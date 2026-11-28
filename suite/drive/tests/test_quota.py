@@ -32,6 +32,7 @@ from suite.drive._core.roots import LARGEST_FILES, create_root, personal_root_fo
 from suite.drive.jobs import recompute_root_usage
 from suite.drive.tests.fixtures import ensure_rootless_user
 from suite.hooks import scheduler_events
+from suite.tests.utils import begin_test_write
 
 
 def scan_active_and_archived_roots(doctype, filters=None, pluck=None):
@@ -572,6 +573,7 @@ class TestRootReservationsAndRecompute(IntegrationTestCase):
             frappe.connect()
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 try:
                     create_storage_reservation(self.root, key, 6)
                     frappe.db.commit()

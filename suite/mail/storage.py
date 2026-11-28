@@ -109,6 +109,9 @@ def refresh() -> None:
     updated = measurements(previous)
     if updated == previous:
         return
+    if frappe.db.db_type == "sqlite" and not frappe.db.transaction_writes:
+        # SQLite cannot upgrade a snapshot after another transaction committed during the provider calls.
+        frappe.db.commit()  # nosemgrep: frappe-manual-commit
     doc, _policy, _latest = state(lock=True)
     if doc.modified != seen.get("modified"):
         queue_refresh()

@@ -190,8 +190,8 @@ class TestRowsWithCollabOff(IntegrationTestCase):
 
     def hide_table(self, kind: str) -> None:
         name = tables.table(APP, kind)
-        frappe.db.sql_ddl(f"RENAME TABLE `{name}` TO `{name}_hidden`")
-        self.addCleanup(frappe.db.sql_ddl, f"RENAME TABLE `{name}_hidden` TO `{name}`")
+        frappe.db.sql_ddl(f"ALTER TABLE `{name}` RENAME TO `{name}_hidden`")
+        self.addCleanup(frappe.db.sql_ddl, f"ALTER TABLE `{name}_hidden` RENAME TO `{name}`")
 
     def delete_node(self, node: str) -> None:
         frappe.db.delete("Drive Node", node)

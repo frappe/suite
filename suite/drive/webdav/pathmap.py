@@ -227,15 +227,21 @@ def _child(parent_name: str, segment: str) -> frappe._dict | None:
     base = f"SELECT {NODE_FIELDS} FROM `tabDrive Node` WHERE parent_node = %(parent_node)s AND {_VISIBLE}"
     values = {"parent_node": parent_name, "segment": segment}
 
+    exact = (
+        "title COLLATE BINARY = %(segment)s"
+        if frappe.db.db_type == "sqlite"
+        else "title = BINARY %(segment)s"
+    )
     rows = frappe.db.sql(
-        base + " AND title = BINARY %(segment)s ORDER BY creation ASC LIMIT 1",
+        base + f" AND {exact} ORDER BY creation ASC LIMIT 1",
         values=values,
         as_dict=True,
     )
     if not rows:
         # tolerate case-sloppy clients, but only when unambiguous
+        collation = " COLLATE NOCASE" if frappe.db.db_type == "sqlite" else ""
         rows = frappe.db.sql(
-            base + " AND title = %(segment)s ORDER BY creation ASC LIMIT 2",
+            base + f" AND title{collation} = %(segment)s ORDER BY creation ASC LIMIT 2",
             values=values,
             as_dict=True,
         )

@@ -83,17 +83,7 @@ DESCENDANTS_SQL = f"""
       AND n.state = 'Active'
       AND n.path LIKE %(prefix)s
       AND NOT EXISTS (
-          SELECT 1
-          FROM JSON_TABLE(
-              CASE WHEN COALESCE(n.path, '') = '' THEN '[]'
-                   ELSE CONCAT('[\"', REPLACE(TRIM(BOTH '/' FROM n.path), '/', '\",\"'), '\"]')
-              END,
-              '$[*]' COLUMNS (
-                  name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-              )
-          ) AS ancestor_id
-          JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-          WHERE document_ancestor.kind = 'document'
+          {{document_ancestor}}
       )
     ORDER BY CHAR_LENGTH(n.path), n.name
 """
@@ -392,7 +382,7 @@ def _members(principals: Principals, nodes: Sequence[str]) -> list[frappe._dict]
 
 def _descendants(principals: Principals, folder: frappe._dict) -> list[frappe._dict]:
     rows = frappe.db.sql(
-        DESCENDANTS_SQL,
+        DESCENDANTS_SQL.format(document_ancestor=node_core.document_ancestor_sql("n.path")),
         {"root": folder.root, "prefix": f"{folder.path or '/'}{folder.name}/%"},
         as_dict=True,
     )

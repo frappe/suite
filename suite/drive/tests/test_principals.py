@@ -127,11 +127,5 @@ class TestRequestPrincipals(UnitTestCase):
 
 class TestGroupMembershipIndex(UnitTestCase):
     def test_membership_is_indexed_by_user_and_survives_schema_sync(self):
-        def indexed():
-            return any(
-                row.Column_name == "user" and row.Seq_in_index == 1
-                for row in frappe.db.sql("SHOW INDEX FROM `tabUser Group Member`", as_dict=True)
-            )
-
-        self.assertTrue(indexed())
+        self.assertTrue(frappe.db.get_column_index("tabUser Group Member", "user"))
         self.assertEqual(frappe.get_meta("User Group Member").get_field("user").search_index, 1)

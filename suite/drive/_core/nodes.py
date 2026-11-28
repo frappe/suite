@@ -103,22 +103,31 @@ NODE_FIELDS = ", ".join(f"`{field}`" for field in NODE_FIELD_NAMES)
 # node whose `state`, `url`, or `creation` was silently null.
 NODE_FIELDS_N = ", ".join(f"n.`{field}`" for field in NODE_FIELD_NAMES)
 
+
+def document_ancestor_sql(path: str) -> str:
+    """Test whether any component of a stored Drive path names a document."""
+    path_ids = f"""CASE WHEN COALESCE({path}, '') = '' THEN '[]'
+        ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM {path}), '/', '","'), '"]') END"""
+    if frappe.db.db_type == "sqlite":
+        ancestors = f"json_each({path_ids})"
+        name = "value"
+    else:
+        ancestors = f"""JSON_TABLE({path_ids}, '$[*]' COLUMNS (
+            name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
+        ))"""
+        name = "name"
+    return f"""SELECT 1
+        FROM {ancestors} AS ancestor_id
+        JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.{name}
+        WHERE document_ancestor.kind = 'document'"""
+
+
 FOLDER_PAGE_SQL = """
 SELECT page.*
 FROM (
     SELECT 0 AS _drive_parent,
            EXISTS (
-               SELECT 1
-               FROM JSON_TABLE(
-                   CASE WHEN COALESCE(container.path, '') = '' THEN '[]'
-                        ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM container.path), '/', '","'), '"]')
-                   END,
-                   '$[*]' COLUMNS (
-                       name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-                   )
-               ) AS ancestor_id
-               JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-               WHERE document_ancestor.kind = 'document'
+               {document_ancestor}
            ) AS _drive_document_descendant,
            {parent_fields}
     FROM `tabDrive Node` container
@@ -156,17 +165,7 @@ WHERE g.principal IN %(own)s
   AND (%(personal_root)s IS NULL OR n.root <> %(personal_root)s)
   AND {{type_filter}}
   AND NOT EXISTS (
-      SELECT 1
-      FROM JSON_TABLE(
-          CASE WHEN COALESCE(n.path, '') = '' THEN '[]'
-               ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM n.path), '/', '","'), '"]')
-          END,
-          '$[*]' COLUMNS (
-              name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-          )
-      ) AS ancestor_id
-      JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-      WHERE document_ancestor.kind = 'document'
+      {{document_ancestor}}
   )
   AND NOT EXISTS (
       SELECT 1
@@ -224,17 +223,7 @@ WHERE n.root = %(root)s
   AND n.is_template = 0
   AND {{type_filter}}
   AND NOT EXISTS (
-      SELECT 1
-      FROM JSON_TABLE(
-          CASE WHEN COALESCE(n.path, '') = '' THEN '[]'
-               ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM n.path), '/', '","'), '"]')
-          END,
-          '$[*]' COLUMNS (
-              name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-          )
-      ) AS ancestor_id
-      JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-      WHERE document_ancestor.kind = 'document'
+      {{document_ancestor}}
   )
 ORDER BY n.trashed_at DESC
 LIMIT %(limit)s OFFSET %(offset)s
@@ -248,17 +237,7 @@ WHERE n.state = 'Active'
   AND n.is_template = 1
   AND (%(content_doctype)s IS NULL OR n.content_doctype = %(content_doctype)s)
   AND NOT EXISTS (
-      SELECT 1
-      FROM JSON_TABLE(
-          CASE WHEN COALESCE(n.path, '') = '' THEN '[]'
-               ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM n.path), '/', '","'), '"]')
-          END,
-          '$[*]' COLUMNS (
-              name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-          )
-      ) AS ancestor_id
-      JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-      WHERE document_ancestor.kind = 'document'
+      {{document_ancestor}}
   )
 ORDER BY n.title
 LIMIT %(limit)s OFFSET %(offset)s
@@ -274,17 +253,7 @@ WHERE n.state = 'Active'
   AND n.title LIKE %(term)s
   AND {{type_filter}}
   AND NOT EXISTS (
-      SELECT 1
-      FROM JSON_TABLE(
-          CASE WHEN COALESCE(n.path, '') = '' THEN '[]'
-               ELSE CONCAT('["', REPLACE(TRIM(BOTH '/' FROM n.path), '/', '","'), '"]')
-          END,
-          '$[*]' COLUMNS (
-              name VARCHAR(140) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci PATH '$'
-          )
-      ) AS ancestor_id
-      JOIN `tabDrive Node` document_ancestor ON document_ancestor.name = ancestor_id.name
-      WHERE document_ancestor.kind = 'document'
+      {{document_ancestor}}
   )
 ORDER BY n.modified DESC
 LIMIT %(limit)s OFFSET %(offset)s
@@ -745,9 +714,7 @@ def title_taken(principals: Principals, parent: str, title: str) -> bool:
     _validate_parent(parent_row)
     if not isinstance(title, str) or not title.strip():
         frappe.throw(_("A Drive node title is required"), frappe.ValidationError)
-    return bool(
-        frappe.db.exists("Drive Node", {"parent_node": parent_row.name, "title": title, "state": "Active"})
-    )
+    return _title_exists(parent_row.name, title, for_update=False)
 
 
 def readable_child_counts(principals: Principals, parents: list[str]) -> dict[str, int]:
@@ -1192,7 +1159,7 @@ def _link_document(node: str, spec, docname: str) -> None:
         """,
         {"doctype": spec.doctype, "docname": docname, "node": node},
     )
-    if int(frappe.db.sql("SELECT ROW_COUNT()")[0][0]) != 1:
+    if int(frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]) != 1:
         raise DriveConflict(_("A Drive content document identity cannot change"))
     linked = frappe.db.get_value(spec.doctype, docname, spec.node_field, for_update=True)
     if linked and linked != node:
@@ -1827,7 +1794,9 @@ def _trash(principals: Principals, node_id: str) -> dict:
                 "stamp": stamp,
             },
         )
-        changed = int(frappe.db.sql("SELECT ROW_COUNT()")[0][0])
+        changed = int(
+            frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]
+        )
         _record_activity(
             current.name,
             "trash",
@@ -1904,7 +1873,9 @@ def _restore(principals: Principals, node_id: str, *, parent_node: str | None) -
             """,
             {"node": current.name, "stamp": current.trashed_at},
         )
-        changed = int(frappe.db.sql("SELECT ROW_COUNT()")[0][0])
+        changed = int(
+            frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]
+        )
         if not changed:
             raise DriveConflict(_("The Drive trash state changed during restore"))
         _record_activity(
@@ -2402,12 +2373,13 @@ def _free_title(parent: str, title: str, *, exclude: str | None = None, for_upda
 
 def _title_exists(parent: str, title: str, *, exclude: str | None = None, for_update: bool = True) -> bool:
     lock = "FOR UPDATE" if for_update else ""
+    collation = "COLLATE NOCASE" if frappe.db.db_type == "sqlite" else ""
     return bool(
         frappe.db.sql(
             f"""
             SELECT name
             FROM `tabDrive Node`
-            WHERE parent_node = %(parent_node)s AND state = 'Active' AND title = %(title)s
+            WHERE parent_node = %(parent_node)s AND state = 'Active' AND title {collation} = %(title)s
               AND (%(exclude)s IS NULL OR name <> %(exclude)s)
             LIMIT 1
             {lock}
@@ -2798,18 +2770,14 @@ BLOB_SOURCE_MAX_PAGES = 4
 BLOB_OWN_SOURCES_SQL = """
 SELECT name, root, path, kind
 FROM (
-    (
-        SELECT n.name, n.root, n.path, n.kind
-        FROM `tabDrive Node` n
-        WHERE n.`blob` = %(blob)s AND n.`owner` = %(user)s AND n.name > %(after)s
-    )
+    SELECT n.name, n.root, n.path, n.kind
+    FROM `tabDrive Node` n
+    WHERE n.`blob` = %(blob)s AND n.`owner` = %(user)s AND n.name > %(after)s
     UNION
-    (
-        SELECT n.name, n.root, n.path, n.kind
-        FROM `tabDrive Node Version` v
-        JOIN `tabDrive Node` n ON n.name = v.node
-        WHERE v.`blob` = %(blob)s AND n.`owner` = %(user)s AND n.name > %(after)s
-    )
+    SELECT n.name, n.root, n.path, n.kind
+    FROM `tabDrive Node Version` v
+    JOIN `tabDrive Node` n ON n.name = v.node
+    WHERE v.`blob` = %(blob)s AND n.`owner` = %(user)s AND n.name > %(after)s
 ) AS owned
 ORDER BY name
 LIMIT %(limit)s
@@ -2821,18 +2789,14 @@ LIMIT %(limit)s
 BLOB_SOURCES_SQL = """
 SELECT name, root, path, kind, own
 FROM (
-    (
-        SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
-        FROM `tabDrive Node` n
-        WHERE n.`blob` = %(blob)s AND n.name > %(after)s
-    )
+    SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
+    FROM `tabDrive Node` n
+    WHERE n.`blob` = %(blob)s AND n.name > %(after)s
     UNION
-    (
-        SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
-        FROM `tabDrive Node Version` v
-        JOIN `tabDrive Node` n ON n.name = v.node
-        WHERE v.`blob` = %(blob)s AND n.name > %(after)s
-    )
+    SELECT n.name, n.root, n.path, n.kind, (n.owner = %(user)s) AS own
+    FROM `tabDrive Node Version` v
+    JOIN `tabDrive Node` n ON n.name = v.node
+    WHERE v.`blob` = %(blob)s AND n.name > %(after)s
 ) AS sources
 ORDER BY name
 LIMIT %(limit)s
@@ -3046,6 +3010,7 @@ def _folder_page_query(
     listing_types: Sequence[str] = (),
 ) -> str:
     return FOLDER_PAGE_SQL.format(
+        document_ancestor=document_ancestor_sql("container.path"),
         parent_fields=", ".join(f"container.`{field}` AS `{field}`" for field in NODE_FIELD_NAMES),
         child_fields=", ".join(f"children.`{field}`" for field in NODE_FIELD_NAMES),
         node_fields=NODE_FIELDS,
@@ -3138,7 +3103,11 @@ def views(
 
     if name == "shared":
         values["personal_root"] = personal_root_for(principals.user)
-        window = frappe.db.sql(SHARED_SQL.format(type_filter=kept_type), values, as_dict=True)
+        window = frappe.db.sql(
+            SHARED_SQL.format(type_filter=kept_type, document_ancestor=document_ancestor_sql("n.path")),
+            values,
+            as_dict=True,
+        )
         rows = _readable_rows(
             window,
             principals,
@@ -3154,7 +3123,11 @@ def views(
         if not isinstance(root, str) or not root:
             frappe.throw(_("The trash view requires a Drive root"), frappe.ValidationError)
         values["root"] = root
-        window = frappe.db.sql(TRASH_SQL.format(type_filter=kept_type), values, as_dict=True)
+        window = frappe.db.sql(
+            TRASH_SQL.format(type_filter=kept_type, document_ancestor=document_ancestor_sql("n.path")),
+            values,
+            as_dict=True,
+        )
         rows = _readable_rows(
             window,
             principals,
@@ -3166,7 +3139,9 @@ def views(
         if content_doctype is not None and not isinstance(content_doctype, str):
             frappe.throw(_("The template content type is invalid"), frappe.ValidationError)
         values["content_doctype"] = content_doctype
-        window = frappe.db.sql(TEMPLATES_SQL, values, as_dict=True)
+        window = frappe.db.sql(
+            TEMPLATES_SQL.format(document_ancestor=document_ancestor_sql("n.path")), values, as_dict=True
+        )
         rows = _readable_rows(
             window,
             principals,
@@ -3179,7 +3154,11 @@ def views(
             frappe.throw(_("The search term is required"), frappe.ValidationError)
         values["visible_roots"] = _sql_values(_visible_root_ids(principals))
         values["term"] = f"%{term}%"
-        window = frappe.db.sql(SEARCH_SQL.format(type_filter=kept_type), values, as_dict=True)
+        window = frappe.db.sql(
+            SEARCH_SQL.format(type_filter=kept_type, document_ancestor=document_ancestor_sql("n.path")),
+            values,
+            as_dict=True,
+        )
         rows = _readable_rows(
             window,
             principals,

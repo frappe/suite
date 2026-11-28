@@ -39,7 +39,7 @@ from suite.drive._core.upload import (
     upload_chunk,
 )
 from suite.drive.tests.fixtures import ensure_rootless_user
-from suite.tests.utils import ensure_user
+from suite.tests.utils import begin_test_write, ensure_user
 
 USER = "drive-upload-user@example.com"
 OTHER = "drive-upload-other@example.com"
@@ -1207,6 +1207,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.connect()
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 try:
                     admit(self.root.name, 6)
                     frappe.db.commit()
@@ -1253,6 +1254,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.set_user(USER)
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 try:
                     node = finish_upload(
                         self.principals,
@@ -1312,6 +1314,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.set_user(USER)
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 update(
                     self.principals,
                     node,
@@ -1375,6 +1378,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.set_user(USER)
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 try:
                     node = finish_upload(self.principals, upload_id, parent_node=self.root.name, title=title)
                     frappe.db.commit()
@@ -1421,6 +1425,7 @@ class TestDriveFileAccounting(IntegrationTestCase):
             frappe.set_user(USER)
             try:
                 barrier.wait(timeout=10)
+                begin_test_write()
                 try:
                     created = finish_upload(
                         self.principals,

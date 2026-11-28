@@ -83,6 +83,21 @@ def restore_local(name: str, value: object) -> None:
         delattr(frappe.local, name)
 
 
+def begin_test_write() -> None:
+    """Take SQLite's writer lock before a worker simulates an HTTP write."""
+    if frappe.db.db_type != "sqlite":
+        return
+
+    from frappe.utils import set_request
+
+    previous = getattr(frappe.local, "request", ABSENT)
+    set_request(method="POST")
+    try:
+        frappe.db.commit()
+    finally:
+        restore_local("request", previous)
+
+
 @contextmanager
 def column_hidden(doctype: str, column: str):
     # Takes a column off the table for the block and puts it back with its values, even if the block raises:

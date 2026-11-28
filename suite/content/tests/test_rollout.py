@@ -4,6 +4,7 @@ import json
 import struct
 import threading
 import time
+from unittest import skipIf
 from unittest.mock import MagicMock, patch
 
 import frappe
@@ -163,7 +164,10 @@ class TestRollout(NoteAppCase):
             frappe.init(site=site)
             frappe.connect()
             try:
-                frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 2")
+                if frappe.db.db_type == "sqlite":
+                    frappe.db.set_execution_timeout(2)
+                else:
+                    frappe.db.sql("SET SESSION innodb_lock_wait_timeout = 2")
                 frappe.db.sql(
                     "UPDATE `tabSuite Collab App` SET `conversion_paused` = 1 WHERE `name` = %s", writer_name
                 )
@@ -338,6 +342,7 @@ class TestRollout(NoteAppCase):
 
         self.assertTrue(log.enabled(note.EDITOR.app))
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_a_job_that_reaches_its_lock_after_an_off_save_converts_nothing(self):
         self.addCleanup(log.set_mode, note.EDITOR.app, "on")
         self.purge_every_log()
@@ -385,6 +390,7 @@ class TestRollout(NoteAppCase):
         self.assertIsNone(log.find(note.EDITOR.app, node))
         self.assertFalse(frappe.db.sql("SELECT 1 FROM `__note_content_conversion` WHERE `node` = %s", node))
 
+    @skipIf(frappe.conf.db_type == "sqlite", "Requires overlapping row locks")
     def test_an_off_save_behind_a_job_holding_the_app_row_is_refused(self):
         self.addCleanup(log.set_mode, note.EDITOR.app, "on")
         self.purge_every_log()

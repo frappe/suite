@@ -116,9 +116,10 @@ def begin_drive_write() -> None:
     the site's default level.
     """
     frappe.db.commit()
-    frappe.db.sql("COMMIT")
-    frappe.db.sql("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-    frappe.db.begin()
+    if frappe.db.db_type != "sqlite":
+        frappe.db.sql("COMMIT")
+        frappe.db.sql("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
+        frappe.db.begin()
 
 
 # The sites that may embed a Drive page or call its API from an iframe.
@@ -676,7 +677,7 @@ def _list_predicate(node_column: str, user: str | None) -> str:
         f"WHERE `drive_node`.`name` = {node_column} "
         "AND `drive_node`.`kind` = 'document' AND `drive_node`.`state` = 'Active' "
         f"AND (COALESCE({own}, -1) <> 0 OR (COALESCE({named}, -1) <> 0 AND {other_depth} > {own_depth})) "
-        f"AND GREATEST(COALESCE({own}, 0), COALESCE({other}, 0)) >= {READ})"
+        f"AND ({own} >= {READ} OR {other} >= {READ}))"
     )
 
 
@@ -739,11 +740,19 @@ def _live_grants(alias: str, principals: tuple[str, ...], *, skip_locked: bool) 
     )
 
 
+def _path_position(alias: str) -> str:
+    node = f"`{alias}`.`node`"
+    path = "`drive_node`.`path`"
+    if frappe.db.db_type == "sqlite":
+        return f"INSTR({path}, printf('/%s/', {node}))"
+    return f"LOCATE(CONCAT('/', {node}, '/'), {path})"
+
+
 def _applies_expr(alias: str) -> str:
     return (
         f"(`{alias}`.`node` = `drive_node`.`name` OR `{alias}`.`node` = `drive_node`.`root` "
         f"OR (COALESCE(`drive_node`.`path`, '') <> '' "
-        f"AND LOCATE(CONCAT('/', `{alias}`.`node`, '/'), `drive_node`.`path`) > 0))"
+        f"AND {_path_position(alias)} > 0))"
     )
 
 
@@ -751,5 +760,5 @@ def _depth_expr(alias: str) -> str:
     return (
         f"(CASE WHEN `{alias}`.`node` = `drive_node`.`name` THEN {NODE_DEPTH} "
         f"WHEN `{alias}`.`node` = `drive_node`.`root` THEN 0 "
-        f"ELSE LOCATE(CONCAT('/', `{alias}`.`node`, '/'), `drive_node`.`path`) END)"
+        f"ELSE {_path_position(alias)} END)"
     )
