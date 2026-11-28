@@ -1,8 +1,10 @@
 import { fromPartial } from '@total-typescript/shoehorn'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createAutofit, type MeasureContext } from './autofit.js'
-import type { CellFormat, CellValue } from './types.js'
+import { createGrid } from './index.js'
+import { createMockCtx } from './painters/test-utils.js'
+import type { CellFormat, CellValue, SelRange, ViewSnapshot } from './types.js'
 
 // Every character is 10px wide (bold 12px), so widths are easy to predict.
 function measureCtx(): MeasureContext {
@@ -52,27 +54,30 @@ describe('fitColWidth', () => {
   })
 })
 
-describe('fitRowHeight', () => {
+// Row 1's fitted height, as a fit of that row measures it
+const firstRow = (fit: ReturnType<typeof setup>) => fit.measureRows((r) => r === 0).get(0)?.height
+
+describe('fitting a row', () => {
   it('fits the cell with the most lines', () => {
     const fit = setup({ A1: 'one', B1: 'one\ntwo\nthree' })
     // 3 lines × 16px (13px font × 1.25) + 6px padding
-    expect(fit.fitRowHeight(0)).toBe(3 * 16 + 6)
+    expect(firstRow(fit)).toBe(3 * 16 + 6)
   })
 
   it('counts soft-wrapped lines in wrap mode', () => {
     // 50px column − 8px inset = 42px per line; "aaaa bbbb cccc" wraps to 3.
     const fit = setup({ A1: 'aaaa bbbb cccc' }, { A1: { textWrap: 'wrap' } }, 50)
-    expect(fit.fitRowHeight(0)).toBe(3 * 16 + 6)
+    expect(firstRow(fit)).toBe(3 * 16 + 6)
   })
 
   it('grows for a word moved whole to the next line', () => {
     // 42px holds 4 chars: "ab" / "cd" / "ef", not "ab c" / "d ef".
     const fit = setup({ A1: 'ab cd ef' }, { A1: { textWrap: 'wrap' } }, 50)
-    expect(fit.fitRowHeight(0)).toBe(3 * 16 + 6)
+    expect(firstRow(fit)).toBe(3 * 16 + 6)
   })
 
   it('keeps at least the default height', () => {
-    expect(setup({}).fitRowHeight(0)).toBe(24)
+    expect(firstRow(setup({ A1: 'one' }))).toBe(24)
   })
 })
 
@@ -138,5 +143,67 @@ describe('wrappedRows', () => {
     )
     expect(fit.wrappedRows(new Set([0])).sort()).toEqual([0, 3])
     expect(fit.wrappedRows(new Set())).toEqual([])
+  })
+})
+
+describe('fitting rows from a tab', () => {
+  // At the 13px text a line is 16px and a row 6px more, never under 28
+  const TWO_LINES = 38
+  const THREE_LINES = 54
+  const ONE_LINE = 28
+
+  // Rows 2 to 4 and 6 hold text; rows 2, 4, 6 and the empty 7 are sized by hand
+  function grid(sel: Partial<SelRange>) {
+    const parent = document.createElement('div')
+    const canvas = document.createElement('canvas')
+    vi.spyOn(canvas, 'getContext').mockReturnValue(createMockCtx())
+    parent.appendChild(canvas)
+    document.body.appendChild(parent)
+    const g = createGrid(canvas, { cells: { getStyle: () => ({}) }, host: { canEdit: () => true } })
+    g.resize(800, 600)
+    g.batchSetCells({ A2: 'a\nb', B3: 'a\nb\nc', A4: 'a', A6: 'a\nb' })
+    const view: Partial<ViewSnapshot> = {
+      rowH: { 1: 100, 3: 70, 5: 90, 6: 80 },
+      manualRows: [1, 3, 5, 6],
+    }
+    g.viewRestore(view)
+    g.setSelection(sel)
+    return g
+  }
+  const heights = (g: ReturnType<typeof grid>, rows: number[]) => rows.map((r) => g.getRowHeight(r))
+
+  it('fits each selected row to its own text, none of them sized by hand after', () => {
+    const g = grid({ r0: 1, c0: 0, r1: 3, c1: 0, mode: 'row' })
+    g.autoFitRow(2)
+    expect(heights(g, [1, 2, 3, 5])).toEqual([TWO_LINES, THREE_LINES, ONE_LINE, 90])
+    expect(g.viewSnapshot().manualRows).toEqual([5, 6])
+  })
+
+  it('fits only the row asked for when it is outside the selected rows', () => {
+    const g = grid({ r0: 1, c0: 0, r1: 3, c1: 0, mode: 'row' })
+    g.autoFitRow(5)
+    expect(heights(g, [1, 2, 3, 5])).toEqual([100, 28, 70, TWO_LINES])
+    expect(g.viewSnapshot().manualRows).toEqual([1, 3, 6])
+  })
+
+  it('fits only the row asked for when cells, not whole rows, are selected', () => {
+    const g = grid({ r0: 1, c0: 0, r1: 3, c1: 1, mode: 'cell' })
+    g.autoFitRow(2)
+    expect(heights(g, [1, 2, 3])).toEqual([100, THREE_LINES, 70])
+  })
+
+  it('fits every row when the whole sheet is selected, an empty one to the default', () => {
+    const g = grid({ r0: 0, c0: 0, r1: 0, c1: 0, mode: 'all' })
+    g.autoFitRow(0)
+    expect(heights(g, [0, 1, 2, 3, 4, 5, 6])).toEqual([
+      28,
+      TWO_LINES,
+      THREE_LINES,
+      ONE_LINE,
+      28,
+      TWO_LINES,
+      28,
+    ])
+    expect(g.viewSnapshot().manualRows).toEqual([])
   })
 })

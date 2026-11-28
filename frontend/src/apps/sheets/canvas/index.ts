@@ -22,6 +22,7 @@ import { COL_HEADER_H, ROW_HEADER_W } from './constants.js'
 import { createGeometry } from './geometry.js'
 import { createGridActions } from './grid-actions.js'
 import { createAutocomplete } from './input/autocomplete.js'
+import { resizeTargets } from './input/drag.js'
 import { createEditor } from './input/editor.js'
 import { createHitTester } from './input/hit-test.js'
 import { createKeyboard, type Keyboard } from './input/keyboard.js'
@@ -379,9 +380,22 @@ export function createGrid(canvas: HTMLCanvasElement, opts: GridOptions = {}): G
     relayout()
   }
   // "Fit to data": the row fits its contents again, now and after later edits.
+  // Its rows are the ones a drag of its edge sizes: the selected rows when it
+  // is inside them, or every row when the whole sheet is selected
   function autoFitRow(r: number): void {
-    vm.setRowManual(r, false)
-    vm.setRowHeight(r, fit.fitRowHeight(r))
+    const range = S.range()
+    const inBlock = S.mode === 'row' && r >= range.r0 && r <= range.r1
+    const rows = resizeTargets(r, inBlock, S.mode === 'all', range.r0, range.r1, vm.totalRows)
+    const lo = rows[0] ?? r
+    const hi = rows.at(-1) ?? r
+    const fits = (row: number) => row >= lo && row <= hi
+    const measured = fit.measureRows(fits)
+    // An empty row at the default height and fitting already is left alone
+    const sized = [...Object.keys(vm.rowH).map(Number), ...vm.manualRows].filter(fits)
+    for (const row of new Set([r, ...measured.keys(), ...sized])) {
+      vm.setRowManual(row, false)
+      vm.setRowHeight(row, measured.get(row)?.height ?? DEFAULT_ROW_H)
+    }
     relayout()
   }
 

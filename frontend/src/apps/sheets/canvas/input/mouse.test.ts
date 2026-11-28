@@ -254,6 +254,19 @@ describe('double-click', () => {
     expect(h.opts.autoFitRow).toHaveBeenCalledWith(5)
   })
 
+  it('records a row fit from a double-click as one undo step, after the fit', () => {
+    const onResizeEnd = vi.fn()
+    const h = setup({}, { onResizeEnd })
+    h.hit({ kind: 'rowResize', row: 5 })
+    h.dbl()
+    const fitted = vi.mocked(h.opts.autoFitRow)
+    expect(fitted).toHaveBeenCalledTimes(1)
+    expect(onResizeEnd).toHaveBeenCalledTimes(1)
+    expect(onResizeEnd.mock.invocationCallOrder[0]).toBeGreaterThan(
+      fitted.mock.invocationCallOrder[0] ?? Infinity,
+    )
+  })
+
   it('lets the host drill into a pivot instead of editing', () => {
     const h = setup({}, { onPivotDrill: () => true })
     h.hit({ kind: 'cell', r: 1, c: 1 })

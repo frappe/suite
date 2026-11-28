@@ -352,6 +352,8 @@ export function createMouse(o: MouseOptions): Mouse {
       case 'rowResize':
       case 'rowHeader':
         o.autoFitRow(hit.row)
+        // One undo step for every row it fits, as a drag records
+        host.onResizeEnd?.()
         return
       case 'cell':
         // On a pivot output sheet the host drills down instead of editing.
