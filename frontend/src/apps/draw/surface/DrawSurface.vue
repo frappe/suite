@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Button } from 'frappe-ui'
 import { computed, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
+import { isNavigationFailure, onBeforeRouteLeave, onBeforeRouteUpdate, useRouter } from 'vue-router'
 
 import {
   DriveDocumentHeader,
@@ -19,6 +19,7 @@ const props = defineProps<{ session: DocumentSession }>()
 const router = useRouter()
 const creation = useDriveDocumentCreation()
 const recovering = ref(false)
+const recoveredCopy = ref<string>()
 const persistence = new DrawingPersistence(props.session)
 provide(DRAWING_PERSISTENCE, persistence)
 const editor = ref<InstanceType<typeof DrawEditor> | null>(null)
@@ -31,9 +32,11 @@ const {
   editable,
   recoveryAvailable,
   recoveryAllowed,
+  unfinished,
   drawingLoading,
   readable,
 } = persistence
+const recoveryPending = computed(() => conflict.value || unfinished.value)
 useHideRail(() => readable.value && !loadError.value)
 const saveState = computed(() => {
   if (error.value && dirty.value) return 'failed'
@@ -45,11 +48,17 @@ function reload() {
   location.reload()
 }
 async function saveRecoveredCopy() {
+  if (recovering.value) return
   recovering.value = true
   try {
-    const node = await creation.run({ content_doctype: 'Drawing' })
-    await persistence.saveRecoveryTo(node.name)
-    await router.push(driveNodeRoute(node))
+    if (!recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
+    recoveredCopy.value ??= await persistence.saveRecoveryCopy(
+      async () => (await creation.run({ content_doctype: 'Drawing' })).name,
+    )
+    const navigation = await router.push(driveNodeRoute(recoveredCopy.value))
+    if (isNavigationFailure(navigation)) {
+      error.value = __('The recovered drawing was saved. Open it to continue.')
+    }
   } catch (reason) {
     error.value =
       reason instanceof Error ? reason.message : __('Could not save the recovered drawing.')
@@ -103,18 +112,20 @@ onBeforeUnmount(() => {
         title-label="Drawing title"
         :save-state="saveState"
         :view-only="!editable && !drawingLoading && !loadError"
-        :state-badge="conflict ? 'Editing paused' : ''"
+        :state-badge="recoveryPending ? 'Editing paused' : ''"
       />
       <div
-        v-if="error || conflict || !recoveryAvailable"
+        v-if="error || recoveryPending || !recoveryAvailable"
         class="flex flex-wrap items-center gap-2 border-b border-outline-gray-2 px-3 py-2 text-sm"
         role="alert"
       >
         <span>{{
           error ||
-          (conflict
-            ? __('The saved drawing changed. Your recovery draft is preserved.')
-            : __('Recovery storage is unavailable. Keep this tab open.'))
+          (unfinished
+            ? __('Unfinished text is preserved as a recovery draft.')
+            : conflict
+              ? __('The saved drawing changed. Your recovery draft is preserved.')
+              : __('Recovery storage is unavailable. Keep this tab open.'))
         }}</span>
         <Button
           v-if="dirty"
@@ -122,13 +133,13 @@ onBeforeUnmount(() => {
           @click="persistence.downloadRecovery"
         />
         <Button
-          v-if="dirty && conflict"
-          :label="__('Save recovered copy')"
+          v-if="recoveredCopy || (dirty && recoveryPending)"
+          :label="recoveredCopy ? __('Open recovered drawing') : __('Save recovered copy')"
           :loading="recovering"
           @click="saveRecoveredCopy"
         />
         <Button
-          v-if="!conflict && !loadError"
+          v-if="!recoveryPending && !loadError"
           :label="__('Retry save')"
           :loading="saving"
           :disabled="!editable"

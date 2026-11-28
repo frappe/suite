@@ -56,7 +56,7 @@ const tickSize = computed(() => 5 / props.scale)
 }
 
 .snap-guide-line {
-  stroke: #e34aa6;
+  stroke: var(--ink-pink-5);
   stroke-width: 1px;
   stroke-dasharray: 1 3;
   stroke-linecap: round;

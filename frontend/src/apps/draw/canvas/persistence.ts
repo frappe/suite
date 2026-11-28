@@ -17,6 +17,7 @@ export class DrawingPersistence {
   readonly saving = ref(false)
   readonly error = ref('')
   readonly conflict = ref(false)
+  readonly unfinished = ref(false)
   readonly loadError = ref(false)
   readonly recoveryAvailable = ref(true)
   readonly drawingTitle
@@ -56,6 +57,7 @@ export class DrawingPersistence {
         (session.access.value.role ?? 0) >= 40 &&
         !this.drawingLoading.value &&
         !this.loadError.value &&
+        !this.unfinished.value &&
         !this.conflict.value,
     )
   }
@@ -88,6 +90,8 @@ export class DrawingPersistence {
           updatedAt: Date.now(),
         }
         this.dirty.value = true
+        this.unfinished.value = recovered.unfinished === true
+        this.transient = this.unfinished.value
         this.conflict.value = drafts.length > 1 || recovered.baseModified !== this.modified
       }
       return scene
@@ -109,13 +113,14 @@ export class DrawingPersistence {
     this.timer = setTimeout(() => void this.saveDrawing(), 600)
   }
 
-  retainScene = (scene: Scene): void => {
+  retainScene = (scene: Scene, unfinished = false): void => {
     if (this.disposed.value || this.drawingLoading.value || this.loadError.value) return
     this.pending = {
       content: parseScene(scene),
       baseModified: this.modified,
       revision: randomId(),
       updatedAt: Date.now(),
+      unfinished,
     }
     this.transient = true
     this.dirty.value = true
@@ -167,24 +172,44 @@ export class DrawingPersistence {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
 
-  saveRecoveryTo = async (node: string): Promise<void> => {
+  saveRecoveryCopy = async (create: () => Promise<string>): Promise<string> => {
     if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
     const pending = this.pending
     if (!pending) throw new Error(__('No recovery draft is available.'))
+    if (!pending.recoveryNode) {
+      pending.recoveryNode = await create()
+      await this.retainRecovery()
+      if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
+    }
+    const node = pending.recoveryNode
     const created = await client.query(api.draw.documents.get, { node })
-    await client.mutation(
-      api.draw.documents.save,
-      {
-        node,
-        content: JSON.stringify(pending.content),
-        base_modified: created.modified,
-      },
-      { silent: true },
-    )
+    const savedScene: unknown = JSON.parse(created.content)
+    if (!sameJson(savedScene, pending.content)) {
+      const destinationChanged = pending.recoveryModified
+        ? pending.recoveryModified !== created.modified
+        : !sameJson(savedScene, { rectangles: [], lines: [] })
+      if (destinationChanged) {
+        throw new Error(__('The recovered drawing changed. Your recovery draft is preserved.'))
+      }
+      pending.recoveryModified = created.modified
+      await this.retainRecovery()
+      if (!this.recoveryAllowed.value) throw new Error(__('Sign in again to recover your drawing.'))
+      await client.mutation(
+        api.draw.documents.save,
+        {
+          node,
+          content: JSON.stringify(pending.content),
+          base_modified: created.modified,
+        },
+        { silent: true },
+      )
+    }
     this.pending = undefined
     this.dirty.value = false
+    this.unfinished.value = false
     this.removeAcknowledged(pending)
     await this.recoveryWrite
+    return node
   }
 
   dispose = (): void => {
@@ -242,7 +267,9 @@ export class DrawingPersistence {
       this.recoveryAvailable.value = false
       return []
     })
-    const saved = drafts.filter((draft) => sameJson(draft.value.content, stored))
+    const saved = drafts.filter(
+      (draft) => !draft.value.recoveryNode && sameJson(draft.value.content, stored),
+    )
     await Promise.all(saved.map(removeDraft)).catch(() => {
       this.recoveryAvailable.value = false
     })

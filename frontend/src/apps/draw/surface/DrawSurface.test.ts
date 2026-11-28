@@ -13,17 +13,31 @@ interface Opened {
   loadError: Ref<boolean>
   editable: Ref<boolean>
   conflict: Ref<boolean>
+  dirty: Ref<boolean>
+  unfinished: Ref<boolean>
+  saveRecoveryCopy: ReturnType<typeof vi.fn>
 }
 const drawing = vi.hoisted(() => ({
   opened: fromPartial<Opened | null>(null),
+  route: vi.fn(),
+  navigationFailure: Symbol('navigation failure'),
   // What the surface last told the shared header, null while it shows none
   header: fromPartial<Record<string, unknown> | null>(null),
 }))
 
-vi.mock('frappe-ui', () => ({ Button: { render: () => null } }))
+vi.mock('frappe-ui', async () => {
+  const { h } = await import('vue')
+  return {
+    Button: {
+      render(this: { $attrs: { label: string } }) {
+        return h('button', this.$attrs.label)
+      },
+    },
+  }
+})
 vi.mock('@/apps/drive', () => ({
   useDriveDocumentCreation: () => ({}),
-  driveNodeRoute: vi.fn(),
+  driveNodeRoute: (node: string) => ({ path: '/d/' + node }),
   DriveDocumentHeader: {
     inheritAttrs: false,
     render(this: { $attrs: Record<string, unknown> }) {
@@ -37,9 +51,10 @@ vi.mock('@/apps/drive', () => ({
 }))
 vi.mock('@/platform/translation', () => ({ translate: (text: string) => text }))
 vi.mock('vue-router', () => ({
+  isNavigationFailure: (value: unknown) => value === drawing.navigationFailure,
   onBeforeRouteLeave: vi.fn(),
   onBeforeRouteUpdate: vi.fn(),
-  useRouter: vi.fn(),
+  useRouter: () => ({ push: drawing.route }),
 }))
 vi.mock('../App.vue', () => ({ default: { render: () => null } }))
 vi.mock('../canvas/persistence', async () => {
@@ -51,6 +66,7 @@ vi.mock('../canvas/persistence', async () => {
       saving = ref(false)
       error = ref('')
       conflict = ref(false)
+      unfinished = ref(false)
       loadError = ref(false)
       editable = ref(true)
       recoveryAvailable = ref(true)
@@ -59,6 +75,7 @@ vi.mock('../canvas/persistence', async () => {
       readable = ref(true)
       saveDrawing = vi.fn()
       retainRecovery = vi.fn()
+      saveRecoveryCopy = vi.fn()
       dispose = vi.fn()
       constructor() {
         drawing.opened = this
@@ -68,16 +85,40 @@ vi.mock('../canvas/persistence', async () => {
 })
 
 let app: App | null = null
+const host = document.createElement('div')
 
 function openDrawing() {
   app = createApp(DrawSurface, { session: fromPartial<DocumentSession>({}) })
-  app.mount(document.createElement('div'))
+  app.mount(host)
   return drawing.opened!
 }
 
 afterEach(() => {
   app?.unmount()
   app = null
+  drawing.route.mockReset()
+})
+
+it('reopens a saved recovery copy after navigation fails without saving again', async () => {
+  const opened = openDrawing()
+  opened.dirty.value = true
+  opened.unfinished.value = true
+  opened.saveRecoveryCopy.mockResolvedValue('recovery-node')
+  drawing.route.mockResolvedValueOnce(drawing.navigationFailure)
+
+  await nextTick()
+  const buttons = () => [...host.querySelectorAll('button')]
+  buttons()
+    .find((button) => button.textContent === 'Save recovered copy')!
+    .click()
+  await vi.waitFor(() => expect(host.textContent).toContain('Open it to continue'))
+  buttons()
+    .find((button) => button.textContent === 'Open recovered drawing')!
+    .click()
+
+  await vi.waitFor(() => expect(drawing.route).toHaveBeenCalledTimes(2))
+  expect(drawing.route).toHaveBeenNthCalledWith(2, { path: '/d/recovery-node' })
+  expect(opened.saveRecoveryCopy).toHaveBeenCalledOnce()
 })
 
 it('hides the rail while the drawing is open, and gives it back on leaving', () => {

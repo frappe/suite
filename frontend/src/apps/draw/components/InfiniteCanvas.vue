@@ -17,9 +17,11 @@ import {
 } from 'lucide-vue-next'
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 
+import { useTheme } from '@/platform/theme'
 import { translate as __ } from '@/platform/translation'
 
 import rotateCursorSvg from '../assets/rotate-cursor-white.svg?raw'
+import { textInk } from '../canvas/appearance'
 import {
   dotInterval,
   MAX_SCALE,
@@ -44,6 +46,7 @@ import {
   setLineCurve,
   type LineHandle,
 } from '../canvas/line-interactions'
+import { paletteColor } from '../canvas/palette'
 import { useDrawingPersistence } from '../canvas/persistence'
 import {
   containsPoint,
@@ -85,6 +88,7 @@ import {
   isFreeDraw,
   isLine,
   parseScene,
+  pointBounds,
   transformShape,
   type Shape,
 } from '../canvas/selection'
@@ -148,6 +152,10 @@ const textAlignOptions = [
 ] satisfies { value: TextAlign; label: string; icon: typeof AlignLeft }[]
 
 const props = defineProps<{ activeTool: DrawingTool | null }>()
+const { resolvedMode } = useTheme()
+function displayColor(color?: string, usage: 'ink' | 'fill' = 'ink') {
+  return paletteColor(color, resolvedMode.value === 'dark', usage)
+}
 const persistence = useDrawingPersistence()
 const { loadDrawing, queueSave, warnUnsaved, saveDrawing, drawingLoading, editable } = persistence
 const emit = defineEmits<{
@@ -719,8 +727,14 @@ const textEditorStyle = computed(() => {
     width: `${editor.width}px`,
     height: `${Math.max(editor.height, editor.fontSize * TEXT_LINE_HEIGHT)}px`,
     fontSize: `${editor.fontSize}px`,
-    color: editor.fill ?? 'var(--draw-ink)',
-    backgroundColor: editor.backgroundColor ?? 'transparent',
+    color: textInk(
+      editor.fill,
+      editor.kind === 'label'
+        ? rectangles.value.find((shape) => shape.id === editor.shapeId)?.fill
+        : editor.backgroundColor,
+      resolvedMode.value === 'dark',
+    ),
+    backgroundColor: displayColor(editor.backgroundColor, 'fill') ?? 'transparent',
     lineHeight: `${TEXT_LINE_HEIGHT}`,
     fontFamily: TEXT_FONT_FAMILIES[editor.fontFamily ?? 'shantell'],
     fontWeight: editor.fontWeight ?? 400,
@@ -1728,7 +1742,7 @@ watch(
   textEditor,
   (editor) => {
     if (!editable.value) return
-    if (editor) persistence.retainScene(sceneWithTextDraft())
+    if (editor) persistence.retainScene(sceneWithTextDraft(), true)
     else if (persistence.dirty.value) queueSave(copyScene())
   },
   { deep: true },
@@ -2331,11 +2345,11 @@ function replaceLine(next: LineShape) {
 
 function shapeStyle(shape: Shape) {
   return {
-    stroke: shape.stroke === null ? 'none' : (shape.stroke ?? 'var(--draw-ink)'),
+    stroke: shape.stroke === null ? 'none' : (displayColor(shape.stroke) ?? 'var(--draw-ink)'),
     fill:
       isLine(shape) || isImage(shape) || (isFreeDraw(shape) && !isClosedFreeDraw(shape))
         ? 'none'
-        : (shape.fill ?? 'none'),
+        : (displayColor(shape.fill, 'fill') ?? 'none'),
     strokeWidth: `${shape.strokeWidth ?? 2}px`,
     strokeDasharray:
       shape.strokeStyle === 'dashed' ? '8 5' : shape.strokeStyle === 'dotted' ? '1 5' : undefined,
@@ -2978,14 +2992,7 @@ function updateDraw(event: PointerEvent) {
   if (shape.points.length > 2 && distance(first, last) * viewport.scale <= 12) {
     shape.points[shape.points.length - 1] = { ...first }
   }
-  const xs = shape.points.map((point) => point.x),
-    ys = shape.points.map((point) => point.y)
-  Object.assign(shape, {
-    x: Math.min(...xs),
-    y: Math.min(...ys),
-    width: Math.max(...xs) - Math.min(...xs),
-    height: Math.max(...ys) - Math.min(...ys),
-  })
+  Object.assign(shape, pointBounds(shape.points))
 }
 
 function finishDraw(event: PointerEvent) {
@@ -3872,7 +3879,7 @@ watch(
 watch(editable, (value) => {
   if (!value) {
     if (textEditor.value) {
-      persistence.retainScene(sceneWithTextDraft())
+      persistence.retainScene(sceneWithTextDraft(), true)
       textEditor.value = undefined
     }
     cancelGesture()
@@ -4108,7 +4115,7 @@ onBeforeUnmount(() => {
               :font-size="rectangle.labelFontSize ?? 16"
               class="shape-label"
               :style="{
-                fill: rectangle.labelFill ?? 'var(--draw-ink)',
+                fill: textInk(rectangle.labelFill, rectangle.fill, resolvedMode === 'dark'),
                 fontFamily: TEXT_FONT_FAMILIES[rectangle.labelFontFamily ?? 'shantell'],
                 fontWeight: rectangle.labelFontWeight ?? 400,
                 fontStyle: rectangle.labelFontStyle ?? 'normal',
@@ -4156,7 +4163,10 @@ onBeforeUnmount(() => {
               :height="text.height"
               :rx="text.cornerRadius"
               :ry="text.cornerRadius"
-              :style="{ fill: text.backgroundColor, opacity: text.opacity ?? 1 }"
+              :style="{
+                fill: displayColor(text.backgroundColor, 'fill'),
+                opacity: text.opacity ?? 1,
+              }"
             />
             <text
               :x="textX(text)"
@@ -4164,7 +4174,7 @@ onBeforeUnmount(() => {
               :font-size="text.fontSize"
               class="drawn-text"
               :style="{
-                fill: text.fill ?? 'var(--draw-ink)',
+                fill: textInk(text.fill, text.backgroundColor, resolvedMode === 'dark'),
                 opacity: text.opacity ?? 1,
                 fontFamily: TEXT_FONT_FAMILIES[text.fontFamily ?? 'shantell'],
                 fontWeight: text.fontWeight ?? 400,
@@ -4478,7 +4488,7 @@ onBeforeUnmount(() => {
                     ? drawStyle.stroke === color.color
                     : activePropertyColor === color.color,
               }"
-              :style="{ '--property-color': color.color }"
+              :style="{ '--property-color': displayColor(color.color) }"
               @click="applySolidColor(color.color)"
             />
           </Tooltip>
@@ -4502,7 +4512,10 @@ onBeforeUnmount(() => {
                     ? drawStyle.stroke === color.border && drawStyle.fill === color.fill
                     : activePropertyColor === color.fill,
               }"
-              :style="{ '--property-fill': color.fill, '--property-border': color.border }"
+              :style="{
+                '--property-fill': displayColor(color.fill, 'fill'),
+                '--property-border': displayColor(color.border),
+              }"
               @click="applyObjectColor(color)"
             />
           </Tooltip>
@@ -4571,10 +4584,12 @@ onBeforeUnmount(() => {
           size="sm"
           variant="ghost"
           theme="gray"
-          :class="{
-            'is-active': textPropertyControlsEnabled && propertyTextStyle.fontWeight >= 600,
-          }"
           :label="__('Bold')"
+          :data-state="
+            textPropertyControlsEnabled && propertyTextStyle.fontWeight >= 600
+              ? 'active'
+              : undefined
+          "
           :aria-pressed="propertyTextStyle.fontWeight >= 600"
           :disabled="!textPropertyControlsEnabled"
           @click="
@@ -4588,10 +4603,12 @@ onBeforeUnmount(() => {
           size="sm"
           variant="ghost"
           theme="gray"
-          :class="{
-            'is-active': textPropertyControlsEnabled && propertyTextStyle.fontStyle === 'italic',
-          }"
           :label="__('Italic')"
+          :data-state="
+            textPropertyControlsEnabled && propertyTextStyle.fontStyle === 'italic'
+              ? 'active'
+              : undefined
+          "
           :aria-pressed="propertyTextStyle.fontStyle === 'italic'"
           :disabled="!textPropertyControlsEnabled"
           @click="
@@ -4607,11 +4624,12 @@ onBeforeUnmount(() => {
           size="sm"
           variant="ghost"
           theme="gray"
-          :class="{
-            'is-active':
-              textPropertyControlsEnabled && propertyTextStyle.textDecoration === 'underline',
-          }"
           :label="__('Underline')"
+          :data-state="
+            textPropertyControlsEnabled && propertyTextStyle.textDecoration === 'underline'
+              ? 'active'
+              : undefined
+          "
           :aria-pressed="propertyTextStyle.textDecoration === 'underline'"
           :disabled="!textPropertyControlsEnabled"
           @click="
@@ -4784,10 +4802,11 @@ onBeforeUnmount(() => {
   scrollbar-width: none;
   white-space: nowrap;
   transform: translateX(-50%);
-  border: 1px solid var(--outline-gray-1);
+  border: 1px solid var(--outline-elevation-2);
   border-radius: 10px;
-  background: var(--surface-base);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+  background: var(--surface-elevation-2);
+  color: var(--ink-gray-8);
+  box-shadow: var(--shadow-sm);
   pointer-events: none;
 }
 .property-toolbar::-webkit-scrollbar {
@@ -4829,6 +4848,11 @@ onBeforeUnmount(() => {
 }
 .property-color--solid {
   background: var(--property-color) !important;
+  box-shadow: inset 0 0 0 1px var(--outline-gray-3);
+}
+.property-color[aria-pressed='true'] {
+  outline: 2px solid var(--ink-gray-9);
+  outline-offset: 2px;
 }
 .property-toolbar :deep(.property-tool) {
   width: 28px;
@@ -4842,9 +4866,8 @@ onBeforeUnmount(() => {
   height: 16px;
   flex: 0 0 auto;
 }
-.property-toolbar :deep(.property-tool.is-active) {
-  color: var(--ink-gray-8);
-  background: var(--surface-gray-3);
+.property-toolbar :deep(.property-tool[data-state='active']) {
+  box-shadow: inset 0 0 0 1px var(--outline-gray-3);
 }
 .property-toolbar :deep(.property-text-control) {
   flex: 0 0 auto;
@@ -4983,9 +5006,10 @@ onBeforeUnmount(() => {
   gap: 5px;
   height: 36px;
   padding: 3px;
-  border: 1px solid var(--outline-gray-1);
+  border: 1px solid var(--outline-elevation-2);
   border-radius: 10px;
-  background: var(--surface-base);
+  background: var(--surface-elevation-2);
+  color: var(--ink-gray-8);
   box-shadow: var(--shadow-sm);
 }
 
@@ -5006,7 +5030,7 @@ onBeforeUnmount(() => {
 .infinite-canvas {
   --draw-paper: var(--surface-base);
   --draw-ink: var(--ink-gray-9);
-  --selection-blue: #4285f4;
+  --selection-blue: var(--ink-blue-5);
 
   container: draw-canvas / inline-size;
   position: relative;
@@ -5079,6 +5103,12 @@ onBeforeUnmount(() => {
     crosshair;
 }
 
+:global(:root[data-theme='dark'] .infinite-canvas.is-laser-ready) {
+  cursor:
+    url('../assets/laser-pointer-white.svg') 2 2,
+    crosshair;
+}
+
 .infinite-canvas.is-lasso-ready {
   cursor: crosshair;
 }
@@ -5102,8 +5132,8 @@ onBeforeUnmount(() => {
   padding: 6px 10px;
   overflow: hidden;
   border-radius: 7px;
-  background: #171717;
-  color: #fff;
+  background: var(--surface-gray-10);
+  color: var(--ink-base);
   font-size: 13px;
   font-weight: 600;
   line-height: 20px;
@@ -5119,7 +5149,7 @@ onBeforeUnmount(() => {
   left: 50%;
   width: 10px;
   height: 10px;
-  background: #171717;
+  background: var(--surface-gray-10);
   content: '';
   transform: translateX(-50%) rotate(45deg);
 }
@@ -5233,7 +5263,7 @@ onBeforeUnmount(() => {
 }
 
 .text-box-preview {
-  fill: rgb(66 133 244 / 6%);
+  fill: color-mix(in srgb, var(--selection-blue) 6%, transparent);
   stroke: var(--selection-blue);
   stroke-dasharray: 4 3;
   stroke-width: 1px;
@@ -5331,7 +5361,7 @@ onBeforeUnmount(() => {
 
 .selection-rotate-control.is-highlighted {
   background: var(--selection-blue);
-  color: #fff;
+  color: var(--ink-base);
 }
 
 .selection-rotate-icon {
@@ -5361,9 +5391,9 @@ onBeforeUnmount(() => {
   left: 16px;
   bottom: 16px;
   z-index: 1;
-  border: 1px solid var(--outline-gray-1);
+  border: 1px solid var(--outline-elevation-2);
   border-radius: 10px;
-  background: var(--surface-base);
+  background: var(--surface-elevation-2);
   box-shadow: var(--shadow-sm);
 }
 .viewport-controls {

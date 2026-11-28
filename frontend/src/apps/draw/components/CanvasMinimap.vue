@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 
+import { useTheme } from '@/platform/theme'
+
+import { textInk } from '../canvas/appearance'
 import { screenToWorld, type Point, type Viewport } from '../canvas/geometry'
+import { paletteColor } from '../canvas/palette'
 import {
   diamondPath,
   freeDrawPath,
@@ -22,6 +26,8 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ panTo: [point: Point] }>()
 const svg = ref<SVGSVGElement>()
+const { resolvedMode: colorScheme } = useTheme()
+const dark = computed(() => colorScheme.value === 'dark')
 
 const width = 160
 const height = 96
@@ -162,11 +168,13 @@ function rotation(shape: RectangleShape): string {
 }
 
 function stroke(shape: Shape): string {
-  return shape.stroke === null ? 'none' : (shape.stroke ?? 'var(--draw-ink)')
+  return shape.stroke === null
+    ? 'none'
+    : (paletteColor(shape.stroke, dark.value) ?? 'var(--draw-ink, var(--ink-gray-9))')
 }
 
 function fill(shape: RectangleShape): string {
-  return shape.fill ?? 'none'
+  return paletteColor(shape.fill, dark.value, 'fill') ?? 'none'
 }
 
 function labelWidth(shape: RectangleShape): number {
@@ -259,13 +267,13 @@ function textX(shape: TextShape): number {
               :y="shape.y"
               :width="shape.width"
               :height="shape.height"
-              :fill="shape.backgroundColor"
+              :fill="paletteColor(shape.backgroundColor, dark, 'fill')"
             />
             <text
               :x="textX(shape)"
               :y="shape.y + (textLayouts.get(shape.id)?.baseline ?? shape.fontSize)"
               :font-size="shape.fontSize"
-              :fill="shape.fill ?? 'var(--draw-ink)'"
+              :fill="textInk(shape.fill, shape.backgroundColor, dark)"
               :font-family="TEXT_FONT_FAMILIES[shape.fontFamily ?? 'shantell']"
               :font-weight="shape.fontWeight ?? 400"
               :font-style="shape.fontStyle ?? 'normal'"
@@ -328,7 +336,7 @@ function textX(shape: TextShape): number {
             :x="shape.x + shape.width / 2"
             :y="shape.y + shape.height / 2"
             :font-size="shape.labelFontSize ?? 16"
-            :fill="shape.labelFill ?? 'var(--draw-ink)'"
+            :fill="textInk(shape.labelFill, shape.fill, dark)"
             :font-family="TEXT_FONT_FAMILIES[shape.labelFontFamily ?? 'shantell']"
             text-anchor="middle"
             dominant-baseline="middle"
@@ -370,16 +378,16 @@ function textX(shape: TextShape): number {
   width: min(160px, calc(100vw - 32px));
   height: 96px;
   overflow: hidden;
-  border: 1px solid var(--outline-gray-2);
+  border: 1px solid var(--outline-elevation-2);
   border-radius: 12px;
-  background: var(--draw-paper);
-  box-shadow: var(--shadow-sm);
+  background: var(--draw-paper, var(--surface-base));
+  box-shadow: var(--shadow-2xl);
   cursor: crosshair;
   touch-action: manipulation;
 }
 .minimap-viewport {
-  fill: rgb(0 112 204 / 10%);
-  stroke: #0070cc;
+  fill: color-mix(in srgb, var(--ink-blue-5) 10%, transparent);
+  stroke: var(--ink-blue-5);
   stroke-width: 1.5px;
   vector-effect: non-scaling-stroke;
 }

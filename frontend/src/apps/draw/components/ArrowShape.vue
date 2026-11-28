@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
+import { useTheme } from '@/platform/theme'
+
 import { arrowGeometry } from '../canvas/arrow'
+import { paletteColor } from '../canvas/palette'
 import type { LineShape } from '../canvas/scene'
 
 const props = defineProps<{
@@ -11,11 +14,17 @@ const props = defineProps<{
   opacity?: number
 }>()
 
+const { resolvedMode: colorScheme } = useTheme()
+const dark = computed(() => colorScheme.value === 'dark')
 const geometry = computed(() => arrowGeometry(props.shape, props.scale))
 const shaftColor = computed(() =>
-  props.shape.stroke === null ? 'transparent' : (props.shape.stroke ?? 'var(--draw-ink)'),
+  props.shape.stroke === null
+    ? 'transparent'
+    : (paletteColor(props.shape.stroke, dark.value) ?? 'var(--draw-ink, var(--ink-gray-9))'),
 )
-const headColor = computed(() => props.shape.arrowHeadFill ?? shaftColor.value)
+const headColor = computed(
+  () => paletteColor(props.shape.arrowHeadFill, dark.value) ?? shaftColor.value,
+)
 </script>
 
 <template>

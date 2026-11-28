@@ -28,9 +28,10 @@ const rectangle = {
   cornerRadius: 0,
 }
 const scene = { rectangles: [rectangle], lines: [] }
+const emptyScene = { rectangles: [], lines: [] }
 let unmount: (() => void) | undefined
 let persistence: DrawingPersistence
-async function editor(loadedScene: unknown = scene, contentDocname = crypto.randomUUID()) {
+async function editor(loadedScene: unknown = scene, contentDocname: string = crypto.randomUUID()) {
   network.query.mockResolvedValue({ content: JSON.stringify(loadedScene), modified: 'original' })
   network.mutation.mockResolvedValue({ modified: 'saved' })
   persistence = new DrawingPersistence(
@@ -128,6 +129,70 @@ it('reopens cleanly when the save sent before a reload reached the server', asyn
   expect(reopened.editable.value).toBe(true)
   await reopened.retainRecovery()
   expect(await readDrafts(`artist@example.com:${drawing}`)).toEqual([])
+})
+
+it('keeps unfinished text local when another editor opens the drawing', async () => {
+  const drawing = crypto.randomUUID()
+  const first = await editor(emptyScene, drawing)
+  await first.loadDrawing()
+  first.retainScene(scene, true)
+  await first.retainRecovery()
+
+  const reopened = await editor(emptyScene, drawing)
+  expect(await reopened.loadDrawing()).toEqual(scene)
+  expect(reopened.dirty.value).toBe(true)
+  expect(reopened.editable.value).toBe(false)
+  expect(reopened.unfinished.value).toBe(true)
+  await reopened.saveDrawing()
+  expect(network.mutation).not.toHaveBeenCalled()
+  expect((await readDrafts(`artist@example.com:${drawing}`))[0]?.value.unfinished).toBe(true)
+})
+
+it('reuses the persisted destination after reload and recognizes a lost save response', async () => {
+  const create = vi.fn(async () => 'recovery-node')
+  const save = await editor()
+  await save.loadDrawing()
+  save.retainScene(scene, true)
+  await save.retainRecovery()
+  network.query.mockResolvedValue({
+    content: JSON.stringify(emptyScene),
+    modified: 'blank',
+  })
+  network.mutation.mockRejectedValueOnce(new Error('Network response lost'))
+  await expect(save.saveRecoveryCopy(create)).rejects.toThrow('Network response lost')
+  const entry = (await readDrafts(`artist@example.com:${save.session.contentDocname}`))[0]
+  expect(entry?.value).toMatchObject({ recoveryNode: 'recovery-node', recoveryModified: 'blank' })
+
+  const reopened = await editor(emptyScene, save.session.contentDocname)
+  await reopened.loadDrawing()
+
+  network.query.mockResolvedValue({ content: JSON.stringify(scene), modified: 'saved' })
+  expect(await reopened.saveRecoveryCopy(create)).toBe('recovery-node')
+  expect(create).toHaveBeenCalledOnce()
+  expect(network.mutation).toHaveBeenCalledOnce()
+  expect(reopened.dirty.value).toBe(false)
+})
+
+it('does not overwrite a recovery destination that changed after it was selected', async () => {
+  const create = vi.fn(async () => 'recovery-node')
+  const save = await editor()
+  await save.loadDrawing()
+  save.retainScene(scene, true)
+  await save.retainRecovery()
+  network.query.mockResolvedValue({
+    content: JSON.stringify(emptyScene),
+    modified: 'blank',
+  })
+  network.mutation.mockRejectedValueOnce(new Error('Network response lost'))
+  await expect(save.saveRecoveryCopy(create)).rejects.toThrow('Network response lost')
+
+  network.query.mockResolvedValue({
+    content: JSON.stringify(emptyScene),
+    modified: 'newer',
+  })
+  await expect(save.saveRecoveryCopy(create)).rejects.toThrow('recovered drawing changed')
+  expect(network.mutation).toHaveBeenCalledOnce()
+  expect(save.dirty.value).toBe(true)
 })
 
 it('still pauses editing when someone else saved over the draft', async () => {

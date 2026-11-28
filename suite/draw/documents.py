@@ -7,34 +7,37 @@ from frappe import _
 
 from suite import drive
 from suite.draw import DrawingBody, DrawingConflict, DrawingNotFound
+from suite.draw.drive import _operation
 
 
 def read(node: str) -> DrawingBody:
-    document = _document(node)
+    document = frappe.get_doc("Drawing", _drawing_name(node))
     document.drive_check(drive.READ)
     return _body(document)
 
 
 def save(node: str, content: str, base_modified: str) -> DrawingBody:
-    document = _document(node, lock=True)
-    document.drive_check(drive.EDIT)
+    name = _drawing_name(node)
+    drive.lock_content_for_edit(node)
+    document = frappe.get_doc("Drawing", name, for_update=True)
     if not isinstance(base_modified, str) or str(document.modified) != base_modified:
         raise DrawingConflict(_("This drawing changed elsewhere. Your draft has been kept."))
     if not isinstance(content, str):
         raise frappe.ValidationError(_("Drawing content must be a JSON string."))
     document.content = content
-    document.save()
+    with _operation.set(("save", name)):
+        document.save()
     document.drive_take_version()
     return _body(document)
 
 
-def _document(node: str, *, lock: bool = False):
+def _drawing_name(node: str) -> str:
     if frappe.session.user == "Guest":
         raise frappe.PermissionError(_("Sign in to open drawings."))
-    name = frappe.db.get_value("Drawing", {"node": node}, "name", for_update=lock)
+    name = frappe.db.get_value("Drawing", {"node": node}, "name")
     if not name:
         raise DrawingNotFound(_("The drawing could not be found."))
-    return frappe.get_doc("Drawing", name, for_update=lock)
+    return name
 
 
 def _body(document) -> DrawingBody:

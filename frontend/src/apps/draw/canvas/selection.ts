@@ -37,25 +37,38 @@ export function isLine(shape: Shape): shape is LineShape {
   return 'kind' in shape && (shape.kind === 'line' || shape.kind === 'arrow')
 }
 export function bounds(shapes: Shape[]): RectangleShape | undefined {
-  if (!shapes.length) return
-  const points = shapes.flatMap((shape) =>
-    isLine(shape)
-      ? [shape.start, shape.end, lineControlPoint(shape)]
-      : isFreeDraw(shape)
-        ? shape.points
-        : Object.values(rectangleCorners(shape)),
+  const box = pointBounds(
+    (function* () {
+      for (const shape of shapes) {
+        if (isLine(shape)) {
+          yield shape.start
+          yield shape.end
+          yield lineControlPoint(shape)
+        } else if (isFreeDraw(shape) && shape.points.length) {
+          yield* shape.points
+        } else {
+          yield* Object.values(rectangleCorners(shape))
+        }
+      }
+    })(),
   )
-  const x = Math.min(...points.map((p) => p.x)),
-    y = Math.min(...points.map((p) => p.y))
-  return {
-    id: 'selection',
-    x,
-    y,
-    width: Math.max(...points.map((p) => p.x)) - x,
-    height: Math.max(...points.map((p) => p.y)) - y,
-    rotation: 0,
-    cornerRadius: 0,
+  return box && { id: 'selection', ...box, rotation: 0, cornerRadius: 0 }
+}
+export function pointBounds(
+  points: Iterable<Point>,
+): Pick<RectangleShape, 'x' | 'y' | 'width' | 'height'> | undefined {
+  let left = Infinity,
+    top = Infinity,
+    right = -Infinity,
+    bottom = -Infinity
+  for (const point of points) {
+    left = Math.min(left, point.x)
+    top = Math.min(top, point.y)
+    right = Math.max(right, point.x)
+    bottom = Math.max(bottom, point.y)
   }
+  if (left === Infinity) return
+  return { x: left, y: top, width: right - left, height: bottom - top }
 }
 export function transformShape(shape: Shape, from: RectangleShape, to: RectangleShape): Shape {
   const a = rectangleCenter(from),
@@ -80,16 +93,10 @@ export function transformShape(shape: Shape, from: RectangleShape, to: Rectangle
   }
   if (isFreeDraw(shape)) {
     const points = shape.points.map(map)
-    const xs = points.map((point) => point.x),
-      ys = points.map((point) => point.y)
-    return {
-      ...shape,
-      points,
-      x: Math.min(...xs),
-      y: Math.min(...ys),
-      width: Math.max(...xs) - Math.min(...xs),
-      height: Math.max(...ys) - Math.min(...ys),
-    }
+    const box = pointBounds(
+      points.length ? points : Object.values(rectangleCorners(shape)).map(map),
+    )
+    return { ...shape, points, ...box }
   }
   const center = map(rectangleCenter(shape))
   const radians = (shape.rotation * Math.PI) / 180
