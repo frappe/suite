@@ -4,11 +4,13 @@ import { describe, expect, it } from 'vitest'
 import type { Mail } from '@/apps/mail/types'
 
 import {
+  arrivalsIn,
   foldedNames,
   holdNewestOpen,
   isCollapsed,
   lastMessageOf,
   stillFolded,
+  withEarlier,
 } from './threadFolding'
 
 // Every mail arrives seen, and so collapsed, the way a reloaded thread hands them over.
@@ -113,5 +115,77 @@ describe('mail arriving in an open thread', () => {
     const fold = foldedNames([a, b, c, d, e, f])
     c.seen = 0
     expect(hidden(fold, [a, b, c, e, f])).toEqual(['b'])
+  })
+})
+
+describe('a long thread, read in part', () => {
+  const at = (name: string, overrides: Partial<Mail> = {}) =>
+    mail(name, { id: name, received_at: `2026-10-01T09:00:${name.slice(1)}Z`, ...overrides })
+
+  it('puts a page ahead of the mail it was asked for, and its oldest says what is left', () => {
+    const before = at('m40', { earlier_unloaded: 39 })
+    const page = [at('m38', { earlier_unloaded: 37 }), at('m39')]
+    const thread = withEarlier([at('m00'), before, at('m41')], before, page, page)
+    expect(thread.map((m) => [m.name, m.earlier_unloaded ?? 0])).toEqual([
+      ['m00', 0],
+      ['m38', 37],
+      ['m39', 0],
+      ['m40', 0],
+      ['m41', 0],
+    ])
+  })
+
+  it('asks for the next page from the oldest mail fetched when the pane shows none of the page', () => {
+    // Every mail of the page is in Trash, which this view leaves out.
+    const before = at('m40', { earlier_unloaded: 39 })
+    const page = [at('m38', { earlier_unloaded: 37 }), at('m39')]
+    const thread = withEarlier([at('m00'), before], before, page, [])
+    expect(thread.map((m) => m.name)).toEqual(['m00', 'm40'])
+    expect(before).toMatchObject({ earlier_unloaded: 37, earlier_from: 'm38' })
+  })
+
+  it('leaves out mail the thread already holds', () => {
+    const first = at('m00')
+    const before = at('m02', { earlier_unloaded: 1 })
+    const thread = withEarlier(
+      [first, before],
+      before,
+      [at('m00'), at('m01')],
+      [at('m00'), at('m01')],
+    )
+    expect(thread.map((m) => m.name)).toEqual(['m00', 'm01', 'm02'])
+  })
+
+  it('takes a reply from a fuller part of the thread, and not the older mail that comes with it', () => {
+    // The pane opened on a list row; the thread fetched on its own brings more of its newest mail.
+    const held = [at('m00'), at('m98', { earlier_unloaded: 97 }), at('m99')]
+    const fetched = [
+      at('m00'),
+      at('m96', { earlier_unloaded: 95 }),
+      at('m97'),
+      at('m98'),
+      at('m99'),
+    ]
+    const reply = at('m100')
+    expect(arrivalsIn([...fetched, reply], held)).toEqual([reply])
+    expect(reply.earlier_unloaded).toBe(0)
+  })
+
+  it('says how many arrivals the fresh part of the thread left out', () => {
+    const held = [at('m00'), at('m98', { earlier_unloaded: 97 }), at('m99')]
+    const row = [at('m00'), at('m103', { earlier_unloaded: 102 }), at('m104')]
+    expect(arrivalsIn(row, held).map((m) => [m.name, m.earlier_unloaded])).toEqual([
+      ['m103', 3],
+      ['m104', 0],
+    ])
+  })
+
+  it('says nothing is ahead of an arrival when the pane holds a message it does not show', () => {
+    // The pane loaded the whole thread but m50, trashed and so not shown; m100 has just come in.
+    const held = Array.from({ length: 100 }, (_, n) => at(`m${String(n).padStart(2, '0')}`)).filter(
+      (m) => m.name !== 'm50',
+    )
+    const row = [at('m00'), at('m99', { earlier_unloaded: 98 }), at('m100')]
+    expect(arrivalsIn(row, held).map((m) => [m.name, m.earlier_unloaded])).toEqual([['m100', 0]])
   })
 })

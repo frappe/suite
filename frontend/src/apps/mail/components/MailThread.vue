@@ -180,26 +180,31 @@
                 {{ getFormattedDate(group.date) }}
               </div>
               <template v-for="mail in group.mails" :key="mail.name">
+                <ThreadMoreButton
+                  v-if="mail.name === firstMailOfCollapsedGroup"
+                  :message="__('{0} more messages', [String(foldedCount)])"
+                  @click="resetCollapsedGroup"
+                />
+                <!-- A long thread comes in part: the mail still on the server ahead of this one,
+                       a page of it read on each click. Inside a fold it is counted with the fold,
+                       and stands here once that is opened. Said as the fold says it: to the
+                       reader both are mail the thread is not showing. -->
+                <ThreadMoreButton
+                  v-else-if="mail.earlier_unloaded && !collapsedMailNames.has(mail.name)"
+                  :message="
+                    mail.earlier_unloaded === 1
+                      ? __('1 more message')
+                      : __('{0} more messages', [String(mail.earlier_unloaded)])
+                  "
+                  :loading="loadingEarlier === mail.name"
+                  @click="loadEarlier(mail)"
+                />
+                <!-- Under the mail not shown, which is older, and on the first new message. -->
                 <ThreadDivider
                   v-if="shouldShowUnseenMarker(mail.id)"
                   class="!text-ink-blue-6 max-sm:px-3 [&_.border-t]:border-[var(--outline-blue-3)]"
                   :message="unseenMessage"
                 />
-
-                <!-- The quiet line, with an icon that says the count opens. A phone keeps it
-                       inside the cards' margin, its whole row tall enough to tap. -->
-                <button
-                  v-if="mail.name === firstMailOfCollapsedGroup"
-                  class="text-ink-gray-5 hover:text-ink-gray-8 active:text-ink-gray-8 flex w-full cursor-pointer items-center transition-colors max-sm:px-3 max-sm:py-1.5"
-                  @click="resetCollapsedGroup"
-                >
-                  <span class="flex-1 border-t" />
-                  <span class="flex items-center gap-1.5 px-2 py-1 text-xs">
-                    <span class="lucide-chevrons-up-down size-3.5" aria-hidden="true" />
-                    {{ __('{0} more messages', [String(collapsedMailNames.size)]) }}
-                  </span>
-                  <span class="flex-1 border-t" />
-                </button>
                 <!-- A draft that is popped out drops out of the thread entirely: it is being
 						     written in the composer window, and it must be the card that goes, not
 						     just the editor inside it — the wrapper carries the draft's own border,
@@ -652,7 +657,7 @@
                       @allow-domain="(domain: string) => allowDomain(domain)"
                       @deny="denySenders()"
                     />
-                    <div v-show="!isCollapsed(mail)">
+                    <div v-if="isBodyDrawn(mail)" v-show="!isCollapsed(mail)">
                       <!-- Styled as the new-sender bar is: a blocked sender's mail is the
 										     other side of the same decision. -->
                       <div
@@ -941,6 +946,7 @@ import {
   shallowRef,
   useTemplateRef,
   watch,
+  watchEffect,
 } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -971,6 +977,7 @@ import SenderCard from '@/apps/mail/components/SenderCard.vue'
 import SendMail from '@/apps/mail/components/SendMail.vue'
 import ThreadDivider from '@/apps/mail/components/ThreadDivider.vue'
 import ThreadHeader from '@/apps/mail/components/ThreadHeader.vue'
+import ThreadMoreButton from '@/apps/mail/components/ThreadMoreButton.vue'
 import ThreadStrip from '@/apps/mail/components/ThreadStrip.vue'
 import UndeliveredBanner from '@/apps/mail/components/UndeliveredBanner.vue'
 import { openComposePage, type PendingCompose } from '@/apps/mail/composables/composeHandoff'
@@ -1049,11 +1056,14 @@ import { returnedStrip } from '@/apps/mail/utils/snoozeTimes'
 import { submissionRow } from '@/apps/mail/utils/submission'
 import type { SwipeOffset } from '@/apps/mail/utils/swipeGesture'
 import {
+  arrivalsIn,
   foldedNames,
   holdNewestOpen,
   isCollapsed as isCollapsedIn,
   lastMessageOf,
   stillFolded,
+  unloadedIn,
+  withEarlier,
 } from '@/apps/mail/utils/threadFolding'
 import { mailRow } from '@/apps/mail/utils/threadRows'
 import { UNIFIED_ROUTE, UNIFIED_THREAD_ROUTE } from '@/apps/mail/utils/unifiedFolders'
@@ -1338,7 +1348,8 @@ usePageTitle(() =>
 // would see one set and not the other, and the pane would fetch the thread anyway.
 const fallbackInput = (): InputOf<typeof api.mail.threads.get> | false =>
   !messages?.length && !threadsLoading && threadID
-    ? { account: scopeAccountId.value, thread_id: threadID }
+    ? // A long thread comes in part, with the message it is opened on.
+      { account: scopeAccountId.value, thread_id: threadID, include: landOn }
     : false
 const settledFallbackInput = shallowRef(fallbackInput())
 watch(fallbackInput, (input) => (settledFallbackInput.value = input))
@@ -1590,8 +1601,9 @@ watch(
 // all). Persisted via the parent (list + server) WITHOUT mutating the displayed messages, so the
 // "unread from here" marker survives reopening. Works for list and get_thread-fallback threads alike.
 const setThreadSeen = (seen: boolean) => {
-  const ids = (sourceMessages() ?? thread.value).flatMap(mailCopyIds)
-  emit('setSeen', seen, ids)
+  const source = sourceMessages() ?? thread.value
+  // A long thread comes in part: said with its ids, so the mail still on the server is marked too.
+  emit('setSeen', seen, source.flatMap(mailCopyIds), unloadedIn(source) > 0)
 }
 
 // "Mark Unread from Here": mark the given messages unseen in the displayed list and the fallback
@@ -1654,10 +1666,8 @@ const syncWithSource = (source = sourceMessages()) => {
   // that belongs in an open thread is the one being composed locally (tracked as a `draft:` item whose
   // saved id isn't known here), so a draft returning from a background reload would otherwise be
   // mistaken for a new message and spawn a duplicate, blank compose editor.
-  const existing = new Set(thread.value.flatMap(mailCopyIds))
-  const additions = transformThreadMails(source).filter(
-    (mail) => !existing.has(mail.id) && !mail.draft,
-  )
+  // Of a long thread, only what follows the mail held: its rows may be another part of it.
+  const additions = arrivalsIn(transformThreadMails(source), thread.value)
   if (!additions.length) return
   // After the last message, not before the first draft: a draft put aside earlier in the
   // conversation keeps its place, and what came after it goes after it. Placed before it, a reply
@@ -1706,6 +1716,47 @@ const foldedAway = ref<string[]>([])
 const isFolding = computed(() => collapsedMailNames.value.size > 0)
 const resetCollapsedGroup = () => (foldedAway.value = [])
 const setCollapsedGroup = (data: Mail[]) => (foldedAway.value = foldedNames(data))
+// A long thread comes in part, and what its folded mail left on the server is behind the fold too.
+const foldedCount = computed(
+  () =>
+    collapsedMailNames.value.size +
+    unloadedIn(thread.value.filter((mail: Mail) => collapsedMailNames.value.has(mail.name))),
+)
+// A page of the mail a long thread left on the server, read ahead of `mail` and put in its place.
+// It stays in the pane only: the list's row keeps the part it came with, so a rebuild of the pane
+// starts from that part again, as it folds an opened message back up.
+// One page at a time, in the thread it was asked for in: moved on to another, the reader can load
+// that one's at once.
+const loadingEarlier = ref<string>()
+let loadingIn: string | undefined
+const loadEarlier = async (mail: Mail) => {
+  if ((loadingEarlier.value && loadingIn === threadID) || !threadID) return
+  const opened = threadID
+  loadingIn = opened
+  loadingEarlier.value = mail.name
+  const ahead = thread.value.slice(0, thread.value.indexOf(mail))
+  const rows = await client
+    .query(api.mail.threads.earlier, {
+      account: scopeAccountId.value,
+      thread_id: opened,
+      before: mail.earlier_from ?? mail.id,
+      after: ahead.findLast((other: Mail) => !other.draft)?.id,
+    })
+    .catch(raiseError)
+  if (loadingIn === opened) loadingEarlier.value = undefined
+  if (!rows || threadID !== opened || !thread.value.includes(mail)) return
+  const fetched = rows.map(mailRow)
+  // Each folded to its line, read or not, and opened at a click. Unread mail comes open, and a
+  // page can be fifty of it: drawn all at once, the pane stood still for as long as that took.
+  const shown = transformThreadMails(fetched).map((row) => ({ ...row, collapsed: true }))
+  // A draft saved this far back is a reply being written all the same: its editor needs what it says.
+  shown.forEach((row) => {
+    if (!row.draft) return
+    row.groupedRecipients = getGroupedRecipients(row.recipients, false)
+    populateDraftMails(row)
+  })
+  thread.value = withEarlier(thread.value, mail, fetched, shown)
+}
 const firstMailOfCollapsedGroup = computed(
   () => thread.value?.find((m) => collapsedMailNames.value.has(m.name))?.name ?? null,
 )
@@ -2130,6 +2181,19 @@ const downloadAttachmentsAsZip = async (mail: Mail) => {
 }
 const lastMessage = computed(() => lastMessageOf(thread.value))
 const isCollapsed = (mail: Mail) => isCollapsedIn(mail, lastMessage.value)
+// A message's body is drawn when the message is first opened, and kept from then on: folded and
+// opened again, it is there at once, where the reader left it. A folded message never opened has
+// none. Each body is a frame of its own, and drawn for every row, a thread of fifty messages held
+// the pane still for seconds before it showed any of them.
+const drawnBodies = reactive(new Set<string>())
+watchEffect(() =>
+  thread.value.forEach((mail: Mail) => !isCollapsed(mail) && drawnBodies.add(mail.name)),
+)
+const isBodyDrawn = (mail: Mail) => !isCollapsed(mail) || drawnBodies.has(mail.name)
+watch(
+  () => threadID,
+  () => drawnBodies.clear(),
+)
 const showReplyAll = (mail: Mail) =>
   !mail.draft &&
   mail.groupedRecipients?.to

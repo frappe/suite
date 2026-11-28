@@ -26,12 +26,14 @@ from suite.mail.api.utils import get_avatar_url
 from suite.mail.bounces import dsn_blob_id, get_delivery_report
 from suite.mail.classification import Category, tab_filter
 from suite.mail.doctype.mail_message.mail_message import (
+    EARLIER_PAGE,
     ListChanges,
     add_messages_to_mailbox,
     delete_messages,
     empty_mailbox,
     fetch_blob,
     fetch_blobs,
+    fetch_earlier_messages,
     fetch_thread,
     fetch_threads,
     get_messages,
@@ -89,6 +91,7 @@ from suite.mail.jmap import (
     get_mailbox_id_by_name,
     get_mailbox_id_by_role,
 )
+from suite.mail.long_threads import file_rest, leaving, rest_of, restore_rest, set_rest_seen
 from suite.mail.pins import (
     INBOX_SORT,
     PINNED_KEYWORD,
@@ -146,6 +149,9 @@ UNDO_SEND_GRACE_SECONDS = 3
 # position (page length ~25 → ~20 pages), which is far beyond any real unified-list scroll.
 ALL_INBOX_MAX_LIMIT = 100
 ALL_INBOX_MAX_FETCH = 500
+
+# The most of a long thread's earlier messages one request reads (see `get_earlier_messages`).
+EARLIER_PAGE_MAX = 100
 
 # Starred is a keyword rather than a mailbox, so it has no slug of its own; it is the one unified
 # folder named outright.
@@ -450,6 +456,7 @@ def get_threads(
                     first=written_messages(conversation)[0],
                     sent_mailbox=ids_by_role.get("sent"),
                     inbox_mailbox=ids_by_role.get("inbox"),
+                    read=conversation,
                 ),
                 "reaction_only": cint(reaction_only),
                 # Pinned in this folder: asked of the mail it holds, under its own pin, as its sort does.
@@ -461,6 +468,13 @@ def get_threads(
 
     if unread_reactions:
         try_set_seen(account, unread_reactions, True)
+
+    # A long thread a job is still filing out of this folder has mail here until the job is done.
+    # Its row stays on the page, as a reaction's does, and is left out of what is shown: the thread
+    # went on the click, and a list read meanwhile must not bring it back.
+    if threads and (on_their_way_out := leaving(account, mailbox)):
+        for thread in threads:
+            thread["leaving"] = cint(thread["thread_id"] in on_their_way_out)
 
     if threads and mailbox == ids_by_role.get("snoozed"):
         add_snooze_times(account, threads)
@@ -791,7 +805,7 @@ def get_unified_threads(
             threads = get_threads(account_id, view_mailbox, per_account_limit, 0, filter_by, category)["rows"]
             for thread in threads:
                 # This list is cut to its window here, so what it leaves out doesn't disturb paging.
-                if thread["thread_id"] in seen or thread["reaction_only"]:
+                if thread["thread_id"] in seen or thread["reaction_only"] or thread.get("leaving"):
                     continue
                 seen.add(thread["thread_id"])
                 thread["account"] = account_id
@@ -1136,16 +1150,43 @@ def get_all_inbox_unread_count() -> int:
 
 
 @frappe.whitelist()
-def get_thread(account: str, thread_id: str) -> list[dict]:
-    """Returns the full list of messages in a thread, for threads not present in the mailbox list
-    (e.g. search results or a thread on another page)."""
+def get_thread(account: str, thread_id: str, include: str | None = None) -> list[dict]:
+    """Returns the list of messages in a thread, for threads not present in the mailbox list
+    (e.g. search results or a thread on another page).
+
+    A long thread comes in part: its first message, its newest, and `include`, the message it is
+    opened on. Each message says how many were left out ahead of it (`earlier_unloaded`), and
+    `get_earlier_messages` reads those.
+    """
+
+    return serialize_thread_mails(account, fetch_thread(account, thread_id, keep=[include]))
+
+
+@frappe.whitelist()
+def get_earlier_messages(
+    account: str, thread_id: str, before: str, after: str | None = None, limit: int = EARLIER_PAGE
+) -> list[dict]:
+    """Returns the messages of a long thread that come just ahead of the message `before`, oldest
+    first, as `get_thread` gives them. `after` is the nearest message the reader already has on
+    their far side: nothing as old as it is returned, and the first message returned says how many
+    are still left between the two."""
+
+    limit = min(max(cint(limit), 1), EARLIER_PAGE_MAX)
+    return serialize_thread_mails(account, fetch_earlier_messages(account, thread_id, before, after, limit))
+
+
+def serialize_thread_mails(account: str, messages: list[dict]) -> list[dict]:
+    """A thread's messages as the pane reads them, when they do not come on a list row."""
 
     inbox = get_mailbox_id_by_role(account, "inbox")
-    mails = collapse_reactions(
-        collapse_duplicate_copies(
-            [serialize_mail(m, inbox) for m in fetch_thread(account, thread_id)],
-            get_mailbox_id_by_role(account, "sent"),
-        )
+    mails = with_unloaded(
+        messages,
+        collapse_reactions(
+            collapse_duplicate_copies(
+                [serialize_mail(m, inbox) for m in messages],
+                get_mailbox_id_by_role(account, "sent"),
+            )
+        ),
     )
     add_reaction_refusals(account, mails)
     return add_user_images_to_emails(account, mails, is_thread=True)
@@ -1172,6 +1213,7 @@ def serialize_thread(
     first: dict | None = None,
     sent_mailbox: str | None = None,
     inbox_mailbox: str | None = None,
+    read: list[dict] | None = None,
 ) -> dict:
     """Serializes a thread for response.
 
@@ -1184,7 +1226,8 @@ def serialize_thread(
     from the latest of `messages` so that a mailbox dates a thread by its own newest message. The
     conversation is serialized under `messages` so the whole thread can be rendered without a separate
     fetch. The row's cast is read off that same list in the frontend (see utils/participants), which
-    is why nothing here names the thread's senders.
+    is why nothing here names the thread's senders. `read` is every message read from the thread,
+    shown or not, for a long thread that came in part (see `with_unloaded`).
     """
 
     first = first or thread_messages[0]
@@ -1231,12 +1274,48 @@ def serialize_thread(
         ),
         "subject": first["subject"],
         "attachments": serialize_attachments(latest.get("attachments", [])),
-        "messages": collapse_reactions(
-            collapse_duplicate_copies(
-                [serialize_mail(message, inbox_mailbox) for message in thread_messages], sent_mailbox
-            )
+        "messages": with_unloaded(
+            read or thread_messages,
+            collapse_reactions(
+                collapse_duplicate_copies(
+                    [serialize_mail(message, inbox_mailbox) for message in thread_messages], sent_mailbox
+                )
+            ),
         ),
     }
+
+
+def with_unloaded(read: list[dict], mails: list[dict]) -> list[dict]:
+    """Says on the messages shown where a long thread has more on the server, and how many.
+
+    A long thread is read in part (see `thread_window`), and each message read says how many were
+    left out ahead of it. Not every message read is shown: a view leaves out junked and trashed
+    mail, and copies and reactions fold onto another message. What one of those was owed passes to
+    the next message shown, or the run it stood after could never be asked for. With none shown
+    after it, the last message shown says it as `later_unloaded`: still counted, and the thread still
+    known to come in part, though the pane has nothing to ask for it ahead of.
+    """
+
+    if not any(message.get("earlier_unloaded") for message in read):
+        return mails
+
+    shown = {mail["id"] for mail in mails}
+    unloaded: dict[str, int] = {}
+    owed = 0
+    last = None
+    for message in read:
+        owed += message.get("earlier_unloaded", 0)
+        if message["id"] in shown:
+            unloaded[message["id"]] = owed
+            owed, last = 0, message["id"]
+
+    def marked(mail: dict) -> dict:
+        marks = {"earlier_unloaded": unloaded[mail["id"]]} if unloaded.get(mail["id"]) else {}
+        if owed and mail["id"] == last:
+            marks["later_unloaded"] = owed
+        return {**mail, **marks} if marks else mail
+
+    return [marked(mail) for mail in mails]
 
 
 def serialize_mail(mail: dict, inbox_mailbox: str | None = None) -> dict:
@@ -1475,9 +1554,10 @@ def forget_submission(client: SuiteJMAPClient, submission_id: str | None) -> Non
 def _own_reactions_to(account: str, target: dict, own: set[str]) -> int:
     """How many reactions the account has on this message already."""
 
+    # Counted over what is read of the thread: in a long one, the reactions among its newest mail.
     return sum(
         len(read_reactions(message))
-        for message in fetch_thread(account, target["thread_id"])
+        for message in fetch_thread(account, target["thread_id"], keep=[target["id"]])
         if message.get("in_reply_to") == target["message_id"]
         and (message.get("from_email") or "").lower() in own
     )
@@ -1751,35 +1831,59 @@ def get_mime_message(name: str) -> dict:
 
 
 @frappe.whitelist()
-def set_flagged(account: str, ids: list[str], flagged: bool) -> dict:
-    """Sets flagged for mails."""
+def set_flagged(account: str, ids: list[str], flagged: bool, threads: list[str] | None = None) -> dict:
+    """Sets flagged for mails. Unstarring, `threads` names the long threads among them that the
+    client holds only part of: the stars on the rest of each come off too."""
 
-    set_flagged_status(account, ids, flagged)
+    set_flagged_status(
+        account,
+        ids + (rest_of(account, threads, ids, "$flagged") if threads and not flagged else []),
+        flagged,
+    )
 
     return {"ids": ids, "flagged": flagged}
 
 
 @frappe.whitelist()
-def pin_mails(account: str, ids: list[str], pinned: bool, mailbox: str | None = None) -> dict:
+def pin_mails(
+    account: str, ids: list[str], pinned: bool, mailbox: str | None = None, threads: list[str] | None = None
+) -> dict:
     """Pins or unpins a conversation in the folder it is pinned from, the Inbox unless `mailbox` names
-    another, given its messages (see suite.mail.pins)."""
+    another, given its messages (see suite.mail.pins). `threads` names the long threads among them
+    that the client holds only part of: the rest of each is pinned or unpinned too."""
 
-    return {"ids": set_pinned_status(account, ids, pinned, mailbox), "pinned": pinned}
+    every = ids + (rest_of(account, threads, ids) if threads else [])
+    changed = set(set_pinned_status(account, every, pinned, mailbox))
+    return {"ids": [id for id in ids if id in changed], "pinned": pinned}
 
 
 @frappe.whitelist()
-def snooze_mails(account: str, ids: list[str], until: str, leaves: str | None = None) -> Filed:
+def snooze_mails(
+    account: str, ids: list[str], until: str, leaves: str | None = None, threads: list[str] | None = None
+) -> Filed:
     """Hides a conversation until `until`, given its messages (see suite.mail.reminders). `leaves`
-    names the list it leaves: the client's own hint, as in `file_mails`."""
+    names the list it leaves: the client's own hint, as in `file_mails`. `threads` names the long
+    threads among them that the client holds only part of, as there."""
 
-    return snooze(account, ids, until)
+    before = get_messages_mailboxes(account, ids) if threads else None
+    filed = snooze(account, ids, until)
+    if threads:
+        file_rest(account, threads, ids, "snooze", None, before)
+    return filed
 
 
 @frappe.whitelist()
-def unsnooze_mails(account: str, ids: list[str], leaves: str | None = None) -> Unsnoozed:
-    """Brings a snoozed conversation back to the Inbox now (see suite.mail.reminders)."""
+def unsnooze_mails(
+    account: str, ids: list[str], leaves: str | None = None, threads: list[str] | None = None
+) -> Unsnoozed:
+    """Brings a snoozed conversation back to the Inbox now (see suite.mail.reminders). `threads` names
+    the long threads among them that the client holds only part of, as in `file_mails`."""
 
-    return unsnooze(account, ids)
+    before = get_messages_mailboxes(account, ids) if threads else None
+    woken = unsnooze(account, ids)
+    if threads:
+        file_rest(account, threads, ids, "wake", None, before)
+    return woken
 
 
 @frappe.whitelist()
@@ -1818,10 +1922,13 @@ def get_reply_reminder(account: str, thread_id: str) -> dict:
 
 
 @frappe.whitelist()
-def set_mails_seen(account: str, ids: list[str], seen: bool) -> list[str]:
-    """Sets seen status for the given mails."""
+def set_mails_seen(account: str, ids: list[str], seen: bool, threads: list[str] | None = None) -> list[str]:
+    """Sets seen status for the given mails. `threads` names the long threads among them that the
+    client holds only part of: the rest of each is marked too (see `suite.mail.long_threads`)."""
 
     set_seen_status(account, ids, seen)
+    if threads:
+        set_rest_seen(account, threads, ids, seen)
 
     return ids
 
@@ -1844,6 +1951,7 @@ def file_mails(
     screen_action: str | None = None,
     leaves: str | None = None,
     shows: dict | None = None,
+    threads: list[str] | None = None,
 ) -> Filed:
     """Archives, unarchives, moves, junks, un-junks or trashes the given mails — a conversation's, usually — by
     the filing rules (see `suite.mail.filing`), optionally screening their senders with
@@ -1852,10 +1960,18 @@ def file_mails(
     `leaves` names the list the conversation leaves (a mailbox id, or an All Inboxes folder), if it
     does, and `shows` the folders each message is expected in after: the client's own hints, for
     taking rows off that list and showing the rest refiled before the answer comes. The server has
-    no use for either."""
+    no use for either.
 
+    `threads` names the long threads among the mails that the client holds only part of: the rest
+    of each is filed by the same rules (see `suite.mail.long_threads`). What is returned speaks for
+    the mails named."""
+
+    # Where the mails are until now: a long thread whose filing fails goes back whole.
+    before = get_messages_mailboxes(account, ids) if threads else None
     filed = file_messages(account, ids, action, mailbox)
     _screen_senders(account, filed["updated"], screen_action)
+    if threads:
+        file_rest(account, threads, ids, action, mailbox, before)
     return filed
 
 
@@ -1888,9 +2004,13 @@ def _screen_senders(account: str, ids: list[str], action: str | None) -> None:
 @frappe.whitelist()
 def set_mails_mailboxes(account: str, mails: list[dict], screen_action: str | None = None) -> None:
     """Restores each mail's exact mailbox membership and junk status (used to undo a move), optionally
-    re-screening the senders with `screen_action` to reverse a junk/not-junk's screening on undo."""
+    re-screening the senders with `screen_action` to reverse a junk/not-junk's screening on undo.
+
+    A long thread filed whole goes back whole: the rest of it, which the client never held, is
+    restored with the mails it names (see `suite.mail.long_threads`)."""
 
     set_messages_mailboxes(account, mails)
+    restore_rest(account, mails)
     _screen_senders(account, [m["id"] for m in mails], screen_action)
 
 
@@ -2003,6 +2123,7 @@ def search_threads(account: str, filter: dict, start: int, limit: int) -> tuple[
             first=written[0],
             sent_mailbox=ids_by_role.get("sent"),
             inbox_mailbox=ids_by_role.get("inbox"),
+            read=conversation,
         )
         row["received_at"] = match["received_at"]
         row["match_id"] = match["id"]

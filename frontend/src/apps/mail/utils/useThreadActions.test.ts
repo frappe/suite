@@ -313,6 +313,79 @@ it('moves the mail of a row that has already left the list', async () => {
   })
 })
 
+it('names a thread that came in part, so archiving it reaches the mail the list never held', async () => {
+  const first = { id: 'm1', name: 'm1', draft: 0, junk: 0, mailboxes: [{ mailbox_id: 'inbox' }] }
+  const newest = { ...first, id: 'm90', name: 'm90', earlier_unloaded: 88 }
+  const long = fromPartial<Thread>({ ...newest, thread_id: 'long', messages: [first, newest] })
+  const short = fromPartial<Thread>({ ...first, id: 's1', thread_id: 'short', messages: [first] })
+  const rows = ref([long, short])
+  fetcher.mockResolvedValue(answer({ updated: ['m1', 'm90'], left_inbox: true }))
+  const actions = scope.run(() =>
+    useThreadActions({
+      rows: computed(() => rows.value),
+      mailbox: computed(() => 'inbox'),
+      threadID: computed(() => undefined),
+      selections: ref([]),
+      mailThreadRef: ref(null),
+      resetThreads: vi.fn(),
+      syncAfterAction: vi.fn(),
+      // The rows leave the list before the request is sent.
+      removeThreadsFromList: () => {
+        const removed = rows.value
+        rows.value = []
+        return removed
+      },
+      restoreThreadsToList: vi.fn(),
+      refillIfEmpty: vi.fn(),
+      goToMailbox: vi.fn(),
+      goToNextThreadOrMailbox: vi.fn(),
+    }),
+  )!
+
+  actions.handleArchiveThreads(['long', 'short'])
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalled())
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+    action: 'archive',
+    threads: ['long'],
+  })
+})
+
+it('names a thread that came in part, so deleting it forever reaches the mail the list never held', async () => {
+  const first = { id: 'm1', name: 'a|m1', draft: 0, junk: 0, mailboxes: [{ mailbox_id: 'trash' }] }
+  const newest = { ...first, id: 'm90', name: 'a|m90', earlier_unloaded: 88 }
+  const long = fromPartial<Thread>({ ...newest, thread_id: 'long', messages: [first, newest] })
+  const rows = ref([long])
+  fetcher.mockResolvedValue(answer(null))
+  const actions = scope.run(() =>
+    useThreadActions({
+      rows: computed(() => rows.value),
+      mailbox: computed(() => 'trash'),
+      threadID: computed(() => undefined),
+      selections: ref([]),
+      mailThreadRef: ref(null),
+      resetThreads: vi.fn(),
+      syncAfterAction: vi.fn(),
+      removeThreadsFromList: () => {
+        const removed = rows.value
+        rows.value = []
+        return removed
+      },
+      restoreThreadsToList: vi.fn(),
+      refillIfEmpty: vi.fn(),
+      goToMailbox: vi.fn(),
+      goToNextThreadOrMailbox: vi.fn(),
+    }),
+  )!
+
+  actions.junkOrDeleteThreads(['long'], false)
+  actions.junkOrDeleteThreadsOptions.value.actions.at(-1)?.onClick()
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalled())
+  expect(JSON.parse(String(fetcher.mock.calls[0][1]?.body))).toMatchObject({
+    names: ['a|m1', 'a|m90'],
+    threads: ['long'],
+  })
+})
+
 describe('the confirmation for deleting conversations forever', () => {
   it('names how many, says it is for good, and its button says what it does', () => {
     const confirm = vi.fn()

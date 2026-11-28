@@ -389,8 +389,8 @@
           :returned-at="pane.row?.returned_at"
           @reload-mails="resetThreads"
           @set-seen="
-            (seen: boolean, ids: string[]) =>
-              handleSetSeen({ [Number(seen)]: [threadID!] }, seen, ids)
+            (seen: boolean, ids: string[], inPart: boolean) =>
+              handleSetSeen({ [Number(seen)]: [threadID!] }, seen, ids, inPart)
           "
           @sync-unseen="handleSyncUnseen"
           @set-flagged="(ids: string[], flagged: boolean) => setFlaggedSubmit({ ids, flagged })"
@@ -1144,6 +1144,7 @@ const threadRows = computed(() =>
       activeThreads.value.rows
         // On the page only so that paging by row count holds (see get_threads).
         .filter((row) => !('reaction_only' in row && row.reaction_only))
+        .filter((row) => !('leaving' in row && row.leaving))
         .map((row) => threadRow(row, store.accountId))
         .filter((row) => !isDiscarding(row, { inDrafts: mailbox === store.mailboxIds.drafts }))
         .map(withoutHeldDrafts),

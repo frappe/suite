@@ -452,6 +452,7 @@ import {
 import { resnooze, type Waited } from '@/apps/mail/utils/resnooze'
 import { selectActions as buildSelectActions } from '@/apps/mail/utils/selectActions'
 import { snoozeChoices, snoozedMessage } from '@/apps/mail/utils/snoozeTimes'
+import { threadsInPart } from '@/apps/mail/utils/threadFolding'
 import { threadRow } from '@/apps/mail/utils/threadRows'
 import { timeMenuOptions } from '@/apps/mail/utils/timeMenuOptions'
 import {
@@ -1249,6 +1250,7 @@ const handleSetSeen = (thread: Thread, seen: boolean, silent = false) => {
       account: thread.account,
       ids: messageIds(thread),
       seen,
+      threads: threadsInPart([thread]),
     })
     .then(refreshCounts)
     .catch((error) => {
@@ -1418,6 +1420,7 @@ const fileThreads = (
         .mutation(api.mail.messages.file, {
           account,
           ids: copyIds(rows),
+          threads: threadsInPart(rows),
           action,
           mailbox: target ?? null,
           screen_action: screenAction ?? null,
@@ -1482,6 +1485,7 @@ const snoozeTo = (threads: Thread[], until: string) => {
         ids: copyIds(rows),
         until,
         leaves: leaves ? folder : null,
+        threads: threadsInPart(rows),
       }),
     { onClick: snoozedMessage(threads.length, until) },
     // Rows that left come back on the Undo's click; a list that kept them reads them again.
@@ -1505,7 +1509,12 @@ const unsnoozeThreads = (threads: Thread[]) => {
     threads,
     (account, rows) =>
       client
-        .mutation(api.mail.messages.unsnooze, { account, ids: copyIds(rows), leaves: folder })
+        .mutation(api.mail.messages.unsnooze, {
+          account,
+          ids: copyIds(rows),
+          leaves: folder,
+          threads: threadsInPart(rows),
+        })
         .then((answer) => waited.set(account, answer.waited)),
     {
       onClick: threads.length === 1 ? __('Conversation unsnoozed') : __('Conversations unsnoozed'),
@@ -1514,7 +1523,15 @@ const unsnoozeThreads = (threads: Thread[]) => {
       onClick:
         threads.length === 1 ? __('Conversation moved back') : __('Conversations moved back'),
     },
-    { putBack, restore: (account) => resnooze(account, waited.get(account) ?? []) },
+    {
+      putBack,
+      restore: (account) =>
+        resnooze(
+          account,
+          waited.get(account) ?? [],
+          threadsInPart(threads.filter((thread) => thread.account === account)),
+        ),
+    },
   )
 }
 
@@ -1626,7 +1643,12 @@ const setThreadsSeen = (threads: Thread[], seen: boolean) => {
   applySeen(seen ? 1 : 0)
   raiseOptimisticToast(
     perAccount(changed, (account, rows) =>
-      client.mutation(api.mail.messages.seen, { account, ids: copyIds(rows), seen }),
+      client.mutation(api.mail.messages.seen, {
+        account,
+        ids: copyIds(rows),
+        seen,
+        threads: threadsInPart(rows),
+      }),
     )
       .then(refreshCounts)
       .catch((error) => {
@@ -1647,6 +1669,8 @@ const setThreadsFlagged = (threads: Thread[], flagged: boolean) => {
       account,
       ids: rows.flatMap((row) => threadStarIds(row, flagged)),
       flagged,
+      // Taken off, a star comes off the rest of a long thread too.
+      threads: flagged ? undefined : threadsInPart(rows),
     }),
   ).catch((error) => {
     apply(flagged ? 0 : 1) // revert the optimistic update
@@ -1781,10 +1805,12 @@ const handleDelete = (rows: Thread[]) => {
   keptRead.release(rows.map(threadKey))
   closeComposeWindowFor(rows.flatMap(messageIds))
   raiseOptimisticToast(
-    client.mutation(api.mail.messages.delete, { names }).then(refreshCounts, (error) => {
-      refreshThreads()
-      throw error
-    }),
+    client
+      .mutation(api.mail.messages.delete, { names, threads: threadsInPart(rows) })
+      .then(refreshCounts, (error) => {
+        refreshThreads()
+        throw error
+      }),
     { onClick: rows.length === 1 ? __('Conversation deleted') : __('Conversations deleted') },
   )
 }

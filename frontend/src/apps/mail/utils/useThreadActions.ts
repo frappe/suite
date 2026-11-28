@@ -26,6 +26,7 @@ import { mailCopies, mailCopyIds, mailCopyNames, threadStarIds } from '@/apps/ma
 import { isReceived } from '@/apps/mail/utils/receivedMail'
 import { resnooze, type Waited } from '@/apps/mail/utils/resnooze'
 import { snoozedMessage } from '@/apps/mail/utils/snoozeTimes'
+import { threadsInPart } from '@/apps/mail/utils/threadFolding'
 import { translate as __ } from '@/platform/translation'
 
 type SetSeenParams = {
@@ -141,6 +142,13 @@ export function useThreadActions(deps: {
     return items.flatMap((t: Thread) => (t.messages ?? []).flatMap(mailCopies))
   }
   const allMailIds = (threadIds: string[]): string[] => threadMails(threadIds).map((m) => m.id)
+  // Of the given threads, the long ones the list holds only part of: named to the server with their
+  // mails, so an action on the whole thread reaches the rest (see threadsInPart). Not in search,
+  // where a row is the one mail that matched and an action is on that mail alone.
+  const inPart = (threadIds: string[]): string[] =>
+    mailbox.value === 'search'
+      ? []
+      : threadsInPart((rows.value ?? []).filter((t: Thread) => threadIds.includes(t.thread_id)))
 
   /** The composer window gives up a draft whose thread is being trashed, junked or deleted. */
   const closeComposeWindowHolding = (threadIds: string[]) =>
@@ -158,22 +166,40 @@ export function useThreadActions(deps: {
     return mails.filter((m) => m.mailboxes.some((mb) => ids.includes(mb.mailbox_id)))
   }
   const setSeen = useMutation(api.mail.messages.seen)
-  async function setSeenSubmit({ ids, seen }: { ids: string[]; seen: boolean }) {
+  async function setSeenSubmit({
+    ids,
+    seen,
+    threads,
+  }: {
+    ids: string[]
+    seen: boolean
+    threads?: string[]
+  }) {
     const input: InputOf<typeof api.mail.messages.seen> = {
       account: store.accountId,
       ids,
       seen,
+      threads,
     }
     await setSeen.run(input)
     await mailboxes.refetch().catch(() => {})
   }
 
   const setFlagged = useMutation(api.mail.messages.flag)
-  async function setFlaggedSubmit({ ids, flagged }: { ids: string[]; flagged: boolean }) {
+  async function setFlaggedSubmit({
+    ids,
+    flagged,
+    threads,
+  }: {
+    ids: string[]
+    flagged: boolean
+    threads?: string[]
+  }) {
     const input: InputOf<typeof api.mail.messages.flag> = {
       account: store.accountId,
       ids,
       flagged,
+      threads,
     }
     await setFlagged.run(input)
   }
@@ -499,9 +525,10 @@ export function useThreadActions(deps: {
     deleteForeverOptions(threadsToBeDeleted.value.length, handleDeleteConfirmed),
   )
   const bulkDelete = useMutation(api.mail.messages.delete)
-  async function bulkDeleteSubmit({ names }: { names: string[] }) {
+  async function bulkDeleteSubmit({ names, threads }: { names: string[]; threads?: string[] }) {
     const input: InputOf<typeof api.mail.messages.delete> = {
       names,
+      threads,
     }
     await afterUndoing(() => bulkDelete.run(input))
   }
@@ -526,7 +553,13 @@ export function useThreadActions(deps: {
     syncAfterAction()
     return removed
   }
-  const handleSetSeen = (threadIDs: SetSeenParams, silent = false, mailIds?: string[]) => {
+  const handleSetSeen = (
+    threadIDs: SetSeenParams,
+    silent = false,
+    mailIds?: string[],
+    // From the reading pane: its thread came in part, which the list can't say of a thread it lacks.
+    paneInPart = false,
+  ) => {
     const seen = Object.keys(threadIDs)[0] === '1'
     const selectedThreads = Object.values(threadIDs).flat()
     // The reading pane passes explicit ids and has already decided a change is needed; the thread-level
@@ -568,12 +601,14 @@ export function useThreadActions(deps: {
     // Seen applies to the whole conversation (every mailbox) so the state stays consistent. Prefer
     // the open thread's mail ids from the reading pane (covers fallback threads not in the list).
     const ids = mailIds ?? allMailIds(selectedThreads)
+    const threads = paneInPart ? selectedThreads : inPart(selectedThreads)
 
     // The auto mark-as-read on opening a thread is silent (no toast); still roll back on failure.
     if (silent)
       return void setSeenSubmit({
         ids,
         seen,
+        threads,
       }).catch(() => rollback())
 
     // The seen flag already flipped — confirm immediately; roll back + error toast only if it fails.
@@ -585,6 +620,7 @@ export function useThreadActions(deps: {
       setSeenSubmit({
         ids,
         seen,
+        threads,
       }).catch((error) => {
         rollback()
         throw error
@@ -616,9 +652,11 @@ export function useThreadActions(deps: {
     setUndoAction(undefined)
     const touched = rows.value.filter((t: Thread) => threadIDs.includes(t.thread_id))
     const ids = touched.flatMap((thread: Thread) => threadStarIds(thread, flagged))
+    // A star goes on the mail the row holds; taken off, it comes off the rest of a long thread too.
     void setFlaggedSubmit({
       ids,
       flagged,
+      threads: flagged ? undefined : inPart(threadIDs),
     }).catch(() => {})
     // Starring a screened thread accepts its sender; the toast's Undo unstars it too.
     if (flagged)
@@ -673,6 +711,7 @@ export function useThreadActions(deps: {
     const forward = Object.entries(threadIDs).map(([target, tids]) => {
       const input = {
         ids: threadMails(tids).map((m) => m.id),
+        threads: inPart(tids),
         action: 'move' as const,
         mailbox: target,
         leaves: keptInList || reconcileView ? null : mailbox.value,
@@ -879,6 +918,8 @@ export function useThreadActions(deps: {
   ) => {
     if (!threadIds.length) return
     const mails = threadMails(threadIds)
+    // Read off the rows now, before they leave the list.
+    const threads = inPart(threadIds)
     const snapshot = mails.map((m) => ({
       id: m.id,
       mailbox_ids: m.mailboxes.map((mb) => mb.mailbox_id),
@@ -893,9 +934,11 @@ export function useThreadActions(deps: {
     let undone = false
     const forward = (
       action === 'snooze'
-        ? afterUndoing(() => snoozeMails.run({ account, ids, until: until!, leaves: leaving }))
+        ? afterUndoing(() =>
+            snoozeMails.run({ account, ids, until: until!, leaves: leaving, threads }),
+          )
         : action === 'wake'
-          ? afterUndoing(() => unsnoozeMails.run({ account, ids, leaves: leaving })).then(
+          ? afterUndoing(() => unsnoozeMails.run({ account, ids, leaves: leaving, threads })).then(
               (answer) => {
                 waited = answer.waited
                 return answer
@@ -903,6 +946,7 @@ export function useThreadActions(deps: {
             )
           : fileMailsSubmit({
               ids,
+              threads,
               action,
               leaves: leaving,
               // Rows that stay show the new folders at once; Search is read again, its rows being
@@ -943,7 +987,7 @@ export function useThreadActions(deps: {
         // Unsnoozing ended its wait: only snoozing again has it come back at its time.
         () =>
           (action === 'wake'
-            ? resnooze(account, waited)
+            ? resnooze(account, waited, threads)
             : setMailsMailboxesSubmit({ mails: snapshot })
           ).then(() => {
             mailboxes.refetch().catch(() => {})
@@ -1011,6 +1055,7 @@ export function useThreadActions(deps: {
     closeComposeWindowHolding(selectedThreads)
     const spam = Object.keys(threadIDs)[0] === '1'
     const mails = threadMails(selectedThreads)
+    const threads = inPart(selectedThreads)
     // Snapshot exact state now (threads leave the list on success) so undo restores the original
     // mailbox + junk, rather than set_spam_status's blanket move to Inbox.
     const snapshot = mails.map((m) => ({
@@ -1037,6 +1082,7 @@ export function useThreadActions(deps: {
     const forward = () =>
       fileMailsSubmit({
         ids,
+        threads,
         action: spam ? 'junk' : 'not_junk',
         screen_action: screenForward,
         leaves: reconcileView ? null : mailbox.value,
@@ -1136,11 +1182,13 @@ export function useThreadActions(deps: {
 
     // Resolve mail names before the optimistic removal empties currentMailboxMails.
     const names = currentMailboxMails(thread_ids).map((m) => m.name)
+    const threads = inPart(thread_ids)
     // Optimistic: drop the rows now (excludeCommonMailboxes=false removes locally even in
     // search/starred — a hard delete is unambiguous). No undo; restore the rows if the request fails.
     const removed = handleSuccessAndRemoveFromList(thread_ids, false)
     const forward = bulkDeleteSubmit({
       names,
+      threads,
     })
       .then(() => refillIfEmpty())
       .catch((error) => {

@@ -1,6 +1,6 @@
 import { fromPartial } from '@total-typescript/shoehorn'
-import { afterEach, describe, expect, it } from 'vitest'
-import { createApp, defineComponent, nextTick, reactive } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { createApp, defineComponent, h, nextTick, reactive } from 'vue'
 
 import { usePaginatedThreads } from '@/apps/mail/composables/usePaginatedThreads'
 import type { Thread } from '@/apps/mail/types'
@@ -151,5 +151,72 @@ describe('usePaginatedThreads at the end of what is loaded', () => {
 
     expect(opened).toEqual(['t3'])
     unmount()
+  })
+})
+
+describe('usePaginatedThreads with a list shorter than its view', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('asks for the window after the one that just landed, while the end of the list is still in view', async () => {
+    // The end of the list is in view from the start, and stays there: nothing scrolls it back in.
+    let inView!: (entries: Partial<IntersectionObserverEntry>[]) => void
+    vi.stubGlobal(
+      'IntersectionObserver',
+      class {
+        constructor(callback: typeof inView) {
+          inView = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    const server = listOnServer()
+    const thread = (id: string) => fromPartial<Thread>({ thread_id: id, messages: [] })
+    server.query.rows = [thread('t1')]
+    server.query.hasNext = true
+    let windows = 0
+    let land!: () => void
+    server.query.fetchNext = () => {
+      windows += 1
+      server.query.isFetching = true
+      return new Promise<void>((resolve) => {
+        land = () => {
+          server.query.rows = [...server.query.rows, thread(`w${windows}`)]
+          server.query.isFetching = false
+          // The page looks again as its rows change, before the read itself is done with.
+          list.topUpIfShort()
+          resolve()
+        }
+      })
+    }
+    let list!: ReturnType<typeof usePaginatedThreads>
+    const app = createApp(
+      defineComponent({
+        setup() {
+          list = usePaginatedThreads({
+            query: () => fromPartial(server.query),
+            rows: () => server.query.rows,
+            openThreadID: () => undefined,
+            onEdgeThread: () => {},
+          })
+          return () => h('div', { ref: 'mailList' }, [h('div', { ref: 'loadMoreSentinel' })])
+        },
+      }),
+    )
+    const host = document.createElement('div')
+    document.body.append(host)
+    app.mount(host)
+    await nextTick()
+    const box = fromPartial<DOMRect>({ top: 0, bottom: 100 })
+    host.querySelectorAll('div').forEach((el) => (el.getBoundingClientRect = () => box))
+
+    inView([{ isIntersecting: true }])
+    expect(windows).toBe(1)
+    land()
+    await settle()
+
+    expect(windows).toBe(2)
+    app.unmount()
+    host.remove()
   })
 })

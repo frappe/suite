@@ -1,4 +1,5 @@
-import type { Mail } from '@/apps/mail/types'
+import type { Mail, Thread } from '@/apps/mail/types'
+import { mailCopies, mailCopyIds } from '@/apps/mail/utils/mailCopies'
 
 // Which rows of a conversation fold to a line. A mail already seen comes back collapsed when the
 // thread loads (see transformThreadMails), and a click opens it; these two say what that flag is
@@ -48,4 +49,75 @@ export const stillFolded = (folded: readonly string[], thread: Mail[]): Set<stri
 export const holdNewestOpen = (thread: Mail[]) => {
   const newest = lastMessageOf(thread)
   if (newest) newest.collapsed = false
+}
+
+// A long thread comes in part: its first mail, its newest, and whatever it was opened on (see
+// thread_window in mail_message.py). Each mail says how many ahead of it are still on the server,
+// and this is how many that is over a run of mail: what a row's count and a fold's add to the mail
+// they hold. The last mail shown may say how many after it are too, where the newest are mail the
+// view leaves out.
+export const unloadedIn = (mails: readonly Mail[]): number =>
+  mails.reduce(
+    (count, mail) => count + (mail.earlier_unloaded ?? 0) + (mail.later_unloaded ?? 0),
+    0,
+  )
+
+// The threads that came in part, by id. An action on a whole thread names them, and the server
+// reaches the mail the client never held (see suite/mail/long_threads.py); Undo restores the mail
+// the client does hold, and the server puts the rest back with it.
+export const threadsInPart = (threads: readonly Thread[]): string[] =>
+  threads.flatMap((thread) => (unloadedIn(thread.messages ?? []) > 0 ? [thread.thread_id] : []))
+
+// A page of that mail, asked for ahead of `before`, takes its place in the thread. `fetched` is the
+// page as it came and `shown` what the pane makes of it: a view leaves out junked and trashed mail.
+// What is still on the server is said by the oldest mail now shown, or by `before` again when the
+// page shows nothing. The next page is then asked for from the oldest mail fetched (`earlier_from`),
+// not from the mail that says it, or the same page would come back.
+export const withEarlier = (
+  thread: Mail[],
+  before: Mail,
+  fetched: Mail[],
+  shown: Mail[],
+): Mail[] => {
+  const held = new Set(thread.flatMap(mailCopyIds))
+  const added = shown.filter((mail) => !mailCopyIds(mail).some((id) => held.has(id)))
+  const left = unloadedIn(fetched)
+  const [oldest] = fetched
+    .flatMap(mailCopies)
+    .sort((a, b) => a.received_at.localeCompare(b.received_at))
+
+  before.earlier_unloaded = 0
+  before.earlier_from = undefined
+  added.forEach((mail) => (mail.earlier_unloaded = 0))
+  const carrier = added[0] ?? before
+  carrier.earlier_unloaded = left
+  if (left && oldest && oldest.id !== carrier.id) carrier.earlier_from = oldest.id
+
+  const at = thread.indexOf(before)
+  return [...thread.slice(0, at), ...added, ...thread.slice(at)]
+}
+
+// Mail the pane does not hold yet, in fresh rows of its thread (`source`, oldest first). Of a thread
+// read whole, all of it has arrived since. Fresh rows of a long thread are a part of it, and not
+// always the part the pane holds: the thread fetched on its own comes with more of its newest mail
+// than a list's row does. So only what follows the newest mail held is an arrival, and older mail
+// waits behind "more messages", where it belongs. Arrivals can outrun a part as well: the first
+// then says how many came between it and the mail held. Otherwise an arrival says nothing about
+// what is ahead of it: the pane may hold more of the thread by now than the rows do (see withEarlier).
+// Nor more than the rows say is ahead of it: the pane holds mail it does not show (trashed mail, in
+// a page it loaded), which its count of cards leaves out.
+export const arrivalsIn = (source: Mail[], thread: Mail[]): Mail[] => {
+  const held = new Set(thread.flatMap(mailCopyIds))
+  const size = (mails: Mail[]) => mails.filter((mail) => !mail.draft).length + unloadedIn(mails)
+  const inPart = unloadedIn(source) > 0
+  const newestHeld = inPart
+    ? source.findLastIndex((mail) => !mail.draft && mailCopyIds(mail).some((id) => held.has(id)))
+    : -1
+  const isArrival = (mail: Mail, at: number) => at > newestHeld && !held.has(mail.id) && !mail.draft
+  const arrivals = source.filter(isArrival)
+  const ahead = unloadedIn(source.slice(newestHeld + 1, source.findIndex(isArrival) + 1))
+  const between = inPart ? Math.min(size(source) - size(thread) - arrivals.length, ahead) : 0
+  arrivals.forEach((mail) => (mail.earlier_unloaded = 0))
+  if (arrivals.length && between > 0) arrivals[0].earlier_unloaded = between
+  return arrivals
 }

@@ -85,6 +85,12 @@ class Message(Copy):
     dsn_blob_id: str | None
     duplicates: NotRequired[list[Copy]]
     user_image: NotRequired[str | None]
+    # In a long thread, read in part: how many messages just ahead of this one are still on the
+    # server (see `get_earlier_messages`).
+    earlier_unloaded: NotRequired[int]
+    # And how many after it, where no message after it is shown: the pane has nothing to load them
+    # ahead of (see `with_unloaded`).
+    later_unloaded: NotRequired[int]
 
 
 class AccountTag(TypedDict, total=False):
@@ -100,6 +106,9 @@ class AccountTag(TypedDict, total=False):
 class Thread(Copy, AccountTag):
     # Listed here only by a reaction, so kept on the page for paging and left out of what is shown.
     reaction_only: NotRequired[Flag]
+    # A long thread on its way out of this folder, a job still filing the rest of it: kept on the
+    # page and left out of what is shown, the same way (see suite.mail.long_threads).
+    leaving: NotRequired[Flag]
     # The senders of this thread's unscreened mail, in the order they first wrote.
     unscreened_senders: NotRequired[list[str]]
     # Held at the top of the folder it is listed from, which takes pins (see suite.mail.pins).

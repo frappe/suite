@@ -5449,6 +5449,8 @@ export type GetThreadsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetThreadsOutputCopy>
   user_image?: string | null
+  earlier_unloaded?: number
+  later_unloaded?: number
 }
 
 export type GetThreadsOutputReaction = {
@@ -5486,6 +5488,7 @@ export type GetThreadsOutputThread = {
   archive?: string | null
   trash?: string | null
   reaction_only?: 0 | 1
+  leaving?: 0 | 1
   unscreened_senders?: Array<string>
   pinned?: 0 | 1
   returned?: 0 | 1
@@ -5606,6 +5609,8 @@ export type GetUnifiedThreadsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetUnifiedThreadsOutputCopy>
   user_image?: string | null
+  earlier_unloaded?: number
+  later_unloaded?: number
 }
 
 export type GetUnifiedThreadsOutputReaction = {
@@ -5643,6 +5648,7 @@ export type GetUnifiedThreadsOutputThread = {
   archive?: string | null
   trash?: string | null
   reaction_only?: 0 | 1
+  leaving?: 0 | 1
   unscreened_senders?: Array<string>
   pinned?: 0 | 1
   returned?: 0 | 1
@@ -5856,6 +5862,8 @@ export type GetThreadOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<GetThreadOutputCopy>
   user_image?: string | null
+  earlier_unloaded?: number
+  later_unloaded?: number
 }
 
 export type GetThreadOutputReaction = {
@@ -5872,7 +5880,7 @@ export type GetThreadOutputRecipient = {
 
 export type GetThreadOutputReplyAddress = { email: string; display_name: string | null }
 
-export type GetThreadInput = { account: string; thread_id: string }
+export type GetThreadInput = { account: string; thread_id: string; include?: string | null }
 
 export type GetThreadOutput = Array<GetThreadOutputMessage>
 
@@ -5892,6 +5900,121 @@ const operationGetThread: QueryRef<GetThreadInput, GetThreadOutput, GetThreadErr
   entity: null,
   errors: ['PermissionError', 'ValidationError'],
   loadValidators: async () => (await import('./validators')).operationGetThread,
+}
+
+export type GetEarlierMessagesOutputAttachment = {
+  filename: string | null
+  type: string
+  size: number
+  blob_id: string
+  disposition: string | null
+  cid: string
+  url: string | null
+  part_id?: string | null
+  charset?: string | null
+  language?: string | null
+  location?: string | null
+}
+
+export type GetEarlierMessagesOutputCopy = {
+  name: string
+  id: string
+  thread_id: string
+  from_name: string | null
+  from_email: string
+  received_at: string
+  mailboxes: Array<GetEarlierMessagesOutputMailboxRef>
+  seen: 0 | 1
+  junk: 0 | 1
+  flagged: 0 | 1
+  draft: 0 | 1
+  unscreened?: 0 | 1
+}
+
+export type GetEarlierMessagesOutputMailboxRef = {
+  mailbox: string
+  mailbox_id: string
+  mailbox_name: string | null
+}
+
+export type GetEarlierMessagesOutputMessage = {
+  name: string
+  id: string
+  thread_id: string
+  from_name: string | null
+  from_email: string
+  received_at: string
+  mailboxes: Array<GetEarlierMessagesOutputMailboxRef>
+  seen: 0 | 1
+  junk: 0 | 1
+  flagged: 0 | 1
+  draft: 0 | 1
+  unscreened?: 0 | 1
+  message_id: string | null
+  in_reply_to: string | null
+  pinned_in?: Array<string>
+  reacts_with: Array<string>
+  reactions?: Array<GetEarlierMessagesOutputReaction>
+  mailing_list: 0 | 1
+  cannot_react?: string | null
+  subject: string | null
+  html_body: string | null
+  text_body: string | null
+  preview: string
+  recipients: Array<GetEarlierMessagesOutputRecipient>
+  reply_to: Array<GetEarlierMessagesOutputReplyAddress>
+  attachments: Array<GetEarlierMessagesOutputAttachment>
+  dsn_blob_id: string | null
+  duplicates?: Array<GetEarlierMessagesOutputCopy>
+  user_image?: string | null
+  earlier_unloaded?: number
+  later_unloaded?: number
+}
+
+export type GetEarlierMessagesOutputReaction = {
+  emoji: string
+  from_name: string | null
+  from_email: string | null
+}
+
+export type GetEarlierMessagesOutputRecipient = {
+  type: 'To' | 'Cc' | 'Bcc'
+  email: string
+  display_name: string | null
+}
+
+export type GetEarlierMessagesOutputReplyAddress = { email: string; display_name: string | null }
+
+export type GetEarlierMessagesInput = {
+  account: string
+  thread_id: string
+  before: string
+  after?: string | null
+  limit?: number
+}
+
+export type GetEarlierMessagesOutput = Array<GetEarlierMessagesOutputMessage>
+
+export type GetEarlierMessagesError = 'PermissionError' | 'ValidationError'
+
+const operationGetEarlierMessages: QueryRef<
+  GetEarlierMessagesInput,
+  GetEarlierMessagesOutput,
+  GetEarlierMessagesError
+> = {
+  id: 'get_earlier_messages',
+  owner: 'mail',
+  kind: 'query',
+  publicName: 'threads.earlier',
+  envelope: 'message',
+  method: 'POST',
+  path: '/api/method/suite.mail.api.mail.get_earlier_messages',
+  prefix: '/api/suite/mail/',
+  pathParams: [],
+  nodeParams: [],
+  entity: null,
+  errors: ['PermissionError', 'ValidationError'],
+  loadValidators: async () => (await import('./validators')).operationGetEarlierMessages,
 }
 
 export type SearchMailsInputSearchFilter = {
@@ -5984,6 +6107,8 @@ export type SearchMailsOutputMessage = {
   dsn_blob_id: string | null
   duplicates?: Array<SearchMailsOutputCopy>
   user_image?: string | null
+  earlier_unloaded?: number
+  later_unloaded?: number
 }
 
 export type SearchMailsOutputReaction = {
@@ -6021,6 +6146,7 @@ export type SearchMailsOutputSearchRow = {
   archive?: string | null
   trash?: string | null
   reaction_only?: 0 | 1
+  leaving?: 0 | 1
   unscreened_senders?: Array<string>
   pinned?: 0 | 1
   returned?: 0 | 1
@@ -6387,7 +6513,12 @@ const operationDeleteMail: MutationRef<DeleteMailInput, DeleteMailOutput, Delete
   loadValidators: async () => (await import('./validators')).operationDeleteMail,
 }
 
-export type SetFlaggedInput = { account: string; ids: Array<string>; flagged: boolean }
+export type SetFlaggedInput = {
+  account: string
+  ids: Array<string>
+  flagged: boolean
+  threads?: Array<string> | null
+}
 
 export type SetFlaggedOutput = { ids: Array<string>; flagged: boolean }
 
@@ -6414,6 +6545,7 @@ export type PinMailsInput = {
   ids: Array<string>
   pinned: boolean
   mailbox?: string | null
+  threads?: Array<string> | null
 }
 
 export type PinMailsOutput = { ids: Array<string>; pinned: boolean }
@@ -6441,6 +6573,7 @@ export type SnoozeMailsInput = {
   ids: Array<string>
   until: string
   leaves?: string | null
+  threads?: Array<string> | null
 }
 
 export type SnoozeMailsOutput = { updated: Array<string>; left_inbox: boolean }
@@ -6465,7 +6598,12 @@ const operationSnoozeMails: MutationRef<SnoozeMailsInput, SnoozeMailsOutput, Sno
 
 export type UnsnoozeMailsOutputWaited = { until: string; ids: Array<string> }
 
-export type UnsnoozeMailsInput = { account: string; ids: Array<string>; leaves?: string | null }
+export type UnsnoozeMailsInput = {
+  account: string
+  ids: Array<string>
+  leaves?: string | null
+  threads?: Array<string> | null
+}
 
 export type UnsnoozeMailsOutput = {
   updated: Array<string>
@@ -6631,7 +6769,12 @@ const operationRestoreReturnedMail: MutationRef<
   loadValidators: async () => (await import('./validators')).operationRestoreReturnedMail,
 }
 
-export type SetMailsSeenInput = { account: string; ids: Array<string>; seen: boolean }
+export type SetMailsSeenInput = {
+  account: string
+  ids: Array<string>
+  seen: boolean
+  threads?: Array<string> | null
+}
 
 export type SetMailsSeenOutput = Array<string>
 
@@ -6696,6 +6839,7 @@ export type FileMailsInput = {
   screen_action?: string | null
   leaves?: string | null
   shows?: { [key: string]: Array<FileMailsInputShownFolder> } | null
+  threads?: Array<string> | null
 }
 
 export type FileMailsOutput = { updated: Array<string>; left_inbox: boolean }
@@ -7313,7 +7457,7 @@ const operationDismissFailedMail: MutationRef<
   loadValidators: async () => (await import('./validators')).operationDismissFailedMail,
 }
 
-export type DeleteMessagesInput = { names: Array<string> }
+export type DeleteMessagesInput = { names: Array<string>; threads?: Array<string> | null }
 
 export type DeleteMessagesOutput = null
 
@@ -7738,6 +7882,7 @@ export const api = {
   threads: {
     list: operationGetThreads,
     get: operationGetThread,
+    earlier: operationGetEarlierMessages,
   },
   tabs: {
     counts: operationGetTabCounts,

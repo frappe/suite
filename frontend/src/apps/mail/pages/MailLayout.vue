@@ -24,13 +24,14 @@ import { useFollowOpenFolder } from '@/apps/mail/composables/useFollowOpenFolder
 import { isMailRoute } from '@/apps/mail/router'
 import { initSocket } from '@/apps/mail/socket'
 import { userStore } from '@/apps/mail/stores/user'
-import { shouldIgnoreKeypress } from '@/apps/mail/utils'
+import { raiseToast, shouldIgnoreKeypress } from '@/apps/mail/utils'
 import { useSettings, useShortcuts, useUndo } from '@/apps/mail/utils/composables'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { useGoToShortcuts } from '@/apps/mail/utils/goToShortcuts'
 import { useGPrefix } from '@/apps/mail/utils/listNavigation'
 import { mailServerUnavailable } from '@/boot/config'
 import { provideAreaShortcuts } from '@/platform/shortcuts'
+import { translate as __ } from '@/platform/translation'
 import { useRootStore } from '@/stores/root'
 
 import '@/apps/mail/styles.css'
@@ -138,6 +139,17 @@ const socket = initSocket()
 provide('$socket', socket)
 onScopeDispose(() => socket.disconnect())
 provideChangeSync(useChangeSync(socket, () => mailServerUnavailable.value))
+// A long thread is filed behind the click, in a job (see suite/mail/long_threads.py). One that fails
+// is put back by the server, which says so here, on whatever page of Mail the reader is by then.
+// The lists read again on the `mail_changed` it sends with it.
+socket.on('mail_thread_filing_failed', ({ put_back }: { put_back: boolean }) =>
+  raiseToast(
+    put_back
+      ? __('Could not move the whole conversation. It is back where it was.')
+      : __('Could not move the whole conversation. Some of its messages have moved.'),
+    'error',
+  ),
+)
 
 const Layout = computed(() => {
   if (route.meta.noLayout) return 'div'
