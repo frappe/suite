@@ -456,12 +456,15 @@ jobs:
           pnpm exec vite build --config vite.slides-checker.config.ts
           pnpm exec vite build --config vite.slides-checker.config.ts --mode converter
 
-      - name: Start Pilot and create SQLite test site
+      - name: Start Redis and create SQLite test site
         working-directory: /home/runner/pilot/benches/frappe-bench
         run: |
-          pilot -b frappe-bench start > "$RUNNER_TEMP/pilot-sqlite.log" 2>&1 &
-          curl --fail --silent --show-error --retry 30 --retry-connrefused --retry-delay 1 \
-            http://127.0.0.1:7000/api/v1/health
+          # Tests enqueue jobs, but live workers can invalidate SQLite read snapshots.
+          for service in cache queue; do
+            redis-server "config/redis_$service.conf" > "$RUNNER_TEMP/redis-$service.log" 2>&1 &
+            url=$(jq -r ".redis_$service" sites/common_site_config.json)
+            timeout 15 bash -c 'until redis-cli -u "$1" ping | grep -qx PONG; do sleep 1; done' _ "$url"
+          done
           pilot new-site test_site --admin-password admin --apps frappe suite --skip-assets
           ./env/bin/python -c 'import json; assert json.load(open("sites/test_site/site_config.json"))["db_type"] == "sqlite"'
           pilot frappe --site test_site disable-scheduler
@@ -485,7 +488,7 @@ jobs:
           name: suite-sqlite-backend-${{ matrix.shard }}
           path: |
             ${{ runner.temp }}/suite-sqlite-tests.log
-            ${{ runner.temp }}/pilot-sqlite.log
+            ${{ runner.temp }}/redis-*.log
 
   node-servers:
     if: ${{ !inputs.sqlite_backend_only }}
