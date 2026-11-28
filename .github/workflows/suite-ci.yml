@@ -469,6 +469,7 @@ jobs:
           pilot frappe --site test_site set-config throttle_user_limit 1000 --parse
 
       - name: Run Suite backend tests
+        shell: bash
         working-directory: /home/runner/pilot/benches/frappe-bench
         env:
           SHARD: ${{ matrix.shard }}
