@@ -53,30 +53,9 @@
         :size="buttonSize"
         :disabled="isSaveBlocked"
         :loading="updateVacationResponse.isPending"
-        @click="handleSave"
+        @click="updateVacationResponseSubmit"
       />
     </SettingsDialogActions>
-    <!-- The mail server runs one script at a time, and the reply is one: on, it stops the app's sorting -->
-    <AdaptiveDialog
-      v-model:open="showConfirmDialog"
-      v-bind="{
-        title: __('Turn on auto-reply?'),
-        message: confirmMessage,
-        actions: [
-          {
-            label: __('Cancel'),
-            variant: 'outline' as const,
-            onClick: () => closeConfirm(),
-          },
-          {
-            label: __('Turn on auto-reply'),
-            variant: 'solid' as const,
-            loading: updateVacationResponse.isPending,
-            onClick: () => updateVacationResponseSubmit(),
-          },
-        ],
-      }"
-    />
   </div>
 </template>
 
@@ -92,7 +71,6 @@ import { useScreenSize } from '@/apps/mail/utils/composables'
 import { fromLocalInput, inUserTimeZone } from '@/apps/mail/utils/datetime'
 import dayjs from '@/apps/mail/utils/dayjs'
 import { failureLine } from '@/platform/feedback'
-import AdaptiveDialog from '@/platform/feedback/AdaptiveDialog.vue'
 import SettingsDialogActions from '@/platform/settings/SettingsDialogActions.vue'
 import { translate as __ } from '@/platform/translation'
 
@@ -101,39 +79,6 @@ const emit = defineEmits<{ saved: [] }>()
 const store = userStore()
 const { isMobile } = useScreenSize()
 const buttonSize = computed(() => (isMobile.value ? 'md' : 'sm'))
-const showConfirmDialog = ref(false)
-function closeConfirm() {
-  showConfirmDialog.value = false
-}
-
-const activeSieveScript = computed(
-  () => store.sieveScripts.data?.find((s) => s.active && s._name !== 'vacation')?._name,
-)
-// Names what the reply stops. The automation script is all of the app's sorting at delivery, not
-// only its folder rules, so each part of it is named; otherwise it is a rule of the user's own
-const confirmMessage = computed(() => {
-  if (activeSieveScript.value === 'frappe_mail_automation') {
-    return __(
-      'While auto-reply is on, incoming mail isn’t sorted: screening, blocked senders, categories and folder rules all stop. They start again when you turn auto-reply off.',
-    )
-  }
-
-  return __(
-    'Your rule “{0}” stops running while auto-reply is on. It starts again when you turn auto-reply off.',
-    [activeSieveScript.value ?? ''],
-  )
-})
-
-// Awaited, so a refused save is no stray error
-async function handleSave() {
-  if (activeSieveScript.value && draft.enabled) {
-    showConfirmDialog.value = true
-    return
-  }
-
-  await updateVacationResponseSubmit()
-}
-
 // What a date and time field reads and writes: a clock reading in the user's zone, naming no
 // zone. The field keeps time to the minute, so a saved time is read to the minute, or the field
 // would hand back another time the first time it is left
@@ -216,13 +161,10 @@ async function updateVacationResponseSubmit() {
     subject: draft.subject.trim() || __('Out of office'),
     html_body: draft.html_body,
   }
-  try {
-    await updateVacationResponse.run(input)
-  } finally {
-    // The question is answered either way, and a refusal is said on the form it would cover
-    showConfirmDialog.value = false
-  }
+  await updateVacationResponse.run(input)
 
+  // Turned on, the reply activates the automation script, so the active script may have changed
+  if (draft.enabled) store.sieveScripts.refetch()
   await vacationResponse.refetch()
   raiseToast(__('Auto-reply updated'))
   emit('saved')

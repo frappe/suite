@@ -6,20 +6,23 @@ from datetime import datetime
 import frappe
 from frappe import _
 from frappe.model.document import Document
-from frappe.utils import cint, today
+from frappe.utils import cint, get_datetime
 
-from suite.mail.doctype.sieve_script.sieve_script import (
-    activate_last_active_sieve_script,
-    get_active_sieve_script_id,
-    set_last_active_sieve_script_id,
-)
-from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account
-from suite.mail.jmap import JMAP_REFUSALS, format_method_error, format_set_error, get_account_client
-from suite.mail.utils.dt import normalize_utc_z
+from suite.mail.doctype.user_account.user_account import get_user_for_jmap_account, get_user_jmap_accounts
+from suite.mail.utils.dt import from_utc_z, normalize_utc_z, to_utc_z
 from suite.mail.utils.html_to_text import html_to_text
+from suite.utils.user import is_suite_admin, is_system_manager
 
 
 class VacationResponse(Document):
+    """An account's auto-reply, one per account and named after it.
+
+    The reply is sent by the Vacation block of the account's automation Sieve script, so it runs
+    alongside screening, blocked senders, categories and folder rules. Stalwart's own
+    VacationResponse is left off: the server runs one script at a time, and turning that one on
+    stopped the automation script.
+    """
+
     # begin: auto-generated types
     # This code is auto-generated. Do not modify anything in this block.
 
@@ -28,76 +31,58 @@ class VacationResponse(Document):
     if TYPE_CHECKING:
         from frappe.types import DF
 
-        account: DF.Link | None
+        account: DF.Link
         enabled: DF.Check
         from_date: DF.Datetime | None
         html_body: DF.TextEditor | None
         subject: DF.Data | None
         text_body: DF.Code | None
         to_date: DF.Datetime | None
-        user: DF.Link | None
     # end: auto-generated types
 
-    def db_insert(self, *args, **kwargs) -> None:
-        raise NotImplementedError
+    def validate(self) -> None:
+        if self.enabled and self.from_date and self.to_date:
+            if get_datetime(self.from_date) >= get_datetime(self.to_date):
+                frappe.throw(_("To Date must be after From Date."))
 
-    @frappe.whitelist()
-    def load_from_db(self) -> VacationResponse:
-        if not self.get("account"):
-            frappe.msgprint(_("Please select an account to view vacation response details."), alert=True)
-            return super(Document, self).__init__({"creation": today(), "modified": today()})
-
-        vr = get_vacation_response(self.account)
-        return super(Document, self).__init__(vr)
+        # Where there is an HTML body it is authoritative, so both parts say the same thing rather
+        # than the text being a flattened trace of it.
+        if derived := html_to_text(self.html_body):
+            self.text_body = derived
+        else:
+            self.html_body = None
 
     def on_update(self) -> None:
-        if not self.get("account"):
+        # Skipped during migrate (no JMAP round-trips) and when a caller paused builds.
+        if frappe.flags.in_migrate or frappe.flags.get("skip_automation_sieve_build"):
             return
 
-        update_vacation_response(
-            self.account,
-            self.enabled,
-            self.from_date,
-            self.to_date,
-            self.subject,
-            self.text_body,
-            self.html_body,
-        )
-        self.reload()
+        from suite.mail.doctype.sieve_script.sieve_script import build_automation_sieve
 
-    def delete(self) -> None:
-        pass
-
-    @staticmethod
-    def get_list(filters=None, page_length=20, **kwargs) -> list:
-        pass
-
-    @staticmethod
-    def get_count(filters=None, **kwargs):
-        pass
-
-    @staticmethod
-    def get_stats(**kwargs) -> dict:
-        return {}
+        # Raised, so a reply the script could not take is not saved as if it would be sent. Turned
+        # on, the automation script is activated: the reply is a block of it.
+        build_automation_sieve(self.account, activate=bool(self.enabled), raise_exception=True)
 
 
 @frappe.whitelist()
 def get_vacation_response(account: str) -> dict:
     """Returns the vacation response settings for the given account."""
 
-    vr = _fetch_vacation_response(account)
-    return format_vacation_response(account, vr)
+    get_user_for_jmap_account(account, raise_exception=True)
+    fields = ["enabled", "from_date", "to_date", "subject", "text_body", "html_body", "creation", "modified"]
+    vr = frappe.db.get_value("Vacation Response", account, fields, as_dict=True) or {}
 
-
-def _fetch_vacation_response(account: str) -> dict:
-    """Returns the raw VacationResponse object for the account (a singleton), or {}."""
-
-    client = get_account_client(account)
-    with client.batch() as b:
-        h = b.vacation.vacation_response.get()
-
-    items = h.result.items
-    return items[0].to_wire() if items else {}
+    return {
+        "account": account,
+        "enabled": cint(vr.get("enabled")),
+        "from_date": to_utc_z(vr.get("from_date")),
+        "to_date": to_utc_z(vr.get("to_date")),
+        "subject": vr.get("subject"),
+        "text_body": vr.get("text_body"),
+        "html_body": vr.get("html_body"),
+        "creation": str(vr["creation"]) if vr.get("creation") else None,
+        "modified": str(vr["modified"]) if vr.get("modified") else None,
+    }
 
 
 @frappe.whitelist()
@@ -112,71 +97,57 @@ def update_vacation_response(
 ) -> None:
     """Updates the vacation response settings for the given account."""
 
-    enabled = bool(enabled)
-    # The API listens UTC: naive values are read as UTC and sent to Stalwart in the ``...Z`` form.
-    from_date = normalize_utc_z(from_date)
-    to_date = normalize_utc_z(to_date)
+    get_user_for_jmap_account(account, raise_exception=True)
 
-    if enabled and (from_date and to_date) and (from_date >= to_date):
-        frappe.throw(_("To Date must be after From Date."))
-
-    # Where there is an HTML body it is authoritative, so both parts say the same thing rather
-    # than the text being a flattened trace of it. Plain rather than flowed: Stalwart composes
-    # the auto-reply itself, and nothing on that path declares what a soft break needs.
-    if derived := html_to_text(html_body):
-        text_body = derived
+    if frappe.db.exists("Vacation Response", account):
+        doc = frappe.get_doc("Vacation Response", account)
     else:
-        html_body = None
+        doc = frappe.new_doc("Vacation Response")
+        doc.account = account
 
-    current_active_sieve_script_id = get_active_sieve_script_id(account)
-
-    previous_vacation_response = _fetch_vacation_response(account)
-
-    client = get_account_client(account)
-    title = _("Vacation Response Update Error")
-    try:
-        with client.batch() as b:
-            h = b.vacation.vacation_response.set(
-                update={
-                    "singleton": {
-                        "isEnabled": enabled,
-                        "fromDate": from_date,
-                        "toDate": to_date,
-                        "subject": subject,
-                        "textBody": text_body,
-                        "htmlBody": html_body,
-                    }
-                }
-            )
-        response = h.result
-    except JMAP_REFUSALS as e:
-        frappe.throw(format_method_error(e), title=title)
-
-    if "singleton" not in response.updated:
-        # Refused as an object rather than as a call: not a success to report.
-        frappe.throw(format_set_error(response.not_updated.get("singleton")), title=title)
-
-    if enabled:
-        if not previous_vacation_response.get("isEnabled"):
-            set_last_active_sieve_script_id(account, current_active_sieve_script_id)
-    else:
-        activate_last_active_sieve_script(account)
+    # The API speaks UTC: naive values are read as UTC, and stored as system time, as Frappe keeps
+    # datetimes.
+    doc.update(
+        {
+            "enabled": cint(enabled),
+            "from_date": from_utc_z(normalize_utc_z(from_date)),
+            "to_date": from_utc_z(normalize_utc_z(to_date)),
+            "subject": subject,
+            "text_body": text_body,
+            "html_body": html_body,
+        }
+    )
+    doc.save()
 
 
-def format_vacation_response(account: str, vr: dict) -> dict:
-    """Formats the vacation response data."""
+def get_vacation_reply(account: str) -> frappe._dict | None:
+    """The account's auto-reply while it is on, for the automation script: its window as UTC
+    ``...Z`` timestamps, its subject and its bodies. None while it is off."""
 
-    return {
-        "account": account,
-        "enabled": cint(vr.get("isEnabled")),
-        "from_date": normalize_utc_z(vr.get("fromDate")),
-        "to_date": normalize_utc_z(vr.get("toDate")),
-        "subject": vr.get("subject"),
-        "text_body": vr.get("textBody"),
-        "html_body": vr.get("htmlBody"),
-        "creation": today(),
-        "modified": today(),
-    }
+    vr = frappe.db.get_value(
+        "Vacation Response",
+        {"name": account, "enabled": 1},
+        ["from_date", "to_date", "subject", "text_body", "html_body"],
+        as_dict=True,
+    )
+    if not vr:
+        return None
+
+    vr.from_date = to_utc_z(vr.from_date)
+    vr.to_date = to_utc_z(vr.to_date)
+    return vr
+
+
+def get_permission_query_condition(user: str | None = None) -> str | None:
+    user = user or frappe.session.user
+    if is_system_manager(user) or is_suite_admin(user):
+        return ""
+
+    accounts = get_user_jmap_accounts(user)
+    if not accounts:
+        return "1=0"
+
+    return f"""`tabVacation Response`.account in ({", ".join(frappe.db.escape(account) for account in accounts)})"""
 
 
 def has_permission(doc: Document, ptype: str, user: str | None = None) -> bool:

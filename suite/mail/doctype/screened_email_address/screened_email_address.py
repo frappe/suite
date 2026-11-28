@@ -74,7 +74,7 @@ class ScreenedEmailAddress(Document):
         # Spam <-> Accepted in Desk), since that moves the sender between sieve blocks. Skipped when a
         # caller paused builds for a bulk write (it rebuilds once at the end instead).
         if self.has_value_changed("action"):
-            # Activate the automation script so the screening rule takes effect (unless vacation is active).
+            # Activate the automation script so the screening rule takes effect.
             maybe_build_automation_sieve(self.account, activate=True)
 
     def after_delete(self) -> None:

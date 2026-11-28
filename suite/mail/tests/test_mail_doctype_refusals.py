@@ -20,7 +20,6 @@ from suite.mail.doctype.address_book import address_book
 from suite.mail.doctype.contact_card import contact_card
 from suite.mail.doctype.mailbox import mailbox
 from suite.mail.doctype.sieve_script import sieve_script
-from suite.mail.doctype.vacation_response import vacation_response
 from suite.mail.jmap import MailServerUnavailableError, SuiteJMAPClient
 
 CORE = "urn:ietf:params:jmap:core"
@@ -35,7 +34,7 @@ URNS = [
 ACCOUNT = "f7"
 USER = "user@example.test"
 SCRIPT = 'require ["fileinto"];\nkeep;\n'
-DOCTYPES = (address_book, contact_card, mailbox, sieve_script, vacation_response)
+DOCTYPES = (address_book, contact_card, mailbox, sieve_script)
 
 
 def _server(
@@ -108,10 +107,6 @@ class ReadOnlyAccount(_Doctypes):
         script = {"id": "s1", "name": "bills", "blobId": "B1", "isActive": False}
         self.server.respond("SieveScript/get", {"state": "s", "list": [script], "notFound": []})
         self.server.respond("SieveScript/query", {"queryState": "q", "ids": [], "position": 0, "total": 0})
-        self.server.respond(
-            "VacationResponse/get",
-            {"state": "v", "list": [{"id": "singleton", "isEnabled": False}], "notFound": []},
-        )
 
     def assert_refused(self, write, *args, **kwargs) -> None:
         with self.assertRaises(frappe.ValidationError) as raised:
@@ -172,9 +167,6 @@ class ReadOnlyAccount(_Doctypes):
 
     def test_a_sieve_script_is_not_deleted(self):
         self.assert_refused(sieve_script.SieveScript._delete_sieve_scripts, ACCOUNT, ["s1"])
-
-    def test_a_vacation_response_is_not_updated(self):
-        self.assert_refused(vacation_response.update_vacation_response, ACCOUNT, True, subject="Away")
 
 
 class UnofferedCall(_Doctypes):
@@ -324,23 +316,6 @@ class PartlyRefused(_Doctypes):
             mailbox.delete_mailboxes(ACCOUNT, ["m1"])
 
         self.assertIn("the store is locked", logged.call_args.args[1])
-
-    def test_a_vacation_response_the_server_refuses_as_an_object_is_not_reported_saved(self):
-        self.server.respond(
-            "VacationResponse/get",
-            {"state": "v", "list": [{"id": "singleton", "isEnabled": False}], "notFound": []},
-        )
-        self.server.respond("SieveScript/query", {"queryState": "q", "ids": [], "position": 0, "total": 0})
-        refused = {"singleton": {"type": "invalidProperties", "description": "toDate is before fromDate."}}
-        self.server.respond("VacationResponse/set", {"notUpdated": refused})
-
-        with (
-            mock.patch.object(vacation_response, "set_last_active_sieve_script_id") as remembered,
-            self.assertRaisesRegex(frappe.ValidationError, "toDate is before fromDate."),
-        ):
-            vacation_response.update_vacation_response(ACCOUNT, True, subject="Away")
-
-        remembered.assert_not_called()
 
 
 class LargeRead(_Doctypes):

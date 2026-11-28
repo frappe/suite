@@ -108,6 +108,8 @@ suite.mail.patches.classify_mail_at_delivery
 suite.mail.patches.drop_cached_drafts
 # Every existing account starts with the default message cache quota.
 suite.mail.patches.set_default_message_cache_quota
+# The auto-reply moves into the automation Sieve script, so turning it on no longer stops the rules.
+suite.mail.patches.move_vacation_into_automation_sieve
 # --- calendar ---
 # (no patches)
 # --- suite_core ---

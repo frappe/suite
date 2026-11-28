@@ -189,6 +189,7 @@ permission_query_conditions = {
     "Mail Sync History": "suite.mail.doctype.mail_sync_history.mail_sync_history.get_permission_query_condition",
     "Mailbox Settings": "suite.mail.doctype.mailbox_settings.mailbox_settings.get_permission_query_condition",
     "Screened Email Address": "suite.mail.doctype.screened_email_address.screened_email_address.get_permission_query_condition",
+    "Vacation Response": "suite.mail.doctype.vacation_response.vacation_response.get_permission_query_condition",
 }
 
 # ============================================================================
