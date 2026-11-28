@@ -403,11 +403,7 @@ jobs:
 
   backend-sqlite:
     if: ${{ inputs.sqlite_backend_only }}
-    name: Backend (SQLite, shard ${{ matrix.shard }})
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4, 5]
+    name: Backend (SQLite)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -474,18 +470,14 @@ jobs:
       - name: Run Suite backend tests
         shell: bash
         working-directory: /home/runner/pilot/benches/frappe-bench
-        env:
-          SHARD: ${{ matrix.shard }}
-          TOTAL_SHARDS: ${{ strategy.job-total }}
         run: |
-          pilot frappe --site test_site run-parallel-tests --app suite \
-            --build-number "$SHARD" --total-builds "$TOTAL_SHARDS" 2>&1 | tee "$RUNNER_TEMP/suite-sqlite-tests.log"
+          pilot frappe --site test_site run-parallel-tests --app suite --total-builds 1 2>&1 | tee "$RUNNER_TEMP/suite-sqlite-tests.log"
 
       - name: Upload SQLite test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: suite-sqlite-backend-${{ matrix.shard }}
+          name: suite-sqlite-backend
           path: |
             ${{ runner.temp }}/suite-sqlite-tests.log
             ${{ runner.temp }}/redis-*.log
