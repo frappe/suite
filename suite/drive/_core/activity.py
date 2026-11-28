@@ -526,6 +526,19 @@ def send_share_email(node: str, recipient: str, role: int, path: str, sharer: st
     )
 
 
+def notify_user(user: str, subject: str, *, detail: str | None, node: str | None) -> None:
+    from suite.drive._core.changes import emit_for_users
+
+    frappe.get_doc(
+        {
+            "doctype": "Drive Notification",
+            "to_user": user,
+            "inbox_message": frappe.as_json({"subject": subject, "detail": detail, "node": node}),
+        }
+    ).insert(ignore_permissions=True)
+    emit_for_users((user,))
+
+
 def notifications(
     principals: Principals,
     *,
@@ -573,9 +586,10 @@ def _visible_notifications(
 ) -> tuple[list[dict], int]:
     """Return the visible pointers, and how many rows the SQL window held.
 
-    A pointer names an activity on a node, or one of the caller's own downloads.
+    An entry contains an activity, a download, or a private message.
     """
     from suite.drive._core import downloads
+    from suite.drive._core.nodes import node_url
 
     _require_person(principals)
     # §14.6 drops the legacy inbox: those rows point at nothing, so the inbox
@@ -586,8 +600,17 @@ def _visible_notifications(
         filters["read"] = 0
     options = {
         "filters": filters,
-        "or_filters": {"activity": ["is", "set"], "download": ["is", "set"]},
-        "fields": ["name", "activity", "download", "to_user", "read", "creation", "title_without_access"],
+        "or_filters": {"activity": ["is", "set"], "download": ["is", "set"], "inbox_message": ["is", "set"]},
+        "fields": [
+            "name",
+            "activity",
+            "download",
+            "to_user",
+            "read",
+            "creation",
+            "title_without_access",
+            "inbox_message",
+        ],
         "order_by": "creation desc",
     }
     if limit is not None:
@@ -597,6 +620,13 @@ def _visible_notifications(
     visible = []
     for row in rows:
         saved_title = row.pop("title_without_access")
+        if payload := row.pop("inbox_message"):
+            message = _json_value(payload, {})
+            node = _readable_node(principals, message["node"]) if message.get("node") else None
+            url = node_url(node.name, kind=node.kind) if node is not None else None
+            row.message = {"subject": message["subject"], "detail": message.get("detail"), "url": url}
+            visible.append(row)
+            continue
         if row.download:
             try:
                 row.download = downloads.get(principals, row.download)

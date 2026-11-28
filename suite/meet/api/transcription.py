@@ -9,6 +9,7 @@ import secrets
 from datetime import timedelta
 
 import frappe
+from frappe import _
 from frappe.utils import cint, get_datetime, now_datetime
 
 from suite import drive
@@ -247,7 +248,9 @@ def complete(
         for values in sorted({(g["start_ms"], g["end_ms"], g["reason"]) for g in all_gaps})
     ]
     partial = bool(all_gaps) or bool(partial)
-    return _publish(doc, successful, all_gaps, partial)
+    result = _publish(doc, successful, all_gaps, partial)
+    _notify(doc)
+    return result
 
 
 def _publish(doc, segments, gaps, partial):
@@ -257,7 +260,6 @@ def _publish(doc, segments, gaps, partial):
     doc.status = "Partial" if partial else "Ready"
     doc.gaps = json.dumps(gaps)
     doc.ready_at = now_datetime()
-    doc.notification_pending = 1
     doc.save(ignore_permissions=True)
     # Source deletion is retried by maintenance after publication transaction
     # commits, so an external cleanup failure cannot roll back a usable artifact.
@@ -319,18 +321,22 @@ def _failure(doc, code, transient):
             before_publication = doc.as_dict()
             frappe.db.savepoint("partial_transcript_publication")
             try:
-                return _publish(doc, segments, gaps, True)
+                result = _publish(doc, segments, gaps, True)
             except Exception:
                 frappe.db.rollback(save_point="partial_transcript_publication")
                 # Publication can mutate the document before failing to save it.
                 doc.update(before_publication)
                 doc.failure_code = "publication_failed"
                 frappe.logger("meet_transcription").error("Partial transcript publication failed")
+            else:
+                _notify(doc)
+                return result
         doc.status = "Failed"
-        doc.notification_pending = 1
     if capture_was_active:
         doc.participant_revision = cint(doc.participant_revision) + 1
     doc.save(ignore_permissions=True)
+    if doc.status == "Failed":
+        _notify(doc)
     if capture_was_active:
         from suite.meet.transcription.capture import finish_capture_state
 
@@ -347,14 +353,12 @@ def operator_retry(job: str) -> dict:
     doc.status = "Queued"
     doc.retry_at = now_datetime()
     doc.attempts = 0
-    doc.notification_pending = 0
-    doc.notification_sent_at = None
     doc.save(ignore_permissions=True)
     return {"status": "Queued"}
 
 
 def maintenance():
-    """Recover abandoned leases, enqueue finalized sources, notify and purge."""
+    """Recover abandoned leases, enqueue finalized sources and purge."""
     from suite.meet.transcription.artifacts import reconcile_purged_artifact
     from suite.meet.transcription.capture import reconcile_capture
 
@@ -364,7 +368,7 @@ def maintenance():
         FROM `tabMeet Transcription Job` job
         LEFT JOIN `tabDrive Node` node ON node.name = job.artifact
         WHERE job.status IN ('Capturing', 'Queued', 'Processing', 'Deleted')
-           OR job.source_deleted = 0 OR job.notification_pending = 1
+           OR job.source_deleted = 0
            OR (job.artifact IS NOT NULL AND job.artifact <> '' AND node.name IS NULL)
         """,
         pluck=True,
@@ -385,14 +389,6 @@ def maintenance():
             frappe.db.commit()
             doc = _locked(name)
             reconcile_purged_artifact(doc)
-            if doc.notification_pending:
-                try:
-                    _notify(doc)
-                    frappe.db.commit()
-                except Exception:
-                    frappe.db.rollback()
-                    frappe.logger("meet_transcription").warning("Transcription notification deferred")
-                doc = _locked(name)
             if not doc.source_deleted and (
                 doc.status in ("Ready", "Partial", "Deleted") or get_datetime(doc.retention_deadline) <= now
             ):
@@ -426,25 +422,12 @@ def maintenance():
 
 
 def _notify(doc):
-    from html import escape
-
-    ready = doc.status in ("Ready", "Partial")
-    subject = "Your Meet transcript is ready" if ready else "Your Meet transcript could not be processed"
-    link = frappe.utils.get_url(drive.node_url(doc.artifact)) if ready else None
-    message = (
-        (
-            f'<p>{"A partial transcript is ready; missing intervals are marked." if doc.status == "Partial" else "Your transcript is ready."}</p><p><a href="{escape(link, quote=True)}">Open transcript in Drive</a></p>'
-        )
-        if ready
-        else "<p>We could not produce a usable transcript for your capture. Contact your administrator for assistance.</p>"
-    )
-    frappe.sendmail(
-        recipients=[doc.room_owner],
-        subject=subject,
-        message=message,
-        reference_doctype="Meet Transcription Job",
-        reference_name=doc.name,
-    )
-    doc.notification_pending = 0
-    doc.notification_sent_at = now_datetime()
-    doc.save(ignore_permissions=True)
+    if doc.status == "Ready":
+        subject, detail = _("Your Meet transcript is ready"), None
+    elif doc.status == "Partial":
+        subject = _("Your partial Meet transcript is ready")
+        detail = _("Missing intervals are marked in the transcript.")
+    else:
+        subject = _("Your Meet transcript could not be processed")
+        detail = _("No usable transcript was produced.")
+    drive.notify_user(doc.room_owner, subject, detail=detail, node=doc.artifact or None)

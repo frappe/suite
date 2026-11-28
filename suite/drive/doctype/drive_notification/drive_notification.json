@@ -7,6 +7,7 @@
  "field_order": [
   "activity",
   "download",
+  "inbox_message",
   "to_user",
   "read",
   "title_without_access"
@@ -24,6 +25,11 @@
    "label": "Download",
    "options": "Drive Download",
    "search_index": 1
+  },
+  {
+   "fieldname": "inbox_message",
+   "fieldtype": "Small Text",
+   "label": "Inbox Message"
   },
   {
    "fieldname": "to_user",

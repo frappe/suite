@@ -1128,7 +1128,8 @@ const recurringScopeModalProps = computed(() => ({
 						     the grid cell and sets the width — so the pencil sits against the
 						     title instead of adrift at the column's edge. The mirror falls back
 						     to the placeholder so an empty title still leaves something to read,
-						     and max-w-full keeps a long one inside the column, where the input
+						     and the mirror clips, so a long one cannot hold the cell wider than
+						     the column: the cell stops at the column's edge and the input
 						     scrolls internally as it did at full width. The click is on the row
 						     rather than its two children, which is what makes the gap between
 						     title and pencil live rather than dead space — and the row runs the
@@ -1147,7 +1148,7 @@ const recurringScopeModalProps = computed(() => ({
                 <div class="grid min-w-0 max-w-full">
                   <span
                     aria-hidden="true"
-                    class="invisible col-start-1 row-start-1 whitespace-pre text-xl font-semibold tracking-tight"
+                    class="invisible col-start-1 row-start-1 overflow-hidden whitespace-pre text-xl font-semibold tracking-tight"
                     >{{ event.title || __('Add title') }}</span
                   >
                   <input

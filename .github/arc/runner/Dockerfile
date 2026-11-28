@@ -107,3 +107,9 @@ RUN bench init --skip-redis-config-generation --skip-assets --python "$PYTHON_RO
     && uv pip install --quiet --target /tmp/suite-cache/packages -r /tmp/suite-cache/dependencies.txt \
     && uv cache prune --ci \
     && rm -rf /tmp/frappe-bench /tmp/suite-cache /var/cache/yarn/* /home/runner/.cache/puccinialin
+
+ARG PILOT_VERSION=v1.0.0-rc.5
+RUN curl -fsSL https://raw.githubusercontent.com/frappe/pilot/develop/install.sh \
+    | sh -s -- --ci --version "$PILOT_VERSION"
+ENV PATH="/home/runner/pilot/bin:/home/runner/.local/bin:${PATH}"
+RUN pilot --version

@@ -30,10 +30,6 @@ WRITE_ONCE_FIELDS = (
 )
 TERMINAL_MUTABLE_FIELDS = {
     "terminal_acknowledged_at",
-    "notification_pending",
-    "notification_attempts",
-    "notification_next_retry_at",
-    "notification_sent_at",
 }
 ENDPOINT_WRITE_ONCE_FIELDS = (
     "recorder_key_thumbprint",
@@ -285,7 +281,7 @@ class MeetRecording(Document):
             ):
                 frappe.throw(_("Recording upload metadata is invalid"))
 
-        if cint(self.finalization_attempts) < 0 or cint(self.notification_attempts) < 0:
+        if cint(self.finalization_attempts) < 0:
             frappe.throw(_("Recording finalization counters cannot be negative"))
         if self.finalization_stage:
             if not self.metadata_accepted_at or not self.finalization_deadline:
@@ -302,8 +298,6 @@ class MeetRecording(Document):
             frappe.throw(_("Terminal finalization requires a terminal recording result"))
         if self.terminal_acknowledged_at and self.status not in ("Ready", "Partial", "Failed", "Cancelled"):
             frappe.throw(_("Only a terminal recording can be acknowledged"))
-        if self.notification_sent_at and self.notification_pending:
-            frappe.throw(_("A delivered recording notification cannot remain pending"))
 
     def on_update(self):
         previous = self.get_doc_before_save()

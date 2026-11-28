@@ -107,17 +107,10 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Unused files, dependencies, unresolved imports and duplicate exports fail.
-      # Phase 2 of the tooling work fixes the current findings and removes
-      # `continue-on-error` here.
-      - name: Check frontend dead code
+      # Existing findings make this evidence-only until the baseline is clean.
+      - name: Report frontend dead code and unused exports
         continue-on-error: true
-        run: pnpm knip:root --exclude exports,types
-
-      # Unused exports and types are evidence-only until that baseline is clean.
-      - name: Report frontend unused exports
-        continue-on-error: true
-        run: pnpm knip:root --include exports,types
+        run: pnpm knip:root
 
       # Existing findings make these evidence-only until their baselines are clean.
       - name: Check E2E dead code

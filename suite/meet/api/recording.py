@@ -39,6 +39,7 @@ from suite.meet.recording.ingest import (
     begin_upload,
     complete_upload,
     finalization_status,
+    notify_recording,
     reject_upload_metadata,
 )
 from suite.meet.recording.recorder_client import RecorderClient, RecorderOutcome
@@ -225,7 +226,7 @@ def get_preflight(
         and not bool(room.e2ee_enabled)
         and storage_available
         and (not video_enabled or budget_bytes >= MINIMUM_BUDGET_BYTES)
-        and (not transcription_enabled or transcription_available)
+        and (video_enabled or transcription_available)
         and _recorder_available(),
         "global_enabled": global_enabled,
         "transcription_available": transcription_available,
@@ -297,13 +298,20 @@ def _participant_recording_state(recording):
         job = frappe.db.get_value(
             "Meet Transcription Job",
             {"capture": state.name},
-            ["status", "stop_requested", "participant_revision", "capture_started_at"],
+            [
+                "status",
+                "stop_requested",
+                "participant_revision",
+                "capture_started_at",
+                "manifest",
+                "failure_code",
+            ],
             as_dict=True,
         )
-        state.transcription_capture_state = participant_state(state.name)
+        state.transcription_capture_state = participant_state(job)
         if job:
             state.state_revision = cint(state.state_revision) + cint(job.participant_revision)
-            if job.status == "Capturing":
+            if state.transcription_capture_state == "capturing":
                 audio_started = _system_datetime_as_utc(job.capture_started_at).replace(tzinfo=None)
                 state.started_at = state.started_at or audio_started
                 state.capture_started_at = state.capture_started_at or audio_started
@@ -370,9 +378,11 @@ def _client() -> RecorderClient:
 
 
 def _limits(recording) -> dict:
+    pending = recording.pending_deadline
+    reserved_end = add_to_date(pending, seconds=MAX_SECONDS) if pending else recording.max_ends_at
     return {
         "budget_bytes": recording.budget_bytes,
-        "max_ends_at": _system_datetime_as_utc(recording.max_ends_at)
+        "max_ends_at": _system_datetime_as_utc(reserved_end)
         .isoformat(timespec="milliseconds")
         .replace("+00:00", "Z"),
         "output": {"width": 1920, "height": 1080, "fps": 30, "video": "h264", "audio": "aac"},
@@ -457,10 +467,9 @@ def _fail_startup(room, recording, failure_code: str):
     recording.state_revision += 1
     recording.failure_code = failure_code
     recording.flags.startup_failure = True
-    if audio_active and recording.video_enabled:
-        recording.notification_pending = 1
-        recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
+    if recording.video_enabled:
+        notify_recording(recording)
     _publish_state(room, recording if audio_active else None, hosts_only=not audio_active)
 
 
@@ -606,10 +615,7 @@ def start(
                 "meet_room": room.name,
                 "room_owner": room.owner,
                 "initiated_by": frappe.session.user,
-                "calendar_event": room.calendar_event,
                 "status": "Starting",
-                "estimated_seconds": preflight["estimated_seconds"],
-                "estimated_bytes": preflight["estimated_bytes"],
                 "budget_bytes": preflight["budget_bytes"],
                 "max_ends_at": add_to_date(now, seconds=MAX_SECONDS + STARTUP_TIMEOUT_SECONDS),
                 "recorder_job_id": frappe.generate_hash(length=32),
@@ -626,16 +632,19 @@ def start(
             )
             if _count_active_owner_recordings(room.owner) > owner_limit:
                 frappe.throw(_("The Room Owner already has the maximum number of active recordings"))
-    if transcription_enabled:
+    if transcription_enabled and preflight["transcription_available"]:
         from suite.meet.transcription.capture import prepare
 
         try:
             prepare(recording)
-            _publish_state(room, recording)
         except Exception:
-            _fail_startup(room, _locked_recording(recording.name), "capture_failed")
-            frappe.db.commit()
-            raise
+            if not video_enabled:
+                _fail_startup(room, _locked_recording(recording.name), "capture_failed")
+                frappe.db.commit()
+                raise
+            frappe.logger("meet_transcription").warning("Transcription startup failed for %s", recording.name)
+        else:
+            _publish_state(room, recording)
         if not video_enabled:
             recording = _locked_recording(recording.name)
             if recording.status != "Starting":
@@ -746,7 +755,6 @@ def _finish_start(
     if not delivered:
         return _stop_after_grant_delivery_failure(room, current, client)
     current.grant_delivered = True
-    current.grant_delivered_at = _utc_now_naive()
     current.save(ignore_permissions=True)
     frappe.db.commit()
     if client is None:
@@ -768,6 +776,7 @@ def _stop_after_grant_delivery_failure(room, recording, client: RecorderClient |
     recording.flags.startup_failure = True
     operation_id = _stop_operation_id(recording)
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     audio_active = bool(recording.transcription_enabled and _active_audio_capture(room.name))
     _publish_state(room, recording if audio_active else None, hosts_only=not audio_active)
     frappe.db.commit()
@@ -1225,7 +1234,6 @@ def _apply_replacement_ready(
     recording.grant_issued_at = issued_at
     recording.grant_expires_at = expires_at
     recording.grant_delivered = False
-    recording.grant_delivered_at = None
     recording.flags.replacement_reconciliation = reconcile
     recording.save(ignore_permissions=True)
     _deliver_replacement_grant(recording, client)
@@ -1273,7 +1281,6 @@ def _deliver_replacement_grant(recording, client: RecorderClient) -> bool:
         and not current.grant_delivered
     ):
         current.grant_delivered = True
-        current.grant_delivered_at = _utc_now_naive()
         current.save(ignore_permissions=True)
         frappe.db.commit()
     return True
@@ -1527,10 +1534,9 @@ def recorder_failed(
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     if startup_failure:
         recording.flags.startup_failure = True
-    else:
-        recording.notification_pending = 1
-        recording.notification_next_retry_at = now_datetime()
     recording.save(ignore_permissions=True)
+    if recording.video_enabled:
+        notify_recording(recording)
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),
         None if startup_failure and not _active_audio_capture(recording.meet_room) else recording,
@@ -1630,6 +1636,7 @@ def _fail_stale_recording(name: str):
         recording.ended_at = recording.ended_at or _bounded_end(recording)
     recording.flags.reconciliation_update = True
     recording.save(ignore_permissions=True)
+    notify_recording(recording)
     startup_failure = previous_status in ("Pending", "Starting")
     _publish_state(
         frappe.get_doc("Meet Room", recording.meet_room),

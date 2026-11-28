@@ -123,34 +123,47 @@ class FrappePushNotification {
     // Return if token already presence in the instance
     if (this.token != null) return { permission_granted: true, token: this.token }
 
-    // ask for permission
-    const permission = await Notification.requestPermission()
+    // Safari answers no to a page that asks twice from one tap, even when the user already said
+    // yes, and the tap that got here has asked (see useDevicePush). So ask only if still undecided.
+    const permission =
+      Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission()
     if (permission !== 'granted') return { permission_granted: false, token: '' }
 
-    // check in local storage for old token
+    const token = await this.currentToken()
+    await this.syncApps()
+    return { permission_granted: true, token }
+  }
+
+  /**
+   * Asks Firebase for this device's token again, on a device already notified. Firebase makes a
+   * new push subscription when the browser dropped the old one, as Safari does, and renews a
+   * token that has aged; the relay hears of a new token, so the device is notified again.
+   */
+  async refreshToken(): Promise<void> {
+    if (!this.messaging || !this.isNotificationEnabled()) return
+    if (Notification.permission !== 'granted') return
+    await this.currentToken()
+  }
+
+  // This device's token from Firebase, subscribed at the relay in place of the old one.
+  async currentToken(): Promise<string> {
     const oldToken = localStorage.getItem(`firebase_token_${this.projectName}`)
     const vapidKey = await this.fetchVapidPublicKey()
     const newToken = await getToken(this.messaging!, {
       vapidKey: vapidKey,
       serviceWorkerRegistration: this.serviceWorkerRegistration!,
     })
-    // register new token if token is changed
     if (oldToken !== newToken) {
-      // unsubscribe old token
       if (oldToken) await this.unregisterTokenHandler(oldToken, this.registeredApps())
 
-      // subscribe push notification and register token
-      const isSubscriptionSuccessful = await this.registerTokenHandler(newToken, this.apps)
-      if (isSubscriptionSuccessful === false)
+      if (!(await this.registerTokenHandler(newToken, this.apps)))
         throw new Error('Failed to subscribe to push notification')
 
-      // save token to local storage
       localStorage.setItem(`firebase_token_${this.projectName}`, newToken)
       this.saveRegisteredApps(this.apps)
     }
     this.token = newToken
-    await this.syncApps()
-    return { permission_granted: true, token: newToken }
+    return newToken
   }
 
   // This will delete token from firebase and unsubscribe from push notification

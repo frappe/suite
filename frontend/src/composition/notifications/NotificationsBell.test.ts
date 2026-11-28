@@ -121,6 +121,12 @@ vi.mock('@/api', async () => ({
       downloadNotification('notice-4', 'Ready'),
       downloadNotification('notice-5', 'Failed'),
       downloadNotification('notice-6', 'Expired'),
+      {
+        name: 'recording-ready',
+        read: 0,
+        creation: null,
+        message: { subject: 'Recording ready', detail: null, url: '/d/video' },
+      },
       expiredSinceLoaded(),
     ],
     status: 'success',
@@ -229,6 +235,21 @@ describe('Notifications bell', () => {
     expect(assign).toHaveBeenCalledWith('/api/suite/drive/downloads/notice-4/content')
     expect(state.loadNode).not.toHaveBeenCalled()
   })
+  it('opens a recording outcome after marking it read', async () => {
+    const markRead = Promise.withResolvers<{ read: number }>()
+    state.markRead.mockReturnValue(markRead.promise)
+    const row = notificationRows(mount()).find((button) =>
+      button.textContent?.includes('Recording ready'),
+    )
+    row?.click()
+    await nextTick()
+    expect(state.markRead).toHaveBeenCalledWith({ notifications: ['recording-ready'] })
+    expect(state.push).not.toHaveBeenCalled()
+
+    markRead.resolve({ read: 1 })
+    await vi.waitFor(() => expect(state.push).toHaveBeenCalledWith('/d/video'))
+  })
+
   it("shows a ready zip's size and until when it can be downloaded", () => {
     const row = notificationRows(mount()).find((button) =>
       button.textContent?.includes('Talks.zip is ready to download'),

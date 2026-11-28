@@ -14,9 +14,20 @@ from werkzeug.wrappers import Request
 from suite import drive
 from suite.composition.http import handle_before_request
 from suite.meet.api import transcription
-from suite.meet.api.recording import get_preflight, start
+from suite.meet.api.recording import get_preflight, get_state, start
+from suite.meet.doctype.meet_recording.meet_recording import recording_storage_reservation_key
 from suite.meet.speech_context import make_hints
 from suite.meet.transcription.protocol import MODEL
+
+CAPTURE_CONFIG = {
+    "recorder_server_url": "http://localhost:3999",
+    "sfu_server_url": "http://localhost:3998",
+    "recorder_secret": "recorder-test-secret",
+    "sfu_secret": "sfu-test-secret",
+    "transcription_enabled": True,
+    "transcription_worker_secret": "a" * 40,
+    "recording_fixture_mode": True,
+}
 
 
 class IntegrationTestTranscription(IntegrationTestCase):
@@ -74,19 +85,10 @@ class IntegrationTestTranscription(IntegrationTestCase):
             start(self.room.name, "4d818270-fad0-4cd1-9fa1-be7987c06599", False, True)
 
     def test_start_failure_preserves_service_error_with_default_event_sequence(self):
-        config = {
-            "recorder_server_url": "http://localhost:3999",
-            "sfu_server_url": "http://localhost:3998",
-            "recorder_secret": "recorder-test-secret",
-            "sfu_secret": "sfu-test-secret",
-            "transcription_enabled": True,
-            "transcription_worker_secret": "a" * 40,
-            "recording_fixture_mode": True,
-        }
         frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
         frappe.clear_cache(doctype="Meet Settings")
         with (
-            patch.dict(frappe.conf, config),
+            patch.dict(frappe.conf, CAPTURE_CONFIG),
             patch("suite.meet.transcription.client.recorder"),
             patch(
                 "suite.meet.transcription.client.sfu",
@@ -99,6 +101,52 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(failed.status, "Failed")
         self.assertEqual(failed.failure_code, "capture_failed")
         self.assertIsNone(failed.started_at)
+
+    def test_paired_video_starts_when_sfu_cannot_confirm_transcription_start(self):
+        frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
+        frappe.clear_cache(doctype="Meet Settings")
+        with (
+            patch.dict(frappe.conf, CAPTURE_CONFIG),
+            patch("suite.meet.transcription.client.recorder"),
+            patch("suite.meet.transcription.client.sfu", side_effect=ConnectionError("SFU unavailable")),
+        ):
+            recording = start(self.room.name, "20e2f648-2469-4c75-aaa9-ad07701c7066", True, True)
+            self.addCleanup(
+                drive.release_storage_reservation,
+                self.owner_root,
+                recording_storage_reservation_key(recording["name"]),
+            )
+            state = get_state(self.room.name)
+
+        self.assertEqual(state.name, recording["name"])
+        self.assertEqual(state.status, "Recording")
+        self.assertEqual(state.video_capture_state, "capturing")
+        self.assertEqual(state.transcription_capture_state, "failed")
+        job = frappe.get_doc("Meet Transcription Job", {"capture": recording["name"]})
+        self.assertEqual(job.status, "Capturing")
+        self.assertTrue(job.stop_requested)
+        self.assertEqual(job.failure_code, "capture_start_unconfirmed")
+
+    def test_paired_video_starts_without_transcription_capacity(self):
+        frappe.db.set_single_value("Meet Settings", "enable_recording", 1)
+        frappe.clear_cache(doctype="Meet Settings")
+        with (
+            patch.dict(frappe.conf, CAPTURE_CONFIG),
+            patch("suite.meet.transcription.capture.admission", return_value=False),
+            patch("suite.meet.transcription.client.sfu") as sfu,
+        ):
+            recording = start(self.room.name, "ef27c454-b8ce-4bd1-aab4-1b63a66020ec", True, True)
+            self.addCleanup(
+                drive.release_storage_reservation,
+                self.owner_root,
+                recording_storage_reservation_key(recording["name"]),
+            )
+            state = get_state(self.room.name)
+
+        self.assertEqual(state.video_capture_state, "capturing")
+        self.assertEqual(state.transcription_capture_state, "failed")
+        self.assertFalse(frappe.db.exists("Meet Transcription Job", {"capture": recording["name"]}))
+        sfu.assert_not_called()
 
     def test_worker_auth_is_not_an_owner_privilege(self):
         with (
@@ -131,10 +179,21 @@ class IntegrationTestTranscription(IntegrationTestCase):
             self.assertEqual(result["status"], "Queued")
             self.assertEqual(job.attempts, expected_attempt)
             job.status = "Processing"
+        filters = {"to_user": job.room_owner, "inbox_message": ["is", "set"]}
+        previous = set(frappe.get_all("Drive Notification", filters=filters, pluck="name"))
         result = transcription._failure(job, "source_unavailable", True)
         self.assertEqual(result["status"], "Failed")
-        self.assertTrue(job.notification_pending)
         self.assertFalse(job.artifact)
+        self.assertEqual(
+            [
+                frappe.parse_json(row.inbox_message)["subject"]
+                for row in frappe.get_all(
+                    "Drive Notification", filters=filters, fields=["name", "inbox_message"]
+                )
+                if row.name not in previous
+            ],
+            ["Your Meet transcript could not be processed"],
+        )
 
     def test_failed_remaining_sources_do_not_publish_an_empty_partial_transcript(self):
         job = self.job("Processing")
@@ -198,7 +257,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 self.assertEqual(result["status"], "Failed")
                 job.reload()
                 self.assertEqual(job.status, "Failed")
-                self.assertTrue(job.notification_pending)
                 self.assertEqual(job.failure_code, "publication_failed")
                 self.assertFalse(job.artifact)
                 self.assertFalse(job.capture_folder)
@@ -263,7 +321,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(outcome["status"], "Failed")
         job.reload()
         self.assertFalse(job.artifact)
-        self.assertTrue(job.notification_pending)
         self.assertEqual(job.failure_code, "no_usable_segments")
 
     def test_deleted_result_revokes_worker_lease(self):
@@ -407,25 +464,29 @@ class IntegrationTestTranscription(IntegrationTestCase):
                     self.assertEqual(
                         frappe.db.get_value("Meet Transcription Job", job.name, "status"), "Ready"
                     )
-            # Ready delivery survives recorder failure; cleanup remains retryable.
-            with (
-                patch("frappe.sendmail") as notify,
-                patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")),
-            ):
+            messages = [
+                row["message"]
+                for row in self._drive_request("GET", "notifications")["rows"]
+                if row.get("message", {}).get("url") == drive.node_url(artifact.name)
+            ]
+            self.assertEqual(
+                messages,
+                [
+                    {
+                        "subject": "Your Meet transcript is ready",
+                        "detail": None,
+                        "url": drive.node_url(artifact.name),
+                    },
+                ],
+            )
+            # The notice is already in the inbox when cleanup begins.
+            with patch("suite.meet.transcription.client.recorder", side_effect=ConnectionError("offline")):
                 transcription.maintenance()
-                owner_messages = [
-                    call for call in notify.call_args_list if call.kwargs.get("recipients") == [self.owner]
-                ]
-                self.assertEqual(len(owner_messages), 1)
             job.reload()
-            self.assertTrue(job.notification_sent_at)
             self.assertFalse(job.source_deleted)
-            with patch("frappe.sendmail") as notify:
-                transcription.maintenance()
-                notify.assert_not_called()
+            transcription.maintenance()
             job.reload()
             self.assertTrue(job.source_deleted)
-            self.assertTrue(job.notification_sent_at)
             self.assertEqual(recorder.call_args.args[2], "delete")
             self._drive_request("PATCH", f"nodes/{artifact.name}", state="Trashed")
             self._drive_request("DELETE", f"nodes/{artifact.name}")
@@ -553,8 +614,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 "status": "Starting",
                 "video_enabled": 1,
                 "transcription_enabled": 1,
-                "estimated_seconds": 3600,
-                "estimated_bytes": 1000,
                 "budget_bytes": 1000,
                 "recorder_job_id": frappe.generate_hash(),
                 "request_id": frappe.generate_hash(),
@@ -599,7 +658,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
         self.assertEqual(job.failure_code, "source_missing")
         self.assertTrue(job.source_deleted)
         self.assertFalse(job.artifact)
-        self.assertTrue(job.notification_pending)
 
     def test_deleted_transcript_does_not_remove_processing_video_metadata(self):
         recording = frappe.get_doc(
@@ -611,8 +669,6 @@ class IntegrationTestTranscription(IntegrationTestCase):
                 "status": "Starting",
                 "video_enabled": 1,
                 "transcription_enabled": 1,
-                "estimated_seconds": 3600,
-                "estimated_bytes": 1000,
                 "budget_bytes": 1000,
                 "recorder_job_id": frappe.generate_hash(),
                 "request_id": frappe.generate_hash(),

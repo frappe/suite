@@ -172,7 +172,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.room_owner, self.owner)
         self.assertEqual(recording.drive_home_folder, drive.personal_root_for(self.owner))
         self.assertEqual(stop(self.room.name)["status"], "Processing")
-        content = b"cohost-recording"
+        content = f"cohost-recording-{recording.name}".encode()
         digest = hashlib.sha256(content).hexdigest()
         begin_upload(
             recording.name,
@@ -189,6 +189,13 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
             with patch("suite.meet.recording.ingest._validate_media", return_value={"duration_ms": 1000}):
                 result = process_upload(recording.name)
             self.assertEqual(frappe.db.get_value("Drive Node", result["artifact"], "owner"), self.owner)
+            rows = frappe.get_all(
+                "Drive Notification",
+                filters={"inbox_message": ["like", f"%{result['artifact']}%"]},
+                fields=["name", "to_user"],
+            )
+            self.assertEqual([row.to_user for row in rows], [self.cohost])
+            self.addCleanup(frappe.db.delete, "Drive Notification", {"name": rows[0].name})
         finally:
             path.unlink(missing_ok=True)
 
@@ -398,7 +405,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.state_revision, 6)
         self.assertEqual(recording.recorder_event_sequence, 10)
         self.assertIsNotNone(recording.ended_at)
-        self.assertTrue(recording.notification_pending)
 
     def test_callback_timestamps_and_gaps_stay_within_recording(self):
         started = start(self.room.name, str(uuid.uuid4()))
@@ -523,7 +529,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
         self.assertEqual(recording.finalization_stage, "Terminal")
         self.assertEqual(recording.finalization_failure_type, "deterministic")
         self.assertEqual(recording.finalization_failure_code, "invalid_terminal_metadata")
-        self.assertTrue(recording.notification_pending)
         self.assertEqual(
             finalization_status(recording.name),
             {"action": "delete_local", "terminal_result": "Failed"},
@@ -643,8 +648,6 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
                 "room_owner": self.owner,
                 "initiated_by": self.owner,
                 "status": "Pending",
-                "estimated_seconds": 60,
-                "estimated_bytes": MINIMUM_BUDGET_BYTES,
                 "budget_bytes": MINIMUM_BUDGET_BYTES,
                 "max_ends_at": add_to_date(now_datetime(), days=-1),
                 "recorder_job_id": frappe.generate_hash(length=32),
@@ -676,7 +679,7 @@ class IntegrationTestRecordingReliability(IntegrationTestCase):
     def _publish_recording(self) -> tuple[str, str]:
         started = start(self.room.name, str(uuid.uuid4()))
         stop(self.room.name)
-        content = b"real-recording-artifact"
+        content = f"real-recording-artifact-{started['name']}".encode()
         digest = hashlib.sha256(content).hexdigest()
         begin_upload(
             started["name"],
