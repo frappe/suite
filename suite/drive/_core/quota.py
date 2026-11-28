@@ -16,6 +16,7 @@ from suite.drive._core.errors import (
     rollback_savepoint,
 )
 from suite.drive._core.roots import validate_root_pair
+from suite.utils.db import affected_rows
 
 ADMIT_SQL = """
 UPDATE `tabDrive Root`
@@ -120,7 +121,7 @@ def admit(root: str, delta: int, *, source_root: str | None = None, site_limit_o
         limit = effective_quota(root_row)
 
     frappe.db.sql(ADMIT_SQL, {"root": root, "delta": delta, "effective_quota": limit})
-    if not frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]:
+    if not affected_rows():
         raise DriveOverQuota(_("This write exceeds the Drive root quota"))
 
 

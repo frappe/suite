@@ -58,6 +58,7 @@ from suite.drive._core.roots import (
     validate_root_pair,
 )
 from suite.drive._core.times import to_site_naive
+from suite.utils.db import affected_rows
 
 DEFAULT_PAGE_SIZE = 60
 MAX_PAGE_SIZE = 200
@@ -1159,7 +1160,7 @@ def _link_document(node: str, spec, docname: str) -> None:
         """,
         {"doctype": spec.doctype, "docname": docname, "node": node},
     )
-    if int(frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]) != 1:
+    if affected_rows() != 1:
         raise DriveConflict(_("A Drive content document identity cannot change"))
     linked = frappe.db.get_value(spec.doctype, docname, spec.node_field, for_update=True)
     if linked and linked != node:
@@ -1794,9 +1795,7 @@ def _trash(principals: Principals, node_id: str) -> dict:
                 "stamp": stamp,
             },
         )
-        changed = int(
-            frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]
-        )
+        changed = affected_rows()
         _record_activity(
             current.name,
             "trash",
@@ -1873,9 +1872,7 @@ def _restore(principals: Principals, node_id: str, *, parent_node: str | None) -
             """,
             {"node": current.name, "stamp": current.trashed_at},
         )
-        changed = int(
-            frappe.db.multisql({"mariadb": "SELECT ROW_COUNT()", "sqlite": "SELECT changes()"})[0][0]
-        )
+        changed = affected_rows()
         if not changed:
             raise DriveConflict(_("The Drive trash state changed during restore"))
         _record_activity(
