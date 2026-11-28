@@ -319,7 +319,7 @@ export function loadConfig(
 	};
 	const webRtcTransport: WebRTCTransportOptions = {
 		enableTcp: false,
-		initialAvailableOutgoingBitrate: 2_500_000,
+		initialAvailableOutgoingBitrate: 600_000,
 	};
 
 	return deepFreeze({

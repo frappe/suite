@@ -17,6 +17,7 @@ import { resolveCodecStrategy } from './codecStrategy'
 import { DefaultE2EETransformPolicy, type E2EETransformPolicy } from './E2EETransformPolicy'
 import {
   audioCodecOptions,
+  microphoneCodecOptions,
   screenEncodings,
   svcEncodingTemplate,
   videoCodecOptions,
@@ -463,7 +464,8 @@ export class TransportManager {
     }
 
     if (track?.kind === 'audio') {
-      produceOptions.codecOptions = audioCodecOptions
+      produceOptions.codecOptions =
+        safeAppData.type === 'microphone' ? microphoneCodecOptions : audioCodecOptions
     }
 
     const producer = await this.sendTransport.produce(produceOptions)
