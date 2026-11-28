@@ -60,7 +60,7 @@ curl -H "$AUTH" $SITE/api/suite/sheets/spreadsheets/<node>
 ] } }
 ```
 
-A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. Each sheet's `rows` sent back as a cell write from `A1` writes nothing.
+A read gives what was typed, not what a tab shows: a formula reads as the formula, and every value reads as text, such as `"1200"`. Each sheet's `rows` sent back as a cell write from `A1` writes nothing, when they fit in one write: up to 10,000 cells and 1 MB.
 
 To see what a tab shows, read the values. The answer has the same shape, but a formula reads as its result, and a number as its format shows it, such as `"$1,200.00"` or `"15.0%"`. A date or time with no set style reads in US English, such as `"1/15/2026"`. A date typed as `"2026-01-15"` keeps that style. `NOW` and `TODAY` count in UTC. An error reads as a tab shows it, such as `"#DIV/0!"`, `"#CIRC!"`, `"#NAME?"` or `"#ERROR!"`. A formula that fills more cells, such as `=SEQUENCE(3)`, shows each filled cell at its place, and one with a typed cell in its way reads `"#SPILL!"`. `NOW`, `TODAY`, `RAND` and `RANDBETWEEN` are worked out again on each read, so their result can change. The values are each cell's result, not a picture of the tab: cells in hidden rows and columns and in rows a filter hides are in it, a sparkline reads blank, and a cell under a merge reads its own value, though a tab shows only the merge's top-left cell. Working out the values may take up to 10 seconds and about 1 GB of memory. A spreadsheet whose formulas need more is refused with `SheetsRefused`, and each values read is refused at once until the spreadsheet changes, for up to an hour: read it as typed.
 
@@ -162,8 +162,8 @@ To change a few cells, write just those cells, with `null` for any between them.
 - A write that changes nothing, such as one sent again after a lost answer, writes nothing and answers the `rev` the spreadsheet is at.
 - Adding rows sent again, as after a lost answer, adds the rows again. Read the spreadsheet first to see whether the first one landed.
 - Adding a sheet sent again, as after a lost answer, is refused because the name is taken, which can mean the first one landed. Read the spreadsheet first to see.
-- A merged cell shows only its top left cell's value. Send `null` for the cells it covers. A value for one of them is refused.
-- A cell a tab can't edit, because the sheet is protected, is refused. The message names the cell.
+- A merged cell shows only its top left cell's value. Send `null` for the cells it covers. A value that would change one of them is refused.
+- A value that would change a cell a tab can't edit, because the sheet is protected, is refused. The message names the cell.
 - A write that names a sheet the spreadsheet doesn't have is refused. Add the sheet first, as in step 7.
 - One call writes up to 10,000 cells. It counts every cell sent, `null` ones too, and an empty row as one. In a create, it counts every sheet's cells together. Build a larger sheet with several writes.
 - A call's body is at most 1 MB.
@@ -174,7 +174,7 @@ One user makes up to 30 creates, 30 cell writes, 30 row adds and 30 sheet adds a
 
 A read gives up to 1,000,000 cells, the empty ones before each sheet's last used cell included. A larger spreadsheet is refused with `SheetsRefused`.
 
-A values read takes a spreadsheet of up to 50,000 cells with a value, and works out its formulas in up to 10 seconds and about 1 GB of memory. A larger or heavier one is refused with `SheetsRefused`: read it as typed.
+A values read takes a spreadsheet of up to 50,000 cells with a value, and works out its formulas in up to 10 seconds and about 1 GB of memory. It also gives up to 1,000,000 cells, the empty ones before each sheet's last cell with a value included. A larger or heavier one is refused with `SheetsRefused`: read it as typed.
 
 ## Refusals
 
@@ -192,7 +192,7 @@ A wrong API key answers `AuthenticationError` with no `message`.
 | `PermissionError` | 403 | A call has no `Authorization` header |
 | `DriveError` | 400 | A field is missing or wrong, such as a `parent`, `title` or `sheet` that is not text, an empty title or one over 140 characters, or a `role` that is not one of the numbers. The message names it. Nothing was written |
 | `DriveNotFound` | 404 | The folder or spreadsheet does not exist for this user, the item is not a spreadsheet, or the spreadsheet was deleted during the write |
-| `DriveForbidden` | 403 | The user may not add to the folder or edit the spreadsheet, or the spreadsheet is in the trash |
+| `DriveForbidden` | 403 | The user may not add to the folder or edit the spreadsheet, or a write's spreadsheet is in the trash |
 | `DriveLocked` | 401 | The item is behind a link password |
 | `DriveLinkExpired` | 410 | The link the item is shared by has expired |
 | `DriveConflict` | 409 | On create: the title is taken in the folder, and `free_title` names one that is free, or `parent` is not a folder |
