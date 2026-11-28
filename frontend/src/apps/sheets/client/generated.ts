@@ -417,6 +417,109 @@ const operationSpreadsheetSheetAdd: MutationRef<
   loadValidators: async () => (await import('./validators')).operationSpreadsheetSheetAdd,
 }
 
+export type SpreadsheetRowHeightsSetOutputAccessShape = {
+  role?: number
+  via_link?: string | null
+  source_node?: string | null
+  source_principal?: string | null
+  can_manage?: boolean
+}
+
+export type SpreadsheetRowHeightsSetOutputAudienceShape = {
+  kind: 'public' | 'organization' | 'link' | 'people'
+  people: number
+}
+
+export type SpreadsheetRowHeightsSetOutputBreadcrumbShape = {
+  name: string
+  title: string
+  kind: string
+  role: number
+}
+
+export type SpreadsheetRowHeightsSetOutputPerson = {
+  id: string
+  full_name: string
+  user_image: string | null
+}
+
+export type SpreadsheetRowHeightsSetOutputPreviewShape = { url: string; expires: number }
+
+export type SpreadsheetRowHeightsSetInput = {
+  sheet: string
+  start: number
+  heights: Array<number | null>
+  node: string
+}
+
+export type SpreadsheetRowHeightsSetOutput = {
+  name: string
+  title: string
+  kind: string
+  parent_node: string | null
+  root: string
+  state: string
+  trash_root: string | null
+  size: number
+  mime: string | null
+  url: string | null
+  content_doctype: string | null
+  content_docname: string | null
+  is_template: number
+  owner: SpreadsheetRowHeightsSetOutputPerson
+  creation: string | null
+  modified: string | null
+  content_modified: string | null
+  access?: SpreadsheetRowHeightsSetOutputAccessShape
+  audience?: SpreadsheetRowHeightsSetOutputAudienceShape
+  breadcrumbs?: Array<SpreadsheetRowHeightsSetOutputBreadcrumbShape>
+  contents_size?: number
+  preview?: SpreadsheetRowHeightsSetOutputPreviewShape | null
+  opened_at?: string | null
+  favourite?: boolean
+  rev: number
+}
+
+export type SpreadsheetRowHeightsSetError =
+  | 'DriveError'
+  | 'RateLimitExceededError'
+  | 'DriveNotFound'
+  | 'DriveForbidden'
+  | 'DriveLocked'
+  | 'DriveLinkExpired'
+  | 'SheetsRefused'
+  | 'WriteRefused'
+  | 'WriteBusy'
+
+const operationSpreadsheetRowHeightsSet: MutationRef<
+  SpreadsheetRowHeightsSetInput,
+  SpreadsheetRowHeightsSetOutput,
+  SpreadsheetRowHeightsSetError
+> = {
+  id: 'spreadsheet_row_heights_set',
+  owner: 'sheets',
+  kind: 'mutation',
+  publicName: 'spreadsheets.setRowHeights',
+  method: 'POST',
+  path: 'spreadsheets/{node}/row-heights',
+  prefix: '/api/suite/sheets/',
+  pathParams: ['node'],
+  nodeParams: ['node'],
+  entity: null,
+  errors: [
+    'DriveError',
+    'RateLimitExceededError',
+    'DriveNotFound',
+    'DriveForbidden',
+    'DriveLocked',
+    'DriveLinkExpired',
+    'SheetsRefused',
+    'WriteRefused',
+    'WriteBusy',
+  ],
+  loadValidators: async () => (await import('./validators')).operationSpreadsheetRowHeightsSet,
+}
+
 export type SpreadsheetReadOutputTypedSheet = { name: string; rows: Array<Array<string>> }
 
 export type SpreadsheetReadInput = { node: string }
@@ -709,6 +812,7 @@ export const api = {
     writeCells: operationSpreadsheetCellsWrite,
     appendRows: operationSpreadsheetRowsAppend,
     addSheet: operationSpreadsheetSheetAdd,
+    setRowHeights: operationSpreadsheetRowHeightsSet,
     read: operationSpreadsheetRead,
     readValues: operationSpreadsheetValues,
   },
