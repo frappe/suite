@@ -259,6 +259,13 @@ export function createMouse(o: MouseOptions): Mouse {
       }
       case 'rowHeader': {
         const row = hit.row
+        // A right-click inside the selected rows or the whole sheet keeps
+        // them, so the context menu acts on them all
+        const inRows = S.mode === 'row' && row >= range.r0 && row <= range.r1
+        if (e.button === 2 && (inRows || S.mode === 'all')) {
+          canvas.focus()
+          return
+        }
         selectWhole(
           'row',
           { r: row, c: 0 },
