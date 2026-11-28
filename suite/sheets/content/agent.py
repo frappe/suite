@@ -98,6 +98,10 @@ class Logged:
 
 def create(parent: str, title: str, sheets: object) -> tuple[str, int]:
     """Create a spreadsheet in the folder `parent` holding `sheets`, and answer its node and rev."""
+    if not title.strip():
+        # Drive refuses it in these words too, but only after the converter's turn
+        raise frappe.ValidationError(_("A Drive file title is required"))
+
     if len(title) > TITLE_MAX:
         raise frappe.ValidationError(_("title must be {0} characters or fewer").format(TITLE_MAX))
 

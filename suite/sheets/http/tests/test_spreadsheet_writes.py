@@ -627,6 +627,17 @@ class TestSpreadsheetWrites(IntegrationTestCase):
         self.assertEqual(self.head(node), rev)
         self.assert_created_nothing("Agent wrong")
 
+    def test_an_empty_title_is_refused_before_the_converter_is_asked(self):
+        # A converter asked fails the request as a 500
+        self.enterContext(patch.object(checker, "ask", side_effect=AssertionError("the converter was asked")))
+        for title in ("", "   "):
+            with self.subTest(title=title):
+                body = {"parent": self.folder, "title": title, "sheets": [{"name": "Data"}]}
+                response = self.sent("POST", "spreadsheets", body)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                self.assertEqual(response.json["errors"][0]["type"], "DriveError")
+                self.assert_created_nothing(title)
+
     def test_a_node_that_is_not_a_spreadsheet_answers_not_found(self):
         with self.assertRaises(drive.DriveNotFound):
             sheets_routes.spreadsheet_read(self.folder)
