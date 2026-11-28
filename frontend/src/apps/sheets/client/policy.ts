@@ -12,6 +12,7 @@ const effects = {
   spreadsheet_sheet_add: {
     invalidates: ['spreadsheet_read', 'spreadsheet_values', 'drive.view_list'],
   },
+  spreadsheet_row_heights_set: { invalidates: ['drive.view_list'] },
 } as const
 
 export const registration: OwnerRegistration = {
